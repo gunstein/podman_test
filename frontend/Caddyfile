@@ -1,9 +1,8 @@
 {
 	admin off
-	auto_https off
 }
 
-:8080 {
+(todo_routes) {
 	handle /api/* {
 		reverse_proxy todo-backend:8000
 	}
@@ -20,4 +19,13 @@
 		root * /srv
 		file_server
 	}
+}
+
+http://:8080 {
+	import todo_routes
+}
+
+https://localhost:8443 {
+	tls internal
+	import todo_routes
 }

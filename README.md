@@ -361,6 +361,76 @@ ansible/.venv/bin/ansible-playbook \
 
 Permanent data removal requires the explicit option `--extra-vars remove_data=true`.
 
+## Build an offline bundle
+
+M9 packages the application for installation without access to a container registry or Python package index. Build the archive on a connected machine:
+
+```bash
+offline/build-bundle.sh
+```
+
+The generated `dist/todo-offline-m9.tar.gz` contains:
+
+- Backend, frontend and PostgreSQL OCI image archives
+- Pinned Ansible and dependency wheels
+- Quadlet and Ansible deployment files
+- An offline installer
+- SHA-256 checksums for every bundled file
+
+On a compatible offline target:
+
+```bash
+tar -xzf todo-offline-m9.tar.gz
+cd todo-offline-m9
+./install.sh
+```
+
+The target must already have rootless Podman, Python 3 with `venv`, user systemd, `tar` and `sha256sum`. The bundle installs the application stack, not operating-system prerequisites. See [offline/README.md](offline/README.md) for details.
+
+## HTTPS with Caddy
+
+Caddy serves the application with its internal CA at:
+
+```text
+https://localhost:8443
+```
+
+HTTP remains available at <http://127.0.0.1:8080> for local development. Verify HTTPS without changing the host trust store:
+
+```bash
+podman cp todo-frontend:/data/caddy/pki/authorities/local/root.crt \
+  /tmp/todo-caddy-root.crt
+curl --cacert /tmp/todo-caddy-root.crt https://localhost:8443/health
+curl --cacert /tmp/todo-caddy-root.crt https://localhost:8443/ready
+```
+
+Browsers will warn until this local root certificate is trusted. On an Ubuntu development machine, trusting it system-wide is an explicit administrator choice:
+
+```bash
+sudo cp /tmp/todo-caddy-root.crt \
+  /usr/local/share/ca-certificates/todo-caddy-root.crt
+sudo update-ca-certificates
+```
+
+Restart the browser afterward. Remove that trust again with:
+
+```bash
+sudo rm /usr/local/share/ca-certificates/todo-caddy-root.crt
+sudo update-ca-certificates
+```
+
+The private CA key remains in the rootless `todo-caddy-data` volume and must never be copied or committed. The volume preserves the certificate across frontend container replacements.
+
+Run the E2E test over HTTPS without modifying the browser test profile's trust store:
+
+```bash
+E2E_BASE_URL=https://localhost:8443 \
+E2E_IGNORE_HTTPS_ERRORS=true \
+  python -m pytest e2e --browser chromium
+```
+
+The separate `curl --cacert` checks above perform full certificate verification.
+
 ## API
 
 - `GET /health`

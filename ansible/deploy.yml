@@ -5,10 +5,13 @@
 
   vars:
     project_root: "{{ playbook_dir }}/.."
+    deployment_mode: build
+    bundle_directory: ""
     quadlet_directory: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/containers/systemd"
     quadlet_files:
       - todo.network
       - todo-postgres-data.volume
+      - todo-caddy-data.volume
       - todo-postgres.container
       - todo-migrate.container
       - todo-backend.container
@@ -20,6 +23,13 @@
       - todo-postgres.service
 
   pre_tasks:
+    - name: Validate the deployment mode
+      ansible.builtin.assert:
+        that:
+          - deployment_mode in ["build", "offline"]
+          - deployment_mode != "offline" or bundle_directory | length > 0
+        fail_msg: Offline deployment requires bundle_directory.
+
     - name: Check that Podman is installed
       ansible.builtin.command:
         argv:
@@ -83,7 +93,21 @@
           - localhost/todo-backend:m8
           - "{{ project_root }}"
       register: backend_built
-      when: backend_image.rc == 1
+      when:
+        - backend_image.rc == 1
+        - deployment_mode == "build"
+
+    - name: Load the backend image from the offline bundle
+      ansible.builtin.command:
+        argv:
+          - podman
+          - load
+          - --input
+          - "{{ bundle_directory }}/images/todo-backend-m8.tar"
+      register: backend_loaded
+      when:
+        - backend_image.rc == 1
+        - deployment_mode == "offline"
 
     - name: Check whether the frontend image exists
       ansible.builtin.command:
@@ -91,7 +115,7 @@
           - podman
           - image
           - exists
-          - localhost/todo-frontend:m8
+          - localhost/todo-frontend:m10
       register: frontend_image
       changed_when: false
       failed_when: frontend_image.rc not in [0, 1]
@@ -104,10 +128,58 @@
           - --file
           - "{{ project_root }}/frontend/Containerfile"
           - --tag
-          - localhost/todo-frontend:m8
+          - localhost/todo-frontend:m10
           - "{{ project_root }}"
       register: frontend_built
-      when: frontend_image.rc == 1
+      when:
+        - frontend_image.rc == 1
+        - deployment_mode == "build"
+
+    - name: Load the frontend image from the offline bundle
+      ansible.builtin.command:
+        argv:
+          - podman
+          - load
+          - --input
+          - "{{ bundle_directory }}/images/todo-frontend-m10.tar"
+      register: frontend_loaded
+      when:
+        - frontend_image.rc == 1
+        - deployment_mode == "offline"
+
+    - name: Check whether the PostgreSQL image exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - image
+          - exists
+          - docker.io/library/postgres:17
+      register: postgres_image
+      changed_when: false
+      failed_when: postgres_image.rc not in [0, 1]
+
+    - name: Pull the PostgreSQL image
+      ansible.builtin.command:
+        argv:
+          - podman
+          - pull
+          - docker.io/library/postgres:17
+      register: postgres_pulled
+      when:
+        - postgres_image.rc == 1
+        - deployment_mode == "build"
+
+    - name: Load the PostgreSQL image from the offline bundle
+      ansible.builtin.command:
+        argv:
+          - podman
+          - load
+          - --input
+          - "{{ bundle_directory }}/images/postgres-17.tar"
+      register: postgres_loaded
+      when:
+        - postgres_image.rc == 1
+        - deployment_mode == "offline"
 
     - name: Create the Quadlet directory
       ansible.builtin.file:
@@ -132,7 +204,11 @@
       when: >-
         secret_created.changed | default(false) or
         backend_built.changed | default(false) or
+        backend_loaded.changed | default(false) or
         frontend_built.changed | default(false) or
+        frontend_loaded.changed | default(false) or
+        postgres_pulled.changed | default(false) or
+        postgres_loaded.changed | default(false) or
         quadlet_installed.changed
 
     - name: Reload generated user systemd units

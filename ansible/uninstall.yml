@@ -8,6 +8,7 @@
     quadlet_files:
       - todo.network
       - todo-postgres-data.volume
+      - todo-caddy-data.volume
       - todo-postgres.container
       - todo-migrate.container
       - todo-backend.container
@@ -26,7 +27,7 @@
       - todo-postgres
     application_images:
       - localhost/todo-backend:m8
-      - localhost/todo-frontend:m8
+      - localhost/todo-frontend:m10
     remove_data: false
 
   tasks:
@@ -135,6 +136,26 @@
       changed_when: false
       failed_when: database_volume.rc not in [0, 1]
       when: remove_data | bool
+
+    - name: Check whether the Caddy data volume exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - volume
+          - exists
+          - todo-caddy-data
+      register: caddy_data_volume
+      changed_when: false
+      failed_when: caddy_data_volume.rc not in [0, 1]
+
+    - name: Remove the Caddy data volume
+      ansible.builtin.command:
+        argv:
+          - podman
+          - volume
+          - rm
+          - todo-caddy-data
+      when: caddy_data_volume.rc == 0
 
     - name: Permanently remove the database volume
       ansible.builtin.command:

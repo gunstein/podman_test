@@ -6,6 +6,6 @@ COPY frontend/app.js /srv/app.js
 COPY frontend/style.css /srv/style.css
 
 USER 1000
-EXPOSE 8080
+EXPOSE 8080 8443
 
 CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

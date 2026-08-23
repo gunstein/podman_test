@@ -8,7 +8,7 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-M9 — Package an offline installation as a tar.gz bundle.
+M11 — Add Keycloak authentication last.
 
 ## Completed
 
@@ -41,7 +41,13 @@ M9 — Package an offline installation as a tar.gz bundle.
 - A small localhost Ansible playbook builds the images, installs Quadlet files, creates the Podman secret when missing, starts the services and verifies health and readiness.
 - A second Ansible run completed with `changed=0`, confirming idempotence.
 - The Ansible-deployed application passed the Chromium E2E test.
-- M1 through M8 are complete.
+- An offline tar.gz bundle contains OCI image archives, pinned Ansible wheels, deployment files, an installer and SHA-256 checksums.
+- Offline installation was verified after removing all three local images and blocking registry and package-index access with invalid proxies.
+- PostgreSQL data survived the offline reinstall.
+- Caddy serves locally issued HTTPS on `https://localhost:8443` while retaining HTTP on port 8080 for development.
+- Caddy's internal CA persists in a dedicated rootless Podman volume.
+- TLS hostname, certificate chain, health, readiness and Chromium E2E behavior were verified.
+- M1 through M10 are complete.
 
 ## Decisions
 
@@ -61,6 +67,11 @@ M9 — Package an offline installation as a tar.gz bundle.
 - Enable only the frontend unit; systemd starts the remaining application dependency chain.
 - Start Ansible with one localhost playbook and only `ansible-core`; add remote deployment structure only when it is needed.
 - Keep secret prompting conditional so repeat deployments remain non-interactive.
+- Treat Podman, Python with venv, user systemd and basic archive/checksum tools as offline target prerequisites.
+- Build platform-specific offline bundles on a machine compatible with the target.
+- Verify every bundled artifact with SHA-256 before installation.
+- Use Caddy's internal CA for offline-compatible local HTTPS without automatically modifying host trust.
+- Persist Caddy's private CA material in a dedicated volume and expose only its public root certificate for explicit trust.
 - Never commit secrets.
 
 ## Local development
@@ -97,10 +108,10 @@ Open <http://127.0.0.1:8000> in a browser.
 - M6: Quadlet and systemd — completed
 - M7: Podman secrets — completed
 - M8: Ansible deployment — completed
-- M9: Offline installation from a `tar.gz` bundle
-- M10: HTTPS
+- M9: Offline installation from a `tar.gz` bundle — completed
+- M10: HTTPS — completed
 - M11: Keycloak authentication
 
 ## Next step
 
-Define the contents and installation flow for an offline tar.gz bundle containing application images and required deployment artifacts.
+Add Keycloak authentication without obscuring the existing Podman, Quadlet and Ansible architecture.

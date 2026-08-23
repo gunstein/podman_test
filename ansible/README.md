@@ -41,7 +41,14 @@ ansible/.venv/bin/ansible-playbook \
 Image refresh is intentionally unavailable in offline mode because the bundle is
 the complete, fixed source of images there.
 
-The playbook does not install Podman, enable lingering, rotate an existing secret or modify system-wide configuration. Those operations require separate administrative decisions.
+The frontend Quadlet is the single `default.target` entrypoint and pulls in the
+remaining services. It starts with the user's systemd manager after login. For
+boot-before-login operation on an always-on host, an administrator must run
+`sudo loginctl enable-linger <service-user>`.
+
+The playbook does not install Podman, enable lingering, rotate an existing
+secret or modify system-wide configuration. Those operations require separate
+administrative decisions.
 
 The Keycloak account created from the prompted password is its temporary
 bootstrap administrator. This localhost demo retains it for repeatable

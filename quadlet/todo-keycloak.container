@@ -25,6 +25,7 @@ Exec=start --import-realm
 NoNewPrivileges=true
 DropCapability=all
 PidsLimit=512
+# Podman 4.9 Quadlet has no native Memory= field.
 PodmanArgs=--memory=1g
 
 [Service]

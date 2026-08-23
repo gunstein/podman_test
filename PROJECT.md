@@ -86,6 +86,8 @@ M12 — Security baseline without hiding the Podman concepts.
 - Mount the database password as a file from rootless Podman secret storage.
 - Keep `DATABASE_URL` for local development and tests; containers use separate non-secret settings plus `DATABASE_PASSWORD_FILE`.
 - Enable only the frontend unit; systemd starts the remaining application dependency chain.
+- Use the frontend Quadlet as the only `default.target` entrypoint; require an administrator to enable user lingering for boot-before-login operation.
+- Keep Keycloak's memory limit in `PodmanArgs` while supporting Podman 4.9; migrate to native `Memory=` when the tested baseline is raised.
 - Start Ansible with one localhost playbook and only `ansible-core`; add remote deployment structure only when it is needed.
 - Keep secret prompting conditional so repeat deployments remain non-interactive.
 - Treat Podman, Python with venv, user systemd and basic archive/checksum tools as offline target prerequisites.

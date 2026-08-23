@@ -56,6 +56,11 @@ The complete stack has been tested with Podman 4.9.3, systemd 255,
 Python 3.12.3 and Ansible Core 2.17.14. These are tested baseline versions,
 not claims that every older version is unsupported.
 
+Keycloak's memory limit uses `PodmanArgs=--memory=1g` because the tested
+Podman 4.9 Quadlet generator does not support the newer native `Memory=`
+field. This small compatibility escape hatch can be replaced when the tested
+Podman baseline is raised.
+
 ## Deploy the complete application
 
 Create a dedicated Ansible virtual environment:
@@ -153,8 +158,21 @@ that they are ready. Ansible subsequently verifies backend health and readiness
 and Keycloak discovery.
 
 Quadlet files are installed in `~/.config/containers/systemd/`. Podman's
-systemd generator turns them into generated user services; generated services
-are started, but not enabled with `systemctl enable`.
+systemd generator turns them into generated user services. The frontend
+Quadlet's `[Install] WantedBy=default.target` makes it the single automatic
+entrypoint; its dependencies pull in the rest of the stack. Generated services
+must not be enabled manually with `systemctl enable`.
+
+With a normal user session, the stack starts when that user's systemd manager
+starts after login. For an always-on server that must start before the service
+user logs in, an administrator must explicitly enable lingering:
+
+```bash
+sudo loginctl enable-linger <service-user>
+```
+
+The Ansible playbook intentionally does not make this host-level administrative
+decision.
 
 ## Verify HTTP and HTTPS
 

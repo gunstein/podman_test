@@ -1,11 +1,11 @@
-FROM docker.io/library/python:3.12-slim
+FROM docker.io/library/caddy:2-alpine
 
-WORKDIR /srv/frontend
-COPY frontend /srv/frontend
+COPY frontend/Caddyfile /etc/caddy/Caddyfile
+COPY frontend/index.html /srv/index.html
+COPY frontend/app.js /srv/app.js
+COPY frontend/style.css /srv/style.css
 
 USER 1000
 EXPOSE 8080
 
-STOPSIGNAL SIGINT
-
-CMD ["python", "-m", "http.server", "8080", "--bind", "0.0.0.0"]
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

@@ -85,21 +85,21 @@ The test suite refuses database names that do not end with `_test`. It migrates 
 Build both images from the project root:
 
 ```bash
-podman build --file backend/Containerfile --tag localhost/todo-backend:m3 .
-podman build --file frontend/Containerfile --tag localhost/todo-frontend:m3 .
+podman build --file backend/Containerfile --tag localhost/todo-backend:m5 .
+podman build --file frontend/Containerfile --tag localhost/todo-frontend:m5 .
 ```
 
 Smoke-test the images separately:
 
 ```bash
 podman run --name todo-backend-smoke --rm --detach \
-  --publish 127.0.0.1:18000:8000 localhost/todo-backend:m3
+  --publish 127.0.0.1:18000:8000 localhost/todo-backend:m5
 curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
   http://127.0.0.1:18000/health
 podman stop todo-backend-smoke
 
 podman run --name todo-frontend-smoke --rm --detach \
-  --publish 127.0.0.1:18080:8080 localhost/todo-frontend:m3
+  --publish 127.0.0.1:18080:8080 localhost/todo-frontend:m5
 curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
   http://127.0.0.1:18080/
 podman stop todo-frontend-smoke
@@ -134,7 +134,7 @@ Apply migrations from a one-off backend container:
 podman run --name todo-migrate --rm \
   --network todo-network \
   --env DATABASE_URL="host=todo-postgres port=5432 dbname=todo user=todo password=$TODO_DB_PASSWORD" \
-  localhost/todo-backend:m3 \
+  localhost/todo-backend:m5 \
   python -m backend.migrate up
 ```
 
@@ -145,12 +145,12 @@ podman run --name todo-backend --detach \
   --network todo-network \
   --publish 127.0.0.1:8000:8000 \
   --env DATABASE_URL="host=todo-postgres port=5432 dbname=todo user=todo password=$TODO_DB_PASSWORD" \
-  localhost/todo-backend:m3
+  localhost/todo-backend:m5
 
 podman run --name todo-frontend --detach \
   --network todo-network \
   --publish 127.0.0.1:8080:8080 \
-  localhost/todo-frontend:m3
+  localhost/todo-frontend:m5
 ```
 
 Inspect and test the running containers:
@@ -178,7 +178,37 @@ podman start todo-postgres todo-backend todo-frontend
 
 If backend health works but `/ready` or `/api/todos` fails with `No route to host`, inspect `podman exec todo-postgres cat /proc/net/route`. An empty table means the container network namespace is incomplete; `podman restart todo-postgres` recreates it.
 
-The containers share a network, and the backend reaches PostgreSQL by the name `todo-postgres`. The frontend is still isolated at HTTP routing level; Caddy will route its relative `/api` requests in M5.
+The containers share a network, and the backend reaches PostgreSQL by the name `todo-postgres`. In the current M5 setup, the Caddy-based frontend handles HTTP routing as described below.
+
+## Run through Caddy
+
+Build the current frontend image, which contains both the static files and Caddy:
+
+```bash
+podman build --file frontend/Containerfile --tag localhost/todo-frontend:m5 .
+```
+
+Replace the stateless frontend container:
+
+```bash
+podman stop todo-frontend
+podman rm todo-frontend
+podman run --name todo-frontend --detach \
+  --network todo-network \
+  --publish 127.0.0.1:8080:8080 \
+  localhost/todo-frontend:m5
+```
+
+Test every route through Caddy:
+
+```bash
+curl --fail --retry 10 --retry-delay 1 --retry-all-errors http://127.0.0.1:8080/
+curl --fail http://127.0.0.1:8080/health
+curl --fail http://127.0.0.1:8080/ready
+curl --fail http://127.0.0.1:8080/api/todos
+```
+
+Open <http://127.0.0.1:8080>. Caddy serves HTML, CSS and JavaScript directly and sends API, health and readiness requests to the backend. HTTPS remains disabled until M10.
 
 ## API
 

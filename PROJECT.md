@@ -8,7 +8,7 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-M5 — Add Caddy as the reverse proxy.
+M5.5 — Add end-to-end browser tests with Playwright for Python.
 
 ## Completed
 
@@ -30,7 +30,9 @@ M5 — Add Caddy as the reverse proxy.
 - Database persistence was verified across a PostgreSQL container stop and start.
 - Container logs, inspect data, routes and lifecycle were used to diagnose and repair a Netavark namespace issue.
 - Liveness (`/health`) and database readiness (`/ready`) are separate endpoints.
-- M1 through M4.5 are complete.
+- Caddy provides one browser-facing endpoint and routes frontend and API traffic by path.
+- Full Todo CRUD was verified through Caddy.
+- M1 through M5 are complete.
 
 ## Decisions
 
@@ -43,6 +45,7 @@ M5 — Add Caddy as the reverse proxy.
 - Keep FastAPI running locally through M2; containerize it in M3.
 - Add Keycloak last.
 - Keep liveness and readiness checks separate.
+- Use one Caddy-based frontend container to serve static files and proxy backend routes.
 - Never commit secrets.
 
 ## Local development
@@ -74,7 +77,7 @@ Open <http://127.0.0.1:8000> in a browser.
 - M3: Containerfiles for backend and frontend — completed
 - M4: Run manually with rootless Podman — completed
 - M4.5: Troubleshooting and lifecycle — completed
-- M5: Caddy reverse proxy
+- M5: Caddy reverse proxy — completed
 - M5.5: End-to-end browser tests with Playwright for Python
 - M6: Quadlet and systemd
 - M7: Podman secrets
@@ -85,4 +88,4 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-Add Caddy so one HTTP endpoint serves the frontend and routes `/api` requests to the backend.
+Add one Playwright for Python end-to-end test for the complete Todo user flow through Caddy.

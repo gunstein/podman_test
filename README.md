@@ -62,6 +62,24 @@ python -m backend.migrate down
 
 The initial rollback drops the `todos` table and deletes its data. Review every down migration before running it.
 
+## Tests
+
+Create the isolated test database once:
+
+```bash
+podman exec todo-postgres createdb -U todo -O todo todo_test
+```
+
+In an activated virtualenv, install test dependencies and run the tests:
+
+```bash
+python -m pip install -r backend/requirements-test.txt
+export TEST_DATABASE_URL="host=127.0.0.1 port=5432 dbname=todo_test user=todo password=$TODO_DB_PASSWORD"
+python -m pytest
+```
+
+The test suite refuses database names that do not end with `_test`. It migrates the test database up, clears Todos between tests and rolls the schema back afterward.
+
 ## API
 
 - `GET /health`

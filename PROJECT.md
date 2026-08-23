@@ -22,7 +22,9 @@ M3 — Build Containerfiles for the backend and frontend.
 - PostgreSQL data was verified to survive a container stop and restart.
 - Versioned SQL migrations support status, upgrade and single-step rollback.
 - Migration upgrade and rollback were verified against a disposable test database.
-- M1, M2 and M2.5 are complete.
+- Six automated tests cover health, frontend serving, CRUD, validation, missing Todos and migration file pairs.
+- Tests were verified against an isolated, automatically removed PostgreSQL test container.
+- M1, M2, M2.5 and M2.6 are complete.
 
 ## Decisions
 
@@ -61,6 +63,7 @@ Open <http://127.0.0.1:8000> in a browser.
 - M1: HTML/JavaScript + FastAPI with hardcoded Todo — completed
 - M2: PostgreSQL + Todo CRUD — completed
 - M2.5: Versioned SQL migrations — completed
+- M2.6: Automated smoke and integration tests — completed
 - M3: Containerfiles for backend and frontend
 - M4: Run manually with rootless Podman
 - M4.5: Troubleshooting and lifecycle

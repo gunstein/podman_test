@@ -1,10 +1,10 @@
 [Unit]
 Description=Todo Caddy frontend and reverse proxy
-Requires=todo-backend.service
-After=todo-backend.service
+Requires=todo-backend.service todo-keycloak.service
+After=todo-backend.service todo-keycloak.service
 
 [Container]
-Image=localhost/todo-frontend:m10
+Image=localhost/todo-frontend:m11
 ContainerName=todo-frontend
 Network=todo.network
 Volume=todo-caddy-data.volume:/data:U

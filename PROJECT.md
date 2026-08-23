@@ -48,6 +48,13 @@ M11 — Add Keycloak authentication last.
 - Caddy's internal CA persists in a dedicated rootless Podman volume.
 - TLS hostname, certificate chain, health, readiness and Chromium E2E behavior were verified.
 - M1 through M10 are complete.
+- Keycloak runs behind Caddy and imports a minimal `todo` realm with a public SPA client using PKCE S256.
+- Todo reads remain public, while create, update and delete operations require a valid Keycloak access token.
+- Keycloak uses the existing PostgreSQL service with a separate database schema created by migration 002.
+- The initial Keycloak administrator password is held in a rootless Podman secret and no users or passwords are committed.
+- Public-read and authenticated CRUD browser flows were verified through Keycloak.
+- A helper provisions the complete `testuser` account and runs both E2E flows without storing test passwords.
+- M11 is complete.
 
 ## Decisions
 
@@ -73,6 +80,8 @@ M11 — Add Keycloak authentication last.
 - Use Caddy's internal CA for offline-compatible local HTTPS without automatically modifying host trust.
 - Persist Caddy's private CA material in a dedicated volume and expose only its public root certificate for explicit trust.
 - Never commit secrets.
+- Keep authentication authorization simple: all authenticated users may write all Todos; per-user ownership is outside this demo.
+- Keep browser tokens in memory and use Authorization Code with PKCE S256 for the public frontend client.
 
 ## Local development
 
@@ -110,8 +119,8 @@ Open <http://127.0.0.1:8000> in a browser.
 - M8: Ansible deployment — completed
 - M9: Offline installation from a `tar.gz` bundle — completed
 - M10: HTTPS — completed
-- M11: Keycloak authentication
+- M11: Keycloak authentication — completed
 
 ## Next step
 
-Add Keycloak authentication without obscuring the existing Podman, Quadlet and Ansible architecture.
+Test the complete offline M11 bundle on a clean virtual machine.

@@ -4,7 +4,7 @@ Requires=todo-postgres.service
 After=todo-postgres.service
 
 [Container]
-Image=localhost/todo-backend:m8
+Image=localhost/todo-backend:m11
 ContainerName=todo-migrate
 Network=todo.network
 Secret=todo-db-password

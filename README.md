@@ -1,40 +1,174 @@
 # Todo demo
 
-FastAPI runs locally while PostgreSQL runs in rootless Podman.
+A small, pedagogical Todo application for learning rootless Podman, Quadlet,
+Ansible, offline installation, HTTPS and Keycloak.
 
-## Start PostgreSQL
+## Architecture
 
-Choose a password for the current shell:
+- Plain HTML, CSS and JavaScript in the browser
+- FastAPI backend
+- PostgreSQL database
+- Caddy serving static files, HTTPS and reverse proxy routes
+- Keycloak authentication
+- Rootless Podman containers managed by Quadlet and user systemd
+- Ansible deployment, including an offline bundle
+
+Anyone can read Todos. A Keycloak login is required to create, update or delete
+them. All authenticated users share the same Todo list; per-user ownership is
+intentionally outside this demo.
+
+## Prerequisites
+
+- Rootless Podman
+- Python 3 with `venv`
+- User systemd
+- Bash
+
+The offline target also needs `tar` and `sha256sum`.
+
+## Deploy the complete application
+
+Create a dedicated Ansible virtual environment:
 
 ```bash
-read -rsp "Database password: " TODO_DB_PASSWORD
-echo
-export TODO_DB_PASSWORD
+python3 -m venv ansible/.venv
+ansible/.venv/bin/python -m pip install -r ansible/requirements.txt
 ```
 
-Create persistent storage and start PostgreSQL:
+Deploy from the project root:
 
 ```bash
-podman volume create todo-postgres-data
-podman run --name todo-postgres \
-  --detach \
-  --publish 127.0.0.1:5432:5432 \
-  --env POSTGRES_DB=todo \
-  --env POSTGRES_USER=todo \
-  --env POSTGRES_PASSWORD="$TODO_DB_PASSWORD" \
-  --volume todo-postgres-data:/var/lib/postgresql/data \
-  docker.io/library/postgres:17
-podman logs --follow todo-postgres
+ansible/.venv/bin/ansible-playbook \
+  --inventory ansible/inventory.ini \
+  ansible/deploy.yml
 ```
 
-Stop following logs with Ctrl+C after PostgreSQL is ready. Later use `podman start todo-postgres` and `podman stop todo-postgres`. The volume preserves the data.
+The first run asks for:
 
-## Run FastAPI
+- The PostgreSQL password
+- An initial Keycloak administrator password
+
+The values are stored as rootless Podman secrets and are never written to the
+repository. Later runs reuse the existing secrets. A repeat deployment should
+finish with `changed=0`.
+
+Open the application at <https://localhost:8443>. Caddy uses its internal CA, so
+an untrusted-certificate warning is expected until its local root certificate is
+trusted. HTTP remains available at <http://127.0.0.1:8080>, but Keycloak login is
+configured for the HTTPS address.
+
+## Inspect the deployment
+
+```bash
+systemctl --user status todo-postgres.service
+systemctl --user status todo-migrate.service
+systemctl --user status todo-backend.service
+systemctl --user status todo-keycloak.service
+systemctl --user status todo-frontend.service
+
+podman ps
+podman network inspect todo-network
+podman secret ls
+```
+
+Starting `todo-frontend.service` pulls in this dependency chain:
+
+```text
+PostgreSQL healthy -> migrations -> backend and Keycloak -> Caddy/frontend
+```
+
+Quadlet files are installed in `~/.config/containers/systemd/`. Podman's
+systemd generator turns them into generated user services; generated services
+are started, but not enabled with `systemctl enable`.
+
+## Verify HTTP and HTTPS
+
+```bash
+curl --fail http://127.0.0.1:8080/health
+curl --fail http://127.0.0.1:8080/ready
+curl --fail http://127.0.0.1:8080/api/todos
+
+podman cp todo-frontend:/data/caddy/pki/authorities/local/root.crt \
+  /tmp/todo-caddy-root.crt
+curl --fail --cacert /tmp/todo-caddy-root.crt \
+  https://localhost:8443/health
+```
+
+`/health` verifies that the backend process is alive. `/ready` additionally
+checks its database connection.
+
+The Caddy CA private key remains in the `todo-caddy-data` volume. Only the
+public root certificate should be copied out. Never commit CA keys or secrets.
+
+## Automated backend tests
+
+Start PostgreSQL and create an isolated test database once:
+
+```bash
+podman exec todo-postgres createdb -U todo -O todo todo_test
+```
+
+Create the backend environment and run the tests:
 
 ```bash
 python3 -m venv backend/.venv
 source backend/.venv/bin/activate
-python -m pip install -r backend/requirements.txt
+python -m pip install -r backend/requirements-test.txt
+
+read -rsp "Database password: " TODO_DB_PASSWORD
+echo
+export TODO_DB_PASSWORD
+export TEST_DATABASE_URL="host=127.0.0.1 port=5432 dbname=todo_test user=todo password=$TODO_DB_PASSWORD"
+python -m pytest backend/tests
+unset TEST_DATABASE_URL TODO_DB_PASSWORD
+```
+
+The test suite refuses database names that do not end in `_test`. It migrates
+the test database, clears Todos between tests and rolls the schema back when
+finished.
+
+## End-to-end browser tests
+
+Install the test-only browser dependencies once:
+
+```bash
+source backend/.venv/bin/activate
+python -m pip install -r backend/requirements-e2e.txt
+python -m playwright install chromium
+```
+
+Run the helper:
+
+```bash
+scripts/run-e2e.sh
+```
+
+The helper asks for a test-user password and the current Keycloak administrator
+password, then creates or updates a complete Keycloak user named `testuser`.
+It runs both the public-read test and the authenticated CRUD test. Passwords
+exist only in process memory or environment variables during the run; they are
+not stored in Git or a project file.
+
+The test user remains in Keycloak for repeatable local testing, and the helper
+sets its password on each run. The uniquely named Todo created by the successful
+test is deleted before the test finishes.
+
+## Keycloak administration
+
+Open <https://localhost:8443/auth/admin/> and log in as `admin` with the
+administrator password chosen during the first deployment. The application realm
+is `todo`.
+
+The browser uses Authorization Code with PKCE S256. Access tokens remain in the
+Keycloak JavaScript adapter's memory and are not stored in local storage.
+
+## Local backend development
+
+For backend-only development, PostgreSQL can remain in Podman while Uvicorn runs
+on the host:
+
+```bash
+source backend/.venv/bin/activate
 read -rsp "Database password: " TODO_DB_PASSWORD
 echo
 export TODO_DB_PASSWORD
@@ -43,315 +177,51 @@ python -m backend.migrate up
 uvicorn backend.main:app --reload
 ```
 
-Enter the same PostgreSQL password when prompted. Virtualenv activation and shell variables must be repeated in every new terminal. Do not store secrets in Git.
+Open <http://127.0.0.1:8000/docs>. Public endpoints work without OIDC settings.
+Testing authenticated writes is simplest through the complete deployment.
 
-Open <http://127.0.0.1:8000>. API docs are at <http://127.0.0.1:8000/docs>.
-
-## Database migrations
+Migration commands:
 
 ```bash
 python -m backend.migrate status
 python -m backend.migrate up
-```
-
-Roll back the latest migration:
-
-```bash
 python -m backend.migrate down
 ```
 
-The initial rollback drops the `todos` table and deletes its data. Review every down migration before running it.
+`down` rolls back one migration and can delete data. Review the corresponding
+`.down.sql` file before using it.
 
-## Tests
+## Offline bundle
 
-Create the isolated test database once:
-
-```bash
-podman exec todo-postgres createdb -U todo -O todo todo_test
-```
-
-In an activated virtualenv, install test dependencies and run the tests:
+On a connected machine compatible with the target:
 
 ```bash
-python -m pip install -r backend/requirements-test.txt
-export TEST_DATABASE_URL="host=127.0.0.1 port=5432 dbname=todo_test user=todo password=$TODO_DB_PASSWORD"
-python -m pytest backend/tests
+offline/build-bundle.sh
 ```
 
-The test suite refuses database names that do not end with `_test`. It migrates the test database up, clears Todos between tests and rolls the schema back afterward.
+This creates `dist/todo-offline-m11.tar.gz` containing:
 
-## End-to-end test
+- Backend, frontend, Keycloak and PostgreSQL OCI image archives
+- Pinned Ansible wheels
+- Quadlet and Ansible deployment files
+- An installer and SHA-256 checksums
 
-With the complete application running through Caddy, install Playwright and Chromium once:
+On the offline target:
 
 ```bash
-python -m pip install -r backend/requirements-e2e.txt
-python -m playwright install chromium
+tar -xzf todo-offline-m11.tar.gz
+cd todo-offline-m11
+./install.sh
 ```
 
-Run the browser test explicitly:
+The installer verifies every file before loading images and running the same
+Ansible deployment without contacting a registry or Python package index. See
+[offline/README.md](offline/README.md) for target assumptions.
 
-```bash
-E2E_BASE_URL=http://127.0.0.1:8080 \
-  python -m pytest e2e --browser chromium
-```
+## Uninstall
 
-The test creates, completes and deletes a uniquely named Todo through the browser. Chromium is a local test dependency and is not included in the application images or production bundle.
-
-## Build container images
-
-Build both images from the project root:
-
-```bash
-podman build --file backend/Containerfile --tag localhost/todo-backend:m5 .
-podman build --file frontend/Containerfile --tag localhost/todo-frontend:m5 .
-```
-
-Smoke-test the images separately:
-
-```bash
-podman run --name todo-backend-smoke --rm --detach \
-  --publish 127.0.0.1:18000:8000 localhost/todo-backend:m5
-curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
-  http://127.0.0.1:18000/health
-podman stop todo-backend-smoke
-
-podman run --name todo-frontend-smoke --rm --detach \
-  --publish 127.0.0.1:18080:8080 localhost/todo-frontend:m5
-curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
-  http://127.0.0.1:18080/
-podman stop todo-frontend-smoke
-```
-
-These smoke tests intentionally test each image in isolation. Full frontend-to-backend routing is tested through Caddy after all services are running.
-
-## Run manually with rootless Podman
-
-The existing PostgreSQL container was originally created without a named network. Recreate only the container on `todo-network`; the named volume keeps the database data:
-
-```bash
-podman network exists todo-network || podman network create todo-network
-podman stop todo-postgres
-podman rm todo-postgres
-podman run --name todo-postgres \
-  --detach \
-  --network todo-network \
-  --publish 127.0.0.1:5432:5432 \
-  --env POSTGRES_DB=todo \
-  --env POSTGRES_USER=todo \
-  --env POSTGRES_PASSWORD="$TODO_DB_PASSWORD" \
-  --volume todo-postgres-data:/var/lib/postgresql/data \
-  docker.io/library/postgres:17
-```
-
-Removing the container does not remove `todo-postgres-data`. Use the same database password as before.
-
-Apply migrations from a one-off backend container:
-
-```bash
-podman run --name todo-migrate --rm \
-  --network todo-network \
-  --env DATABASE_URL="host=todo-postgres port=5432 dbname=todo user=todo password=$TODO_DB_PASSWORD" \
-  localhost/todo-backend:m5 \
-  python -m backend.migrate up
-```
-
-Start backend and frontend containers:
-
-```bash
-podman run --name todo-backend --detach \
-  --network todo-network \
-  --publish 127.0.0.1:8000:8000 \
-  --env DATABASE_URL="host=todo-postgres port=5432 dbname=todo user=todo password=$TODO_DB_PASSWORD" \
-  localhost/todo-backend:m5
-
-podman run --name todo-frontend --detach \
-  --network todo-network \
-  --publish 127.0.0.1:8080:8080 \
-  localhost/todo-frontend:m5
-```
-
-Inspect and test the running containers:
-
-```bash
-podman ps
-podman logs todo-postgres
-podman logs todo-backend
-podman logs todo-frontend
-podman network inspect todo-network
-curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
-  http://127.0.0.1:8000/health
-curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
-  http://127.0.0.1:8000/ready
-curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
-  http://127.0.0.1:8080/
-```
-
-Practice the lifecycle without deleting data:
-
-```bash
-podman stop todo-frontend todo-backend todo-postgres
-podman start todo-postgres todo-backend todo-frontend
-```
-
-If backend health works but `/ready` or `/api/todos` fails with `No route to host`, inspect `podman exec todo-postgres cat /proc/net/route`. An empty table means the container network namespace is incomplete; `podman restart todo-postgres` recreates it.
-
-The containers share a network, and the backend reaches PostgreSQL by the name `todo-postgres`. In the current M5 setup, the Caddy-based frontend handles HTTP routing as described below.
-
-## Run through Caddy
-
-Build the current frontend image, which contains both the static files and Caddy:
-
-```bash
-podman build --file frontend/Containerfile --tag localhost/todo-frontend:m5 .
-```
-
-Replace the stateless frontend container:
-
-```bash
-podman stop todo-frontend
-podman rm todo-frontend
-podman run --name todo-frontend --detach \
-  --network todo-network \
-  --publish 127.0.0.1:8080:8080 \
-  localhost/todo-frontend:m5
-```
-
-Test every route through Caddy:
-
-```bash
-curl --fail --retry 10 --retry-delay 1 --retry-all-errors http://127.0.0.1:8080/
-curl --fail http://127.0.0.1:8080/health
-curl --fail http://127.0.0.1:8080/ready
-curl --fail http://127.0.0.1:8080/api/todos
-```
-
-Open <http://127.0.0.1:8080>. Caddy serves HTML, CSS and JavaScript directly and sends API, health and readiness requests to the backend. HTTPS remains disabled until M10.
-
-## Run with Quadlet and systemd
-
-Quadlet turns the files in `quadlet/` into user systemd services. The units keep the same container, network and volume names as the manual M4 setup.
-
-First stop and remove the three manually created containers. This does not remove the named database volume:
-
-```bash
-podman stop todo-frontend todo-backend todo-postgres
-podman rm todo-frontend todo-backend todo-postgres
-```
-
-Build the backend image that supports file-mounted secrets:
-
-```bash
-podman build --file backend/Containerfile --tag localhost/todo-backend:m7 .
-```
-
-Create the rootless Podman secret without putting its value on the command line:
-
-```bash
-read -rsp "Database password: " TODO_DB_PASSWORD
-echo
-printf '%s' "$TODO_DB_PASSWORD" | podman secret create todo-db-password -
-unset TODO_DB_PASSWORD
-```
-
-Use the existing PostgreSQL password. Podman stores the secret in the current user's container storage; it is not committed to Git or placed in an environment variable inside the containers.
-
-Install the Quadlet files:
-
-```bash
-systemctl --user stop todo-frontend.service todo-backend.service \
-  todo-migrate.service todo-postgres.service
-mkdir -p ~/.config/containers/systemd
-cp quadlet/*.container quadlet/*.network quadlet/*.volume ~/.config/containers/systemd/
-```
-
-If M6's temporary environment file exists, keep it until the secret-based services have been verified. It is no longer referenced by the Quadlet files.
-
-Reload user systemd and start the application:
-
-```bash
-systemctl --user daemon-reload
-systemctl --user start todo-frontend.service
-```
-
-The `WantedBy=default.target` setting is handled by the Quadlet generator, so the generated service must not be enabled with `systemctl enable`. It will be included on future user-systemd starts. Starting the frontend now pulls in the complete dependency chain:
-
-```text
-PostgreSQL healthy -> migration completed -> backend started -> frontend started
-```
-
-The migration is a `oneshot` service. It waits for PostgreSQL's healthcheck and must finish successfully before the backend starts. Running it again is safe because applied migrations are recorded.
-
-Inspect the units and logs:
-
-```bash
-systemctl --user status todo-postgres.service
-systemctl --user status todo-migrate.service
-systemctl --user status todo-backend.service
-systemctl --user status todo-frontend.service
-journalctl --user -u todo-postgres.service -u todo-migrate.service \
-  -u todo-backend.service -u todo-frontend.service
-```
-
-Test the application at <http://127.0.0.1:8080>. Stop or restart the frontend service:
-
-```bash
-systemctl --user stop todo-frontend.service
-systemctl --user restart todo-frontend.service
-```
-
-Stopping the frontend does not automatically stop its dependencies. To stop every application service explicitly:
-
-```bash
-systemctl --user stop todo-frontend.service todo-backend.service \
-  todo-migrate.service todo-postgres.service
-```
-
-User services normally start when the user logs in. To allow them to start during boot without an interactive login, an administrator can enable lingering once:
-
-```bash
-sudo loginctl enable-linger "$USER"
-```
-
-This host-level choice is optional for local learning and is not performed by the project.
-
-### Verify the Podman secret
-
-Inspecting a secret shows metadata, never its value:
-
-```bash
-podman secret ls
-podman secret inspect todo-db-password
-```
-
-PostgreSQL and the backend receive the secret as the file `/run/secrets/todo-db-password`. PostgreSQL reads it through `POSTGRES_PASSWORD_FILE`; the backend reads the same file directly. After the application and E2E test work, remove the obsolete M6 environment file:
-
-```bash
-rm ~/.config/todo-demo/todo.env
-```
-
-## Deploy with Ansible
-
-M8 automates the same localhost deployment without hiding the individual Podman and systemd concepts. Install `ansible-core` in its own virtualenv:
-
-```bash
-python3 -m venv ansible/.venv
-ansible/.venv/bin/python -m pip install -r ansible/requirements.txt
-```
-
-Run the playbook from the project root:
-
-```bash
-ansible/.venv/bin/ansible-playbook \
-  --inventory ansible/inventory.ini \
-  ansible/deploy.yml
-```
-
-The first run asks for the existing database password only if the rootless Podman secret is missing. It builds the milestone images, installs the Quadlet files, reloads user systemd, starts the dependency chain and verifies health and readiness. Repeating the playbook should finish with `changed=0`.
-
-See [ansible/README.md](ansible/README.md) for scope and limitations.
-
-Uninstall the deployment while preserving the PostgreSQL data volume:
+Remove services, containers, application images, network, secrets and installed
+Quadlet files while preserving PostgreSQL data:
 
 ```bash
 ansible/.venv/bin/ansible-playbook \
@@ -359,83 +229,23 @@ ansible/.venv/bin/ansible-playbook \
   ansible/uninstall.yml
 ```
 
-Permanent data removal requires the explicit option `--extra-vars remove_data=true`.
-
-## Build an offline bundle
-
-M9 packages the application for installation without access to a container registry or Python package index. Build the archive on a connected machine:
+Permanently delete the PostgreSQL volume and all Todo and Keycloak data:
 
 ```bash
-offline/build-bundle.sh
+ansible/.venv/bin/ansible-playbook \
+  --inventory ansible/inventory.ini \
+  ansible/uninstall.yml \
+  --extra-vars remove_data=true
 ```
-
-The generated `dist/todo-offline-m9.tar.gz` contains:
-
-- Backend, frontend and PostgreSQL OCI image archives
-- Pinned Ansible and dependency wheels
-- Quadlet and Ansible deployment files
-- An offline installer
-- SHA-256 checksums for every bundled file
-
-On a compatible offline target:
-
-```bash
-tar -xzf todo-offline-m9.tar.gz
-cd todo-offline-m9
-./install.sh
-```
-
-The target must already have rootless Podman, Python 3 with `venv`, user systemd, `tar` and `sha256sum`. The bundle installs the application stack, not operating-system prerequisites. See [offline/README.md](offline/README.md) for details.
-
-## HTTPS with Caddy
-
-Caddy serves the application with its internal CA at:
-
-```text
-https://localhost:8443
-```
-
-HTTP remains available at <http://127.0.0.1:8080> for local development. Verify HTTPS without changing the host trust store:
-
-```bash
-podman cp todo-frontend:/data/caddy/pki/authorities/local/root.crt \
-  /tmp/todo-caddy-root.crt
-curl --cacert /tmp/todo-caddy-root.crt https://localhost:8443/health
-curl --cacert /tmp/todo-caddy-root.crt https://localhost:8443/ready
-```
-
-Browsers will warn until this local root certificate is trusted. On an Ubuntu development machine, trusting it system-wide is an explicit administrator choice:
-
-```bash
-sudo cp /tmp/todo-caddy-root.crt \
-  /usr/local/share/ca-certificates/todo-caddy-root.crt
-sudo update-ca-certificates
-```
-
-Restart the browser afterward. Remove that trust again with:
-
-```bash
-sudo rm /usr/local/share/ca-certificates/todo-caddy-root.crt
-sudo update-ca-certificates
-```
-
-The private CA key remains in the rootless `todo-caddy-data` volume and must never be copied or committed. The volume preserves the certificate across frontend container replacements.
-
-Run the E2E test over HTTPS without modifying the browser test profile's trust store:
-
-```bash
-E2E_BASE_URL=https://localhost:8443 \
-E2E_IGNORE_HTTPS_ERRORS=true \
-  python -m pytest e2e --browser chromium
-```
-
-The separate `curl --cacert` checks above perform full certificate verification.
 
 ## API
 
-- `GET /health`
-- `GET /ready`
-- `GET /api/todos`
-- `POST /api/todos`
-- `PUT /api/todos/{todo_id}`
-- `DELETE /api/todos/{todo_id}`
+- `GET /health` — public liveness
+- `GET /ready` — public database readiness
+- `GET /api/todos` — public
+- `POST /api/todos` — requires login
+- `PUT /api/todos/{todo_id}` — requires login
+- `DELETE /api/todos/{todo_id}` — requires login
+
+Milestone history and design decisions are documented in
+[PROJECT.md](PROJECT.md).

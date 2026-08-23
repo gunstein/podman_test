@@ -15,10 +15,12 @@
       - todo-postgres.container
       - todo-migrate.container
       - todo-backend.container
+      - todo-keycloak.container
       - todo-frontend.container
     application_services:
       - todo-frontend.service
       - todo-backend.service
+      - todo-keycloak.service
       - todo-migrate.service
       - todo-postgres.service
 
@@ -71,13 +73,37 @@
       register: secret_created
       when: database_secret.rc == 1
 
+    - name: Check whether the Keycloak admin secret exists
+      ansible.builtin.command:
+        argv: [podman, secret, exists, todo-keycloak-admin-password]
+      register: keycloak_admin_secret
+      changed_when: false
+      failed_when: keycloak_admin_secret.rc not in [0, 1]
+
+    - name: Ask for the initial Keycloak admin password
+      ansible.builtin.pause:
+        prompt: Initial Keycloak admin password
+        echo: false
+      register: keycloak_admin_password
+      no_log: true
+      when: keycloak_admin_secret.rc == 1
+
+    - name: Create the rootless Keycloak admin secret
+      ansible.builtin.command:
+        argv: [podman, secret, create, todo-keycloak-admin-password, "-"]
+        stdin: "{{ keycloak_admin_password.user_input }}"
+        stdin_add_newline: false
+      no_log: true
+      register: keycloak_admin_secret_created
+      when: keycloak_admin_secret.rc == 1
+
     - name: Check whether the backend image exists
       ansible.builtin.command:
         argv:
           - podman
           - image
           - exists
-          - localhost/todo-backend:m8
+          - localhost/todo-backend:m11
       register: backend_image
       changed_when: false
       failed_when: backend_image.rc not in [0, 1]
@@ -90,7 +116,7 @@
           - --file
           - "{{ project_root }}/backend/Containerfile"
           - --tag
-          - localhost/todo-backend:m8
+          - localhost/todo-backend:m11
           - "{{ project_root }}"
       register: backend_built
       when:
@@ -103,7 +129,7 @@
           - podman
           - load
           - --input
-          - "{{ bundle_directory }}/images/todo-backend-m8.tar"
+          - "{{ bundle_directory }}/images/todo-backend-m11.tar"
       register: backend_loaded
       when:
         - backend_image.rc == 1
@@ -115,7 +141,7 @@
           - podman
           - image
           - exists
-          - localhost/todo-frontend:m10
+          - localhost/todo-frontend:m11
       register: frontend_image
       changed_when: false
       failed_when: frontend_image.rc not in [0, 1]
@@ -128,7 +154,7 @@
           - --file
           - "{{ project_root }}/frontend/Containerfile"
           - --tag
-          - localhost/todo-frontend:m10
+          - localhost/todo-frontend:m11
           - "{{ project_root }}"
       register: frontend_built
       when:
@@ -141,10 +167,40 @@
           - podman
           - load
           - --input
-          - "{{ bundle_directory }}/images/todo-frontend-m10.tar"
+          - "{{ bundle_directory }}/images/todo-frontend-m11.tar"
       register: frontend_loaded
       when:
         - frontend_image.rc == 1
+        - deployment_mode == "offline"
+
+    - name: Check whether the Keycloak image exists
+      ansible.builtin.command:
+        argv: [podman, image, exists, "localhost/todo-keycloak:m11"]
+      register: keycloak_image
+      changed_when: false
+      failed_when: keycloak_image.rc not in [0, 1]
+
+    - name: Build the Keycloak image
+      ansible.builtin.command:
+        argv:
+          - podman
+          - build
+          - --file
+          - "{{ project_root }}/keycloak/Containerfile"
+          - --tag
+          - localhost/todo-keycloak:m11
+          - "{{ project_root }}"
+      register: keycloak_built
+      when:
+        - keycloak_image.rc == 1
+        - deployment_mode == "build"
+
+    - name: Load the Keycloak image from the offline bundle
+      ansible.builtin.command:
+        argv: [podman, load, --input, "{{ bundle_directory }}/images/todo-keycloak-m11.tar"]
+      register: keycloak_loaded
+      when:
+        - keycloak_image.rc == 1
         - deployment_mode == "offline"
 
     - name: Check whether the PostgreSQL image exists
@@ -197,16 +253,24 @@
 
     - name: Stop the old application chain before applying changes
       ansible.builtin.command:
-        argv: "{{ ['systemctl', '--user', 'stop'] + application_services }}"
+        argv:
+          - systemctl
+          - --user
+          - stop
+          - "{{ item }}"
+      loop: "{{ application_services }}"
       register: services_stopped
-      changed_when: services_stopped.rc == 0
+      changed_when: false
       failed_when: false
       when: >-
         secret_created.changed | default(false) or
+        keycloak_admin_secret_created.changed | default(false) or
         backend_built.changed | default(false) or
         backend_loaded.changed | default(false) or
         frontend_built.changed | default(false) or
         frontend_loaded.changed | default(false) or
+        keycloak_built.changed | default(false) or
+        keycloak_loaded.changed | default(false) or
         postgres_pulled.changed | default(false) or
         postgres_loaded.changed | default(false) or
         quadlet_installed.changed
@@ -239,3 +303,12 @@
       until: readiness.status == 200 and readiness.json.status == "ready"
       retries: 15
       delay: 1
+
+    - name: Verify Keycloak discovery through Caddy
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
+        return_content: true
+      register: keycloak_discovery
+      until: keycloak_discovery.status == 200
+      retries: 60
+      delay: 2

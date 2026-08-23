@@ -5,11 +5,15 @@
   <title>Todo Demo</title><link rel="stylesheet" href="/style.css">
 </head>
 <body><main>
-  <h1>Todos</h1>
+  <header><h1>Todos</h1><div class="auth">
+    <span id="user-status">Checking login...</span>
+    <button id="login" type="button" hidden>Log in</button>
+    <button id="logout" type="button" hidden>Log out</button>
+  </div></header>
   <form id="todo-form"><label for="todo-title">New todo</label>
     <div class="new-todo"><input id="todo-title" maxlength="200" required><button>Add</button></div>
   </form>
   <p id="message" role="status"></p>
   <ul id="todo-list"><li>Loading...</li></ul>
-</main><script src="/app.js"></script></body>
+</main><script type="module" src="/app.js"></script></body>
 </html>

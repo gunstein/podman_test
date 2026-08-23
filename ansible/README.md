@@ -1,6 +1,7 @@
 # Ansible deployment
 
-This first Ansible milestone deploys to the current user on localhost. It uses only modules included with `ansible-core` and keeps the same rootless Podman setup used manually in M6 and M7.
+This playbook deploys the complete application to the current user on localhost.
+It uses only modules included with `ansible-core`.
 
 ## Install Ansible
 
@@ -19,7 +20,11 @@ ansible/.venv/bin/ansible-playbook \
   ansible/deploy.yml
 ```
 
-On the first run, the playbook asks for the existing PostgreSQL password without echoing it. It creates the rootless `todo-db-password` secret, builds both images, installs the Quadlet files, starts the service chain and verifies health and readiness.
+On the first run, the playbook asks for the PostgreSQL password and an initial
+Keycloak administrator password without echoing them. It creates rootless Podman
+secrets, builds the backend, frontend and Keycloak images, installs the Quadlet
+files, starts the service chain and verifies health, database readiness and
+Keycloak discovery.
 
 Later runs reuse the existing secret and images. To deliberately rebuild a milestone image, remove that local image before running the playbook again.
 
@@ -27,7 +32,8 @@ The playbook does not install Podman, enable lingering, rotate an existing secre
 
 ## Uninstall
 
-Remove the deployed services, Quadlet files, containers, network, M8 images and Podman secret:
+Remove the deployed services, Quadlet files, containers, network, application
+images and Podman secrets:
 
 ```bash
 ansible/.venv/bin/ansible-playbook \

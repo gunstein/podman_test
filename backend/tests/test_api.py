@@ -1,9 +1,19 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app, connect
 
 
 client = TestClient(app)
+AUTHORIZATION = {"Authorization": "Bearer test-token"}
+
+
+@pytest.fixture(autouse=True)
+def valid_access_token(monkeypatch):
+    monkeypatch.setattr(
+        "backend.main.validate_access_token",
+        lambda token: {"sub": "test-user"},
+    )
 
 
 def test_connect_uses_password_file(monkeypatch, tmp_path):
@@ -57,7 +67,9 @@ def test_frontend_is_served():
 def test_todo_crud():
     assert client.get("/api/todos").json() == []
 
-    created = client.post("/api/todos", json={"title": "Test Todo"})
+    created = client.post(
+        "/api/todos", json={"title": "Test Todo"}, headers=AUTHORIZATION
+    )
     assert created.status_code == 201
     todo = created.json()
     assert todo == {"id": 1, "title": "Test Todo", "completed": False}
@@ -65,11 +77,12 @@ def test_todo_crud():
     updated = client.put(
         f"/api/todos/{todo['id']}",
         json={"title": "Updated Todo", "completed": True},
+        headers=AUTHORIZATION,
     )
     assert updated.status_code == 200
     assert updated.json()["completed"] is True
 
-    deleted = client.delete(f"/api/todos/{todo['id']}")
+    deleted = client.delete(f"/api/todos/{todo['id']}", headers=AUTHORIZATION)
     assert deleted.status_code == 204
     assert client.get("/api/todos").json() == []
 
@@ -78,12 +91,22 @@ def test_missing_todo_returns_404():
     update = client.put(
         "/api/todos/999",
         json={"title": "Missing", "completed": False},
+        headers=AUTHORIZATION,
     )
     assert update.status_code == 404
-    assert client.delete("/api/todos/999").status_code == 404
+    assert client.delete("/api/todos/999", headers=AUTHORIZATION).status_code == 404
 
 
 def test_invalid_titles_are_rejected():
     for title in ("", "   ", "x" * 201):
-        response = client.post("/api/todos", json={"title": title})
+        response = client.post(
+            "/api/todos", json={"title": title}, headers=AUTHORIZATION
+        )
         assert response.status_code == 422
+
+
+def test_writes_require_authentication():
+    assert client.get("/api/todos").status_code == 200
+    response = client.post("/api/todos", json={"title": "Protected"})
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Authentication required"}

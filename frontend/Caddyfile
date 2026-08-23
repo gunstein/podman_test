@@ -3,6 +3,10 @@
 }
 
 (todo_routes) {
+	handle /auth/* {
+		reverse_proxy todo-keycloak:8080
+	}
+
 	handle /api/* {
 		reverse_proxy todo-backend:8000
 	}

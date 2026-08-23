@@ -10,10 +10,11 @@ From the project root:
 offline/build-bundle.sh
 ```
 
-This builds the application images, pulls PostgreSQL, downloads the pinned Ansible wheels and creates:
+This builds the backend, frontend and Keycloak images, pulls PostgreSQL, downloads
+the pinned Ansible wheels and creates:
 
 ```text
-dist/todo-offline-m9.tar.gz
+dist/todo-offline-m11.tar.gz
 ```
 
 The downloaded wheels are platform-specific. Build the bundle on a machine compatible with the offline target.
@@ -23,12 +24,16 @@ The downloaded wheels are platform-specific. Build the bundle on a machine compa
 Copy only the archive to the target, then run:
 
 ```bash
-tar -xzf todo-offline-m9.tar.gz
-cd todo-offline-m9
+tar -xzf todo-offline-m11.tar.gz
+cd todo-offline-m11
 ./install.sh
 ```
 
-The installer verifies every bundled file, creates an isolated Ansible virtualenv from local wheels, loads missing container images and runs the same deployment playbook as the online installation.
+The installer verifies every bundled file, creates an isolated Ansible virtualenv
+from local wheels, loads missing container images and runs the same deployment
+playbook as the online installation. On the first installation it asks for the
+database password and an initial Keycloak administrator password. Neither secret
+is stored in the bundle.
 
 Uninstall while preserving database data:
 

@@ -3,8 +3,12 @@ from pathlib import Path
 from typing import Annotated
 
 import psycopg
-from fastapi import FastAPI, HTTPException, Response, status
+import jwt
+from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
+from jwt import PyJWKClient
+from jwt.exceptions import PyJWKClientError, PyJWTError
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
@@ -35,6 +39,34 @@ def connect():
 
 
 app = FastAPI(title="Todo Demo")
+bearer = HTTPBearer(auto_error=False)
+
+
+def validate_access_token(token: str) -> dict:
+    issuer = os.getenv("OIDC_ISSUER")
+    jwks_url = os.getenv("OIDC_JWKS_URL")
+    audience = os.getenv("OIDC_AUDIENCE", "todo-frontend")
+    if not issuer or not jwks_url:
+        raise RuntimeError("OIDC configuration is incomplete")
+    signing_key = PyJWKClient(jwks_url).get_signing_key_from_jwt(token)
+    return jwt.decode(
+        token,
+        signing_key.key,
+        algorithms=["RS256"],
+        audience=audience,
+        issuer=issuer,
+    )
+
+
+def require_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> dict:
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        return validate_access_token(credentials.credentials)
+    except (PyJWTError, PyJWKClientError, RuntimeError):
+        raise HTTPException(status_code=401, detail="Invalid access token") from None
 
 
 class TodoCreate(BaseModel):
@@ -84,7 +116,7 @@ def get_todos():
 
 
 @app.post("/api/todos", response_model=Todo, status_code=201)
-def create_todo(todo: TodoCreate):
+def create_todo(todo: TodoCreate, _user: Annotated[dict, Depends(require_user)]):
     with connect() as connection:
         return connection.execute(
             "INSERT INTO todos (title) VALUES (%s) RETURNING id, title, completed",
@@ -93,7 +125,11 @@ def create_todo(todo: TodoCreate):
 
 
 @app.put("/api/todos/{todo_id}", response_model=Todo)
-def update_todo(todo_id: int, todo: TodoUpdate):
+def update_todo(
+    todo_id: int,
+    todo: TodoUpdate,
+    _user: Annotated[dict, Depends(require_user)],
+):
     with connect() as connection:
         result = connection.execute(
             "UPDATE todos SET title=%s, completed=%s WHERE id=%s RETURNING id,title,completed",
@@ -105,7 +141,7 @@ def update_todo(todo_id: int, todo: TodoUpdate):
 
 
 @app.delete("/api/todos/{todo_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_todo(todo_id: int):
+def delete_todo(todo_id: int, _user: Annotated[dict, Depends(require_user)]):
     with connect() as connection:
         result = connection.execute(
             "DELETE FROM todos WHERE id=%s RETURNING id", (todo_id,)

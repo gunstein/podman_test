@@ -8,7 +8,7 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-M4 — Run the application manually with rootless Podman.
+M5 — Add Caddy as the reverse proxy.
 
 ## Completed
 
@@ -22,10 +22,15 @@ M4 — Run the application manually with rootless Podman.
 - PostgreSQL data was verified to survive a container stop and restart.
 - Versioned SQL migrations support status, upgrade and single-step rollback.
 - Migration upgrade and rollback were verified against a disposable test database.
-- Six automated tests cover health, frontend serving, CRUD, validation, missing Todos and migration file pairs.
+- Seven automated tests cover health, frontend serving, CRUD, validation, missing Todos and migration file pairs.
 - Tests were verified against an isolated, automatically removed PostgreSQL test container.
 - Backend and frontend images build successfully and pass isolated smoke tests as UID 1000.
-- M1, M2, M2.5, M2.6 and M3 are complete.
+- PostgreSQL, backend and frontend run manually on the rootless `todo-network`.
+- Backend reaches PostgreSQL through Podman DNS using the `todo-postgres` name.
+- Database persistence was verified across a PostgreSQL container stop and start.
+- Container logs, inspect data, routes and lifecycle were used to diagnose and repair a Netavark namespace issue.
+- Liveness (`/health`) and database readiness (`/ready`) are separate endpoints.
+- M1 through M4.5 are complete.
 
 ## Decisions
 
@@ -37,6 +42,7 @@ M4 — Run the application manually with rootless Podman.
 - Run PostgreSQL in a rootless Podman container during M2 instead of installing it on the host.
 - Keep FastAPI running locally through M2; containerize it in M3.
 - Add Keycloak last.
+- Keep liveness and readiness checks separate.
 - Never commit secrets.
 
 ## Local development
@@ -66,8 +72,8 @@ Open <http://127.0.0.1:8000> in a browser.
 - M2.5: Versioned SQL migrations — completed
 - M2.6: Automated smoke and integration tests — completed
 - M3: Containerfiles for backend and frontend — completed
-- M4: Run manually with rootless Podman
-- M4.5: Troubleshooting and lifecycle
+- M4: Run manually with rootless Podman — completed
+- M4.5: Troubleshooting and lifecycle — completed
 - M5: Caddy reverse proxy
 - M5.5: End-to-end browser tests with Playwright for Python
 - M6: Quadlet and systemd
@@ -79,4 +85,4 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-Run PostgreSQL, backend and frontend manually with rootless Podman and learn their lifecycle and networking.
+Add Caddy so one HTTP endpoint serves the frontend and routes `/api` requests to the backend.

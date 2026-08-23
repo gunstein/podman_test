@@ -107,9 +107,83 @@ podman stop todo-frontend-smoke
 
 The M3 images are intentionally tested in isolation. The frontend container serves static files, but its relative `/api` requests are not routed to the backend until the reverse proxy milestone.
 
+## Run manually with rootless Podman
+
+The existing PostgreSQL container was originally created without a named network. Recreate only the container on `todo-network`; the named volume keeps the database data:
+
+```bash
+podman network exists todo-network || podman network create todo-network
+podman stop todo-postgres
+podman rm todo-postgres
+podman run --name todo-postgres \
+  --detach \
+  --network todo-network \
+  --publish 127.0.0.1:5432:5432 \
+  --env POSTGRES_DB=todo \
+  --env POSTGRES_USER=todo \
+  --env POSTGRES_PASSWORD="$TODO_DB_PASSWORD" \
+  --volume todo-postgres-data:/var/lib/postgresql/data \
+  docker.io/library/postgres:17
+```
+
+Removing the container does not remove `todo-postgres-data`. Use the same database password as before.
+
+Apply migrations from a one-off backend container:
+
+```bash
+podman run --name todo-migrate --rm \
+  --network todo-network \
+  --env DATABASE_URL="host=todo-postgres port=5432 dbname=todo user=todo password=$TODO_DB_PASSWORD" \
+  localhost/todo-backend:m3 \
+  python -m backend.migrate up
+```
+
+Start backend and frontend containers:
+
+```bash
+podman run --name todo-backend --detach \
+  --network todo-network \
+  --publish 127.0.0.1:8000:8000 \
+  --env DATABASE_URL="host=todo-postgres port=5432 dbname=todo user=todo password=$TODO_DB_PASSWORD" \
+  localhost/todo-backend:m3
+
+podman run --name todo-frontend --detach \
+  --network todo-network \
+  --publish 127.0.0.1:8080:8080 \
+  localhost/todo-frontend:m3
+```
+
+Inspect and test the running containers:
+
+```bash
+podman ps
+podman logs todo-postgres
+podman logs todo-backend
+podman logs todo-frontend
+podman network inspect todo-network
+curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
+  http://127.0.0.1:8000/health
+curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
+  http://127.0.0.1:8000/ready
+curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
+  http://127.0.0.1:8080/
+```
+
+Practice the lifecycle without deleting data:
+
+```bash
+podman stop todo-frontend todo-backend todo-postgres
+podman start todo-postgres todo-backend todo-frontend
+```
+
+If backend health works but `/ready` or `/api/todos` fails with `No route to host`, inspect `podman exec todo-postgres cat /proc/net/route`. An empty table means the container network namespace is incomplete; `podman restart todo-postgres` recreates it.
+
+The containers share a network, and the backend reaches PostgreSQL by the name `todo-postgres`. The frontend is still isolated at HTTP routing level; Caddy will route its relative `/api` requests in M5.
+
 ## API
 
 - `GET /health`
+- `GET /ready`
 - `GET /api/todos`
 - `POST /api/todos`
 - `PUT /api/todos/{todo_id}`

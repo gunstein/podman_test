@@ -36,6 +36,19 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/ready")
+def readiness():
+    try:
+        with connect() as connection:
+            connection.execute("SELECT 1")
+    except (psycopg.Error, RuntimeError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable",
+        ) from None
+    return {"status": "ready"}
+
+
 @app.get("/api/todos", response_model=list[Todo])
 def get_todos():
     with connect() as connection:

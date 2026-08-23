@@ -22,11 +22,26 @@ ansible/.venv/bin/ansible-playbook \
 
 On the first run, the playbook asks for the PostgreSQL password and an initial
 Keycloak administrator password without echoing them. It creates rootless Podman
-secrets, builds the backend, frontend and Keycloak images, installs the Quadlet
-files, starts the service chain and verifies health, database readiness and
-Keycloak discovery.
+secrets and generates independent passwords for the migration, backend and
+Keycloak database roles. It builds the backend, frontend and Keycloak images,
+installs the Quadlet files, starts the service chain and verifies health,
+database readiness and Keycloak discovery.
 
 Later runs reuse the existing secret and images. To deliberately rebuild a milestone image, remove that local image before running the playbook again.
+
+A normal repeat deploy is idempotent relative to the images already stored
+locally. It does not check registries for security updates. Explicitly rebuild
+the application images, refresh their base images and pull PostgreSQL with:
+
+```bash
+ansible/.venv/bin/ansible-playbook \
+  --inventory ansible/inventory.ini \
+  ansible/deploy.yml \
+  --extra-vars refresh_images=true
+```
+
+Image refresh is intentionally unavailable in offline mode because the bundle is
+the complete, fixed source of images there.
 
 The playbook does not install Podman, enable lingering, rotate an existing secret or modify system-wide configuration. Those operations require separate administrative decisions.
 

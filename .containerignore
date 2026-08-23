@@ -1,8 +1,14 @@
 .git
 .gitignore
-backend/.venv
+.env
+.env.*
+**/.venv
 **/__pycache__
 **/*.py[cod]
+dist
+*.tar.gz
+*.key
+*.pem
 backend/tests
 backend/requirements-test.txt
 backend/requirements-e2e.txt

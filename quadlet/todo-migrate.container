@@ -1,22 +1,24 @@
 [Unit]
 Description=Apply Todo database migrations
-Requires=todo-postgres.service
-After=todo-postgres.service
+Requires=todo-db-setup.service
+After=todo-db-setup.service
 
 [Container]
-Image=localhost/todo-backend:m11
+Image=localhost/todo-backend:m12
 ContainerName=todo-migrate
 Network=todo.network
-Secret=todo-db-password
+Secret=todo-migrator-password
 Environment=DATABASE_HOST=todo-postgres
 Environment=DATABASE_PORT=5432
 Environment=DATABASE_NAME=todo
-Environment=DATABASE_USER=todo
-Environment=DATABASE_PASSWORD_FILE=/run/secrets/todo-db-password
+Environment=DATABASE_USER=todo_migrator
+Environment=DATABASE_PASSWORD_FILE=/run/secrets/todo-migrator-password
 Exec=python -m backend.migrate up
+NoNewPrivileges=true
+DropCapability=all
+PidsLimit=128
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 TimeoutStartSec=120
-ExecStartPre=/usr/bin/podman wait --condition=healthy todo-postgres

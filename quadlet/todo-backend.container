@@ -4,19 +4,22 @@ Requires=todo-migrate.service
 After=todo-migrate.service
 
 [Container]
-Image=localhost/todo-backend:m11
+Image=localhost/todo-backend:m12
 ContainerName=todo-backend
 Network=todo.network
-Secret=todo-db-password
+Secret=todo-app-password
 Environment=DATABASE_HOST=todo-postgres
 Environment=DATABASE_PORT=5432
 Environment=DATABASE_NAME=todo
-Environment=DATABASE_USER=todo
-Environment=DATABASE_PASSWORD_FILE=/run/secrets/todo-db-password
+Environment=DATABASE_USER=todo_app
+Environment=DATABASE_PASSWORD_FILE=/run/secrets/todo-app-password
 Environment=OIDC_ISSUER=https://localhost:8443/auth/realms/todo
 Environment=OIDC_JWKS_URL=http://todo-keycloak:8080/auth/realms/todo/protocol/openid-connect/certs
 Environment=OIDC_AUDIENCE=todo-frontend
 PublishPort=127.0.0.1:8000:8000
+NoNewPrivileges=true
+DropCapability=all
+PidsLimit=128
 
 [Service]
 Restart=on-failure

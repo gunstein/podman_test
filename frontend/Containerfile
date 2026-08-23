@@ -1,4 +1,6 @@
-FROM docker.io/library/caddy:2-alpine
+FROM docker.io/library/caddy:2.11.4-alpine
+
+RUN setcap -r /usr/bin/caddy
 
 COPY frontend/Caddyfile /etc/caddy/Caddyfile
 COPY frontend/index.html /srv/index.html

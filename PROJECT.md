@@ -8,7 +8,7 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-M11 — Add Keycloak authentication last.
+M12 — Security baseline without hiding the Podman concepts.
 
 ## Completed
 
@@ -22,7 +22,7 @@ M11 — Add Keycloak authentication last.
 - PostgreSQL data was verified to survive a container stop and restart.
 - Versioned SQL migrations support status, upgrade and single-step rollback.
 - Migration upgrade and rollback were verified against a disposable test database.
-- Nine automated backend tests cover health, readiness success and failure, frontend serving, CRUD, title validation, missing Todos, migration file pairs and idempotence.
+- Eighteen automated backend tests cover health, readiness, frontend serving, CRUD, validation, migrations and positive and negative JWT validation.
 - Tests were verified against an isolated, automatically removed PostgreSQL test container.
 - Backend and frontend images build successfully and pass isolated smoke tests as UID 1000.
 - PostgreSQL, backend and frontend run manually on the rootless `todo-network`.
@@ -55,6 +55,15 @@ M11 — Add Keycloak authentication last.
 - Public-read and authenticated CRUD browser flows were verified through Keycloak.
 - A helper provisions the complete `testuser` account and runs both E2E flows without storing test passwords.
 - M11 is complete.
+- Direct application dependencies and base-image patch versions are pinned.
+- An explicit `refresh_images=true` mode separates idempotent reuse from security refresh.
+- PostgreSQL runtime access is split into non-superuser migration, backend and Keycloak roles with independent secrets.
+- An idempotent role-setup service upgraded the existing volume without losing Todo or Keycloak data.
+- Backend, frontend and Keycloak run with no new privileges, no effective Linux capabilities and explicit PID limits.
+- JWKS discovery is cached across requests and negative JWT tests cover issuer, audience, expiry, signature and algorithm.
+- Build context excludes environment files, virtualenvs, archives, private keys and distribution artifacts.
+- M12 backend tests, role setup, migrations, service startup, readiness, discovery and Ansible `changed=0` were verified.
+- Both the public and authenticated M12 browser flows were verified after the least-privilege upgrade.
 
 ## Decisions
 
@@ -120,7 +129,8 @@ Open <http://127.0.0.1:8000> in a browser.
 - M9: Offline installation from a `tar.gz` bundle — completed
 - M10: HTTPS — completed
 - M11: Keycloak authentication — completed
+- M12: Security baseline and least privilege — completed
 
 ## Next step
 
-Test the complete offline M11 bundle on a clean virtual machine.
+Test the complete offline M12 bundle on a clean virtual machine.

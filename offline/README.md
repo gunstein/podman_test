@@ -14,7 +14,7 @@ This builds the backend, frontend and Keycloak images, pulls PostgreSQL, downloa
 the pinned Ansible wheels and creates:
 
 ```text
-dist/todo-offline-m11.tar.gz
+dist/todo-offline-m12.tar.gz
 ```
 
 The downloaded wheels are platform-specific. Build the bundle on a machine compatible with the offline target.
@@ -24,8 +24,8 @@ The downloaded wheels are platform-specific. Build the bundle on a machine compa
 Copy only the archive to the target, then run:
 
 ```bash
-tar -xzf todo-offline-m11.tar.gz
-cd todo-offline-m11
+tar -xzf todo-offline-m12.tar.gz
+cd todo-offline-m12
 ./install.sh
 ```
 
@@ -34,6 +34,12 @@ from local wheels, loads missing container images and runs the same deployment
 playbook as the online installation. On the first installation it asks for the
 database password and an initial Keycloak administrator password. Neither secret
 is stored in the bundle.
+
+`SHA256SUMS` detects changed contents, but is not a publisher signature. Anyone
+able to replace both the archive and checksum file could create matching
+checksums. For real distribution, sign the archive or manifest separately with
+an organizational GPG or Sigstore/cosign identity and verify that signature on
+the target before running `install.sh`.
 
 Uninstall while preserving database data:
 

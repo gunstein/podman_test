@@ -2,7 +2,7 @@
 Description=Todo PostgreSQL database
 
 [Container]
-Image=docker.io/library/postgres:17
+Image=docker.io/library/postgres:17.11
 ContainerName=todo-postgres
 Network=todo.network
 Volume=todo-postgres-data.volume:/var/lib/postgresql/data

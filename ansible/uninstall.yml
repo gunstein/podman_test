@@ -10,6 +10,7 @@
       - todo-postgres-data.volume
       - todo-caddy-data.volume
       - todo-postgres.container
+      - todo-db-setup.container
       - todo-migrate.container
       - todo-backend.container
       - todo-keycloak.container
@@ -19,6 +20,7 @@
       - todo-backend.service
       - todo-keycloak.service
       - todo-migrate.service
+      - todo-db-setup.service
       - todo-postgres.service
       - todo-network.service
       - todo-postgres-data-volume.service
@@ -27,11 +29,12 @@
       - todo-backend
       - todo-keycloak
       - todo-migrate
+      - todo-db-setup
       - todo-postgres
     application_images:
-      - localhost/todo-backend:m11
-      - localhost/todo-frontend:m11
-      - localhost/todo-keycloak:m11
+      - localhost/todo-backend:m12
+      - localhost/todo-frontend:m12
+      - localhost/todo-keycloak:m12
     remove_data: false
 
   tasks:
@@ -104,6 +107,25 @@
           - rm
           - todo-db-password
       when: database_secret.rc == 0
+
+    - name: Check whether runtime database secrets exist
+      ansible.builtin.command:
+        argv: [podman, secret, exists, "{{ item }}"]
+      loop:
+        - todo-migrator-password
+        - todo-app-password
+        - todo-keycloak-db-password
+      register: runtime_database_secrets
+      changed_when: false
+      failed_when: runtime_database_secrets.rc not in [0, 1]
+
+    - name: Remove runtime database secrets
+      ansible.builtin.command:
+        argv: [podman, secret, rm, "{{ item.item }}"]
+      loop: "{{ runtime_database_secrets.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.rc == 0
 
     - name: Check whether the Keycloak admin secret exists
       ansible.builtin.command:

@@ -4,12 +4,15 @@ Requires=todo-backend.service todo-keycloak.service
 After=todo-backend.service todo-keycloak.service
 
 [Container]
-Image=localhost/todo-frontend:m11
+Image=localhost/todo-frontend:m12
 ContainerName=todo-frontend
 Network=todo.network
 Volume=todo-caddy-data.volume:/data:U
 PublishPort=127.0.0.1:8080:8080
 PublishPort=127.0.0.1:8443:8443
+NoNewPrivileges=true
+DropCapability=all
+PidsLimit=128
 
 [Service]
 Restart=on-failure

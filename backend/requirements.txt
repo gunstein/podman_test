@@ -1,4 +1,4 @@
-fastapi
+fastapi==0.141.1
 PyJWT[crypto]==2.13.0
-psycopg[binary]
-uvicorn
+psycopg[binary]==3.3.4
+uvicorn==0.52.4

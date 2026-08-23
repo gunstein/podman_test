@@ -1,0 +1,27 @@
+[Unit]
+Description=Create least-privilege Todo database roles
+Requires=todo-postgres.service
+After=todo-postgres.service
+
+[Container]
+Image=localhost/todo-backend:m12
+ContainerName=todo-db-setup
+Network=todo.network
+Secret=todo-db-password
+Secret=todo-migrator-password
+Secret=todo-app-password
+Secret=todo-keycloak-db-password
+Environment=DATABASE_HOST=todo-postgres
+Environment=DATABASE_PORT=5432
+Environment=DATABASE_NAME=todo
+Environment=DATABASE_BOOTSTRAP_USER=todo
+Exec=python -m backend.setup_roles
+NoNewPrivileges=true
+DropCapability=all
+PidsLimit=128
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=120
+ExecStartPre=/usr/bin/podman wait --condition=healthy todo-postgres

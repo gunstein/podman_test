@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
@@ -42,13 +43,18 @@ app = FastAPI(title="Todo Demo")
 bearer = HTTPBearer(auto_error=False)
 
 
+@lru_cache
+def get_jwks_client(jwks_url: str) -> PyJWKClient:
+    return PyJWKClient(jwks_url)
+
+
 def validate_access_token(token: str) -> dict:
     issuer = os.getenv("OIDC_ISSUER")
     jwks_url = os.getenv("OIDC_JWKS_URL")
     audience = os.getenv("OIDC_AUDIENCE", "todo-frontend")
     if not issuer or not jwks_url:
         raise RuntimeError("OIDC configuration is incomplete")
-    signing_key = PyJWKClient(jwks_url).get_signing_key_from_jwt(token)
+    signing_key = get_jwks_client(jwks_url).get_signing_key_from_jwt(token)
     return jwt.decode(
         token,
         signing_key.key,

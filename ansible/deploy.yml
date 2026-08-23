@@ -7,12 +7,14 @@
     project_root: "{{ playbook_dir }}/.."
     deployment_mode: build
     bundle_directory: ""
+    refresh_images: false
     quadlet_directory: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/containers/systemd"
     quadlet_files:
       - todo.network
       - todo-postgres-data.volume
       - todo-caddy-data.volume
       - todo-postgres.container
+      - todo-db-setup.container
       - todo-migrate.container
       - todo-backend.container
       - todo-keycloak.container
@@ -22,6 +24,7 @@
       - todo-backend.service
       - todo-keycloak.service
       - todo-migrate.service
+      - todo-db-setup.service
       - todo-postgres.service
 
   pre_tasks:
@@ -30,6 +33,7 @@
         that:
           - deployment_mode in ["build", "offline"]
           - deployment_mode != "offline" or bundle_directory | length > 0
+          - deployment_mode != "offline" or not (refresh_images | bool)
         fail_msg: Offline deployment requires bundle_directory.
 
     - name: Check that Podman is installed
@@ -73,6 +77,38 @@
       register: secret_created
       when: database_secret.rc == 1
 
+    - name: Check whether runtime database secrets exist
+      ansible.builtin.command:
+        argv: [podman, secret, exists, "{{ item }}"]
+      loop:
+        - todo-migrator-password
+        - todo-app-password
+        - todo-keycloak-db-password
+      register: runtime_database_secret_checks
+      changed_when: false
+      failed_when: runtime_database_secret_checks.rc not in [0, 1]
+
+    - name: Generate missing runtime database passwords
+      ansible.builtin.set_fact:
+        generated_runtime_database_passwords: >-
+          {{
+            generated_runtime_database_passwords | default({})
+            | combine({item.item: lookup('password', '/dev/null length=32 chars=ascii_letters,digits')})
+          }}
+      loop: "{{ runtime_database_secret_checks.results }}"
+      no_log: true
+      when: item.rc == 1
+
+    - name: Create runtime database secrets
+      ansible.builtin.command:
+        argv: [podman, secret, create, "{{ item.item }}", "-"]
+        stdin: "{{ generated_runtime_database_passwords[item.item] }}"
+        stdin_add_newline: false
+      loop: "{{ runtime_database_secret_checks.results }}"
+      no_log: true
+      register: runtime_database_secrets_created
+      when: item.rc == 1
+
     - name: Check whether the Keycloak admin secret exists
       ansible.builtin.command:
         argv: [podman, secret, exists, todo-keycloak-admin-password]
@@ -103,24 +139,23 @@
           - podman
           - image
           - exists
-          - localhost/todo-backend:m11
+          - localhost/todo-backend:m12
       register: backend_image
       changed_when: false
       failed_when: backend_image.rc not in [0, 1]
 
     - name: Build the backend image
       ansible.builtin.command:
-        argv:
-          - podman
-          - build
-          - --file
-          - "{{ project_root }}/backend/Containerfile"
-          - --tag
-          - localhost/todo-backend:m11
-          - "{{ project_root }}"
+        argv: >-
+          {{
+            ['podman', 'build']
+            + (['--pull'] if refresh_images | bool else [])
+            + ['--file', project_root + '/backend/Containerfile',
+               '--tag', 'localhost/todo-backend:m12', project_root]
+          }}
       register: backend_built
       when:
-        - backend_image.rc == 1
+        - backend_image.rc == 1 or refresh_images | bool
         - deployment_mode == "build"
 
     - name: Load the backend image from the offline bundle
@@ -129,7 +164,7 @@
           - podman
           - load
           - --input
-          - "{{ bundle_directory }}/images/todo-backend-m11.tar"
+          - "{{ bundle_directory }}/images/todo-backend-m12.tar"
       register: backend_loaded
       when:
         - backend_image.rc == 1
@@ -141,24 +176,23 @@
           - podman
           - image
           - exists
-          - localhost/todo-frontend:m11
+          - localhost/todo-frontend:m12
       register: frontend_image
       changed_when: false
       failed_when: frontend_image.rc not in [0, 1]
 
     - name: Build the frontend image
       ansible.builtin.command:
-        argv:
-          - podman
-          - build
-          - --file
-          - "{{ project_root }}/frontend/Containerfile"
-          - --tag
-          - localhost/todo-frontend:m11
-          - "{{ project_root }}"
+        argv: >-
+          {{
+            ['podman', 'build']
+            + (['--pull'] if refresh_images | bool else [])
+            + ['--file', project_root + '/frontend/Containerfile',
+               '--tag', 'localhost/todo-frontend:m12', project_root]
+          }}
       register: frontend_built
       when:
-        - frontend_image.rc == 1
+        - frontend_image.rc == 1 or refresh_images | bool
         - deployment_mode == "build"
 
     - name: Load the frontend image from the offline bundle
@@ -167,7 +201,7 @@
           - podman
           - load
           - --input
-          - "{{ bundle_directory }}/images/todo-frontend-m11.tar"
+          - "{{ bundle_directory }}/images/todo-frontend-m12.tar"
       register: frontend_loaded
       when:
         - frontend_image.rc == 1
@@ -175,29 +209,28 @@
 
     - name: Check whether the Keycloak image exists
       ansible.builtin.command:
-        argv: [podman, image, exists, "localhost/todo-keycloak:m11"]
+        argv: [podman, image, exists, "localhost/todo-keycloak:m12"]
       register: keycloak_image
       changed_when: false
       failed_when: keycloak_image.rc not in [0, 1]
 
     - name: Build the Keycloak image
       ansible.builtin.command:
-        argv:
-          - podman
-          - build
-          - --file
-          - "{{ project_root }}/keycloak/Containerfile"
-          - --tag
-          - localhost/todo-keycloak:m11
-          - "{{ project_root }}"
+        argv: >-
+          {{
+            ['podman', 'build']
+            + (['--pull'] if refresh_images | bool else [])
+            + ['--file', project_root + '/keycloak/Containerfile',
+               '--tag', 'localhost/todo-keycloak:m12', project_root]
+          }}
       register: keycloak_built
       when:
-        - keycloak_image.rc == 1
+        - keycloak_image.rc == 1 or refresh_images | bool
         - deployment_mode == "build"
 
     - name: Load the Keycloak image from the offline bundle
       ansible.builtin.command:
-        argv: [podman, load, --input, "{{ bundle_directory }}/images/todo-keycloak-m11.tar"]
+        argv: [podman, load, --input, "{{ bundle_directory }}/images/todo-keycloak-m12.tar"]
       register: keycloak_loaded
       when:
         - keycloak_image.rc == 1
@@ -209,7 +242,7 @@
           - podman
           - image
           - exists
-          - docker.io/library/postgres:17
+          - docker.io/library/postgres:17.11
       register: postgres_image
       changed_when: false
       failed_when: postgres_image.rc not in [0, 1]
@@ -219,10 +252,10 @@
         argv:
           - podman
           - pull
-          - docker.io/library/postgres:17
+          - docker.io/library/postgres:17.11
       register: postgres_pulled
       when:
-        - postgres_image.rc == 1
+        - postgres_image.rc == 1 or refresh_images | bool
         - deployment_mode == "build"
 
     - name: Load the PostgreSQL image from the offline bundle
@@ -231,7 +264,7 @@
           - podman
           - load
           - --input
-          - "{{ bundle_directory }}/images/postgres-17.tar"
+          - "{{ bundle_directory }}/images/postgres-17.11.tar"
       register: postgres_loaded
       when:
         - postgres_image.rc == 1
@@ -264,6 +297,7 @@
       failed_when: false
       when: >-
         secret_created.changed | default(false) or
+        runtime_database_secrets_created.changed | default(false) or
         keycloak_admin_secret_created.changed | default(false) or
         backend_built.changed | default(false) or
         backend_loaded.changed | default(false) or

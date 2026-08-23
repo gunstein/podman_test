@@ -4,10 +4,10 @@ Requires=todo-migrate.service
 After=todo-migrate.service
 
 [Container]
-Image=localhost/todo-keycloak:m11
+Image=localhost/todo-keycloak:m12
 ContainerName=todo-keycloak
 Network=todo.network
-Secret=todo-db-password,type=env,target=KCRAW_DB_PASSWORD
+Secret=todo-keycloak-db-password,type=env,target=KCRAW_DB_PASSWORD
 Secret=todo-keycloak-admin-password,type=env,target=KCRAW_BOOTSTRAP_ADMIN_PASSWORD
 Environment=KC_BOOTSTRAP_ADMIN_USERNAME=admin
 Environment=KC_DB=postgres
@@ -15,13 +15,16 @@ Environment=KC_DB_URL_HOST=todo-postgres
 Environment=KC_DB_URL_PORT=5432
 Environment=KC_DB_URL_DATABASE=todo
 Environment=KC_DB_SCHEMA=keycloak
-Environment=KC_DB_USERNAME=todo
+Environment=KC_DB_USERNAME=keycloak_app
 Environment=KC_HTTP_ENABLED=true
 Environment=KC_HTTP_RELATIVE_PATH=/auth
 Environment=KC_HOSTNAME=https://localhost:8443/auth
 Environment=KC_PROXY_HEADERS=xforwarded
 Environment=KC_HEALTH_ENABLED=true
 Exec=start --import-realm
+NoNewPrivileges=true
+DropCapability=all
+PidsLimit=512
 PodmanArgs=--memory=1g
 
 [Service]

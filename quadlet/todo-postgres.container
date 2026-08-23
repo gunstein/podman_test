@@ -1,0 +1,25 @@
+[Unit]
+Description=Todo PostgreSQL database
+
+[Container]
+Image=docker.io/library/postgres:17
+ContainerName=todo-postgres
+Network=todo.network
+Volume=todo-postgres-data.volume:/var/lib/postgresql/data
+EnvironmentFile=%h/.config/todo-demo/todo.env
+PublishPort=127.0.0.1:5432:5432
+HealthCmd=pg_isready -U todo -d todo
+HealthInterval=10s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartupCmd=pg_isready -U todo -d todo
+HealthStartupInterval=1s
+HealthStartupTimeout=5s
+HealthStartupRetries=30
+HealthStartupSuccess=1
+HealthOnFailure=kill
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=120

@@ -1,0 +1,17 @@
+[Unit]
+Description=Todo Caddy frontend and reverse proxy
+Requires=todo-backend.service
+After=todo-backend.service
+
+[Container]
+Image=localhost/todo-frontend:m5
+ContainerName=todo-frontend
+Network=todo.network
+PublishPort=127.0.0.1:8080:8080
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

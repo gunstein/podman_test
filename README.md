@@ -123,7 +123,7 @@ curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
 podman stop todo-frontend-smoke
 ```
 
-The M3 images are intentionally tested in isolation. The frontend container serves static files, but its relative `/api` requests are not routed to the backend until the reverse proxy milestone.
+These smoke tests intentionally test each image in isolation. Full frontend-to-backend routing is tested through Caddy after all services are running.
 
 ## Run manually with rootless Podman
 
@@ -227,6 +227,76 @@ curl --fail http://127.0.0.1:8080/api/todos
 ```
 
 Open <http://127.0.0.1:8080>. Caddy serves HTML, CSS and JavaScript directly and sends API, health and readiness requests to the backend. HTTPS remains disabled until M10.
+
+## Run with Quadlet and systemd
+
+Quadlet turns the files in `quadlet/` into user systemd services. The units keep the same container, network and volume names as the manual M4 setup.
+
+First stop and remove the three manually created containers. This does not remove the named database volume:
+
+```bash
+podman stop todo-frontend todo-backend todo-postgres
+podman rm todo-frontend todo-backend todo-postgres
+```
+
+Install the Quadlet files and create a private environment file:
+
+```bash
+mkdir -p ~/.config/containers/systemd ~/.config/todo-demo
+cp quadlet/*.container quadlet/*.network quadlet/*.volume ~/.config/containers/systemd/
+cp quadlet/todo.env.example ~/.config/todo-demo/todo.env
+chmod 600 ~/.config/todo-demo/todo.env
+```
+
+Edit `~/.config/todo-demo/todo.env` and replace both example password values with the existing database password. The file is deliberately outside Git. M7 will replace this temporary arrangement with Podman secrets.
+
+Reload user systemd and start the application:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user start todo-frontend.service
+```
+
+The `WantedBy=default.target` setting is handled by the Quadlet generator, so the generated service must not be enabled with `systemctl enable`. It will be included on future user-systemd starts. Starting the frontend now pulls in the complete dependency chain:
+
+```text
+PostgreSQL healthy -> migration completed -> backend started -> frontend started
+```
+
+The migration is a `oneshot` service. It waits for PostgreSQL's healthcheck and must finish successfully before the backend starts. Running it again is safe because applied migrations are recorded.
+
+Inspect the units and logs:
+
+```bash
+systemctl --user status todo-postgres.service
+systemctl --user status todo-migrate.service
+systemctl --user status todo-backend.service
+systemctl --user status todo-frontend.service
+journalctl --user -u todo-postgres.service -u todo-migrate.service \
+  -u todo-backend.service -u todo-frontend.service
+```
+
+Test the application at <http://127.0.0.1:8080>. Stop or restart the frontend service:
+
+```bash
+systemctl --user stop todo-frontend.service
+systemctl --user restart todo-frontend.service
+```
+
+Stopping the frontend does not automatically stop its dependencies. To stop every application service explicitly:
+
+```bash
+systemctl --user stop todo-frontend.service todo-backend.service \
+  todo-migrate.service todo-postgres.service
+```
+
+User services normally start when the user logs in. To allow them to start during boot without an interactive login, an administrator can enable lingering once:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+This host-level choice is optional for local learning and is not performed by the project.
 
 ## API
 

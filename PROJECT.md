@@ -8,7 +8,7 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-M6 — Manage the containers with Quadlet and user systemd.
+M6 — Verify the Quadlet units and user-systemd lifecycle.
 
 ## Completed
 
@@ -33,6 +33,8 @@ M6 — Manage the containers with Quadlet and user systemd.
 - Caddy provides one browser-facing endpoint and routes frontend and API traffic by path.
 - Full Todo CRUD was verified through Caddy.
 - One Chromium E2E test verifies the complete browser Todo flow through Caddy.
+- Rootless Quadlet definitions describe the network, persistent volume, PostgreSQL, migration, backend and frontend.
+- Quadlet dependencies enforce PostgreSQL health, completed migrations, backend startup and frontend startup in that order.
 - M1 through M5.5 are complete.
 
 ## Decisions
@@ -48,6 +50,8 @@ M6 — Manage the containers with Quadlet and user systemd.
 - Keep liveness and readiness checks separate.
 - Use one Caddy-based frontend container to serve static files and proxy backend routes.
 - Keep Playwright and Chromium as separate test-only dependencies.
+- Keep the pre-M7 database credentials in a private user environment file outside Git.
+- Enable only the frontend unit; systemd starts the remaining application dependency chain.
 - Never commit secrets.
 
 ## Local development
@@ -90,4 +94,4 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-Define the network, PostgreSQL, migration, backend and frontend as rootless Quadlet user units with explicit startup ordering.
+Install and verify the Quadlet units, including startup ordering, restart behavior, logs and data persistence.

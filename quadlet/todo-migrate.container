@@ -1,0 +1,17 @@
+[Unit]
+Description=Apply Todo database migrations
+Requires=todo-postgres.service
+After=todo-postgres.service
+
+[Container]
+Image=localhost/todo-backend:m5
+ContainerName=todo-migrate
+Network=todo.network
+EnvironmentFile=%h/.config/todo-demo/todo.env
+Exec=python -m backend.migrate up
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=120
+ExecStartPre=/usr/bin/podman wait --condition=healthy todo-postgres

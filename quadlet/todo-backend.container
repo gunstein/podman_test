@@ -1,0 +1,15 @@
+[Unit]
+Description=Todo FastAPI backend
+Requires=todo-migrate.service
+After=todo-migrate.service
+
+[Container]
+Image=localhost/todo-backend:m5
+ContainerName=todo-backend
+Network=todo.network
+EnvironmentFile=%h/.config/todo-demo/todo.env
+PublishPort=127.0.0.1:8000:8000
+
+[Service]
+Restart=on-failure
+RestartSec=5s

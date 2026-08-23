@@ -80,6 +80,33 @@ python -m pytest
 
 The test suite refuses database names that do not end with `_test`. It migrates the test database up, clears Todos between tests and rolls the schema back afterward.
 
+## Build container images
+
+Build both images from the project root:
+
+```bash
+podman build --file backend/Containerfile --tag localhost/todo-backend:m3 .
+podman build --file frontend/Containerfile --tag localhost/todo-frontend:m3 .
+```
+
+Smoke-test the images separately:
+
+```bash
+podman run --name todo-backend-smoke --rm --detach \
+  --publish 127.0.0.1:18000:8000 localhost/todo-backend:m3
+curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
+  http://127.0.0.1:18000/health
+podman stop todo-backend-smoke
+
+podman run --name todo-frontend-smoke --rm --detach \
+  --publish 127.0.0.1:18080:8080 localhost/todo-frontend:m3
+curl --fail --retry 10 --retry-delay 1 --retry-all-errors \
+  http://127.0.0.1:18080/
+podman stop todo-frontend-smoke
+```
+
+The M3 images are intentionally tested in isolation. The frontend container serves static files, but its relative `/api` requests are not routed to the backend until the reverse proxy milestone.
+
 ## API
 
 - `GET /health`

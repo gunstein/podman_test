@@ -8,7 +8,7 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-M3 — Build Containerfiles for the backend and frontend.
+M4 — Run the application manually with rootless Podman.
 
 ## Completed
 
@@ -24,7 +24,8 @@ M3 — Build Containerfiles for the backend and frontend.
 - Migration upgrade and rollback were verified against a disposable test database.
 - Six automated tests cover health, frontend serving, CRUD, validation, missing Todos and migration file pairs.
 - Tests were verified against an isolated, automatically removed PostgreSQL test container.
-- M1, M2, M2.5 and M2.6 are complete.
+- Backend and frontend images build successfully and pass isolated smoke tests as UID 1000.
+- M1, M2, M2.5, M2.6 and M3 are complete.
 
 ## Decisions
 
@@ -64,7 +65,7 @@ Open <http://127.0.0.1:8000> in a browser.
 - M2: PostgreSQL + Todo CRUD — completed
 - M2.5: Versioned SQL migrations — completed
 - M2.6: Automated smoke and integration tests — completed
-- M3: Containerfiles for backend and frontend
+- M3: Containerfiles for backend and frontend — completed
 - M4: Run manually with rootless Podman
 - M4.5: Troubleshooting and lifecycle
 - M5: Caddy reverse proxy
@@ -78,4 +79,4 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-Design and build separate Containerfiles for the backend and frontend without orchestrating the full application yet.
+Run PostgreSQL, backend and frontend manually with rootless Podman and learn their lifecycle and networking.

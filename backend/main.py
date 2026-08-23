@@ -76,5 +76,6 @@ def delete_todo(todo_id: int):
     return Response(status_code=204)
 
 
-frontend = Path(__file__).resolve().parent.parent / "frontend"
-app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
+if os.getenv("SERVE_FRONTEND", "true").lower() == "true":
+    frontend = Path(__file__).resolve().parent.parent / "frontend"
+    app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")

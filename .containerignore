@@ -1,0 +1,7 @@
+.git
+.gitignore
+backend/.venv
+**/__pycache__
+**/*.py[cod]
+backend/tests
+backend/requirements-test.txt

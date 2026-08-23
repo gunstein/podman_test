@@ -1,18 +1,15 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Todo Demo</title>
-    <link rel="stylesheet" href="/style.css">
-  </head>
-  <body>
-    <main>
-      <h1>Todos</h1>
-      <ul id="todo-list" aria-live="polite">
-        <li>Loading todos...</li>
-      </ul>
-    </main>
-    <script src="/app.js"></script>
-  </body>
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Todo Demo</title><link rel="stylesheet" href="/style.css">
+</head>
+<body><main>
+  <h1>Todos</h1>
+  <form id="todo-form"><label for="todo-title">New todo</label>
+    <div class="new-todo"><input id="todo-title" maxlength="200" required><button>Add</button></div>
+  </form>
+  <p id="message" role="status"></p>
+  <ul id="todo-list"><li>Loading...</li></ul>
+</main><script src="/app.js"></script></body>
 </html>

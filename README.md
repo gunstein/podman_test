@@ -35,13 +35,32 @@ Stop following logs with Ctrl+C after PostgreSQL is ready. Later use `podman sta
 python3 -m venv backend/.venv
 source backend/.venv/bin/activate
 python -m pip install -r backend/requirements.txt
+read -rsp "Database password: " TODO_DB_PASSWORD
+echo
+export TODO_DB_PASSWORD
 export DATABASE_URL="host=127.0.0.1 port=5432 dbname=todo user=todo password=$TODO_DB_PASSWORD"
+python -m backend.migrate up
 uvicorn backend.main:app --reload
 ```
 
-The command uses the password already stored in `TODO_DB_PASSWORD`. Do not store secrets in Git.
+Enter the same PostgreSQL password when prompted. Virtualenv activation and shell variables must be repeated in every new terminal. Do not store secrets in Git.
 
 Open <http://127.0.0.1:8000>. API docs are at <http://127.0.0.1:8000/docs>.
+
+## Database migrations
+
+```bash
+python -m backend.migrate status
+python -m backend.migrate up
+```
+
+Roll back the latest migration:
+
+```bash
+python -m backend.migrate down
+```
+
+The initial rollback drops the `todos` table and deletes its data. Review every down migration before running it.
 
 ## API
 

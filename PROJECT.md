@@ -20,7 +20,9 @@ M3 — Build Containerfiles for the backend and frontend.
 - FastAPI serves the frontend.
 - The README contains local development instructions.
 - PostgreSQL data was verified to survive a container stop and restart.
-- M1 and M2 are complete.
+- Versioned SQL migrations support status, upgrade and single-step rollback.
+- Migration upgrade and rollback were verified against a disposable test database.
+- M1, M2 and M2.5 are complete.
 
 ## Decisions
 
@@ -58,6 +60,7 @@ Open <http://127.0.0.1:8000> in a browser.
 
 - M1: HTML/JavaScript + FastAPI with hardcoded Todo — completed
 - M2: PostgreSQL + Todo CRUD — completed
+- M2.5: Versioned SQL migrations — completed
 - M3: Containerfiles for backend and frontend
 - M4: Run manually with rootless Podman
 - M4.5: Troubleshooting and lifecycle
@@ -72,7 +75,3 @@ Open <http://127.0.0.1:8000> in a browser.
 ## Next step
 
 Design and build separate Containerfiles for the backend and frontend without orchestrating the full application yet.
-
-## Deferred work
-
-- Add proper, versioned PostgreSQL schema migrations after the initial CRUD and database schema are understood and stable. Start M2 with simple, explicit table initialization to keep the learning steps small.

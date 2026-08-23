@@ -1,5 +1,4 @@
 import os
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -17,22 +16,7 @@ def connect():
     return psycopg.connect(url, row_factory=dict_row)
 
 
-def initialize_database():
-    with connect() as connection:
-        connection.execute("""CREATE TABLE IF NOT EXISTS todos (
-            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-            title TEXT NOT NULL,
-            completed BOOLEAN NOT NULL DEFAULT FALSE
-        )""")
-
-
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    initialize_database()
-    yield
-
-
-app = FastAPI(title="Todo Demo", lifespan=lifespan)
+app = FastAPI(title="Todo Demo")
 
 
 class TodoCreate(BaseModel):

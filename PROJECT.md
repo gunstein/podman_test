@@ -68,6 +68,7 @@ Open <http://127.0.0.1:8000> in a browser.
 - M4: Run manually with rootless Podman
 - M4.5: Troubleshooting and lifecycle
 - M5: Caddy reverse proxy
+- M5.5: End-to-end browser tests with Playwright for Python
 - M6: Quadlet and systemd
 - M7: Podman secrets
 - M8: Ansible deployment

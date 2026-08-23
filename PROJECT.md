@@ -8,7 +8,7 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-M8 — Deploy the rootless Quadlet application with Ansible.
+M9 — Package an offline installation as a tar.gz bundle.
 
 ## Completed
 
@@ -38,7 +38,10 @@ M8 — Deploy the rootless Quadlet application with Ansible.
 - The Quadlet lifecycle and browser flow were verified through user systemd.
 - PostgreSQL, migrations and the backend receive the database password from a file-mounted rootless Podman secret.
 - The secret-based deployment passed health, readiness, API and Chromium E2E checks.
-- M1 through M7 are complete.
+- A small localhost Ansible playbook builds the images, installs Quadlet files, creates the Podman secret when missing, starts the services and verifies health and readiness.
+- A second Ansible run completed with `changed=0`, confirming idempotence.
+- The Ansible-deployed application passed the Chromium E2E test.
+- M1 through M8 are complete.
 
 ## Decisions
 
@@ -56,6 +59,8 @@ M8 — Deploy the rootless Quadlet application with Ansible.
 - Mount the database password as a file from rootless Podman secret storage.
 - Keep `DATABASE_URL` for local development and tests; containers use separate non-secret settings plus `DATABASE_PASSWORD_FILE`.
 - Enable only the frontend unit; systemd starts the remaining application dependency chain.
+- Start Ansible with one localhost playbook and only `ansible-core`; add remote deployment structure only when it is needed.
+- Keep secret prompting conditional so repeat deployments remain non-interactive.
 - Never commit secrets.
 
 ## Local development
@@ -91,11 +96,11 @@ Open <http://127.0.0.1:8000> in a browser.
 - M5.5: End-to-end browser tests with Playwright for Python — completed
 - M6: Quadlet and systemd — completed
 - M7: Podman secrets — completed
-- M8: Ansible deployment
+- M8: Ansible deployment — completed
 - M9: Offline installation from a `tar.gz` bundle
 - M10: HTTPS
 - M11: Keycloak authentication
 
 ## Next step
 
-Create a small Ansible deployment that installs the Quadlet files, creates the Podman secret and manages the user-systemd services.
+Define the contents and installation flow for an offline tar.gz bundle containing application images and required deployment artifacts.

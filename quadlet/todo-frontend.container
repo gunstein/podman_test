@@ -4,7 +4,7 @@ Requires=todo-backend.service
 After=todo-backend.service
 
 [Container]
-Image=localhost/todo-frontend:m5
+Image=localhost/todo-frontend:m8
 ContainerName=todo-frontend
 Network=todo.network
 PublishPort=127.0.0.1:8080:8080

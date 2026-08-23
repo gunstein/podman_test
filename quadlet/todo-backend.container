@@ -4,7 +4,7 @@ Requires=todo-migrate.service
 After=todo-migrate.service
 
 [Container]
-Image=localhost/todo-backend:m7
+Image=localhost/todo-backend:m8
 ContainerName=todo-backend
 Network=todo.network
 Secret=todo-db-password

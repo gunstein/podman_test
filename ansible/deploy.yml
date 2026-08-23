@@ -1,0 +1,165 @@
+---
+- name: Deploy the Todo demo with rootless Podman
+  hosts: todo_hosts
+  gather_facts: false
+
+  vars:
+    project_root: "{{ playbook_dir }}/.."
+    quadlet_directory: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/containers/systemd"
+    quadlet_files:
+      - todo.network
+      - todo-postgres-data.volume
+      - todo-postgres.container
+      - todo-migrate.container
+      - todo-backend.container
+      - todo-frontend.container
+    application_services:
+      - todo-frontend.service
+      - todo-backend.service
+      - todo-migrate.service
+      - todo-postgres.service
+
+  pre_tasks:
+    - name: Check that Podman is installed
+      ansible.builtin.command:
+        argv:
+          - podman
+          - --version
+      changed_when: false
+
+  tasks:
+    - name: Check whether the database secret exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - secret
+          - exists
+          - todo-db-password
+      register: database_secret
+      changed_when: false
+      failed_when: database_secret.rc not in [0, 1]
+
+    - name: Ask for the existing database password
+      ansible.builtin.pause:
+        prompt: Database password
+        echo: false
+      register: database_password
+      no_log: true
+      when: database_secret.rc == 1
+
+    - name: Create the rootless Podman secret
+      ansible.builtin.command:
+        argv:
+          - podman
+          - secret
+          - create
+          - todo-db-password
+          - "-"
+        stdin: "{{ database_password.user_input }}"
+        stdin_add_newline: false
+      no_log: true
+      register: secret_created
+      when: database_secret.rc == 1
+
+    - name: Check whether the backend image exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - image
+          - exists
+          - localhost/todo-backend:m8
+      register: backend_image
+      changed_when: false
+      failed_when: backend_image.rc not in [0, 1]
+
+    - name: Build the backend image
+      ansible.builtin.command:
+        argv:
+          - podman
+          - build
+          - --file
+          - "{{ project_root }}/backend/Containerfile"
+          - --tag
+          - localhost/todo-backend:m8
+          - "{{ project_root }}"
+      register: backend_built
+      when: backend_image.rc == 1
+
+    - name: Check whether the frontend image exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - image
+          - exists
+          - localhost/todo-frontend:m8
+      register: frontend_image
+      changed_when: false
+      failed_when: frontend_image.rc not in [0, 1]
+
+    - name: Build the frontend image
+      ansible.builtin.command:
+        argv:
+          - podman
+          - build
+          - --file
+          - "{{ project_root }}/frontend/Containerfile"
+          - --tag
+          - localhost/todo-frontend:m8
+          - "{{ project_root }}"
+      register: frontend_built
+      when: frontend_image.rc == 1
+
+    - name: Create the Quadlet directory
+      ansible.builtin.file:
+        path: "{{ quadlet_directory }}"
+        state: directory
+        mode: "0700"
+
+    - name: Install the Quadlet files
+      ansible.builtin.copy:
+        src: "{{ project_root }}/quadlet/{{ item }}"
+        dest: "{{ quadlet_directory }}/{{ item }}"
+        mode: "0644"
+      loop: "{{ quadlet_files }}"
+      register: quadlet_installed
+
+    - name: Stop the old application chain before applying changes
+      ansible.builtin.command:
+        argv: "{{ ['systemctl', '--user', 'stop'] + application_services }}"
+      register: services_stopped
+      changed_when: services_stopped.rc == 0
+      failed_when: false
+      when: >-
+        secret_created.changed | default(false) or
+        backend_built.changed | default(false) or
+        frontend_built.changed | default(false) or
+        quadlet_installed.changed
+
+    - name: Reload generated user systemd units
+      ansible.builtin.systemd_service:
+        scope: user
+        daemon_reload: true
+
+    - name: Start the Todo application
+      ansible.builtin.systemd_service:
+        name: todo-frontend.service
+        scope: user
+        state: started
+
+    - name: Wait for backend health through Caddy
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/health
+        return_content: true
+      register: health
+      until: health.status == 200 and health.json.status == "ok"
+      retries: 15
+      delay: 1
+
+    - name: Verify database readiness through Caddy
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/ready
+        return_content: true
+      register: readiness
+      until: readiness.status == 200 and readiness.json.status == "ready"
+      retries: 15
+      delay: 1

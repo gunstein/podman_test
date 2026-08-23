@@ -330,6 +330,37 @@ PostgreSQL and the backend receive the secret as the file `/run/secrets/todo-db-
 rm ~/.config/todo-demo/todo.env
 ```
 
+## Deploy with Ansible
+
+M8 automates the same localhost deployment without hiding the individual Podman and systemd concepts. Install `ansible-core` in its own virtualenv:
+
+```bash
+python3 -m venv ansible/.venv
+ansible/.venv/bin/python -m pip install -r ansible/requirements.txt
+```
+
+Run the playbook from the project root:
+
+```bash
+ansible/.venv/bin/ansible-playbook \
+  --inventory ansible/inventory.ini \
+  ansible/deploy.yml
+```
+
+The first run asks for the existing database password only if the rootless Podman secret is missing. It builds the milestone images, installs the Quadlet files, reloads user systemd, starts the dependency chain and verifies health and readiness. Repeating the playbook should finish with `changed=0`.
+
+See [ansible/README.md](ansible/README.md) for scope and limitations.
+
+Uninstall the deployment while preserving the PostgreSQL data volume:
+
+```bash
+ansible/.venv/bin/ansible-playbook \
+  --inventory ansible/inventory.ini \
+  ansible/uninstall.yml
+```
+
+Permanent data removal requires the explicit option `--extra-vars remove_data=true`.
+
 ## API
 
 - `GET /health`

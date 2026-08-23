@@ -1,0 +1,155 @@
+---
+- name: Uninstall the Todo demo
+  hosts: todo_hosts
+  gather_facts: false
+
+  vars:
+    quadlet_directory: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/containers/systemd"
+    quadlet_files:
+      - todo.network
+      - todo-postgres-data.volume
+      - todo-postgres.container
+      - todo-migrate.container
+      - todo-backend.container
+      - todo-frontend.container
+    application_services:
+      - todo-frontend.service
+      - todo-backend.service
+      - todo-migrate.service
+      - todo-postgres.service
+      - todo-network.service
+      - todo-postgres-data-volume.service
+    application_containers:
+      - todo-frontend
+      - todo-backend
+      - todo-migrate
+      - todo-postgres
+    application_images:
+      - localhost/todo-backend:m8
+      - localhost/todo-frontend:m8
+    remove_data: false
+
+  tasks:
+    - name: Stop the user-systemd services
+      ansible.builtin.command:
+        argv: "{{ ['systemctl', '--user', 'stop'] + application_services }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove installed Quadlet files
+      ansible.builtin.file:
+        path: "{{ quadlet_directory }}/{{ item }}"
+        state: absent
+      loop: "{{ quadlet_files }}"
+      register: quadlet_removed
+
+    - name: Reload user systemd
+      ansible.builtin.systemd_service:
+        scope: user
+        daemon_reload: true
+
+    - name: Remove leftover application containers
+      ansible.builtin.command:
+        argv:
+          - podman
+          - rm
+          - --force
+          - --ignore
+          - "{{ item }}"
+      loop: "{{ application_containers }}"
+      register: containers_removed
+      changed_when: containers_removed.stdout | length > 0
+
+    - name: Check whether the application network exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - network
+          - exists
+          - todo-network
+      register: application_network
+      changed_when: false
+      failed_when: application_network.rc not in [0, 1]
+
+    - name: Remove the application network
+      ansible.builtin.command:
+        argv:
+          - podman
+          - network
+          - rm
+          - todo-network
+      when: application_network.rc == 0
+
+    - name: Check whether the database secret exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - secret
+          - exists
+          - todo-db-password
+      register: database_secret
+      changed_when: false
+      failed_when: database_secret.rc not in [0, 1]
+
+    - name: Remove the database secret
+      ansible.builtin.command:
+        argv:
+          - podman
+          - secret
+          - rm
+          - todo-db-password
+      when: database_secret.rc == 0
+
+    - name: Check whether application images exist
+      ansible.builtin.command:
+        argv:
+          - podman
+          - image
+          - exists
+          - "{{ item }}"
+      loop: "{{ application_images }}"
+      register: image_checks
+      changed_when: false
+      failed_when: image_checks.rc not in [0, 1]
+
+    - name: Remove application images
+      ansible.builtin.command:
+        argv:
+          - podman
+          - image
+          - rm
+          - "{{ item.item }}"
+      loop: "{{ image_checks.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.rc == 0
+
+    - name: Check whether the database volume exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - volume
+          - exists
+          - todo-postgres-data
+      register: database_volume
+      changed_when: false
+      failed_when: database_volume.rc not in [0, 1]
+      when: remove_data | bool
+
+    - name: Permanently remove the database volume
+      ansible.builtin.command:
+        argv:
+          - podman
+          - volume
+          - rm
+          - todo-postgres-data
+      when:
+        - remove_data | bool
+        - database_volume.rc == 0
+
+    - name: Report preserved database data
+      ansible.builtin.debug:
+        msg: >-
+          Database volume todo-postgres-data was preserved.
+          Use -e remove_data=true to delete it permanently.
+      when: not (remove_data | bool)

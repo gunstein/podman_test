@@ -50,14 +50,16 @@ M12 — Security baseline without hiding the Podman concepts.
 - M1 through M10 are complete.
 - Keycloak runs behind Caddy and imports a minimal `todo` realm with a public SPA client using PKCE S256.
 - Todo reads remain public, while create, update and delete operations require a valid Keycloak access token.
-- Keycloak uses the existing PostgreSQL service with a separate database schema created by migration 002.
-- The initial Keycloak administrator password is held in a rootless Podman secret and no users or passwords are committed.
+- Keycloak uses the existing PostgreSQL service with a separate bootstrap-owned database schema.
+- The temporary Keycloak bootstrap-administrator password is held in a rootless Podman secret and no users or passwords are committed.
 - Public-read and authenticated CRUD browser flows were verified through Keycloak.
 - A helper provisions the complete `testuser` account and runs both E2E flows without storing test passwords.
 - M11 is complete.
 - Direct application dependencies and base-image patch versions are pinned.
 - An explicit `refresh_images=true` mode separates idempotent reuse from security refresh.
 - PostgreSQL runtime access is split into non-superuser migration, backend and Keycloak roles with independent secrets.
+- The migration, backend and Keycloak roles cannot inherit one another's database privileges.
+- Fresh-install and upgraded-database checks verified that the Todo roles cannot access Keycloak data and the Keycloak role cannot access Todo data.
 - An idempotent role-setup service upgraded the existing volume without losing Todo or Keycloak data.
 - Backend, frontend and Keycloak run with no new privileges, no effective Linux capabilities and explicit PID limits.
 - JWKS discovery is cached across requests and negative JWT tests cover issuer, audience, expiry, signature and algorithm.
@@ -94,6 +96,8 @@ M12 — Security baseline without hiding the Podman concepts.
 - Never commit secrets.
 - Keep authentication authorization simple: all authenticated users may write all Todos; per-user ownership is outside this demo.
 - Keep browser tokens in memory and use Authorization Code with PKCE S256 for the public frontend client.
+- Treat migration 002 as a pre-baseline correction: Keycloak schema lifecycle moved to bootstrap, and applied migrations are immutable from M12 onward.
+- Retain Keycloak's temporary bootstrap administrator only for repeatable localhost administration and E2E setup.
 
 ## Local development
 

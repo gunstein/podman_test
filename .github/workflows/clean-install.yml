@@ -4,9 +4,13 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:17.11
@@ -23,8 +27,8 @@ jobs:
           --health-retries 20
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
           cache: pip
@@ -59,17 +63,48 @@ jobs:
           import psycopg
           from psycopg.errors import InsufficientPrivilege
 
-          with psycopg.connect(
-              "host=127.0.0.1 dbname=todo_test "
-              "user=todo_app password=ci-app-not-a-secret"
-          ) as connection:
-              connection.execute("SELECT id, title, completed FROM todos")
-              try:
-                  connection.execute("SELECT version FROM schema_migrations")
-              except InsufficientPrivilege:
-                  connection.rollback()
-              else:
-                  raise RuntimeError("todo_app can access schema_migrations")
+          base = "host=127.0.0.1 dbname=todo_test"
+          roles = {
+              "todo_app": f"{base} user=todo_app password=ci-app-not-a-secret",
+              "todo_migrator": (
+                  f"{base} user=todo_migrator password=ci-migrator-not-a-secret"
+              ),
+              "keycloak_app": (
+                  f"{base} user=keycloak_app password=ci-keycloak-not-a-secret"
+              ),
+          }
+
+          def expect_allowed(role, query):
+              with psycopg.connect(roles[role]) as connection:
+                  connection.execute(query)
+
+          def expect_denied(role, query):
+              with psycopg.connect(roles[role]) as connection:
+                  try:
+                      connection.execute(query)
+                  except InsufficientPrivilege:
+                      return
+                  else:
+                      raise RuntimeError(f"{role} unexpectedly ran: {query}")
+
+          with psycopg.connect(roles["keycloak_app"]) as connection:
+              connection.execute(
+                  "CREATE TABLE keycloak.privilege_probe (id integer)"
+              )
+
+          expect_allowed("todo_app", "SELECT id, title, completed FROM todos")
+          expect_denied("todo_app", "SELECT version FROM schema_migrations")
+          expect_denied("todo_app", "SELECT id FROM keycloak.privilege_probe")
+
+          expect_allowed("todo_migrator", "SELECT version FROM schema_migrations")
+          expect_denied(
+              "todo_migrator", "SELECT id FROM keycloak.privilege_probe"
+          )
+
+          expect_allowed(
+              "keycloak_app", "SELECT id FROM keycloak.privilege_probe"
+          )
+          expect_denied("keycloak_app", "SELECT id FROM public.todos")
           PY
 
           export TEST_DATABASE_URL='host=127.0.0.1 dbname=todo_test user=todo_migrator password=ci-migrator-not-a-secret'

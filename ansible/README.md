@@ -43,6 +43,10 @@ the complete, fixed source of images there.
 
 The playbook does not install Podman, enable lingering, rotate an existing secret or modify system-wide configuration. Those operations require separate administrative decisions.
 
+The Keycloak account created from the prompted password is its temporary
+bootstrap administrator. This localhost demo retains it for repeatable
+administration and E2E setup; a real deployment should replace and remove it.
+
 ## Uninstall
 
 Remove the deployed services, Quadlet files, containers, network and application
@@ -67,3 +71,6 @@ ansible/.venv/bin/ansible-playbook \
 ```
 
 The second command permanently deletes all Todo and Keycloak data.
+
+Both uninstall modes remove `todo-caddy-data`. A reinstall creates a new local
+Caddy CA, so any previously trusted demo root certificate must be replaced.

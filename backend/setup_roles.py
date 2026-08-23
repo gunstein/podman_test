@@ -24,7 +24,7 @@ def ensure_login_role(connection, name: str, password: str) -> None:
     connection.execute(
         sql.SQL(
             "ALTER ROLE {} PASSWORD {} NOSUPERUSER NOCREATEDB "
-            "NOCREATEROLE NOREPLICATION"
+            "NOCREATEROLE NOREPLICATION NOINHERIT"
         ).format(sql.Identifier(name), sql.Literal(password))
     )
 
@@ -84,7 +84,7 @@ def main() -> None:
             connection, "keycloak_app", read_secret("todo-keycloak-db-password")
         )
 
-        connection.execute("GRANT keycloak_app TO todo_migrator")
+        connection.execute("REVOKE keycloak_app FROM todo_migrator")
         connection.execute(
             sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(
                 sql.Identifier(database)

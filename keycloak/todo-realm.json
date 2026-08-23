@@ -12,7 +12,7 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "redirectUris": [
-        "https://localhost:8443/*"
+        "https://localhost:8443/"
       ],
       "webOrigins": [
         "https://localhost:8443"

@@ -91,6 +91,29 @@
           - todo-network
       when: application_network.rc == 0
 
+    - name: Check whether the database volume exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - volume
+          - exists
+          - todo-postgres-data
+      register: database_volume
+      changed_when: false
+      failed_when: database_volume.rc not in [0, 1]
+      when: remove_data | bool
+
+    - name: Permanently remove the database volume
+      ansible.builtin.command:
+        argv:
+          - podman
+          - volume
+          - rm
+          - todo-postgres-data
+      when:
+        - remove_data | bool
+        - database_volume.rc == 0
+
     - name: Check whether the database secret exists
       ansible.builtin.command:
         argv:
@@ -183,18 +206,6 @@
         label: "{{ item.item }}"
       when: item.rc == 0
 
-    - name: Check whether the database volume exists
-      ansible.builtin.command:
-        argv:
-          - podman
-          - volume
-          - exists
-          - todo-postgres-data
-      register: database_volume
-      changed_when: false
-      failed_when: database_volume.rc not in [0, 1]
-      when: remove_data | bool
-
     - name: Check whether the Caddy data volume exists
       ansible.builtin.command:
         argv:
@@ -214,17 +225,6 @@
           - rm
           - todo-caddy-data
       when: caddy_data_volume.rc == 0
-
-    - name: Permanently remove the database volume
-      ansible.builtin.command:
-        argv:
-          - podman
-          - volume
-          - rm
-          - todo-postgres-data
-      when:
-        - remove_data | bool
-        - database_volume.rc == 0
 
     - name: Report preserved database data
       ansible.builtin.debug:

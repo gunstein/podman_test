@@ -8,7 +8,7 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-M5.5 — Add end-to-end browser tests with Playwright for Python.
+M6 — Manage the containers with Quadlet and user systemd.
 
 ## Completed
 
@@ -22,7 +22,7 @@ M5.5 — Add end-to-end browser tests with Playwright for Python.
 - PostgreSQL data was verified to survive a container stop and restart.
 - Versioned SQL migrations support status, upgrade and single-step rollback.
 - Migration upgrade and rollback were verified against a disposable test database.
-- Seven automated tests cover health, frontend serving, CRUD, validation, missing Todos and migration file pairs.
+- Nine automated backend tests cover health, readiness success and failure, frontend serving, CRUD, title validation, missing Todos, migration file pairs and idempotence.
 - Tests were verified against an isolated, automatically removed PostgreSQL test container.
 - Backend and frontend images build successfully and pass isolated smoke tests as UID 1000.
 - PostgreSQL, backend and frontend run manually on the rootless `todo-network`.
@@ -32,7 +32,8 @@ M5.5 — Add end-to-end browser tests with Playwright for Python.
 - Liveness (`/health`) and database readiness (`/ready`) are separate endpoints.
 - Caddy provides one browser-facing endpoint and routes frontend and API traffic by path.
 - Full Todo CRUD was verified through Caddy.
-- M1 through M5 are complete.
+- One Chromium E2E test verifies the complete browser Todo flow through Caddy.
+- M1 through M5.5 are complete.
 
 ## Decisions
 
@@ -46,6 +47,7 @@ M5.5 — Add end-to-end browser tests with Playwright for Python.
 - Add Keycloak last.
 - Keep liveness and readiness checks separate.
 - Use one Caddy-based frontend container to serve static files and proxy backend routes.
+- Keep Playwright and Chromium as separate test-only dependencies.
 - Never commit secrets.
 
 ## Local development
@@ -78,7 +80,7 @@ Open <http://127.0.0.1:8000> in a browser.
 - M4: Run manually with rootless Podman — completed
 - M4.5: Troubleshooting and lifecycle — completed
 - M5: Caddy reverse proxy — completed
-- M5.5: End-to-end browser tests with Playwright for Python
+- M5.5: End-to-end browser tests with Playwright for Python — completed
 - M6: Quadlet and systemd
 - M7: Podman secrets
 - M8: Ansible deployment
@@ -88,4 +90,4 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-Add one Playwright for Python end-to-end test for the complete Todo user flow through Caddy.
+Define the network, PostgreSQL, migration, backend and frontend as rootless Quadlet user units with explicit startup ordering.

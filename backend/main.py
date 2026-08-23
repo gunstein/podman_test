@@ -6,7 +6,7 @@ import psycopg
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.staticfiles import StaticFiles
 from psycopg.rows import dict_row
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def connect():
@@ -21,6 +21,14 @@ app = FastAPI(title="Todo Demo")
 
 class TodoCreate(BaseModel):
     title: Annotated[str, Field(min_length=1, max_length=200)]
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Title must not be blank")
+        return value
 
 
 class TodoUpdate(TodoCreate):

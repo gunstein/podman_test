@@ -75,10 +75,28 @@ In an activated virtualenv, install test dependencies and run the tests:
 ```bash
 python -m pip install -r backend/requirements-test.txt
 export TEST_DATABASE_URL="host=127.0.0.1 port=5432 dbname=todo_test user=todo password=$TODO_DB_PASSWORD"
-python -m pytest
+python -m pytest backend/tests
 ```
 
 The test suite refuses database names that do not end with `_test`. It migrates the test database up, clears Todos between tests and rolls the schema back afterward.
+
+## End-to-end test
+
+With the complete application running through Caddy, install Playwright and Chromium once:
+
+```bash
+python -m pip install -r backend/requirements-e2e.txt
+python -m playwright install chromium
+```
+
+Run the browser test explicitly:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:8080 \
+  python -m pytest e2e --browser chromium
+```
+
+The test creates, completes and deletes a uniquely named Todo through the browser. Chromium is a local test dependency and is not included in the application images or production bundle.
 
 ## Build container images
 

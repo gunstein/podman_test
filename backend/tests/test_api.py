@@ -18,6 +18,16 @@ def test_readiness():
     assert response.json() == {"status": "ready"}
 
 
+def test_readiness_when_database_is_unavailable(monkeypatch):
+    def unavailable():
+        raise RuntimeError("Database unavailable")
+
+    monkeypatch.setattr("backend.main.connect", unavailable)
+    response = client.get("/ready")
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Database unavailable"}
+
+
 def test_frontend_is_served():
     response = client.get("/")
     assert response.status_code == 200
@@ -53,6 +63,7 @@ def test_missing_todo_returns_404():
     assert client.delete("/api/todos/999").status_code == 404
 
 
-def test_empty_title_is_rejected():
-    response = client.post("/api/todos", json={"title": ""})
-    assert response.status_code == 422
+def test_invalid_titles_are_rejected():
+    for title in ("", "   ", "x" * 201):
+        response = client.post("/api/todos", json={"title": title})
+        assert response.status_code == 422

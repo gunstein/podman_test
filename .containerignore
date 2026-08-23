@@ -5,3 +5,5 @@ backend/.venv
 **/*.py[cod]
 backend/tests
 backend/requirements-test.txt
+backend/requirements-e2e.txt
+e2e

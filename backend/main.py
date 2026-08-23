@@ -61,6 +61,7 @@ def validate_access_token(token: str) -> dict:
         algorithms=["RS256"],
         audience=audience,
         issuer=issuer,
+        options={"require": ["exp", "iss", "aud", "sub"]},
     )
 
 

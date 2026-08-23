@@ -1,0 +1,76 @@
+name: Clean install
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_DB: todo_test
+          POSTGRES_USER: todo
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U todo -d todo_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-test.txt
+
+      - name: Install test dependencies
+        run: python -m pip install -r backend/requirements-test.txt
+
+      - name: Exercise clean role setup and migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_directory=$(mktemp -d)
+          trap 'rm -rf "$secrets_directory"' EXIT
+          printf '%s' 'ci-only-not-a-secret' > "$secrets_directory/todo-db-password"
+          printf '%s' 'ci-migrator-not-a-secret' > "$secrets_directory/todo-migrator-password"
+          printf '%s' 'ci-app-not-a-secret' > "$secrets_directory/todo-app-password"
+          printf '%s' 'ci-keycloak-not-a-secret' > "$secrets_directory/todo-keycloak-db-password"
+
+          export DATABASE_HOST=127.0.0.1
+          export DATABASE_NAME=todo_test
+          export DATABASE_BOOTSTRAP_USER=todo
+          export DATABASE_SECRETS_DIRECTORY="$secrets_directory"
+          python -m backend.setup_roles
+
+          export DATABASE_URL='host=127.0.0.1 dbname=todo_test user=todo_migrator password=ci-migrator-not-a-secret'
+          python -m backend.migrate up
+          unset DATABASE_URL
+          python -m backend.setup_roles
+
+          python - <<'PY'
+          import psycopg
+          from psycopg.errors import InsufficientPrivilege
+
+          with psycopg.connect(
+              "host=127.0.0.1 dbname=todo_test "
+              "user=todo_app password=ci-app-not-a-secret"
+          ) as connection:
+              connection.execute("SELECT id, title, completed FROM todos")
+              try:
+                  connection.execute("SELECT version FROM schema_migrations")
+              except InsufficientPrivilege:
+                  connection.rollback()
+              else:
+                  raise RuntimeError("todo_app can access schema_migrations")
+          PY
+
+          export TEST_DATABASE_URL='host=127.0.0.1 dbname=todo_test user=todo_migrator password=ci-migrator-not-a-secret'
+          python -m pytest backend/tests

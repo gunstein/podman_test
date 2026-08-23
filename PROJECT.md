@@ -22,7 +22,7 @@ M12 — Security baseline without hiding the Podman concepts.
 - PostgreSQL data was verified to survive a container stop and restart.
 - Versioned SQL migrations support status, upgrade and single-step rollback.
 - Migration upgrade and rollback were verified against a disposable test database.
-- Eighteen automated backend tests cover health, readiness, frontend serving, CRUD, validation, migrations and positive and negative JWT validation.
+- Nineteen automated backend tests cover health, readiness, frontend serving, CRUD, validation, migrations and positive and negative JWT validation.
 - Tests were verified against an isolated, automatically removed PostgreSQL test container.
 - Backend and frontend images build successfully and pass isolated smoke tests as UID 1000.
 - PostgreSQL, backend and frontend run manually on the rootless `todo-network`.
@@ -34,7 +34,7 @@ M12 — Security baseline without hiding the Podman concepts.
 - Full Todo CRUD was verified through Caddy.
 - One Chromium E2E test verifies the complete browser Todo flow through Caddy.
 - Rootless Quadlet definitions describe the network, persistent volume, PostgreSQL, migration, backend and frontend.
-- Quadlet dependencies enforce PostgreSQL health, completed migrations, backend startup and frontend startup in that order.
+- Quadlet dependencies enforce PostgreSQL health, role setup, completed migrations, final runtime grants, backend startup and frontend startup in that order.
 - The Quadlet lifecycle and browser flow were verified through user systemd.
 - PostgreSQL, migrations and the backend receive the database password from a file-mounted rootless Podman secret.
 - The secret-based deployment passed health, readiness, API and Chromium E2E checks.
@@ -64,6 +64,9 @@ M12 — Security baseline without hiding the Podman concepts.
 - Build context excludes environment files, virtualenvs, archives, private keys and distribution artifacts.
 - M12 backend tests, role setup, migrations, service startup, readiness, discovery and Ansible `changed=0` were verified.
 - Both the public and authenticated M12 browser flows were verified after the least-privilege upgrade.
+- A clean-install CI job verifies dependency installation, role bootstrap, migrations and backend tests against an empty PostgreSQL database.
+- The clean role-setup and migration sequence was verified against an empty disposable PostgreSQL database.
+- Default uninstall/reinstall was verified to preserve Todo data, Keycloak data and their existing credentials.
 
 ## Decisions
 

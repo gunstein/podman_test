@@ -6,7 +6,8 @@ from psycopg import sql
 
 
 def read_secret(name: str) -> str:
-    value = Path(f"/run/secrets/{name}").read_text().strip()
+    directory = Path(os.getenv("DATABASE_SECRETS_DIRECTORY", "/run/secrets"))
+    value = (directory / name).read_text().strip()
     if not value:
         raise RuntimeError(f"Secret {name} is empty")
     return value
@@ -101,19 +102,29 @@ def main() -> None:
         connection.execute("REVOKE ALL ON SCHEMA public FROM PUBLIC")
         connection.execute("GRANT USAGE ON SCHEMA public TO todo_app")
         connection.execute(
-            "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO todo_app"
+            "REVOKE ALL ON ALL TABLES IN SCHEMA public FROM todo_app"
         )
         connection.execute(
-            "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO todo_app"
-        )
-        connection.execute(
-            "ALTER DEFAULT PRIVILEGES FOR ROLE todo_migrator IN SCHEMA public "
-            "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO todo_app"
+            "REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM todo_app"
         )
         connection.execute(
             "ALTER DEFAULT PRIVILEGES FOR ROLE todo_migrator IN SCHEMA public "
-            "GRANT USAGE, SELECT ON SEQUENCES TO todo_app"
+            "REVOKE ALL ON TABLES FROM todo_app"
         )
+        connection.execute(
+            "ALTER DEFAULT PRIVILEGES FOR ROLE todo_migrator IN SCHEMA public "
+            "REVOKE ALL ON SEQUENCES FROM todo_app"
+        )
+        if connection.execute("SELECT to_regclass('public.todos')").fetchone()[0]:
+            connection.execute(
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE todos TO todo_app"
+            )
+        if connection.execute(
+            "SELECT to_regclass('public.todos_id_seq')"
+        ).fetchone()[0]:
+            connection.execute(
+                "GRANT USAGE, SELECT ON SEQUENCE todos_id_seq TO todo_app"
+            )
 
         connection.execute(
             "CREATE SCHEMA IF NOT EXISTS keycloak AUTHORIZATION keycloak_app"

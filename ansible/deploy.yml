@@ -16,6 +16,7 @@
       - todo-postgres.container
       - todo-db-setup.container
       - todo-migrate.container
+      - todo-db-grants.container
       - todo-backend.container
       - todo-keycloak.container
       - todo-frontend.container
@@ -23,6 +24,7 @@
       - todo-frontend.service
       - todo-backend.service
       - todo-keycloak.service
+      - todo-db-grants.service
       - todo-migrate.service
       - todo-db-setup.service
       - todo-postgres.service

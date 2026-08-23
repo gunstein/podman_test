@@ -79,7 +79,7 @@ repository. Later runs reuse the existing secrets. A repeat deployment should
 finish with `changed=0`.
 
 That idempotent run deliberately reuses local images. To rebuild the application
-against refreshed base images and pull the current PostgreSQL 17 image:
+against refreshed base images and pull the pinned PostgreSQL 17.11 image:
 
 ```bash
 ansible/.venv/bin/ansible-playbook \
@@ -105,7 +105,9 @@ configured for the HTTPS address.
 
 ```bash
 systemctl --user status todo-postgres.service
+systemctl --user status todo-db-setup.service
 systemctl --user status todo-migrate.service
+systemctl --user status todo-db-grants.service
 systemctl --user status todo-backend.service
 systemctl --user status todo-keycloak.service
 systemctl --user status todo-frontend.service
@@ -133,6 +135,7 @@ Starting `todo-frontend.service` pulls in this dependency chain:
 PostgreSQL healthy
   -> least-privilege database roles
   -> migrations complete
+  -> final runtime grants
   -> backend and Keycloak start
   -> Caddy/frontend starts
 ```
@@ -246,6 +249,10 @@ python -m backend.migrate up
 uvicorn backend.main:app --reload
 ```
 
+This intentionally uses the PostgreSQL bootstrap account to keep the local-only
+development recipe short. The deployed backend uses the restricted `todo_app`
+role instead.
+
 Open <http://127.0.0.1:8000/docs>. Public endpoints work without OIDC settings.
 Testing authenticated writes is simplest through the complete deployment.
 
@@ -293,14 +300,19 @@ should deliver and verify a separately signed manifest or bundle.
 
 ## Uninstall
 
-Remove services, containers, application images, network, secrets and installed
-Quadlet files while preserving PostgreSQL data:
+Remove services, containers, application images, network and installed Quadlet
+files while preserving PostgreSQL data:
 
 ```bash
 ansible/.venv/bin/ansible-playbook \
   --inventory ansible/inventory.ini \
   ansible/uninstall.yml
 ```
+
+The database-related Podman secrets are preserved with the volume because an
+existing PostgreSQL or Keycloak database still requires its existing
+credentials. They are deleted together with the database only when
+`remove_data=true`.
 
 Permanently delete the PostgreSQL volume and all Todo and Keycloak data:
 

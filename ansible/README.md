@@ -27,8 +27,6 @@ Keycloak database roles. It builds the backend, frontend and Keycloak images,
 installs the Quadlet files, starts the service chain and verifies health,
 database readiness and Keycloak discovery.
 
-Later runs reuse the existing secret and images. To deliberately rebuild a milestone image, remove that local image before running the playbook again.
-
 A normal repeat deploy is idempotent relative to the images already stored
 locally. It does not check registries for security updates. Explicitly rebuild
 the application images, refresh their base images and pull PostgreSQL with:
@@ -47,8 +45,8 @@ The playbook does not install Podman, enable lingering, rotate an existing secre
 
 ## Uninstall
 
-Remove the deployed services, Quadlet files, containers, network, application
-images and Podman secrets:
+Remove the deployed services, Quadlet files, containers, network and application
+images:
 
 ```bash
 ansible/.venv/bin/ansible-playbook \
@@ -56,7 +54,10 @@ ansible/.venv/bin/ansible-playbook \
   ansible/uninstall.yml
 ```
 
-The persistent `todo-postgres-data` volume is preserved by default. Permanently delete the database only when that is intentional:
+The persistent `todo-postgres-data` volume and its database-related Podman
+secrets are preserved by default. Existing database data requires its existing
+credentials when the application is installed again. Permanently delete the
+database and its related secrets only when that is intentional:
 
 ```bash
 ansible/.venv/bin/ansible-playbook \
@@ -65,4 +66,4 @@ ansible/.venv/bin/ansible-playbook \
   --extra-vars remove_data=true
 ```
 
-The second command permanently deletes all Todo data.
+The second command permanently deletes all Todo and Keycloak data.

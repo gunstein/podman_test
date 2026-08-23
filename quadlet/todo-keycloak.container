@@ -1,7 +1,7 @@
 [Unit]
 Description=Todo Keycloak identity provider
-Requires=todo-migrate.service
-After=todo-migrate.service
+Requires=todo-db-grants.service
+After=todo-db-grants.service
 
 [Container]
 Image=localhost/todo-keycloak:m12

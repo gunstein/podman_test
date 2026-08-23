@@ -12,6 +12,7 @@
       - todo-postgres.container
       - todo-db-setup.container
       - todo-migrate.container
+      - todo-db-grants.container
       - todo-backend.container
       - todo-keycloak.container
       - todo-frontend.container
@@ -19,6 +20,7 @@
       - todo-frontend.service
       - todo-backend.service
       - todo-keycloak.service
+      - todo-db-grants.service
       - todo-migrate.service
       - todo-db-setup.service
       - todo-postgres.service
@@ -29,6 +31,7 @@
       - todo-backend
       - todo-keycloak
       - todo-migrate
+      - todo-db-grants
       - todo-db-setup
       - todo-postgres
     application_images:
@@ -98,6 +101,7 @@
       register: database_secret
       changed_when: false
       failed_when: database_secret.rc not in [0, 1]
+      when: remove_data | bool
 
     - name: Remove the database secret
       ansible.builtin.command:
@@ -106,7 +110,9 @@
           - secret
           - rm
           - todo-db-password
-      when: database_secret.rc == 0
+      when:
+        - remove_data | bool
+        - database_secret.rc == 0
 
     - name: Check whether runtime database secrets exist
       ansible.builtin.command:
@@ -118,14 +124,17 @@
       register: runtime_database_secrets
       changed_when: false
       failed_when: runtime_database_secrets.rc not in [0, 1]
+      when: remove_data | bool
 
     - name: Remove runtime database secrets
       ansible.builtin.command:
         argv: [podman, secret, rm, "{{ item.item }}"]
-      loop: "{{ runtime_database_secrets.results }}"
+      loop: "{{ runtime_database_secrets.results | default([]) }}"
       loop_control:
         label: "{{ item.item }}"
-      when: item.rc == 0
+      when:
+        - remove_data | bool
+        - item.rc == 0
 
     - name: Check whether the Keycloak admin secret exists
       ansible.builtin.command:
@@ -137,6 +146,7 @@
       register: keycloak_admin_secret
       changed_when: false
       failed_when: keycloak_admin_secret.rc not in [0, 1]
+      when: remove_data | bool
 
     - name: Remove the Keycloak admin secret
       ansible.builtin.command:
@@ -145,7 +155,9 @@
           - secret
           - rm
           - todo-keycloak-admin-password
-      when: keycloak_admin_secret.rc == 0
+      when:
+        - remove_data | bool
+        - keycloak_admin_secret.rc == 0
 
     - name: Check whether application images exist
       ansible.builtin.command:
@@ -218,5 +230,7 @@
       ansible.builtin.debug:
         msg: >-
           Database volume todo-postgres-data was preserved.
-          Use -e remove_data=true to delete it permanently.
+          Its database and Keycloak secrets were also preserved so the existing
+          roles remain usable after reinstall. Use -e remove_data=true to delete
+          the data and its associated secrets permanently.
       when: not (remove_data | bool)

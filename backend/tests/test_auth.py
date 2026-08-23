@@ -5,6 +5,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.exceptions import InvalidAlgorithmError, InvalidAudienceError
 from jwt.exceptions import InvalidIssuerError, InvalidSignatureError
+from jwt.exceptions import MissingRequiredClaimError
 from jwt.exceptions import ExpiredSignatureError
 
 from backend.main import get_jwks_client, validate_access_token
@@ -67,6 +68,14 @@ def test_invalid_signature_is_rejected():
     forged = jwt.encode(jwt.decode(token(), options={"verify_signature": False}), OTHER_PRIVATE_KEY, algorithm="RS256")
     with pytest.raises(InvalidSignatureError):
         validate_access_token(forged)
+
+
+def test_missing_expiry_is_rejected():
+    claims = jwt.decode(token(), options={"verify_signature": False})
+    del claims["exp"]
+    unsigned_expiry = jwt.encode(claims, PRIVATE_KEY, algorithm="RS256")
+    with pytest.raises(MissingRequiredClaimError):
+        validate_access_token(unsigned_expiry)
 
 
 def test_wrong_algorithm_is_rejected():

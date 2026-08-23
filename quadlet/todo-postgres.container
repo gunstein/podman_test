@@ -6,7 +6,10 @@ Image=docker.io/library/postgres:17
 ContainerName=todo-postgres
 Network=todo.network
 Volume=todo-postgres-data.volume:/var/lib/postgresql/data
-EnvironmentFile=%h/.config/todo-demo/todo.env
+Secret=todo-db-password
+Environment=POSTGRES_DB=todo
+Environment=POSTGRES_USER=todo
+Environment=POSTGRES_PASSWORD_FILE=/run/secrets/todo-db-password
 PublishPort=127.0.0.1:5432:5432
 HealthCmd=pg_isready -U todo -d todo
 HealthInterval=10s

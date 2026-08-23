@@ -1,9 +1,29 @@
 from fastapi.testclient import TestClient
 
-from backend.main import app
+from backend.main import app, connect
 
 
 client = TestClient(app)
+
+
+def test_connect_uses_password_file(monkeypatch, tmp_path):
+    password_file = tmp_path / "database-password"
+    password_file.write_text("secret-from-file\n")
+    captured = {}
+
+    def fake_connect(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("DATABASE_PASSWORD_FILE", str(password_file))
+    monkeypatch.setenv("DATABASE_HOST", "database.example")
+    monkeypatch.setattr("backend.main.psycopg.connect", fake_connect)
+
+    connect()
+
+    assert captured["host"] == "database.example"
+    assert captured["password"] == "secret-from-file"
 
 
 def test_health():

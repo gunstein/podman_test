@@ -4,10 +4,15 @@ Requires=todo-postgres.service
 After=todo-postgres.service
 
 [Container]
-Image=localhost/todo-backend:m5
+Image=localhost/todo-backend:m7
 ContainerName=todo-migrate
 Network=todo.network
-EnvironmentFile=%h/.config/todo-demo/todo.env
+Secret=todo-db-password
+Environment=DATABASE_HOST=todo-postgres
+Environment=DATABASE_PORT=5432
+Environment=DATABASE_NAME=todo
+Environment=DATABASE_USER=todo
+Environment=DATABASE_PASSWORD_FILE=/run/secrets/todo-db-password
 Exec=python -m backend.migrate up
 
 [Service]

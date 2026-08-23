@@ -239,16 +239,33 @@ podman stop todo-frontend todo-backend todo-postgres
 podman rm todo-frontend todo-backend todo-postgres
 ```
 
-Install the Quadlet files and create a private environment file:
+Build the backend image that supports file-mounted secrets:
 
 ```bash
-mkdir -p ~/.config/containers/systemd ~/.config/todo-demo
-cp quadlet/*.container quadlet/*.network quadlet/*.volume ~/.config/containers/systemd/
-cp quadlet/todo.env.example ~/.config/todo-demo/todo.env
-chmod 600 ~/.config/todo-demo/todo.env
+podman build --file backend/Containerfile --tag localhost/todo-backend:m7 .
 ```
 
-Edit `~/.config/todo-demo/todo.env` and replace both example password values with the existing database password. The file is deliberately outside Git. M7 will replace this temporary arrangement with Podman secrets.
+Create the rootless Podman secret without putting its value on the command line:
+
+```bash
+read -rsp "Database password: " TODO_DB_PASSWORD
+echo
+printf '%s' "$TODO_DB_PASSWORD" | podman secret create todo-db-password -
+unset TODO_DB_PASSWORD
+```
+
+Use the existing PostgreSQL password. Podman stores the secret in the current user's container storage; it is not committed to Git or placed in an environment variable inside the containers.
+
+Install the Quadlet files:
+
+```bash
+systemctl --user stop todo-frontend.service todo-backend.service \
+  todo-migrate.service todo-postgres.service
+mkdir -p ~/.config/containers/systemd
+cp quadlet/*.container quadlet/*.network quadlet/*.volume ~/.config/containers/systemd/
+```
+
+If M6's temporary environment file exists, keep it until the secret-based services have been verified. It is no longer referenced by the Quadlet files.
 
 Reload user systemd and start the application:
 
@@ -297,6 +314,21 @@ sudo loginctl enable-linger "$USER"
 ```
 
 This host-level choice is optional for local learning and is not performed by the project.
+
+### Verify the Podman secret
+
+Inspecting a secret shows metadata, never its value:
+
+```bash
+podman secret ls
+podman secret inspect todo-db-password
+```
+
+PostgreSQL and the backend receive the secret as the file `/run/secrets/todo-db-password`. PostgreSQL reads it through `POSTGRES_PASSWORD_FILE`; the backend reads the same file directly. After the application and E2E test work, remove the obsolete M6 environment file:
+
+```bash
+rm ~/.config/todo-demo/todo.env
+```
 
 ## API
 

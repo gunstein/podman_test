@@ -8,7 +8,7 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-M6 — Verify the Quadlet units and user-systemd lifecycle.
+M8 — Deploy the rootless Quadlet application with Ansible.
 
 ## Completed
 
@@ -35,7 +35,10 @@ M6 — Verify the Quadlet units and user-systemd lifecycle.
 - One Chromium E2E test verifies the complete browser Todo flow through Caddy.
 - Rootless Quadlet definitions describe the network, persistent volume, PostgreSQL, migration, backend and frontend.
 - Quadlet dependencies enforce PostgreSQL health, completed migrations, backend startup and frontend startup in that order.
-- M1 through M5.5 are complete.
+- The Quadlet lifecycle and browser flow were verified through user systemd.
+- PostgreSQL, migrations and the backend receive the database password from a file-mounted rootless Podman secret.
+- The secret-based deployment passed health, readiness, API and Chromium E2E checks.
+- M1 through M7 are complete.
 
 ## Decisions
 
@@ -50,7 +53,8 @@ M6 — Verify the Quadlet units and user-systemd lifecycle.
 - Keep liveness and readiness checks separate.
 - Use one Caddy-based frontend container to serve static files and proxy backend routes.
 - Keep Playwright and Chromium as separate test-only dependencies.
-- Keep the pre-M7 database credentials in a private user environment file outside Git.
+- Mount the database password as a file from rootless Podman secret storage.
+- Keep `DATABASE_URL` for local development and tests; containers use separate non-secret settings plus `DATABASE_PASSWORD_FILE`.
 - Enable only the frontend unit; systemd starts the remaining application dependency chain.
 - Never commit secrets.
 
@@ -85,8 +89,8 @@ Open <http://127.0.0.1:8000> in a browser.
 - M4.5: Troubleshooting and lifecycle — completed
 - M5: Caddy reverse proxy — completed
 - M5.5: End-to-end browser tests with Playwright for Python — completed
-- M6: Quadlet and systemd
-- M7: Podman secrets
+- M6: Quadlet and systemd — completed
+- M7: Podman secrets — completed
 - M8: Ansible deployment
 - M9: Offline installation from a `tar.gz` bundle
 - M10: HTTPS
@@ -94,4 +98,4 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-Install and verify the Quadlet units, including startup ordering, restart behavior, logs and data persistence.
+Create a small Ansible deployment that installs the Quadlet files, creates the Podman secret and manages the user-systemd services.

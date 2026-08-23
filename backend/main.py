@@ -11,9 +11,27 @@ from pydantic import BaseModel, Field, field_validator
 
 def connect():
     url = os.getenv("DATABASE_URL")
-    if not url:
-        raise RuntimeError("DATABASE_URL must be set")
-    return psycopg.connect(url, row_factory=dict_row)
+    if url:
+        return psycopg.connect(url, row_factory=dict_row)
+
+    password_file = os.getenv("DATABASE_PASSWORD_FILE")
+    if not password_file:
+        raise RuntimeError("DATABASE_URL or DATABASE_PASSWORD_FILE must be set")
+    try:
+        password = Path(password_file).read_text().strip()
+    except OSError as error:
+        raise RuntimeError("Could not read database password file") from error
+    if not password:
+        raise RuntimeError("Database password file is empty")
+
+    return psycopg.connect(
+        host=os.getenv("DATABASE_HOST", "todo-postgres"),
+        port=os.getenv("DATABASE_PORT", "5432"),
+        dbname=os.getenv("DATABASE_NAME", "todo"),
+        user=os.getenv("DATABASE_USER", "todo"),
+        password=password,
+        row_factory=dict_row,
+    )
 
 
 app = FastAPI(title="Todo Demo")

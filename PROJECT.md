@@ -8,7 +8,8 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-M12 — Security baseline without hiding the Podman concepts.
+M13 — Ansible-provisioned PostgreSQL primary/standby on two VMs in the same
+local network.
 
 ## Completed
 
@@ -100,6 +101,11 @@ M12 — Security baseline without hiding the Podman concepts.
 - Keep browser tokens in memory and use Authorization Code with PKCE S256 for the public frontend client.
 - Treat migration 002 as a pre-baseline correction: Keycloak schema lifecycle moved to bootstrap, and applied migrations are immutable from M12 onward.
 - Retain Keycloak's temporary bootstrap administrator only for repeatable localhost administration and E2E setup.
+- Keep Ansible responsible for host configuration and desired state.
+- Use small, explicit Python tools for replication checks, promotion and failover workflows; do not build a second configuration-management framework.
+- Provision identical releases and database credentials to primary and standby from one controlled source.
+- Require fencing of the old primary before promotion to avoid split-brain.
+- Treat replication as availability protection, not as a replacement for backup and point-in-time recovery.
 
 ## Local development
 
@@ -139,7 +145,13 @@ Open <http://127.0.0.1:8000> in a browser.
 - M10: HTTPS — completed
 - M11: Keycloak authentication — completed
 - M12: Security baseline and least privilege — completed
+- M13: Ansible-provisioned PostgreSQL primary/standby with a dedicated replication role — planned
+- M13.5: Small Python tools for replication status and controlled promotion — planned
+- M14: Full application disaster recovery with stable service hostname, shared deployment state and smoke tests — planned
+- M15: PostgreSQL backup, WAL archive and point-in-time recovery — planned
 
 ## Next step
 
-Test the complete offline M12 bundle on a clean virtual machine.
+Define the M13 RPO, primary and standby addresses, service hostname and
+replication network policy. Then implement asynchronous PostgreSQL streaming
+replication without changing application failover yet.

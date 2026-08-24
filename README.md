@@ -27,6 +27,10 @@ M3-M5   Containerfiles, manual rootless Podman and Caddy
 M6-M8   Quadlet, Podman secrets and Ansible
 M9-M11  Offline bundle, HTTPS and Keycloak
 M12     Least privilege, image policy, tests and container hardening
+M13     Ansible-provisioned PostgreSQL primary/standby
+M13.5   Python tools for replication status and controlled promotion
+M14     Full application disaster recovery
+M15     Backup, WAL archive and point-in-time recovery
 ```
 
 See [PROJECT.md](PROJECT.md) for the decisions and verification performed at

@@ -7,6 +7,7 @@ const message = document.querySelector("#message");
 const login = document.querySelector("#login");
 const logout = document.querySelector("#logout");
 const userStatus = document.querySelector("#user-status");
+const applicationUrl = new URL("/", window.location.origin).href;
 
 const keycloak = new Keycloak({
   url: window.location.origin + "/auth",
@@ -84,8 +85,8 @@ function showError(error) {
   message.textContent = "Something went wrong.";
 }
 
-login.onclick = () => keycloak.login();
-logout.onclick = () => keycloak.logout({redirectUri: window.location.origin});
+login.onclick = () => keycloak.login({redirectUri: applicationUrl});
+logout.onclick = () => keycloak.logout({redirectUri: applicationUrl});
 
 form.onsubmit = async (event) => {
   event.preventDefault();

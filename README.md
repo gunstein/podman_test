@@ -330,21 +330,40 @@ offline/build-bundle.sh
 This creates `dist/todo-offline-m12.tar.gz` containing:
 
 - Backend, frontend, Keycloak and PostgreSQL OCI image archives
-- Pinned Ansible wheels
+- Pinned Ansible wheels and a prebuilt Ansible runtime
 - Quadlet and Ansible deployment files
-- An installer and SHA-256 checksums
+- A target preflight check, installer and SHA-256 checksums
 
 On the offline target:
 
 ```bash
 tar -xzf todo-offline-m12.tar.gz
 cd todo-offline-m12
-./install.sh
+sh ./preflight.sh
+sh ./install.sh
 ```
 
 The installer verifies every file before loading images and running the same
 Ansible deployment without contacting a registry or Python package index. See
 [offline/README.md](offline/README.md) for target assumptions.
+
+The target must already have rootless Podman with Quadlet, functional user
+systemd, the bundle's recorded Python major/minor, `tar` and `sha256sum`. Rootless user
+namespaces must be configured, normally through `/etc/subuid` and
+`/etc/subgid`. The included preflight also checks the required localhost
+ports and reports available memory and disk space.
+
+The explicit `sh` invocation also works on Ubuntu and is required for the first
+run on hosts where `fapolicyd` blocks direct execution of newly extracted
+scripts.
+
+Oracle Linux 9 with active `fapolicyd` is supported explicitly. The installer
+registers the prebuilt Ansible runtime in a dedicated trust file and does not
+need `pip` or `venv` on the target. Both SELinux and `fapolicyd` remain enabled.
+The runtime must be registered before its native libraries can be checksummed;
+the trust entry is removed automatically if integrity verification fails.
+Details and cleanup instructions are in
+[offline/README.md](offline/README.md).
 
 SHA-256 checks detect modified files only when `SHA256SUMS` itself is trusted.
 They provide integrity, not publisher authenticity. A real distribution process

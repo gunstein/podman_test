@@ -42,7 +42,8 @@ local network.
 - A small localhost Ansible playbook builds the images, installs Quadlet files, creates the Podman secret when missing, starts the services and verifies health and readiness.
 - A second Ansible run completed with `changed=0`, confirming idempotence.
 - The Ansible-deployed application passed the Chromium E2E test.
-- An offline tar.gz bundle contains OCI image archives, pinned Ansible wheels, deployment files, an installer and SHA-256 checksums.
+- An offline tar.gz bundle contains OCI image archives, deployment files, a target preflight check, an installer and SHA-256 checksums.
+- Oracle Linux 9 offline installation was verified with SELinux enforcing, active `fapolicyd` and RPM-managed `ansible-core`.
 - Offline installation was verified after removing all three local images and blocking registry and package-index access with invalid proxies.
 - PostgreSQL data survived the offline reinstall.
 - Caddy serves locally issued HTTPS on `https://localhost:8443` while retaining HTTP on port 8080 for development.
@@ -91,7 +92,8 @@ local network.
 - Keep Keycloak's memory limit in `PodmanArgs` while supporting Podman 4.9; migrate to native `Memory=` when the tested baseline is raised.
 - Start Ansible with one localhost playbook and only `ansible-core`; add remote deployment structure only when it is needed.
 - Keep secret prompting conditional so repeat deployments remain non-interactive.
-- Treat Podman, Python with venv, user systemd and basic archive/checksum tools as offline target prerequisites.
+- Treat Podman, RPM/deb-managed `ansible-core`, user systemd and basic archive/checksum tools as offline target prerequisites.
+- Use the operating system's trusted Ansible package on hardened targets instead of executing a bundled Python runtime from a user-writable directory.
 - Build platform-specific offline bundles on a machine compatible with the target.
 - Verify every bundled artifact with SHA-256 before installation.
 - Use Caddy's internal CA for offline-compatible local HTTPS without automatically modifying host trust.

@@ -10,7 +10,7 @@ require_command() {
     fi
 }
 
-for command in podman systemctl tar sha256sum df awk; do
+for command in podman systemctl ansible-playbook python3 tar sha256sum df awk; do
     require_command "$command"
 done
 
@@ -18,51 +18,19 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 
-required_python=
-if [ -f ./PYTHON_VERSION ]; then
-    required_python=$(cat ./PYTHON_VERSION)
-fi
-
-python_command=
-for candidate in "python${required_python}" python3.12 python3; do
-    if [ "$candidate" = python ]; then
-        continue
-    fi
-    if command -v "$candidate" >/dev/null 2>&1 &&
-        REQUIRED_PYTHON="$required_python" "$candidate" -c '
-import os
-import sys
-
-required = os.environ.get("REQUIRED_PYTHON")
-current = f"{sys.version_info.major}.{sys.version_info.minor}"
-raise SystemExit(
-    sys.version_info < (3, 10) or bool(required and current != required)
-)
-'
-    then
-        python_command=$candidate
-        break
-    fi
-done
-if [ -z "$python_command" ]; then
-    if [ -n "$required_python" ]; then
-        echo "ERROR: this bundle requires Python $required_python." >&2
-    else
-        echo "ERROR: Python 3.10 or newer is required." >&2
-    fi
-    exit 1
-fi
-echo "INFO: using $($python_command --version 2>&1)"
-
 if systemctl is-active --quiet fapolicyd 2>/dev/null; then
-    require_command sudo
-    require_command fapolicyd-cli
-    echo "INFO: active fapolicyd detected; installer will register the bundled Ansible runtime as trusted."
+    echo "INFO: active fapolicyd detected; using RPM-managed Ansible and Python."
 fi
 
-if [ -f ./PYTHON_VERSION ] && [ ! -d ./ansible-runtime/ansible ]; then
-    echo "ERROR: bundled Ansible runtime is missing." >&2
+ansible_version=$(ansible-playbook --version | awk 'NR == 1 {gsub(/[^0-9.]/, "", $3); print $3}')
+ansible_major=$(printf '%s' "$ansible_version" | awk -F. '{print $1}')
+ansible_minor=$(printf '%s' "$ansible_version" | awk -F. '{print $2}')
+if [ -z "$ansible_major" ] || [ "$ansible_major" -lt 2 ] || \
+    { [ "$ansible_major" -eq 2 ] && [ "$ansible_minor" -lt 14 ]; }; then
+    echo "ERROR: ansible-core 2.14 or newer is required." >&2
     failed=1
+else
+    echo "INFO: using ansible-core $ansible_version"
 fi
 
 if ! rootless=$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null); then
@@ -108,7 +76,7 @@ if podman container exists todo-postgres || podman container exists todo-fronten
     echo "INFO: existing Todo containers found; skipping clean-target port checks."
 fi
 
-if [ "$existing_deployment" = false ] && ! "$python_command" - <<'PY'
+if [ "$existing_deployment" = false ] && ! python3 - <<'PY'
 import socket
 
 failed = []

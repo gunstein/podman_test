@@ -7,8 +7,7 @@ work_directory=$(mktemp -d)
 bundle_directory="$work_directory/todo-offline-m12"
 trap 'rm -rf "$work_directory"' EXIT
 
-mkdir -p "$bundle_directory/images" "$bundle_directory/wheels" \
-  "$bundle_directory/ansible-runtime"
+mkdir -p "$bundle_directory/images"
 mkdir -p "$(dirname "$output")"
 
 podman build --pull --file "$project_root/backend/Containerfile" --tag localhost/todo-backend:m12 "$project_root"
@@ -21,14 +20,6 @@ podman save --format oci-archive --output "$bundle_directory/images/todo-fronten
 podman save --format oci-archive --output "$bundle_directory/images/todo-keycloak-m12.tar" localhost/todo-keycloak:m12
 podman save --format oci-archive --output "$bundle_directory/images/postgres-17.11.tar" docker.io/library/postgres:17.11
 
-python3 -m pip download --dest "$bundle_directory/wheels" --requirement "$project_root/ansible/requirements.txt"
-python3 -m pip install \
-  --no-compile \
-  --no-index \
-  --find-links "$bundle_directory/wheels" \
-  --target "$bundle_directory/ansible-runtime" \
-  --requirement "$project_root/ansible/requirements.txt"
-
 cp -r "$project_root/quadlet" "$bundle_directory/"
 mkdir -p "$bundle_directory/ansible"
 cp "$project_root/ansible/"*.yml "$project_root/ansible/inventory.ini" \
@@ -37,8 +28,6 @@ cp "$project_root/offline/install.sh" "$project_root/offline/preflight.sh" \
   "$project_root/offline/README.md" "$bundle_directory/"
 
 printf '%s\n' "M12" > "$bundle_directory/VERSION"
-python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' \
-  > "$bundle_directory/PYTHON_VERSION"
 (
   cd "$bundle_directory"
   find . -type f ! -name SHA256SUMS -print0 |

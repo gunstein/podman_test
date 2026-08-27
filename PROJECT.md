@@ -163,8 +163,6 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-Review and package the completed M13 implementation, then commit and push it.
-Before M14 disaster-recovery work, define the acceptable nonzero RPO for the
-asynchronous replica. M13.5 can then add small local Python tools for status,
-preflight and controlled promotion; promotion must require explicit fencing of
-the old primary.
+Define the acceptable nonzero RPO for the asynchronous replica. Then implement
+M13.5 local Python tools for status, fencing preflight and controlled promotion;
+promotion must require explicit confirmation that the old primary is fenced.

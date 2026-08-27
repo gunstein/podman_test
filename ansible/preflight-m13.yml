@@ -29,6 +29,8 @@
       ansible.builtin.assert:
         that:
           - primary_host != standby_host
+          - hostvars[primary_host].todo_node_role == 'primary'
+          - hostvars[standby_host].todo_node_role == 'standby'
           - hostvars[primary_host].m13_machine_id.stdout != hostvars[standby_host].m13_machine_id.stdout
           - hostvars[primary_host].todo_node_address != hostvars[standby_host].todo_node_address
         fail_msg: Primary and standby must have unique identities and addresses.

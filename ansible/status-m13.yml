@@ -34,6 +34,51 @@
           primary: application|client|state|sync|lag_bytes =
           {{ m13_primary_status.stdout | trim }}
 
+    - name: Query the physical replication slot
+      ansible.builtin.command:
+        argv:
+          - podman
+          - exec
+          - todo-postgres
+          - psql
+          - --username
+          - todo
+          - --dbname
+          - postgres
+          - --tuples-only
+          - --no-align
+          - --field-separator=|
+          - --command
+          - >-
+            SELECT slot_name, active, wal_status, safe_wal_size,
+                   COALESCE(invalidation_reason, '')
+            FROM pg_replication_slots
+            WHERE slot_name = 'todo_standby';
+      register: m13_primary_slot
+      changed_when: false
+      failed_when: m13_primary_slot.stdout | trim == ''
+
+    - name: Parse the physical replication slot state
+      ansible.builtin.set_fact:
+        m13_slot_fields: "{{ (m13_primary_slot.stdout | trim).split('|') }}"
+
+    - name: Require a usable active replication slot
+      ansible.builtin.assert:
+        that:
+          - m13_slot_fields | length == 5
+          - m13_slot_fields[1] == 't'
+          - m13_slot_fields[2] in ['reserved', 'extended']
+          - m13_slot_fields[4] == ''
+        fail_msg: >-
+          The todo_standby slot is inactive, losing WAL or invalidated.
+          Inspect it before attempting promotion or rebuilding standby.
+
+    - name: Show physical replication slot health
+      ansible.builtin.debug:
+        msg: >-
+          primary slot: name|active|wal_status|safe_wal_bytes|invalidation =
+          {{ m13_primary_slot.stdout | trim }}
+
 - name: Read recovery state from standby
   hosts: todo_standby
   gather_facts: false

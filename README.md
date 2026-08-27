@@ -38,11 +38,13 @@ each step.
 
 ## Security scope
 
-This is a localhost learning demo, not a production deployment baseline. All
-published ports are bound to `127.0.0.1`. Before exposing the stack to other
-hosts, remove development-only HTTP and database ports, restrict Keycloak
-administration in the reverse proxy, use publicly trusted TLS, define backup
-and secret-rotation procedures, and establish vulnerability scanning.
+This is a learning demo, not a production deployment baseline. Through M12,
+all published ports are bound to `127.0.0.1`. M13 additionally publishes
+PostgreSQL TCP 5432 on primary's replication interface; the host firewall must
+restrict that port to standby. Before exposing the application to other hosts,
+remove development-only ports, restrict Keycloak administration in the reverse
+proxy, use trusted TLS, define backup and secret-rotation procedures, and
+establish vulnerability scanning.
 
 `E2E_IGNORE_HTTPS_ERRORS=true` is only for the local browser test using Caddy's
 development CA. It must not become an application or production setting.
@@ -56,9 +58,11 @@ development CA. It must not become an application or production setting.
 
 The offline target also needs `tar` and `sha256sum`.
 
-The complete stack has been tested with Podman 4.9.3, systemd 255,
-Python 3.12.3 and Ansible Core 2.17.14. These are tested baseline versions,
-not claims that every older version is unsupported.
+The complete stack has been tested with Podman 4.9.3, systemd 255 and
+Python 3.12.3. Online Ansible development and syntax checks use maintained
+Ansible Core 2.20.8; M13 CI also checks the Oracle Linux 9-compatible 2.14.18
+baseline. These are tested baselines, not claims that every older version is
+unsupported.
 
 Keycloak's memory limit uses `PodmanArgs=--memory=1g` because the tested
 Podman 4.9 Quadlet generator does not support the newer native `Memory=`
@@ -249,6 +253,8 @@ finished.
 `.github/workflows/clean-install.yml` installs the pinned test dependencies
 against an empty PostgreSQL 17.11 database. It exercises database bootstrap,
 migrations, the explicit database-role privilege matrix and all backend tests.
+A separate matrix syntax-checks all M13 playbooks with Ansible Core 2.14.18 on
+Python 3.11 and the maintained 2.20.8 development version on Python 3.12.
 Third-party actions are pinned to immutable commit SHAs and the workflow token
 has read-only repository access.
 

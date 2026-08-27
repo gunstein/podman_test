@@ -6,33 +6,40 @@ Run the read-only preflight before changing either database host:
 ansible-playbook --inventory ansible/inventory-m13.ini ansible/preflight-m13.yml
 ```
 
-The initial bootstrap is deliberately separate from normal deployment. It
-creates a dedicated replication credential and database role, exposes primary
-PostgreSQL on the primary LAN address, takes one streamed base backup and starts
-standby in recovery mode:
-
-```bash
-ansible-playbook --inventory ansible/inventory-m13.ini ansible/bootstrap-m13.yml
-```
-
 By default, the M12 offline bundle must still exist on standby under
 `/home/<ansible_user>/todo-offline-m12`. Set `todo_user_home` in the inventory
 when the remote account uses another home directory.
 
-Rootless Podman's port proxy does not preserve the original client source address.
-The primary role therefore inspects `todo-network` and grants the dedicated
-replication role access from that internal Podman subnet. In the verified Oracle
-Linux environment PostgreSQL saw the connection from `10.89.0.0/24`, not from
-the standby LAN address. The host firewall must enforce the real machine boundary.
-On primary, allow only standby and reload firewalld:
+Configure the primary host firewall before bootstrap publishes PostgreSQL on
+the LAN interface. Allow only standby and reload firewalld:
 
 ```bash
 sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="<standby-address>/32" destination address="<primary-address>" port port="5432" protocol="tcp" accept'
 sudo firewall-cmd --reload
 ```
 
-Do not add a general PostgreSQL service or open TCP 5432 to the entire LAN. The
-bootstrap verifies connectivity before creating the standby volume.
+Do not add a general PostgreSQL service or open TCP 5432 to the entire LAN.
+Rootless Podman port forwarding does not preserve the original client source
+address. The primary role therefore inspects `todo-network` and grants the
+dedicated replication role access from that internal Podman subnet. In the
+verified Oracle Linux environment PostgreSQL saw `10.89.0.0/24`, not the
+standby LAN address; firewalld enforces the real machine boundary.
+
+M13 authenticates replication with SCRAM-SHA-256 but does not configure or
+require encrypted PostgreSQL transport. It is intended for this isolated,
+trusted demo LAN. A networked deployment should add PostgreSQL TLS with
+`hostssl` and `sslmode=verify-full`, or use a separately protected replication
+network, before treating WAL traffic as confidential.
+
+The initial bootstrap is deliberately separate from normal deployment. It
+creates the replication credential and role, publishes primary PostgreSQL,
+takes one streamed base backup and starts standby in recovery mode:
+
+```bash
+ansible-playbook --inventory ansible/inventory-m13.ini ansible/bootstrap-m13.yml
+```
+
+The bootstrap verifies connectivity before creating the standby volume.
 
 `bootstrap-m13.yml` is a one-time operation and refuses to overwrite an
 existing standby volume. If it fails after creating the volume or physical slot,
@@ -45,7 +52,10 @@ ansible-playbook --inventory ansible/inventory-m13.ini ansible/status-m13.yml
 ```
 
 The expected primary state is `streaming|async`; standby must report recovery
-as `t`. The Oracle Linux 9.8 verification also required `0700` on the basebackup
+as `t`. Status also requires an active, usable `todo_standby` slot and reports
+its WAL status, remaining safe WAL bytes and any invalidation reason.
+
+The Oracle Linux 9.8 verification also required `0700` on the basebackup
 directory, an explicit `:Z` SELinux label on its Quadlet volume mount and an
 explicit `/bin/sh` entrypoint for the readable standby startup script.
 

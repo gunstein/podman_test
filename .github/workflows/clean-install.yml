@@ -8,6 +8,43 @@ permissions:
   contents: read
 
 jobs:
+  ansible-syntax:
+    name: M13 syntax (ansible-core ${{ matrix.ansible }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        include:
+          - python: "3.11"
+            ansible: "2.14.18"
+          - python: "3.12"
+            ansible: "2.20.8"
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "${{ matrix.python }}"
+
+      - name: Install Ansible Core
+        run: python -m pip install "ansible-core==${{ matrix.ansible }}"
+
+      - name: Syntax-check M13 playbooks
+        shell: bash
+        run: |
+          set -euo pipefail
+          for playbook in \
+            ansible/preflight-m13.yml \
+            ansible/sync-standby-secrets.yml \
+            ansible/bootstrap-m13.yml \
+            ansible/status-m13.yml
+          do
+            ansible-playbook \
+              --inventory ansible/inventory-m13.example.ini \
+              "$playbook" \
+              --syntax-check
+          done
+
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 15

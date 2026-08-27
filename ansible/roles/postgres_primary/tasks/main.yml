@@ -1,0 +1,146 @@
+---
+- name: Check the replication secret on primary
+  ansible.builtin.command:
+    argv: [podman, secret, exists, todo-replicator-password]
+  register: replicator_secret_check
+  changed_when: false
+  failed_when: replicator_secret_check.rc not in [0, 1]
+
+- name: Generate the replication password
+  ansible.builtin.set_fact:
+    generated_replicator_password: >-
+      {{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}
+  no_log: true
+  when: replicator_secret_check.rc == 1
+
+- name: Create the replication secret on primary
+  ansible.builtin.command:
+    argv: [podman, secret, create, todo-replicator-password, "-"]
+    stdin: "{{ generated_replicator_password }}"
+    stdin_add_newline: false
+  no_log: true
+  when: replicator_secret_check.rc == 1
+
+- name: Read the replication secret for role provisioning
+  ansible.builtin.command:
+    argv:
+      - podman
+      - run
+      - --rm
+      - --secret
+      - todo-replicator-password
+      - localhost/todo-backend:m12
+      - python
+      - -c
+      - >-
+        import pathlib, sys;
+        sys.stdout.write(pathlib.Path('/run/secrets/todo-replicator-password').read_text())
+  register: replicator_secret_value
+  changed_when: false
+  no_log: true
+
+- name: Validate the generated replication password format
+  ansible.builtin.assert:
+    that:
+      - replicator_secret_value.stdout is match('^[A-Za-z0-9]{32}$')
+    fail_msg: The replication secret must be a 32-character alphanumeric value.
+  no_log: true
+
+- name: Create or update the least-privilege replication role
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - --interactive
+      - todo-postgres
+      - psql
+      - --set
+      - ON_ERROR_STOP=1
+      - --username
+      - todo
+      - --dbname
+      - postgres
+  args:
+    stdin: |
+      DO $role$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'todo_replicator') THEN
+          CREATE ROLE todo_replicator LOGIN REPLICATION;
+        END IF;
+      END
+      $role$;
+      ALTER ROLE todo_replicator WITH LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD '{{ replicator_secret_value.stdout }}';
+    stdin_add_newline: true
+  changed_when: false
+  no_log: true
+
+- name: Inspect the rootless Todo network
+  ansible.builtin.command:
+    argv: [podman, network, inspect, todo-network]
+  register: primary_todo_network
+  changed_when: false
+
+- name: Read the rootless port proxy subnet
+  ansible.builtin.set_fact:
+    m13_rootlessport_subnet: >-
+      {{ (primary_todo_network.stdout | from_json)[0].subnets[0].subnet }}
+
+- name: Restrict streaming replication to the standby address
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - sh
+      - -c
+      - >-
+        current=$(grep '^host replication todo_replicator ' "$PGDATA/pg_hba.conf" || true);
+        if [ "$current" != "$1" ]; then
+          sed -i '/^host replication todo_replicator /d' "$PGDATA/pg_hba.conf";
+          printf '%s\n' "$1" >> "$PGDATA/pg_hba.conf";
+          printf 'added\n';
+        fi
+      - sh
+      - "host replication todo_replicator {{ m13_rootlessport_subnet }} scram-sha-256"
+  register: replication_hba
+  changed_when: replication_hba.stdout | trim == 'added'
+
+- name: Reload PostgreSQL authentication configuration
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --command
+      - SELECT pg_reload_conf();
+  changed_when: false
+
+- name: Install the primary PostgreSQL Quadlet
+  ansible.builtin.template:
+    src: todo-postgres.container.j2
+    dest: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/containers/systemd/todo-postgres.container"
+    mode: "0644"
+  register: primary_postgres_quadlet
+
+- name: Reload user systemd after primary Quadlet changes
+  ansible.builtin.systemd_service:
+    scope: user
+    daemon_reload: true
+  when: primary_postgres_quadlet.changed
+
+- name: Restart PostgreSQL with the LAN replication port
+  ansible.builtin.systemd_service:
+    name: todo-postgres.service
+    scope: user
+    state: restarted
+  when: primary_postgres_quadlet.changed
+
+- name: Wait for healthy primary PostgreSQL
+  ansible.builtin.command:
+    argv: [podman, wait, --condition=healthy, todo-postgres]
+  changed_when: false

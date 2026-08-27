@@ -1,0 +1,68 @@
+---
+- name: Read replication state from primary
+  hosts: todo_primary
+  gather_facts: false
+
+  tasks:
+    - name: Query the primary replication connection
+      ansible.builtin.command:
+        argv:
+          - podman
+          - exec
+          - todo-postgres
+          - psql
+          - --username
+          - todo
+          - --dbname
+          - postgres
+          - --tuples-only
+          - --no-align
+          - --field-separator=|
+          - --command
+          - >-
+            SELECT application_name, client_addr, state, sync_state,
+                   pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)::bigint
+            FROM pg_stat_replication
+            WHERE application_name = 'todo_standby';
+      register: m13_primary_status
+      changed_when: false
+      failed_when: m13_primary_status.stdout | trim == ''
+
+    - name: Show primary replication state
+      ansible.builtin.debug:
+        msg: >-
+          primary: application|client|state|sync|lag_bytes =
+          {{ m13_primary_status.stdout | trim }}
+
+- name: Read recovery state from standby
+  hosts: todo_standby
+  gather_facts: false
+
+  tasks:
+    - name: Query standby recovery and replay state
+      ansible.builtin.command:
+        argv:
+          - podman
+          - exec
+          - todo-postgres
+          - psql
+          - --username
+          - todo
+          - --dbname
+          - postgres
+          - --tuples-only
+          - --no-align
+          - --field-separator=|
+          - --command
+          - >-
+            SELECT pg_is_in_recovery(), pg_last_wal_receive_lsn(),
+                   pg_last_wal_replay_lsn();
+      register: m13_standby_status
+      changed_when: false
+      failed_when: not (m13_standby_status.stdout | trim).startswith('t|')
+
+    - name: Show standby recovery state
+      ansible.builtin.debug:
+        msg: >-
+          standby: recovery|receive_lsn|replay_lsn =
+          {{ m13_standby_status.stdout | trim }}

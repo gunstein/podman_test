@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+pgpass=/tmp/todo-replication.pgpass
+umask 077
+printf '%s:%s:replication:%s:' \
+  '{{ hostvars[groups["todo_primary"][0]].todo_node_address }}' \
+  '5432' \
+  'todo_replicator' > "$pgpass"
+cat /run/secrets/todo-replicator-password >> "$pgpass"
+printf '\n' >> "$pgpass"
+
+exec postgres -D "$PGDATA" \
+  -c "primary_conninfo=host={{ hostvars[groups['todo_primary'][0]].todo_node_address }} port=5432 user=todo_replicator application_name=todo_standby passfile=$pgpass" \
+  -c "primary_slot_name=todo_standby"

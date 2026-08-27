@@ -178,6 +178,26 @@ sudo loginctl enable-linger <service-user>
 The Ansible playbook intentionally does not make this host-level administrative
 decision.
 
+## PostgreSQL standby (M13)
+
+M13 adds one asynchronous PostgreSQL standby on a second host. The primary is
+the Ansible controller, while the standby remains locally operable if primary
+is lost. Start with the read-only preparation and bootstrap documentation:
+
+- [Primary/standby preparation](ansible/M13.md)
+- [Replication bootstrap and verification](ansible/M13-BOOTSTRAP.md)
+
+Build the small source-only transfer package with:
+
+```bash
+scripts/build-m13-test-package.sh
+```
+
+This creates `dist/todo-m13-test.tar.gz`. It contains only the M13 Ansible
+files and shared PostgreSQL Quadlets; it contains no inventory, SSH key,
+secret, image or database data. M13 is availability protection, not backup,
+and controlled promotion is deliberately deferred to M13.5.
+
 ## Verify HTTP and HTTPS
 
 ```bash

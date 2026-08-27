@@ -1,0 +1,49 @@
+---
+- name: Read the static hostname
+  ansible.builtin.command:
+    argv: [hostname]
+  register: m13_hostname
+  changed_when: false
+
+- name: Read the systemd machine ID
+  ansible.builtin.command:
+    argv: [cat, /etc/machine-id]
+  register: m13_machine_id
+  changed_when: false
+
+- name: Read global IPv4 addresses
+  ansible.builtin.command:
+    argv: [ip, -4, -o, address, show, scope, global]
+  register: m13_ipv4_addresses
+  changed_when: false
+
+- name: Check Podman
+  ansible.builtin.command:
+    argv: [podman, --version]
+  register: m13_podman_version
+  changed_when: false
+
+- name: Check the user systemd manager
+  ansible.builtin.command:
+    argv: [systemctl, --user, is-system-running]
+  register: m13_user_systemd
+  changed_when: false
+  failed_when: m13_user_systemd.rc not in [0, 1]
+
+- name: Check the PostgreSQL data volume
+  ansible.builtin.command:
+    argv: [podman, volume, exists, todo-postgres-data]
+  register: m13_postgres_volume
+  changed_when: false
+  failed_when: m13_postgres_volume.rc not in [0, 1]
+
+- name: Validate this host's declared identity
+  ansible.builtin.assert:
+    that:
+      - todo_node_role in ['primary', 'standby']
+      - m13_hostname.stdout == inventory_hostname
+      - todo_node_address in m13_ipv4_addresses.stdout
+      - m13_machine_id.stdout | length == 32
+    fail_msg: >-
+      Host identity does not match the M13 inventory. Check hostname,
+      todo_node_address and /etc/machine-id before continuing.

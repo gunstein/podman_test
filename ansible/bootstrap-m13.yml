@@ -1,0 +1,58 @@
+---
+- import_playbook: preflight-m13.yml
+
+- name: Prepare PostgreSQL primary for one standby
+  hosts: todo_primary
+  gather_facts: false
+  any_errors_fatal: true
+
+  roles:
+    - role: postgres_primary
+
+- import_playbook: sync-standby-secrets.yml
+
+- name: Bootstrap the PostgreSQL standby
+  hosts: todo_standby
+  gather_facts: false
+  any_errors_fatal: true
+
+  vars:
+    project_root: "{{ playbook_dir }}/.."
+    m13_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
+    m13_postgres_image_archive: "{{ m13_user_home }}/todo-offline-m12/images/postgres-17.11.tar"
+    m13_config_directory: "{{ m13_user_home }}/.config/todo"
+    m13_quadlet_directory: "{{ m13_user_home }}/.config/containers/systemd"
+
+  roles:
+    - role: postgres_standby
+
+- name: Verify streaming replication on primary
+  hosts: todo_primary
+  gather_facts: false
+  any_errors_fatal: true
+
+  tasks:
+    - name: Read the standby streaming state
+      ansible.builtin.command:
+        argv:
+          - podman
+          - exec
+          - todo-postgres
+          - psql
+          - --username
+          - todo
+          - --dbname
+          - postgres
+          - --tuples-only
+          - --no-align
+          - --command
+          - SELECT state FROM pg_stat_replication WHERE application_name = 'todo_standby';
+      register: primary_replication_state
+      changed_when: false
+      retries: 15
+      delay: 2
+      until: primary_replication_state.stdout | trim == 'streaming'
+
+    - name: Report successful streaming replication
+      ansible.builtin.debug:
+        msg: PostgreSQL standby is streaming asynchronously from primary.

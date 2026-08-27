@@ -1,0 +1,30 @@
+[Unit]
+Description=Todo PostgreSQL primary database
+
+[Container]
+Image=docker.io/library/postgres:17.11
+ContainerName=todo-postgres
+Network=todo.network
+Volume=todo-postgres-data.volume:/var/lib/postgresql/data
+Secret=todo-db-password
+Environment=POSTGRES_DB=todo
+Environment=POSTGRES_USER=todo
+Environment=POSTGRES_PASSWORD_FILE=/run/secrets/todo-db-password
+Exec=postgres -c max_slot_wal_keep_size=1GB
+PublishPort=127.0.0.1:5432:5432
+PublishPort={{ todo_node_address }}:5432:5432
+HealthCmd=pg_isready -U todo -d todo
+HealthInterval=10s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartupCmd=pg_isready -U todo -d todo
+HealthStartupInterval=1s
+HealthStartupTimeout=5s
+HealthStartupRetries=30
+HealthStartupSuccess=1
+HealthOnFailure=kill
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=120

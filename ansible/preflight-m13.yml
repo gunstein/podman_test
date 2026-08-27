@@ -1,0 +1,56 @@
+---
+- name: Inspect both M13 database hosts without changing them
+  hosts: todo_cluster
+  gather_facts: false
+  any_errors_fatal: true
+
+  roles:
+    - role: m13_preflight
+
+- name: Validate the primary and standby relationship
+  hosts: todo_primary
+  gather_facts: false
+  any_errors_fatal: true
+
+  vars:
+    primary_host: "{{ groups['todo_primary'][0] }}"
+    standby_host: "{{ groups['todo_standby'][0] }}"
+    m13_require_empty_standby: true
+
+  tasks:
+    - name: Require exactly one primary and one standby
+      ansible.builtin.assert:
+        that:
+          - groups['todo_primary'] | length == 1
+          - groups['todo_standby'] | length == 1
+        fail_msg: This M13 demo requires exactly one primary and one standby.
+
+    - name: Require unique hostnames, machine IDs and addresses
+      ansible.builtin.assert:
+        that:
+          - primary_host != standby_host
+          - hostvars[primary_host].m13_machine_id.stdout != hostvars[standby_host].m13_machine_id.stdout
+          - hostvars[primary_host].todo_node_address != hostvars[standby_host].todo_node_address
+        fail_msg: Primary and standby must have unique identities and addresses.
+
+    - name: Require existing primary database data
+      ansible.builtin.assert:
+        that:
+          - hostvars[primary_host].m13_postgres_volume.rc == 0
+        fail_msg: The primary todo-postgres-data volume does not exist.
+
+    - name: Require an empty standby before initial base backup
+      ansible.builtin.assert:
+        that:
+          - hostvars[standby_host].m13_postgres_volume.rc == 1
+        fail_msg: >-
+          Standby already has a todo-postgres-data volume. The preflight will
+          not overwrite it. Inspect or remove it explicitly before bootstrap.
+      when: m13_require_empty_standby | bool
+
+    - name: Report successful M13 preflight
+      ansible.builtin.debug:
+        msg: >-
+          M13 preflight passed for {{ primary_host }}
+          ({{ hostvars[primary_host].todo_node_address }}) and {{ standby_host }}
+          ({{ hostvars[standby_host].todo_node_address }}). No state was changed.

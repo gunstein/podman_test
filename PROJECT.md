@@ -71,6 +71,14 @@ local network.
 - A clean-install CI job verifies dependency installation, role bootstrap, migrations and backend tests against an empty PostgreSQL database.
 - The clean role-setup and migration sequence was verified against an empty disposable PostgreSQL database.
 - Default uninstall/reinstall was verified to preserve Todo data, Keycloak data and their existing credentials.
+- M13 preflight verified unique hostnames, machine IDs and LAN addresses on two Oracle Linux 9.8 VMs.
+- A dedicated `todo_replicator` role and Podman secret provide asynchronous PostgreSQL streaming replication.
+- Primary-to-standby secret synchronization was verified through Ansible memory and SSH without plaintext secret files.
+- A streamed `pg_basebackup`, physical replication slot and rootless standby Quadlet were verified with SELinux enforcing.
+- Primary reports `todo_standby` as `streaming|async` with zero measured lag; standby reports recovery mode with matching receive and replay LSNs.
+- A Todo written through the primary application was verified directly in the read-only standby database.
+- Standby automatic boot, recovery re-entry and resumed zero-lag streaming were verified after a full VM reboot.
+- The cloned standby required a one-time `podman system renumber` with all user Podman processes stopped to repair inherited runtime lock allocation; no volume data was removed.
 
 ## Decisions
 
@@ -106,6 +114,7 @@ local network.
 - Keep Ansible responsible for host configuration and desired state.
 - Use small, explicit Python tools for replication checks, promotion and failover workflows; do not build a second configuration-management framework.
 - Provision identical releases and database credentials to primary and standby from one controlled source.
+- Use asynchronous streaming replication for M13; define the acceptable nonzero RPO before treating the DR design as complete.
 - Require fencing of the old primary before promotion to avoid split-brain.
 - Treat replication as availability protection, not as a replacement for backup and point-in-time recovery.
 
@@ -147,13 +156,15 @@ Open <http://127.0.0.1:8000> in a browser.
 - M10: HTTPS — completed
 - M11: Keycloak authentication — completed
 - M12: Security baseline and least privilege — completed
-- M13: Ansible-provisioned PostgreSQL primary/standby with a dedicated replication role — planned
+- M13: Ansible-provisioned PostgreSQL primary/standby with a dedicated replication role — completed
 - M13.5: Small Python tools for replication status and controlled promotion — planned
 - M14: Full application disaster recovery with stable service hostname, shared deployment state and smoke tests — planned
 - M15: PostgreSQL backup, WAL archive and point-in-time recovery — planned
 
 ## Next step
 
-Define the M13 RPO, primary and standby addresses, service hostname and
-replication network policy. Then implement asynchronous PostgreSQL streaming
-replication without changing application failover yet.
+Review and package the completed M13 implementation, then commit and push it.
+Before M14 disaster-recovery work, define the acceptable nonzero RPO for the
+asynchronous replica. M13.5 can then add small local Python tools for status,
+preflight and controlled promotion; promotion must require explicit fencing of
+the old primary.

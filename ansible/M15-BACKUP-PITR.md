@@ -99,7 +99,20 @@ sudo fapolicyd-cli --file add \
 sudo fapolicyd-cli --update
 ```
 
-After an update, use `--file update` for both registered paths.
+After an update, refresh both registered copies and reload the trust database:
+
+```bash
+sudo fapolicyd-cli --file update \
+  "$HOME/todo-m15-test/scripts/todo_backup.py" \
+  --trust-file todo-backup-source
+sudo fapolicyd-cli --file update \
+  "$HOME/.config/todo/todo_backup.py" \
+  --trust-file todo-backup
+sudo fapolicyd-cli --update
+```
+
+See [../offline/FAPOLICYD.md](../offline/FAPOLICYD.md) for denial
+diagnostics, common Ansible symptoms and trust-entry cleanup. Do not disable `fapolicyd` for this demo.
 
 ## Status and base backup
 

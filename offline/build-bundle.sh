@@ -25,7 +25,8 @@ mkdir -p "$bundle_directory/ansible"
 cp "$project_root/ansible/"*.yml "$project_root/ansible/inventory.ini" \
   "$project_root/ansible/requirements.txt" "$bundle_directory/ansible/"
 cp "$project_root/offline/install.sh" "$project_root/offline/preflight.sh" \
-  "$project_root/offline/README.md" "$bundle_directory/"
+  "$project_root/offline/README.md" "$project_root/offline/FAPOLICYD.md" \
+  "$bundle_directory/"
 
 printf '%s\n' "M12" > "$bundle_directory/VERSION"
 (

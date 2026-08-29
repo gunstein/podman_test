@@ -54,8 +54,8 @@ sh ./install.sh
 
 Running the scripts through the trusted system shell is intentional. On a
 machine with active `fapolicyd`, newly extracted scripts cannot yet be executed
-directly with `./script.sh`. The shell may read them as data, and the installer
-then registers the files it needs to execute as trusted.
+directly with `./script.sh`. The RPM-managed shell reads them as data. The
+installer does not add the extracted bundle to the trust database.
 
 The preflight script does not change host configuration. It verifies that the
 host-managed Ansible and Python are present.
@@ -78,6 +78,10 @@ The RPM installation makes Ansible and its Python dependencies trusted through
 the normal package database. The bundle therefore needs no custom `fapolicyd`
 rules or trust entries. Ansible pipelining avoids executing transient modules
 from `~/.ansible/tmp`. SELinux and `fapolicyd` remain enabled.
+
+See [FAPOLICYD.md](FAPOLICYD.md) for denial diagnostics, the difference
+between `add` and `update`, common Ansible symptoms and cleanup. Do not disable
+`fapolicyd` or trust the complete extracted bundle.
 
 If existing Todo containers are found, preflight skips the clean-target port
 check so the same bundle can be rerun idempotently.

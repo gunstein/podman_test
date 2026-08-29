@@ -458,8 +458,10 @@ Oracle Linux 9 with active `fapolicyd` is supported explicitly. The installer
 uses Oracle Linux's RPM-managed ansible-core, so no executable Python code from
 the bundle needs custom trust entries. Both SELinux and `fapolicyd` remain
 enabled.
-Details and cleanup instructions are in
-[offline/README.md](offline/README.md).
+
+Installation details are in [offline/README.md](offline/README.md).
+Denial diagnostics, project-owned Python trust and trust-entry cleanup are in
+[offline/FAPOLICYD.md](offline/FAPOLICYD.md).
 
 SHA-256 checks detect modified files only when `SHA256SUMS` itself is trusted.
 They provide integrity, not publisher authenticity. A real distribution process

@@ -28,11 +28,36 @@ database contents and must be protected like the database itself.
 
 ## Install and configure
 
-Keep the old primary fenced. Build and checksum the M15 package on the trusted
-source host, then copy both files to the promoted host.
+Keep the old primary fenced. On the trusted source host, build, verify and
+transfer the package:
 
-On Oracle Linux with active `fapolicyd`, verify the package checksum before
-trusting the extracted Python source:
+```bash
+scripts/build-m15-test-package.sh
+(
+  cd dist
+  sha256sum -c todo-m15-test.tar.gz.sha256
+)
+read -rp "Promoted host IPv4 address: " TODO_PROMOTED_IP
+scp \
+  dist/todo-m15-test.tar.gz \
+  dist/todo-m15-test.tar.gz.sha256 \
+  "gunstein@${TODO_PROMOTED_IP}:"
+```
+
+On the promoted host, verify and extract both files:
+
+```bash
+cd "$HOME"
+sha256sum -c todo-m15-test.tar.gz.sha256
+mkdir -p todo-m15-test
+tar -xzf todo-m15-test.tar.gz \
+  --strip-components=1 \
+  --directory todo-m15-test
+cd todo-m15-test
+```
+
+On Oracle Linux with active `fapolicyd`, trust the verified extracted Python
+source:
 
 ```bash
 sudo fapolicyd-cli --file add \
@@ -44,8 +69,9 @@ sudo fapolicyd-cli --update
 Reuse the promoted-host inventory from M14 or copy the included example:
 
 ```bash
+read -rp "Promoted host IPv4 address: " TODO_PROMOTED_IP
 cp ansible/inventory-m14.example.ini ansible/inventory-m15.ini
-sed -i 's/192.0.2.11/192.168.0.109/' ansible/inventory-m15.ini
+sed -i "s/192.0.2.11/${TODO_PROMOTED_IP}/" ansible/inventory-m15.ini
 ```
 
 Then:
@@ -162,14 +188,14 @@ The exact confirmation is required. Cleanup never addresses
 
 ## Verified Oracle Linux drill
 
-The live Oracle Linux 9.8 drill created and verified
-`base-20260829T102943Z`, archived a named restore point, and restored it into
-the isolated disposable container. The restored database contained the
-before-target row and excluded the after-target row, while the live database
-retained both. Cleanup removed only disposable restore state. After a full VM
-reboot, PostgreSQL remained writable with archiving enabled, the backup
-persisted, all application services recovered, and a repeat playbook run
-completed with `changed=0`.
+The live Oracle Linux 9.8 drill used promoted host `192.168.0.109` and created
+and verified `base-20260829T102943Z`. It archived a named restore point and
+restored it into the isolated disposable container. The restored database
+contained the before-target row and excluded the after-target row, while the
+live database retained both. Cleanup removed only disposable restore state.
+After a full VM reboot, PostgreSQL remained writable with archiving enabled,
+the backup persisted, all application services recovered, and a repeat
+playbook run completed with `changed=0`.
 
 ## Operational follow-up
 

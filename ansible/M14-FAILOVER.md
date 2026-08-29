@@ -19,18 +19,45 @@ to the promoted host address.
 Keep the M14 source package and the M12 offline image bundle on standby before
 an incident. The package contains no secrets, images or inventory.
 
-The current development drill started before M14 existed, so copying the package
-to the already promoted standby is an explicit one-time test setup. A completed
-deployment must stage it while primary is healthy.
+Build, verify and transfer the package from the trusted source host while
+primary is healthy:
+
+```bash
+scripts/build-m14-test-package.sh
+(
+  cd dist
+  sha256sum -c todo-m14-test.tar.gz.sha256
+)
+read -rp "Standby IPv4 address: " TODO_STANDBY_IP
+scp \
+  dist/todo-m14-test.tar.gz \
+  dist/todo-m14-test.tar.gz.sha256 \
+  "gunstein@${TODO_STANDBY_IP}:"
+```
+
+On standby, verify and stage it before an incident:
+
+```bash
+cd "$HOME"
+sha256sum -c todo-m14-test.tar.gz.sha256
+mkdir -p todo-m14-test
+tar -xzf todo-m14-test.tar.gz \
+  --strip-components=1 \
+  --directory todo-m14-test
+```
 
 ## Host firewall
 
 Before publishing HTTPS, allow only the intended client or management network.
-For the current laptop at `192.168.0.100`, run on standby as an administrator:
+On standby, enter the client IPv4 address that should be allowed:
 
 ```bash
+read -rp "Allowed client IPv4 address: " TODO_CLIENT_IP
+todo_firewall_rule="rule family=ipv4 \
+source address=${TODO_CLIENT_IP}/32 \
+port port=8443 protocol=tcp accept"
 sudo firewall-cmd --permanent --zone=public \
-  --add-rich-rule='rule family=ipv4 source address=192.168.0.100/32 port port=8443 protocol=tcp accept'
+  --add-rich-rule="$todo_firewall_rule"
 sudo firewall-cmd --reload
 ```
 
@@ -40,12 +67,13 @@ localhost for local smoke tests.
 
 ## Deploy on the promoted standby
 
-Verify that primary remains powered off. Extract the M14 package on standby,
-copy the example inventory and set the real address:
+Verify that primary remains powered off. On the promoted standby:
 
 ```bash
+cd "$HOME/todo-m14-test"
+read -rp "Promoted host IPv4 address: " TODO_STANDBY_IP
 cp ansible/inventory-m14.example.ini ansible/inventory-m14.ini
-sed -i 's/192.0.2.11/192.168.0.109/' ansible/inventory-m14.ini
+sed -i "s/192.0.2.11/${TODO_STANDBY_IP}/" ansible/inventory-m14.ini
 ```
 
 Then run:
@@ -73,13 +101,17 @@ origin, and checks health, readiness, discovery and public Todo reads.
 On the laptop, add the temporary LAN mapping:
 
 ```bash
-echo '192.168.0.109 todo.test' | sudo tee -a /etc/hosts
+read -rp "Promoted host IPv4 address: " TODO_STANDBY_IP
+printf '%s %s\n' "$TODO_STANDBY_IP" todo.test | sudo tee -a /etc/hosts
 ```
 
 Copy Caddy's public root certificate from standby:
 
 ```bash
-scp gunstein@192.168.0.109:.config/todo/todo-caddy-root.crt /tmp/
+read -rp "Promoted host IPv4 address: " TODO_STANDBY_IP
+scp \
+  "gunstein@${TODO_STANDBY_IP}:.config/todo/todo-caddy-root.crt" \
+  /tmp/
 sudo cp /tmp/todo-caddy-root.crt /usr/local/share/ca-certificates/todo-m14.crt
 sudo update-ca-certificates
 ```
@@ -106,9 +138,11 @@ operation that starts by rebuilding it as a replica of the promoted database.
 
 ## Verified drill
 
-On 2026-08-29, the Oracle Linux 9.8 promoted host loaded all three staged M12
-application images, started the complete application tier, exposed the stable
-`todo.test` issuer and accepted an authenticated browser Todo write. A second
-playbook run completed with `changed=0`. After a VM reboot, PostgreSQL, backend,
-Keycloak and Caddy all returned `active`; PostgreSQL remained `f|off`, and the
-LAN client verified HTTPS readiness and the replicated Todo data.
+On 2026-08-29, the Oracle Linux 9.8 drill used promoted host
+`192.168.0.109` and client `192.168.0.100`. The promoted host loaded all three
+staged M12 application images, started the complete application tier and
+exposed the stable `todo.test` issuer. It accepted an authenticated browser
+Todo write. A second playbook run completed with `changed=0`. After a VM
+reboot, PostgreSQL, backend, Keycloak and Caddy all returned `active`;
+PostgreSQL remained `f|off`, and the LAN client verified HTTPS readiness and
+the replicated Todo data.

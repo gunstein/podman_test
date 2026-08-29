@@ -179,7 +179,7 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-Review and package the completed M13.5 through M15 implementation, run the
-full local validation suite, then commit and push it. Keep the old primary
-fenced. A later milestone may add off-host backup transfer, retention and
-capacity monitoring; the same-VM M15 volume is not host-loss protection.
+Confirm the documentation-polish commit in GitHub Actions. Then choose whether
+the next milestone should rebuild the old primary as a replica for controlled
+failback, or add off-host backup transfer, retention and capacity monitoring.
+Keep the old primary fenced until the topology is deliberately rebuilt.

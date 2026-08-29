@@ -1,0 +1,73 @@
+---
+- name: Create the Todo DR configuration directory
+  ansible.builtin.file:
+    path: "{{ m13_config_directory }}"
+    state: directory
+    mode: "0700"
+
+- name: Install the local Todo DR files through pipelined stdin
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |
+        import base64
+        import os
+        import pathlib
+        import sys
+        import tempfile
+
+        path = pathlib.Path(sys.argv[1])
+        mode = int(sys.argv[2], 8)
+        content = base64.b64decode(sys.stdin.buffer.read(), validate=True)
+        try:
+            unchanged = (
+                path.read_bytes() == content
+                and path.stat().st_mode & 0o777 == mode
+            )
+        except (FileNotFoundError, PermissionError):
+            unchanged = False
+
+        if unchanged:
+            print("unchanged")
+            raise SystemExit()
+
+        descriptor, temporary = tempfile.mkstemp(
+            dir=path.parent, prefix=f".{path.name}."
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(content)
+                output.flush()
+                os.fsync(output.fileno())
+            os.chmod(temporary, mode)
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        print("changed")
+      - "{{ item.path }}"
+      - "{{ item.mode }}"
+    stdin: "{{ item.content }}"
+    stdin_add_newline: false
+  loop:
+    - path: "{{ m13_config_directory }}/todo_dr.py"
+      mode: "0644"
+      content: "{{ lookup('ansible.builtin.file', project_root ~ '/scripts/todo_dr.py', rstrip=false) | b64encode }}"
+      label: todo_dr.py
+    - path: "{{ m13_config_directory }}/todo-dr.json"
+      mode: "0600"
+      content: >-
+        {{
+          {
+            'primary_name': groups['todo_primary'][0],
+            'primary_address': hostvars[groups['todo_primary'][0]].todo_node_address,
+            'standby_name': groups['todo_standby'][0],
+            'rpo_seconds': todo_rpo_seconds | default(30)
+          } | to_json | b64encode
+        }}
+      label: todo-dr.json
+  loop_control:
+    label: "{{ item.label }}"
+  register: todo_dr_install
+  changed_when: todo_dr_install.stdout | trim == 'changed'

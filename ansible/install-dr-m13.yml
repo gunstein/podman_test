@@ -1,0 +1,13 @@
+---
+- name: Install the local M13.5 disaster-recovery tool on standby
+  hosts: todo_standby
+  gather_facts: false
+  any_errors_fatal: true
+
+  vars:
+    project_root: "{{ playbook_dir }}/.."
+    m13_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
+    m13_config_directory: "{{ m13_user_home }}/.config/todo"
+
+  roles:
+    - role: todo_dr

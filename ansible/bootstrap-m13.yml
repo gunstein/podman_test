@@ -25,6 +25,7 @@
 
   roles:
     - role: postgres_standby
+    - role: todo_dr
 
 - name: Verify streaming replication on primary
   hosts: todo_primary

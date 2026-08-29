@@ -1,0 +1,33 @@
+[Unit]
+Description=Todo Keycloak on promoted database
+Requires=todo-postgres.service
+After=todo-postgres.service
+
+[Container]
+Image=localhost/todo-keycloak:m12
+ContainerName=todo-keycloak
+Network=todo.network
+Secret=todo-keycloak-db-password,type=env,target=KCRAW_DB_PASSWORD
+Secret=todo-keycloak-admin-password,type=env,target=KCRAW_BOOTSTRAP_ADMIN_PASSWORD
+Environment=KC_BOOTSTRAP_ADMIN_USERNAME=admin
+Environment=KC_DB=postgres
+Environment=KC_DB_URL_HOST=todo-postgres
+Environment=KC_DB_URL_PORT=5432
+Environment=KC_DB_URL_DATABASE=todo
+Environment=KC_DB_SCHEMA=keycloak
+Environment=KC_DB_USERNAME=keycloak_app
+Environment=KC_HTTP_ENABLED=true
+Environment=KC_HTTP_RELATIVE_PATH=/auth
+Environment=KC_HOSTNAME={{ m14_service_origin }}/auth
+Environment=KC_PROXY_HEADERS=xforwarded
+Environment=KC_HEALTH_ENABLED=true
+Exec=start --import-realm
+NoNewPrivileges=true
+DropCapability=all
+PidsLimit=512
+PodmanArgs=--memory=1g
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=180

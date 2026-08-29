@@ -1,0 +1,18 @@
+---
+- name: Deploy the application tier on the promoted M14 host
+  hosts: todo_promoted
+  gather_facts: false
+  any_errors_fatal: true
+
+  vars:
+    m14_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
+    m14_config_directory: "{{ m14_user_home }}/.config/todo"
+    m14_quadlet_directory: "{{ m14_user_home }}/.config/containers/systemd"
+    m14_bundle_directory: '{{ todo_bundle_directory | default(m14_user_home ~ "/todo-offline-m12") }}'
+    m14_service_hostname: '{{ todo_service_hostname | default("todo.test") }}'
+    m14_service_port: "{{ todo_service_port | default(8443) }}"
+    m14_service_origin: "https://{{ m14_service_hostname }}:{{ m14_service_port }}"
+    m14_node_address: "{{ todo_node_address }}"
+
+  roles:
+    - role: promoted_application

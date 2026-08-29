@@ -1,0 +1,293 @@
+---
+- name: Read the promoted host identity
+  ansible.builtin.command:
+    argv: [hostname]
+  register: m14_hostname
+  changed_when: false
+
+- name: Read the promoted host IPv4 addresses
+  ansible.builtin.command:
+    argv: [ip, -4, -o, address, show, scope, global]
+  register: m14_addresses
+  changed_when: false
+
+- name: Require the intended promoted host
+  ansible.builtin.assert:
+    that:
+      - m14_hostname.stdout | trim == inventory_hostname
+      - m14_node_address in m14_addresses.stdout
+      - m14_service_hostname | length > 0
+      - m14_service_port | int >= 1024
+      - m14_service_port | int <= 65535
+    fail_msg: Check the M14 inventory hostname, address, service name and port.
+
+- name: Require active promoted PostgreSQL
+  ansible.builtin.command:
+    argv: [systemctl, --user, is-active, todo-postgres.service]
+  register: m14_postgres_service
+  changed_when: false
+  failed_when: m14_postgres_service.stdout | trim != "active"
+
+- name: Require a writable promoted database
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --command
+      - SELECT pg_is_in_recovery(), current_setting('transaction_read_only');
+  register: m14_database_role
+  changed_when: false
+  failed_when: m14_database_role.stdout | trim != "f|off"
+
+- name: Require existing runtime secrets
+  ansible.builtin.command:
+    argv: [podman, secret, exists, "{{ item }}"]
+  loop:
+    - todo-app-password
+    - todo-keycloak-db-password
+    - todo-keycloak-admin-password
+  changed_when: false
+
+- name: Check the application image archives
+  ansible.builtin.stat:
+    path: "{{ m14_bundle_directory }}/images/{{ item }}"
+  loop:
+    - todo-backend-m12.tar
+    - todo-frontend-m12.tar
+    - todo-keycloak-m12.tar
+  register: m14_archives
+
+- name: Require every offline application image archive
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+    fail_msg: "Missing offline image archive: {{ item.item }}"
+  loop: "{{ m14_archives.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Check application images
+  ansible.builtin.command:
+    argv: [podman, image, exists, "{{ item.image }}"]
+  loop:
+    - image: localhost/todo-backend:m12
+      archive: todo-backend-m12.tar
+    - image: localhost/todo-frontend:m12
+      archive: todo-frontend-m12.tar
+    - image: localhost/todo-keycloak:m12
+      archive: todo-keycloak-m12.tar
+  register: m14_image_checks
+  changed_when: false
+  failed_when: m14_image_checks.rc not in [0, 1]
+  loop_control:
+    label: "{{ item.image }}"
+
+- name: Load missing application images
+  ansible.builtin.command:
+    argv:
+      - podman
+      - load
+      - --input
+      - "{{ m14_bundle_directory }}/images/{{ item.item.archive }}"
+  loop: "{{ m14_image_checks.results }}"
+  when: item.rc == 1
+  register: m14_images_loaded
+  loop_control:
+    label: "{{ item.item.image }}"
+
+- name: Create M14 configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - "{{ m14_config_directory }}"
+    - "{{ m14_quadlet_directory }}"
+
+- name: Install the stable-name Caddy configuration
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ m14_config_directory }}/Caddyfile"
+    mode: "0644"
+  register: m14_caddy_config
+
+- name: Install promoted application Quadlets
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ m14_quadlet_directory }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - todo-caddy-data.volume
+    - todo-backend.container
+    - todo-keycloak.container
+    - todo-frontend.container
+  register: m14_quadlets
+
+- name: Stop the application tier before applying changed runtime files
+  ansible.builtin.command:
+    argv: [systemctl, --user, stop, "{{ item }}"]
+  loop:
+    - todo-frontend.service
+    - todo-backend.service
+    - todo-keycloak.service
+  changed_when: false
+  failed_when: false
+  when: >-
+    m14_caddy_config.changed or
+    m14_quadlets.changed or
+    m14_images_loaded.changed | default(false)
+
+- name: Reload promoted host user systemd
+  ansible.builtin.systemd_service:
+    scope: user
+    daemon_reload: true
+
+- name: Start the promoted application tier
+  ansible.builtin.systemd_service:
+    name: todo-frontend.service
+    scope: user
+    state: started
+
+- name: Wait for backend health through local Caddy
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/health
+    return_content: true
+  register: m14_health
+  until: m14_health.status == 200 and m14_health.json.status == "ok"
+  retries: 30
+  delay: 1
+
+- name: Wait for database readiness through local Caddy
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/ready
+    return_content: true
+  register: m14_readiness
+  until: m14_readiness.status == 200 and m14_readiness.json.status == "ready"
+  retries: 30
+  delay: 1
+
+- name: Wait for Keycloak discovery through local Caddy
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
+    return_content: true
+  register: m14_discovery
+  until:
+    - m14_discovery.status == 200
+    - m14_discovery.json.issuer == m14_service_origin ~ "/auth/realms/todo"
+  retries: 90
+  delay: 2
+
+- name: Read the existing Keycloak administrator secret
+  ansible.builtin.command:
+    argv:
+      - podman
+      - run
+      - --rm
+      - --secret
+      - todo-keycloak-admin-password,type=env,target=TODO_ADMIN_PASSWORD
+      - --entrypoint
+      - /bin/sh
+      - docker.io/library/postgres:17.11
+      - -c
+      - 'printf "%s" "$TODO_ADMIN_PASSWORD"'
+  register: m14_keycloak_admin_password
+  changed_when: false
+  no_log: true
+
+- name: Obtain a short-lived Keycloak administrator token
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/auth/realms/master/protocol/openid-connect/token
+    method: POST
+    body_format: form-urlencoded
+    body:
+      grant_type: password
+      client_id: admin-cli
+      username: admin
+      password: "{{ m14_keycloak_admin_password.stdout }}"
+    return_content: true
+    status_code: 200
+  register: m14_admin_token
+  no_log: true
+
+- name: Find the Todo frontend client
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/auth/admin/realms/todo/clients?clientId=todo-frontend
+    headers:
+      Authorization: "Bearer {{ m14_admin_token.json.access_token }}"
+    return_content: true
+    status_code: 200
+  register: m14_client_query
+  no_log: true
+
+- name: Require exactly one Todo frontend client
+  ansible.builtin.assert:
+    that:
+      - m14_client_query.json | length == 1
+    fail_msg: Expected exactly one Keycloak client named todo-frontend.
+
+- name: Read the complete Todo frontend client representation
+  ansible.builtin.uri:
+    url: >-
+      http://127.0.0.1:8080/auth/admin/realms/todo/clients/{{
+      m14_client_query.json[0].id }}
+    headers:
+      Authorization: "Bearer {{ m14_admin_token.json.access_token }}"
+    return_content: true
+    status_code: 200
+  register: m14_client
+  no_log: true
+
+- name: Update the Todo frontend stable redirect and origin
+  ansible.builtin.uri:
+    url: >-
+      http://127.0.0.1:8080/auth/admin/realms/todo/clients/{{
+      m14_client_query.json[0].id }}
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ m14_admin_token.json.access_token }}"
+    body_format: json
+    body: >-
+      {{
+        m14_client.json
+        | combine({
+            'redirectUris': [m14_service_origin ~ '/'],
+            'webOrigins': [m14_service_origin]
+          })
+      }}
+    status_code: 204
+  when: >-
+    m14_client.json.redirectUris != [m14_service_origin ~ '/'] or
+    m14_client.json.webOrigins != [m14_service_origin]
+  no_log: true
+
+- name: Verify public Todo reads through local Caddy
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/api/todos
+    return_content: true
+    status_code: 200
+  register: m14_todos
+  failed_when: m14_todos.json is not sequence
+
+- name: Export the promoted Caddy public root certificate
+  ansible.builtin.command:
+    argv:
+      - podman
+      - cp
+      - todo-frontend:/data/caddy/pki/authorities/local/root.crt
+      - "{{ m14_config_directory }}/todo-caddy-root.crt"
+  changed_when: false
+
+- name: Report successful promoted application deployment
+  ansible.builtin.debug:
+    msg: >-
+      Application tier is healthy on {{ m14_service_origin }}. PostgreSQL was
+      already promoted; no database bootstrap, migration or grants ran.

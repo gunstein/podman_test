@@ -1,0 +1,25 @@
+[Unit]
+Description=Todo FastAPI backend on promoted database
+Requires=todo-postgres.service
+After=todo-postgres.service
+
+[Container]
+Image=localhost/todo-backend:m12
+ContainerName=todo-backend
+Network=todo.network
+Secret=todo-app-password
+Environment=DATABASE_HOST=todo-postgres
+Environment=DATABASE_PORT=5432
+Environment=DATABASE_NAME=todo
+Environment=DATABASE_USER=todo_app
+Environment=DATABASE_PASSWORD_FILE=/run/secrets/todo-app-password
+Environment=OIDC_ISSUER={{ m14_service_origin }}/auth/realms/todo
+Environment=OIDC_JWKS_URL=http://todo-keycloak:8080/auth/realms/todo/protocol/openid-connect/certs
+Environment=OIDC_AUDIENCE=todo-frontend
+NoNewPrivileges=true
+DropCapability=all
+PidsLimit=128
+
+[Service]
+Restart=on-failure
+RestartSec=5s

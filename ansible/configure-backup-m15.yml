@@ -1,0 +1,19 @@
+---
+- name: Configure PostgreSQL continuous archiving on the promoted host
+  hosts: todo_promoted
+  gather_facts: false
+  any_errors_fatal: true
+
+  vars:
+    project_root: "{{ playbook_dir }}/.."
+    m15_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
+    m15_config_directory: "{{ m15_user_home }}/.config/todo"
+    m15_quadlet_directory: "{{ m15_user_home }}/.config/containers/systemd"
+    m15_archive_command: >-
+      test ! -f /var/lib/postgresql/backup/wal/%f &&
+      cp %p /var/lib/postgresql/backup/wal/%f ||
+      test "$(sha256sum < %p)" =
+      "$(sha256sum < /var/lib/postgresql/backup/wal/%f)"
+
+  roles:
+    - role: postgres_backup

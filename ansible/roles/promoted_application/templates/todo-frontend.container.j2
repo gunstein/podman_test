@@ -1,0 +1,23 @@
+[Unit]
+Description=Todo Caddy frontend and reverse proxy on promoted host
+Requires=todo-backend.service todo-keycloak.service
+After=todo-backend.service todo-keycloak.service
+
+[Container]
+Image=localhost/todo-frontend:m12
+ContainerName=todo-frontend
+Network=todo.network
+Volume=todo-caddy-data.volume:/data:U
+Volume={{ m14_config_directory }}/Caddyfile:/etc/caddy/Caddyfile:ro,Z
+PublishPort=127.0.0.1:8080:8080
+PublishPort={{ m14_node_address }}:{{ m14_service_port }}:{{ m14_service_port }}
+NoNewPrivileges=true
+DropCapability=all
+PidsLimit=128
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

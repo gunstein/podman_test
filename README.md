@@ -41,7 +41,9 @@ each step.
 This is a learning demo, not a production deployment baseline. Through M12,
 all published ports are bound to `127.0.0.1`. M13 additionally publishes
 PostgreSQL TCP 5432 on primary's replication interface; the host firewall must
-restrict that port to standby. Before exposing the application to other hosts,
+restrict that port to standby. After promotion, M14 publishes HTTPS 8443 on
+the promoted host's LAN address; its firewall must restrict access to the
+intended clients. Before exposing the application to other hosts,
 remove development-only ports, restrict Keycloak administration in the reverse
 proxy, use trusted TLS, define backup and secret-rotation procedures, and
 establish vulnerability scanning.
@@ -182,14 +184,16 @@ sudo loginctl enable-linger <service-user>
 The Ansible playbook intentionally does not make this host-level administrative
 decision.
 
-## PostgreSQL standby (M13)
+## PostgreSQL standby and controlled promotion (M13-M13.5)
 
 M13 adds one asynchronous PostgreSQL standby on a second host. The primary is
 the Ansible controller, while the standby remains locally operable if primary
-is lost. Start with the read-only preparation and bootstrap documentation:
+is lost. M13.5 adds a small standard-library Python tool that runs locally on
+standby and never depends on primary during a disaster. Start with:
 
 - [Primary/standby preparation](ansible/M13.md)
 - [Replication bootstrap and verification](ansible/M13-BOOTSTRAP.md)
+- [Controlled promotion runbook](ansible/M13.5-PROMOTION.md)
 
 Build the small source-only transfer package with:
 
@@ -197,10 +201,76 @@ Build the small source-only transfer package with:
 scripts/build-m13-test-package.sh
 ```
 
-This creates `dist/todo-m13-test.tar.gz`. It contains only the M13 Ansible
-files and shared PostgreSQL Quadlets; it contains no inventory, SSH key,
-secret, image or database data. M13 is availability protection, not backup,
-and controlled promotion is deliberately deferred to M13.5.
+This creates `dist/todo-m13-test.tar.gz` and a matching
+`dist/todo-m13-test.tar.gz.sha256`. The archive contains the M13/M13.5 Ansible
+files, DR tool and shared PostgreSQL Quadlets; it contains no inventory, SSH
+key, secret, image or database data. Verify the checksum against a value
+received through a trusted channel before trusting extracted files. Replication
+is availability protection, not backup.
+
+The demo targets database RTO within 15 minutes and an operational RPO of at
+most 30 seconds while asynchronous replication is healthy. That RPO is not a
+guarantee: standby cannot detect commits that were never transmitted by a lost
+primary.
+
+Install or update the local tool before an incident:
+
+On an active `fapolicyd` controller, first trust the verified extracted
+`scripts/todo_dr.py` as described in the promotion runbook. Then run:
+
+```bash
+ansible-playbook \
+  --inventory ansible/inventory-m13.ini \
+  ansible/install-dr-m13.yml
+```
+
+A normal, non-mutating check is then run on standby:
+
+```bash
+python3 ~/.config/todo/todo_dr.py status
+```
+
+Actual promotion is irreversible for the existing replication topology. Follow
+the runbook and fence primary before running `preflight` or `promote`. M13.5
+promotes only PostgreSQL; the remaining application failover belongs to M14.
+The controlled Oracle Linux 9.8 drill completed the promotion command in about
+two seconds and verified a writable transaction. This is not a measurement of
+the complete application RTO.
+
+## Application failover (M14)
+
+M14 loads the already staged M12 application images on the promoted standby and
+starts dedicated backend, Keycloak and Caddy Quadlets without running database
+bootstrap, migrations or grants. The stable LAN identity is
+`https://todo.test:8443`. Follow the [M14 failover runbook](ansible/M14-FAILOVER.md).
+
+Build its source-only package and checksum with:
+
+```bash
+scripts/build-m14-test-package.sh
+```
+
+The package contains no secrets, inventory, images or database data. The M12
+offline image bundle must already be present on standby. A live Oracle Linux
+9.8 drill verified authenticated browser writes, a second deployment with
+`changed=0`, and automatic startup of PostgreSQL, backend, Keycloak and Caddy
+after reboot while PostgreSQL remained `f|off`.
+
+## Backup and point-in-time recovery (M15)
+
+M15 uses a separate Podman volume for physical base backups and continuously
+archived WAL, then restores to an isolated disposable container without touching
+the live database. See the [M15 backup and PITR runbook](ansible/M15-BACKUP-PITR.md).
+The local backup volume demonstrates recovery from logical damage; it is not
+protection against loss of the VM or physical host. A live Oracle Linux 9.8 drill
+verified the base backup manifest, named-point recovery with before/after data,
+disposable cleanup, persistence across reboot and an idempotent Ansible rerun.
+
+Build the source-only package with:
+
+```bash
+scripts/build-m15-test-package.sh
+```
 
 ## Verify HTTP and HTTPS
 
@@ -253,8 +323,10 @@ finished.
 `.github/workflows/clean-install.yml` installs the pinned test dependencies
 against an empty PostgreSQL 17.11 database. It exercises database bootstrap,
 migrations, the explicit database-role privilege matrix and all backend tests.
-A separate matrix syntax-checks all M13 playbooks with Ansible Core 2.14.18 on
-Python 3.11 and the maintained 2.20.8 development version on Python 3.12.
+A separate matrix syntax-checks all M13-M14 playbooks with Ansible Core 2.14.18 on
+Python 3.9 and the maintained 2.20.8 development version on Python 3.12.
+The same matrix runs dependency-free unit tests for M13.5 fencing and promotion
+plus M15 backup and disposable-restore safety boundaries.
 Third-party actions are pinned to immutable commit SHAs and the workflow token
 has read-only repository access.
 

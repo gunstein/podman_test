@@ -55,6 +55,15 @@ The expected primary state is `streaming|async`; standby must report recovery
 as `t`. Status also requires an active, usable `todo_standby` slot and reports
 its WAL status, remaining safe WAL bytes and any invalidation reason.
 
+A new bootstrap also installs the M13.5 DR tool. For an already bootstrapped
+standby, install or update it without touching the database:
+
+```bash
+ansible-playbook --inventory ansible/inventory-m13.ini ansible/install-dr-m13.yml
+```
+
+See [the controlled promotion runbook](M13.5-PROMOTION.md) before using it.
+
 The Oracle Linux 9.8 verification also required `0700` on the basebackup
 directory, an explicit `:Z` SELinux label on its Quadlet volume mount and an
 explicit `/bin/sh` entrypoint for the readable standby startup script.

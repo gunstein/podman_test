@@ -9,13 +9,13 @@ permissions:
 
 jobs:
   ansible-syntax:
-    name: M13 syntax (ansible-core ${{ matrix.ansible }})
+    name: M13-M15 syntax (ansible-core ${{ matrix.ansible }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       matrix:
         include:
-          - python: "3.11"
+          - python: "3.9"
             ansible: "2.14.18"
           - python: "3.12"
             ansible: "2.20.8"
@@ -37,6 +37,7 @@ jobs:
             ansible/preflight-m13.yml \
             ansible/sync-standby-secrets.yml \
             ansible/bootstrap-m13.yml \
+            ansible/install-dr-m13.yml \
             ansible/status-m13.yml
           do
             ansible-playbook \
@@ -44,6 +45,37 @@ jobs:
               "$playbook" \
               --syntax-check
           done
+
+      - name: Syntax-check M14 playbook
+        run: >-
+          ansible-playbook
+          --inventory ansible/inventory-m14.example.ini
+          ansible/deploy-promoted-m14.yml
+          --syntax-check
+
+      - name: Syntax-check M15 playbook
+        run: >-
+          ansible-playbook
+          --inventory ansible/inventory-m14.example.ini
+          ansible/configure-backup-m15.yml
+          --syntax-check
+
+      - name: Test DR and backup tools
+        run: python -m unittest discover --start-directory tests --verbose
+      - name: Build and verify milestone packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for milestone in 13 14 15; do
+            "scripts/build-m${milestone}-test-package.sh"
+            (
+              cd dist
+              sha256sum -c "todo-m${milestone}-test.tar.gz.sha256"
+            )
+          done
+          ! tar -tzf dist/todo-m13-test.tar.gz | \
+            grep -Eq 'promoted_application|postgres_backup'
+
 
   backend:
     runs-on: ubuntu-latest

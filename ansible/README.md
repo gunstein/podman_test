@@ -81,3 +81,34 @@ The second command permanently deletes all Todo and Keycloak data.
 
 Both uninstall modes remove `todo-caddy-data`. A reinstall creates a new local
 Caddy CA, so any previously trusted demo root certificate must be replaced.
+
+## PostgreSQL standby and DR tool
+
+M13 uses roles for host-specific database provisioning: `m13_preflight`,
+`postgres_primary`, `postgres_standby` and `todo_dr`. Prepare and bootstrap the
+two-host topology with the files documented in [M13.md](M13.md) and
+[M13-BOOTSTRAP.md](M13-BOOTSTRAP.md). Install or update only the local DR tool
+on an existing standby with:
+
+```bash
+ansible/.venv/bin/ansible-playbook \
+  --inventory ansible/inventory-m13.ini \
+  ansible/install-dr-m13.yml
+```
+
+The promotion operation itself is intentionally local Python, not Ansible. Read
+[M13.5-PROMOTION.md](M13.5-PROMOTION.md) before testing it.
+
+## Promoted application and backup
+
+M14 uses the `promoted_application` role to deploy the existing application
+release only after PostgreSQL has been promoted and verified writable. Follow
+[M14-FAILOVER.md](M14-FAILOVER.md); it deliberately does not bootstrap roles or
+run migrations during an incident.
+
+M15 uses the `postgres_backup` role to add a separate backup volume and
+continuous WAL archiving to that promoted host. The local `todo_backup.py`
+tool creates verified physical base backups and restores only into fixed,
+disposable Podman resources. Follow
+[M15-BACKUP-PITR.md](M15-BACKUP-PITR.md). The same-VM backup volume is a PITR
+demonstration, not protection against loss of the host.

@@ -1,0 +1,357 @@
+---
+- name: Require active promoted PostgreSQL
+  ansible.builtin.command:
+    argv: [systemctl, --user, is-active, todo-postgres.service]
+  register: m15_postgres_service
+  changed_when: false
+  failed_when: m15_postgres_service.stdout | trim != "active"
+
+- name: Require a writable promoted database
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --command
+      - SELECT pg_is_in_recovery(), current_setting('transaction_read_only');
+  register: m15_database_role
+  changed_when: false
+  failed_when: m15_database_role.stdout | trim != "f|off"
+
+- name: Require the existing replication credential
+  ansible.builtin.command:
+    argv: [podman, secret, exists, todo-replicator-password]
+  changed_when: false
+
+- name: Install the backup volume Quadlet
+  ansible.builtin.template:
+    src: todo-postgres-backup.volume.j2
+    dest: "{{ m15_quadlet_directory }}/todo-postgres-backup.volume"
+    mode: "0644"
+  register: m15_backup_volume_quadlet
+
+- name: Reload user systemd for the backup volume
+  ansible.builtin.systemd_service:
+    scope: user
+    daemon_reload: true
+
+- name: Create the backup volume
+  ansible.builtin.systemd_service:
+    name: todo-postgres-backup-volume.service
+    scope: user
+    state: started
+
+- name: Initialize private base-backup and WAL directories
+  ansible.builtin.command:
+    argv:
+      - podman
+      - run
+      - --rm
+      - --user
+      - postgres
+      - --security-opt
+      - no-new-privileges
+      - --cap-drop
+      - all
+      - --volume
+      - todo-postgres-backup:/backup:U,z
+      - --entrypoint
+      - /bin/sh
+      - docker.io/library/postgres:17.11
+      - -ec
+      - umask 077; mkdir -p /backup/base /backup/wal; chmod 0700 /backup /backup/base /backup/wal
+  changed_when: false
+
+- name: Install the WAL-archive PostgreSQL Quadlet
+  ansible.builtin.template:
+    src: todo-postgres.container.j2
+    dest: "{{ m15_quadlet_directory }}/todo-postgres.container"
+    mode: "0644"
+  register: m15_postgres_quadlet
+
+- name: Read current archive settings
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - >-
+        SELECT current_setting('archive_mode'),
+        current_setting('archive_command'),
+        current_setting('archive_timeout');
+  register: m15_archive_settings
+  changed_when: false
+
+- name: Configure continuous WAL archiving
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --set
+      - ON_ERROR_STOP=1
+      - --command
+      - ALTER SYSTEM SET archive_mode = 'on';
+      - --command
+      - "ALTER SYSTEM SET archive_command = '{{ m15_archive_command }}';"
+      - --command
+      - ALTER SYSTEM SET archive_timeout = '60s';
+  register: m15_archive_configured
+  changed_when: true
+  when: >-
+    m15_archive_settings.stdout | trim !=
+    "on|" ~ m15_archive_command ~ "|1min"
+
+- name: Stop the application tier before PostgreSQL restart
+  ansible.builtin.command:
+    argv: [systemctl, --user, stop, "{{ item }}"]
+  loop:
+    - todo-frontend.service
+    - todo-backend.service
+    - todo-keycloak.service
+  changed_when: false
+  failed_when: false
+  when: >-
+    m15_postgres_quadlet.changed or
+    m15_archive_configured.changed | default(false)
+
+- name: Reload user systemd after PostgreSQL changes
+  ansible.builtin.systemd_service:
+    scope: user
+    daemon_reload: true
+
+- name: Restart PostgreSQL with WAL archiving
+  ansible.builtin.systemd_service:
+    name: todo-postgres.service
+    scope: user
+    state: restarted
+  when: >-
+    m15_postgres_quadlet.changed or
+    m15_archive_configured.changed | default(false)
+
+- name: Wait for healthy PostgreSQL
+  ansible.builtin.command:
+    argv: [podman, wait, --condition=healthy, todo-postgres]
+  changed_when: false
+
+- name: Recheck promoted database role and archive settings
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - >-
+        SELECT pg_is_in_recovery(),
+        current_setting('transaction_read_only'),
+        current_setting('archive_mode'),
+        current_setting('archive_command'),
+        current_setting('archive_timeout');
+  register: m15_archive_verified
+  changed_when: false
+  failed_when: >-
+    m15_archive_verified.stdout | trim !=
+    "f|off|on|" ~ m15_archive_command ~ "|1min"
+
+- name: Start the application tier after PostgreSQL restart
+  ansible.builtin.systemd_service:
+    name: todo-frontend.service
+    scope: user
+    state: started
+
+- name: Wait for application readiness
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/ready
+    return_content: true
+  register: m15_readiness
+  until: m15_readiness.status == 200 and m15_readiness.json.status == "ready"
+  retries: 30
+  delay: 1
+
+- name: Wait for Keycloak discovery
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
+    return_content: true
+  register: m15_discovery
+  until: m15_discovery.status == 200
+  retries: 90
+  delay: 2
+
+- name: Install the local backup and PITR tool through pipelined stdin
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |
+        import base64
+        import os
+        import pathlib
+        import sys
+        import tempfile
+
+        path = pathlib.Path(sys.argv[1])
+        content = base64.b64decode(sys.stdin.buffer.read(), validate=True)
+        try:
+            unchanged = (
+                path.read_bytes() == content
+                and path.stat().st_mode & 0o777 == 0o644
+            )
+        except (FileNotFoundError, PermissionError):
+            unchanged = False
+
+        if unchanged:
+            print("unchanged")
+            raise SystemExit()
+
+        descriptor, temporary = tempfile.mkstemp(
+            dir=path.parent, prefix=f".{path.name}."
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(content)
+                output.flush()
+                os.fsync(output.fileno())
+            os.chmod(temporary, 0o644)
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        print("changed")
+      - "{{ m15_config_directory }}/todo_backup.py"
+    stdin: >-
+      {{
+        lookup(
+          'ansible.builtin.file',
+          project_root ~ '/scripts/todo_backup.py',
+          rstrip=false
+        ) | b64encode
+      }}
+    stdin_add_newline: false
+  register: m15_backup_tool
+  changed_when: m15_backup_tool.stdout | trim == "changed"
+
+- name: Decide whether WAL archive verification is required
+  ansible.builtin.set_fact:
+    m15_archive_verification_required: >-
+      {{
+        m15_backup_volume_quadlet.changed or
+        m15_postgres_quadlet.changed or
+        m15_archive_configured.changed | default(false)
+      }}
+  changed_when: false
+
+- name: Generate a WAL record for the archive verification
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --set
+      - ON_ERROR_STOP=1
+      - --command
+      - "SELECT pg_create_restore_point('todo_m15_archive_check_' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISSUS'));"
+  changed_when: false
+  when: m15_archive_verification_required
+
+- name: Read the current WAL segment name
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --command
+      - SELECT pg_walfile_name(pg_current_wal_lsn());
+  register: m15_wal_before_switch
+  changed_when: false
+  when: m15_archive_verification_required
+
+- name: Force a WAL segment switch
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --command
+      - SELECT pg_switch_wal();
+  changed_when: false
+  when: m15_archive_verification_required
+
+- name: Wait for the switched WAL segment to be archived
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - SELECT COALESCE(last_archived_wal, ''), COALESCE(last_failed_wal, '') FROM pg_stat_archiver;
+  register: m15_archiver_status
+  changed_when: false
+  retries: 30
+  delay: 1
+  until: m15_archiver_status.stdout.split('|')[0] == m15_wal_before_switch.stdout | trim
+  when: m15_archive_verification_required
+
+- name: Report healthy continuous archiving
+  ansible.builtin.debug:
+    msg: >-
+      WAL archiving is active. Segment {{ m15_wal_before_switch.stdout | trim }}
+      was copied to the separate todo-postgres-backup volume.
+  when: m15_archive_verification_required

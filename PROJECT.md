@@ -8,8 +8,7 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-M13 — Ansible-provisioned PostgreSQL primary/standby on two VMs in the same
-local network.
+M15 — PostgreSQL backup, WAL archive and point-in-time recovery — completed.
 
 ## Completed
 
@@ -79,6 +78,22 @@ local network.
 - A Todo written through the primary application was verified directly in the read-only standby database.
 - Standby automatic boot, recovery re-entry and resumed zero-lag streaming were verified after a full VM reboot.
 - The cloned standby required a one-time `podman system renumber` with all user Podman processes stopped to repair inherited runtime lock allocation; no volume data was removed.
+- A standard-library Python DR tool implements local standby status, fail-safe fencing preflight and verified PostgreSQL promotion.
+- Ten isolated unit tests verify successful promotion and rejection of unsafe fencing, reachability, lag and confirmation states.
+- A live Oracle Linux 9.8 drill fenced primary at the VM layer, passed the local preflight with zero apply lag, promoted standby in approximately two seconds and verified `f|off` plus a rolled-back Todo write.
+- The old primary remains fenced after promotion; it must not rejoin without being rebuilt as a replica of the promoted database.
+- M14 loaded the staged backend, frontend and Keycloak images on promoted standby without running database bootstrap, migrations or grants.
+- `https://todo.test:8443` served a stable Keycloak issuer, health, readiness and replicated public Todo data through a firewall rule restricted to the test laptop.
+- Authenticated browser login created `M14 browser failover test` through the promoted application stack.
+- A repeat M14 Ansible deployment completed with `changed=0`.
+- After reboot, PostgreSQL, backend, Keycloak and Caddy all returned `active`; PostgreSQL remained writable with `f|off`, and HTTPS readiness plus Todo data were verified from the laptop.
+- M15 configured `archive_mode=on` with a non-overwriting archive command and a separate `todo-postgres-backup` volume on the promoted Oracle Linux 9.8 host.
+- A streamed physical base backup completed in approximately three seconds and passed `pg_verifybackup` with a SHA-256 backup manifest.
+- A named-restore-point drill restored into the network-isolated `todo-postgres-restore` container without targeting or modifying the live data volume.
+- The restored database contained `M15 before restore point` but excluded `M15 after restore point`; the writable live database retained both rows.
+- Exact-confirmation cleanup removed only the disposable restore container and volume while preserving the base backup, WAL archive and live data.
+- After a full VM reboot, PostgreSQL remained `f|off|on`, all four application services were active, the base backup persisted, WAL archiving resumed with zero failures, and the M15 playbook completed with `changed=0`.
+- The live drill demonstrated that the same-VM archive grows continuously (337 MiB during testing); off-host transfer, retention and capacity alerts remain production requirements.
 
 ## Decisions
 
@@ -114,7 +129,8 @@ local network.
 - Keep Ansible responsible for host configuration and desired state.
 - Use small, explicit Python tools for replication checks, promotion and failover workflows; do not build a second configuration-management framework.
 - Provision identical releases and database credentials to primary and standby from one controlled source.
-- Use asynchronous streaming replication for M13; define the acceptable nonzero RPO before treating the DR design as complete.
+- Use asynchronous streaming replication with a 30-second operational RPO target; this is not a guaranteed bound after abrupt primary loss.
+- Target database write availability within a 15-minute RTO.
 - Require fencing of the old primary before promotion to avoid split-brain.
 - Treat replication as availability protection, not as a replacement for backup and point-in-time recovery.
 
@@ -157,12 +173,13 @@ Open <http://127.0.0.1:8000> in a browser.
 - M11: Keycloak authentication — completed
 - M12: Security baseline and least privilege — completed
 - M13: Ansible-provisioned PostgreSQL primary/standby with a dedicated replication role — completed
-- M13.5: Small Python tools for replication status and controlled promotion — planned
-- M14: Full application disaster recovery with stable service hostname, shared deployment state and smoke tests — planned
-- M15: PostgreSQL backup, WAL archive and point-in-time recovery — planned
+- M13.5: Small Python tools for replication status and controlled promotion — completed
+- M14: Full application disaster recovery with stable service hostname, shared deployment state and smoke tests — completed
+- M15: PostgreSQL backup, WAL archive and point-in-time recovery — completed
 
 ## Next step
 
-Define the acceptable nonzero RPO for the asynchronous replica. Then implement
-M13.5 local Python tools for status, fencing preflight and controlled promotion;
-promotion must require explicit confirmation that the old primary is fenced.
+Review and package the completed M13.5 through M15 implementation, run the
+full local validation suite, then commit and push it. Keep the old primary
+fenced. A later milestone may add off-host backup transfer, retention and
+capacity monitoring; the same-VM M15 volume is not host-loss protection.

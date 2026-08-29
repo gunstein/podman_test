@@ -1,0 +1,11 @@
+---
+exclude_paths:
+  - ansible/.venv/
+
+# Milestone prefixes (m13_, m14_ and m15_) make the operational sequence
+# clearer than repeating long role directory names in this pedagogical demo.
+# Database restarts remain inline so their ordering is visible in the one-shot
+# bootstrap procedure.
+skip_list:
+  - var-naming[no-role-prefix]
+  - no-handler

@@ -25,6 +25,7 @@
 - name: Load PostgreSQL from the offline archive
   ansible.builtin.command:
     argv: [podman, load, --input, "{{ m13_postgres_image_archive }}"]
+  changed_when: true
   when: standby_postgres_image.rc == 1
 
 - name: Confirm the replication secret exists on standby
@@ -59,6 +60,7 @@
 - name: Create the empty standby database volume
   ansible.builtin.command:
     argv: [podman, volume, create, todo-postgres-data]
+  changed_when: true
 
 - name: Initialize standby from a streamed base backup
   ansible.builtin.command:
@@ -92,6 +94,7 @@
       - --create-slot
       - --slot=todo_standby
       - --progress
+  changed_when: true
 
 - name: Restrict the standby data directory permissions
   ansible.builtin.command:
@@ -112,6 +115,7 @@
       - docker.io/library/postgres:17.11
       - "0700"
       - /var/lib/postgresql/data
+  changed_when: true
 
 - name: Create the standby configuration directory
   ansible.builtin.file:

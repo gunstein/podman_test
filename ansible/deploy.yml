@@ -77,6 +77,7 @@
         stdin_add_newline: false
       no_log: true
       register: secret_created
+      changed_when: true
       when: database_secret.rc == 1
 
     - name: Check whether runtime database secrets exist
@@ -109,6 +110,7 @@
       loop: "{{ runtime_database_secret_checks.results }}"
       no_log: true
       register: runtime_database_secrets_created
+      changed_when: true
       when: item.rc == 1
 
     - name: Check whether the Keycloak admin secret exists
@@ -133,6 +135,7 @@
         stdin_add_newline: false
       no_log: true
       register: keycloak_admin_secret_created
+      changed_when: true
       when: keycloak_admin_secret.rc == 1
 
     - name: Check whether the backend image exists
@@ -156,6 +159,7 @@
                '--tag', 'localhost/todo-backend:m12', project_root]
           }}
       register: backend_built
+      changed_when: true
       when:
         - backend_image.rc == 1 or refresh_images | bool
         - deployment_mode == "build"
@@ -168,6 +172,7 @@
           - --input
           - "{{ bundle_directory }}/images/todo-backend-m12.tar"
       register: backend_loaded
+      changed_when: true
       when:
         - backend_image.rc == 1
         - deployment_mode == "offline"
@@ -193,6 +198,7 @@
                '--tag', 'localhost/todo-frontend:m12', project_root]
           }}
       register: frontend_built
+      changed_when: true
       when:
         - frontend_image.rc == 1 or refresh_images | bool
         - deployment_mode == "build"
@@ -205,6 +211,7 @@
           - --input
           - "{{ bundle_directory }}/images/todo-frontend-m12.tar"
       register: frontend_loaded
+      changed_when: true
       when:
         - frontend_image.rc == 1
         - deployment_mode == "offline"
@@ -226,6 +233,7 @@
                '--tag', 'localhost/todo-keycloak:m12', project_root]
           }}
       register: keycloak_built
+      changed_when: true
       when:
         - keycloak_image.rc == 1 or refresh_images | bool
         - deployment_mode == "build"
@@ -234,6 +242,7 @@
       ansible.builtin.command:
         argv: [podman, load, --input, "{{ bundle_directory }}/images/todo-keycloak-m12.tar"]
       register: keycloak_loaded
+      changed_when: true
       when:
         - keycloak_image.rc == 1
         - deployment_mode == "offline"
@@ -256,6 +265,7 @@
           - pull
           - docker.io/library/postgres:17.11
       register: postgres_pulled
+      changed_when: true
       when:
         - postgres_image.rc == 1 or refresh_images | bool
         - deployment_mode == "build"
@@ -268,6 +278,7 @@
           - --input
           - "{{ bundle_directory }}/images/postgres-17.11.tar"
       register: postgres_loaded
+      changed_when: true
       when:
         - postgres_image.rc == 1
         - deployment_mode == "offline"

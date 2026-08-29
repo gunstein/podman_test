@@ -102,6 +102,7 @@
   loop: "{{ m14_image_checks.results }}"
   when: item.rc == 1
   register: m14_images_loaded
+  changed_when: true
   loop_control:
     label: "{{ item.item.image }}"
 

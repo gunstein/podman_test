@@ -1,5 +1,6 @@
 ---
-- import_playbook: preflight-m13.yml
+- name: Run the M13 preflight
+  ansible.builtin.import_playbook: preflight-m13.yml
 
 - name: Prepare PostgreSQL primary for one standby
   hosts: todo_primary
@@ -9,7 +10,8 @@
   roles:
     - role: postgres_primary
 
-- import_playbook: sync-standby-secrets.yml
+- name: Synchronize standby secrets
+  ansible.builtin.import_playbook: sync-standby-secrets.yml
 
 - name: Bootstrap the PostgreSQL standby
   hosts: todo_standby

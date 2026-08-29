@@ -19,6 +19,7 @@
     stdin: "{{ generated_replicator_password }}"
     stdin_add_newline: false
   no_log: true
+  changed_when: true
   when: replicator_secret_check.rc == 1
 
 - name: Read the replication secret for role provisioning

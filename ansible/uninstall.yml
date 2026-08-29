@@ -119,6 +119,7 @@
           - network
           - rm
           - todo-network
+      changed_when: true
       when: application_network.rc == 0
 
     - name: Check whether the database volume exists
@@ -140,6 +141,7 @@
           - volume
           - rm
           - todo-postgres-data
+      changed_when: true
       when:
         - remove_data | bool
         - database_volume.rc == 0
@@ -163,6 +165,7 @@
           - secret
           - rm
           - todo-db-password
+      changed_when: true
       when:
         - remove_data | bool
         - database_secret.rc == 0
@@ -185,6 +188,7 @@
       loop: "{{ runtime_database_secrets.results | default([]) }}"
       loop_control:
         label: "{{ item.item }}"
+      changed_when: true
       when:
         - remove_data | bool
         - item.rc == 0
@@ -208,6 +212,7 @@
           - secret
           - rm
           - todo-keycloak-admin-password
+      changed_when: true
       when:
         - remove_data | bool
         - keycloak_admin_secret.rc == 0
@@ -234,6 +239,7 @@
       loop: "{{ image_checks.results }}"
       loop_control:
         label: "{{ item.item }}"
+      changed_when: true
       when: item.rc == 0
 
     - name: Check whether the Caddy data volume exists
@@ -254,6 +260,7 @@
           - volume
           - rm
           - todo-caddy-data
+      changed_when: true
       when: caddy_data_volume.rc == 0
 
     - name: Report preserved database data

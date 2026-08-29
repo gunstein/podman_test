@@ -3,13 +3,16 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jwt.exceptions import InvalidAlgorithmError, InvalidAudienceError
-from jwt.exceptions import InvalidIssuerError, InvalidSignatureError
-from jwt.exceptions import MissingRequiredClaimError
-from jwt.exceptions import ExpiredSignatureError
+from jwt.exceptions import (
+    ExpiredSignatureError,
+    InvalidAlgorithmError,
+    InvalidAudienceError,
+    InvalidIssuerError,
+    InvalidSignatureError,
+    MissingRequiredClaimError,
+)
 
 from backend.main import get_jwks_client, validate_access_token
-
 
 ISSUER = "https://issuer.example/realms/todo"
 AUDIENCE = "todo-frontend"

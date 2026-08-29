@@ -4,7 +4,6 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 SCRIPT = Path(__file__).parents[1] / "scripts" / "todo_backup.py"
 SPEC = importlib.util.spec_from_file_location("todo_backup", SCRIPT)
 assert SPEC and SPEC.loader
@@ -27,7 +26,7 @@ class FakeRunner:
         self.archive_status = archive_status
         self.commands = []
 
-    def __call__(self, arguments):
+    def __call__(self, arguments, timeout=None):
         command = list(arguments)
         self.commands.append(command)
 
@@ -123,6 +122,20 @@ class TodoBackupTests(unittest.TestCase):
         with self.assertRaises(todo_backup.BackupError):
             todo_backup.TodoBackup._validate_restore_point("bad point; rm")
 
+    def test_restore_point_checks_exact_wal_file_after_archiver_advances(self):
+        runner = FakeRunner(
+            archive_status="on|000000010000000000000002||2|0"
+        )
+        self.tool(runner).create_restore_point("archiver_advanced")
+        expected = "/var/lib/postgresql/backup/wal/000000010000000000000001"
+        self.assertTrue(any(expected in command for command in runner.commands))
+
+    def test_short_control_command_timeout_is_actionable(self):
+        def timeout_runner(arguments, timeout=None):
+            raise subprocess.TimeoutExpired(arguments, timeout)
+
+        with self.assertRaisesRegex(todo_backup.BackupError, "timed out"):
+            self.tool(timeout_runner).database_state()
 
 if __name__ == "__main__":
     unittest.main()

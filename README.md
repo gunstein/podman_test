@@ -326,6 +326,8 @@ migrations, the explicit database-role privilege matrix and all backend tests.
 A matrix syntax-checks all M12-M15 playbooks with Ansible Core 2.14.18 on
 Python 3.9 and the maintained 2.20.8 development version on Python 3.12. A
 separate job runs pinned ansible-lint 26.8.0 against all Ansible content.
+Another pinned job runs Ruff against project Python and ShellCheck against the
+project-owned shell scripts; local virtual environments are excluded.
 The same matrix runs dependency-free unit tests for M13.5 fencing and promotion
 plus M15 backup and disposable-restore safety boundaries.
 Third-party actions are pinned to immutable commit SHAs and the workflow token

@@ -3,8 +3,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-import psycopg
 import jwt
+import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles

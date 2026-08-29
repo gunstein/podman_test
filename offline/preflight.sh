@@ -70,27 +70,45 @@ if ! systemctl --user show-environment >/dev/null 2>&1; then
     failed=1
 fi
 
-existing_deployment=false
-if podman container exists todo-postgres || podman container exists todo-frontend; then
-    existing_deployment=true
-    echo "INFO: existing Todo containers found; skipping clean-target port checks."
-fi
+allowed_ports=""
+for container_ports in \
+    "todo-postgres:5432" \
+    "todo-backend:8000" \
+    "todo-frontend:8080,8443"
+do
+    container=${container_ports%%:*}
+    ports=${container_ports#*:}
+    if podman container exists "$container" && \
+        [ "$(podman inspect --format '{{.State.Running}}' "$container")" = true ]; then
+        allowed_ports="${allowed_ports}${allowed_ports:+,}${ports}"
+    fi
+done
 
-if [ "$existing_deployment" = false ] && ! python3 - <<'PY'
+if ! TODO_ALLOWED_PORTS="$allowed_ports" python3 - <<'PY'
+import os
 import socket
 
+allowed = {
+    int(port)
+    for port in os.environ.get("TODO_ALLOWED_PORTS", "").split(",")
+    if port
+}
 failed = []
 for port in (5432, 8000, 8080, 8443):
     sock = socket.socket()
     try:
         sock.bind(("127.0.0.1", port))
     except OSError:
-        failed.append(port)
+        if port not in allowed:
+            failed.append(port)
     finally:
         sock.close()
 
 if failed:
-    raise SystemExit("ERROR: localhost ports already in use: " + ", ".join(map(str, failed)))
+    raise SystemExit(
+        "ERROR: localhost ports already in use by an unexpected process: "
+        + ", ".join(map(str, failed))
+    )
 PY
 then
     failed=1

@@ -63,7 +63,10 @@
             'primary_name': groups['todo_primary'][0],
             'primary_address': hostvars[groups['todo_primary'][0]].todo_node_address,
             'standby_name': groups['todo_standby'][0],
-            'rpo_seconds': todo_rpo_seconds | default(30)
+            'rpo_target_seconds': (
+              todo_rpo_target_seconds
+              | default(todo_rpo_seconds | default(30))
+            )
           } | to_json | b64encode
         }}
       label: todo-dr.json

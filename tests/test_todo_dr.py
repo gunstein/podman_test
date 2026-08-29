@@ -6,7 +6,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-
 SCRIPT = Path(__file__).parents[1] / "scripts" / "todo_dr.py"
 SPEC = importlib.util.spec_from_file_location("todo_dr", SCRIPT)
 assert SPEC and SPEC.loader
@@ -23,7 +22,7 @@ class FakeRunner:
         self.database_outputs = iter(database_outputs)
         self.commands = []
 
-    def __call__(self, arguments):
+    def __call__(self, arguments, timeout=None):
         command = list(arguments)
         self.commands.append(command)
         if command[:3] == ["systemctl", "--user", "is-active"]:
@@ -50,7 +49,7 @@ class TodoDrTests(unittest.TestCase):
         )
         return tool, runner
 
-    def test_load_config(self):
+    def test_load_legacy_config(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "dr.json"
             path.write_text(
@@ -58,7 +57,7 @@ class TodoDrTests(unittest.TestCase):
                 '"standby_name":"s","rpo_seconds":30}',
                 encoding="utf-8",
             )
-            self.assertEqual(todo_dr.load_config(path).rpo_seconds, 30)
+            self.assertEqual(todo_dr.load_config(path).rpo_target_seconds, 30)
 
     def test_status_reports_normal_standby(self):
         tool, _runner = self.tool(["t|on|0/10|0/10|0"], reachable=True)
@@ -120,6 +119,28 @@ class TodoDrTests(unittest.TestCase):
         flattened = [item for command in runner.commands for item in command]
         self.assertNotIn("pg_ctl", flattened)
 
+    def test_load_current_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "dr.json"
+            path.write_text(
+                '{"primary_name":"p","primary_address":"192.0.2.10",'
+                '"standby_name":"s","rpo_target_seconds":45}',
+                encoding="utf-8",
+            )
+            self.assertEqual(todo_dr.load_config(path).rpo_target_seconds, 45)
+
+    def test_status_labels_rpo_target_as_informational(self):
+        tool, _runner = self.tool(["t|on|0/10|0/10|0"], reachable=True)
+        output = "\n".join(tool.status_lines())
+        self.assertIn("Configured RPO target (informational)", output)
+
+    def test_control_command_timeout_is_actionable(self):
+        def timeout_runner(arguments, timeout=None):
+            raise subprocess.TimeoutExpired(arguments, timeout)
+
+        tool = todo_dr.TodoDr(self.config(), runner=timeout_runner)
+        with self.assertRaisesRegex(todo_dr.DrError, "timed out"):
+            tool.service_status()
 
 if __name__ == "__main__":
     unittest.main()

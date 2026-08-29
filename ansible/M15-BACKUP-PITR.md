@@ -147,6 +147,10 @@ python3 "$HOME/.config/todo/todo_backup.py" mark \
   --name m15_before_after
 ```
 
+The command returns only after the exact WAL segment containing the restore
+point is present in the archive. It does not rely on that segment still being
+reported as the most recently archived one.
+
 Then create data that must not exist in the restored view:
 
 ```bash
@@ -170,6 +174,18 @@ python3 "$HOME/.config/todo/todo_backup.py" restore \
 The tool copies into the fixed `todo-postgres-restore-data` volume and starts
 the fixed `todo-postgres-restore` container with networking disabled. Recovery
 pauses at the named point.
+If recovery fails, disposable state may remain for inspection. After diagnosing
+it, rerun only with explicit replacement:
+
+```bash
+python3 "$HOME/.config/todo/todo_backup.py" restore \
+  --backup base-YYYYMMDDTHHMMSSZ \
+  --target m15_before_after \
+  --replace
+```
+
+`--replace` can delete only the fixed disposable restore container and volume;
+it never targets the live or backup volume.
 
 Verify the isolated database:
 

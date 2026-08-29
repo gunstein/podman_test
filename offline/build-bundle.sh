@@ -33,7 +33,8 @@ printf '%s\n' "M12" > "$bundle_directory/VERSION"
   cd "$bundle_directory"
   find . -type f ! -name SHA256SUMS -print0 |
     sort -z |
-    xargs -0 sha256sum > SHA256SUMS
+    xargs -0 sha256sum > "$work_directory/SHA256SUMS"
+  mv "$work_directory/SHA256SUMS" SHA256SUMS
 )
 
 tar -czf "$output" -C "$work_directory" "$(basename "$bundle_directory")"

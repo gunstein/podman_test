@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Local disaster-recovery checks and PostgreSQL promotion for Todo standby."""
 
 import argparse
@@ -9,7 +8,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence
-
 
 DEFAULT_CONFIG = Path.home() / ".config" / "todo" / "todo-dr.json"
 POSTGRES_DATA = "/var/lib/postgresql/data"
@@ -24,7 +22,7 @@ class Config:
     primary_name: str
     primary_address: str
     standby_name: str
-    rpo_seconds: int
+    rpo_target_seconds: int
 
 
 @dataclass(frozen=True)
@@ -36,13 +34,19 @@ class DatabaseStatus:
     apply_lag_bytes: int
 
 
-Runner = Callable[[Sequence[str]], subprocess.CompletedProcess]
+Runner = Callable[[Sequence[str], float], subprocess.CompletedProcess]
 Connector = Callable[[str, int, float], bool]
 
 
-def run_command(arguments: Sequence[str]) -> subprocess.CompletedProcess:
+def run_command(
+    arguments: Sequence[str], timeout: float = 120
+) -> subprocess.CompletedProcess:
     return subprocess.run(
-        list(arguments), check=False, capture_output=True, text=True
+        list(arguments),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
 
 
@@ -61,15 +65,17 @@ def load_config(path: Path) -> Config:
             primary_name=str(raw["primary_name"]),
             primary_address=str(raw["primary_address"]),
             standby_name=str(raw["standby_name"]),
-            rpo_seconds=int(raw["rpo_seconds"]),
+            rpo_target_seconds=int(
+                raw.get("rpo_target_seconds", raw.get("rpo_seconds"))
+            ),
         )
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise DrError(f"Cannot read valid DR configuration from {path}: {error}") from error
 
     if not all((config.primary_name, config.primary_address, config.standby_name)):
         raise DrError(f"DR configuration contains an empty host identity: {path}")
-    if config.rpo_seconds <= 0:
-        raise DrError("rpo_seconds must be greater than zero")
+    if config.rpo_target_seconds <= 0:
+        raise DrError("rpo_target_seconds must be greater than zero")
     return config
 
 
@@ -77,7 +83,7 @@ class TodoDr:
     def __init__(
         self,
         config: Config,
-        runner: Callable[[Sequence[str]], subprocess.CompletedProcess] = run_command,
+        runner: Runner = run_command,
         connector: Callable[[str, int, float], bool] = tcp_reachable,
     ) -> None:
         self.config = config
@@ -85,7 +91,12 @@ class TodoDr:
         self.connector = connector
 
     def _run(self, arguments: Sequence[str], description: str) -> str:
-        result = self.runner(arguments)
+        try:
+            result = self.runner(arguments, 120)
+        except subprocess.TimeoutExpired as error:
+            raise DrError(
+                f"{description} timed out after 120 seconds"
+            ) from error
         if result.returncode != 0:
             detail = (result.stderr or result.stdout).strip()
             suffix = f": {detail}" if detail else ""
@@ -162,7 +173,8 @@ class TodoDr:
             f"Replay LSN: {database.replay_lsn}",
             f"Local apply lag: {database.apply_lag_bytes} bytes",
             f"Primary endpoint {self.config.primary_address}:5432: {primary}",
-            f"RPO target: at most {self.config.rpo_seconds} seconds",
+            f"Configured RPO target (informational): at most "
+            f"{self.config.rpo_target_seconds} seconds",
         ]
 
     def preflight(self, fencing_confirmation: str) -> DatabaseStatus:

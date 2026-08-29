@@ -4,7 +4,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-
 KEYCLOAK_URL = "http://127.0.0.1:8080/auth"
 REALM = "todo"
 USERNAME = "testuser"
@@ -19,12 +18,15 @@ def request(url, *, method="GET", token=None, data=None, content_type=None):
     body = data.encode() if isinstance(data, str) else data
     try:
         with urllib.request.urlopen(
-            urllib.request.Request(url, data=body, headers=headers, method=method)
+            urllib.request.Request(url, data=body, headers=headers, method=method),
+            timeout=10,
         ) as response:
             return response.status, response.read(), response.headers
     except urllib.error.HTTPError as error:
         detail = error.read().decode(errors="replace")
         raise RuntimeError(f"Keycloak returned HTTP {error.code}: {detail}") from error
+    except urllib.error.URLError as error:
+        raise RuntimeError(f"Could not reach Keycloak: {error.reason}") from error
 
 
 def json_request(url, *, method="GET", token=None, value=None):

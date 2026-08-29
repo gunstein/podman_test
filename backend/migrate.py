@@ -5,7 +5,6 @@ from pathlib import Path
 
 from backend.main import connect
 
-
 DIRECTORY = Path(__file__).parent / "migrations"
 PATTERN = re.compile(r"^(\d+)_(.+)\.(up|down)\.sql$")
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Physical PostgreSQL backup and disposable PITR for the Todo demo."""
 
 import argparse
@@ -9,7 +8,6 @@ import time
 from datetime import datetime, timezone
 from typing import Callable, Optional, Sequence
 
-
 IMAGE = "docker.io/library/postgres:17.11"
 BACKUP_VOLUME = "todo-postgres-backup"
 RESTORE_VOLUME = "todo-postgres-restore-data"
@@ -17,18 +15,25 @@ RESTORE_CONTAINER = "todo-postgres-restore"
 DATA_DIRECTORY = "/var/lib/postgresql/data"
 BACKUP_NAME = re.compile(r"base-[0-9]{8}T[0-9]{6}Z")
 RESTORE_POINT = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,62}")
+WAL_SEGMENT = re.compile(r"[0-9A-F]{24}")
 
 
 class BackupError(RuntimeError):
     """An expected, operator-actionable backup error."""
 
 
-Runner = Callable[[Sequence[str]], subprocess.CompletedProcess]
+Runner = Callable[[Sequence[str], Optional[float]], subprocess.CompletedProcess]
 
 
-def run_command(arguments: Sequence[str]) -> subprocess.CompletedProcess:
+def run_command(
+    arguments: Sequence[str], timeout: Optional[float] = None
+) -> subprocess.CompletedProcess:
     return subprocess.run(
-        list(arguments), check=False, capture_output=True, text=True
+        list(arguments),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
 
 
@@ -43,8 +48,18 @@ class TodoBackup:
         self.clock = clock
         self.sleeper = sleeper
 
-    def _run(self, arguments: Sequence[str], description: str) -> str:
-        result = self.runner(arguments)
+    def _run(
+        self,
+        arguments: Sequence[str],
+        description: str,
+        timeout: Optional[float] = 30,
+    ) -> str:
+        try:
+            result = self.runner(arguments, timeout)
+        except subprocess.TimeoutExpired as error:
+            raise BackupError(
+                f"{description} timed out after {timeout:g} seconds"
+            ) from error
         if result.returncode != 0:
             detail = (result.stderr or result.stdout).strip()
             suffix = f": {detail}" if detail else ""
@@ -52,7 +67,12 @@ class TodoBackup:
         return result.stdout.strip()
 
     def _exists(self, kind: str, name: str) -> bool:
-        result = self.runner(["podman", kind, "exists", name])
+        try:
+            result = self.runner(["podman", kind, "exists", name], 30)
+        except subprocess.TimeoutExpired as error:
+            raise BackupError(
+                f"Podman {kind} inspection timed out after 30 seconds"
+            ) from error
         if result.returncode not in (0, 1):
             detail = (result.stderr or result.stdout).strip()
             raise BackupError(f"Could not inspect Podman {kind} {name}: {detail}")
@@ -142,6 +162,7 @@ class TodoBackup:
                 "--progress",
             ],
             "Physical base backup",
+            timeout=None,
         )
         self._run(
             [
@@ -155,6 +176,7 @@ class TodoBackup:
                 f"/backup/base/{name}",
             ],
             "Base backup verification",
+            timeout=None,
         )
         self._run(
             [
@@ -207,10 +229,24 @@ class TodoBackup:
         return output
 
     def _wait_for_archived_wal(self, wal: str) -> None:
+        if not WAL_SEGMENT.fullmatch(wal):
+            raise BackupError(f"Unexpected WAL segment name: {wal!r}")
+        archive_path = f"/var/lib/postgresql/backup/wal/{wal}"
         for _attempt in range(30):
-            fields = self.archive_status().split("|")
-            if len(fields) == 5 and fields[1] == wal:
+            try:
+                result = self.runner(
+                    ["podman", "exec", "todo-postgres", "test", "-f", archive_path],
+                    30,
+                )
+            except subprocess.TimeoutExpired as error:
+                raise BackupError(
+                    "WAL archive inspection timed out after 30 seconds"
+                ) from error
+            if result.returncode == 0:
                 return
+            if result.returncode != 1:
+                detail = (result.stderr or result.stdout).strip()
+                raise BackupError(f"WAL archive inspection failed: {detail}")
             self.sleeper(1)
         raise BackupError(f"WAL segment was not archived within 30 seconds: {wal}")
 
@@ -271,6 +307,7 @@ class TodoBackup:
                     "todo-backup", backup,
                 ],
                 "Base backup copy into disposable restore volume",
+                timeout=None,
             )
             self._run(
                 [
@@ -301,20 +338,26 @@ class TodoBackup:
             )
             self._wait_for_restore_pause()
         except Exception:
-            self.runner(["podman", "rm", "--force", RESTORE_CONTAINER])
+            self.runner(["podman", "rm", "--force", RESTORE_CONTAINER], 30)
             raise
 
     def _wait_for_restore_pause(self) -> None:
         for _attempt in range(60):
-            result = self.runner(
-                [
-                    "podman", "exec", RESTORE_CONTAINER,
-                    "psql", "--username", "todo", "--dbname", "postgres",
-                    "--tuples-only", "--no-align", "--field-separator=|",
-                    "--command",
-                    "SELECT pg_is_in_recovery(), pg_is_wal_replay_paused();",
-                ]
-            )
+            try:
+                result = self.runner(
+                    [
+                        "podman", "exec", RESTORE_CONTAINER,
+                        "psql", "--username", "todo", "--dbname", "postgres",
+                        "--tuples-only", "--no-align", "--field-separator=|",
+                        "--command",
+                        "SELECT pg_is_in_recovery(), pg_is_wal_replay_paused();",
+                    ],
+                    30,
+                )
+            except subprocess.TimeoutExpired as error:
+                raise BackupError(
+                    "Disposable PITR status query timed out after 30 seconds"
+                ) from error
             if result.returncode == 0 and result.stdout.strip() == "t|t":
                 return
             if not self._exists("container", RESTORE_CONTAINER):

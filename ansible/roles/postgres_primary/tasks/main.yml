@@ -71,7 +71,7 @@
       $role$;
       ALTER ROLE todo_replicator WITH LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD '{{ replicator_secret_value.stdout }}';
     stdin_add_newline: true
-  changed_when: false
+  changed_when: true
   no_log: true
 
 - name: Inspect the rootless Todo network

@@ -54,7 +54,11 @@ The Keycloak account created from the prompted password is its temporary
 bootstrap administrator. This localhost demo retains it for repeatable
 administration and E2E setup; a real deployment should replace and remove it.
 
-## Uninstall
+## M12 uninstall
+
+`uninstall.yml` is intentionally limited to the single-host M12 deployment. It
+refuses to run when it detects M13-M15 replication, promotion or backup state.
+Do not treat a promoted database or its backup archive as ordinary M12 data.
 
 Remove the deployed services, Quadlet files, containers, network and application
 images:

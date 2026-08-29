@@ -28,6 +28,18 @@
       changed_when: false
       failed_when: m13_primary_status.stdout | trim == ''
 
+    - name: Parse the primary replication state
+      ansible.builtin.set_fact:
+        m13_primary_fields: >-
+          {{ (m13_primary_status.stdout | trim).split("|") }}
+
+    - name: Require active streaming replication
+      ansible.builtin.assert:
+        that:
+          - m13_primary_fields | length == 5
+          - m13_primary_fields[2] == "streaming"
+        fail_msg: The todo_standby connection is present but not streaming.
+
     - name: Show primary replication state
       ansible.builtin.debug:
         msg: >-

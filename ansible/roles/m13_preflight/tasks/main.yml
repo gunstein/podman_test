@@ -42,7 +42,7 @@
     that:
       - todo_node_role in ['primary', 'standby']
       - m13_hostname.stdout == inventory_hostname
-      - todo_node_address in m13_ipv4_addresses.stdout
+      - (" " ~ todo_node_address ~ "/") in m13_ipv4_addresses.stdout
       - m13_machine_id.stdout | length == 32
     fail_msg: >-
       Host identity does not match the M13 inventory. Check hostname,

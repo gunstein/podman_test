@@ -1,5 +1,5 @@
 ---
-- name: Uninstall the Todo demo
+- name: Uninstall the M12 Todo deployment
   hosts: todo_hosts
   gather_facts: false
 
@@ -39,13 +39,43 @@
       - localhost/todo-frontend:m12
       - localhost/todo-keycloak:m12
     remove_data: false
+    later_milestone_markers:
+      - "{{ quadlet_directory }}/todo-postgres-backup.volume"
+      - "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/todo/todo-standby-entrypoint.sh"
+      - "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/todo/todo_dr.py"
+      - "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/todo/todo_backup.py"
+
+  pre_tasks:
+    - name: Check for the M13 replication secret
+      ansible.builtin.command:
+        argv: [podman, secret, exists, todo-replicator-password]
+      register: replication_secret_state
+      changed_when: false
+      failed_when: replication_secret_state.rc not in [0, 1]
+
+    - name: Check for M13-M15 state outside the M12 uninstaller scope
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ later_milestone_markers }}"
+      register: later_milestone_state
+
+    - name: Refuse to apply the M12 uninstaller to a DR host
+      ansible.builtin.assert:
+        that:
+          - replication_secret_state.rc == 1
+          - not (later_milestone_state.results | selectattr('stat.exists') | list)
+        fail_msg: >-
+          uninstall.yml only supports the M12 deployment. This host contains
+          M13-M15 replication, promotion or backup state. Preserve it and use
+          the milestone runbook instead of treating it as an M12 host.
 
   tasks:
     - name: Stop the user-systemd services
       ansible.builtin.command:
         argv: "{{ ['systemctl', '--user', 'stop'] + application_services }}"
+      register: application_services_stopped
       changed_when: false
-      failed_when: false
+      failed_when: application_services_stopped.rc not in [0, 5]
 
     - name: Remove installed Quadlet files
       ansible.builtin.file:

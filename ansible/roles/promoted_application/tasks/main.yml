@@ -15,7 +15,7 @@
   ansible.builtin.assert:
     that:
       - m14_hostname.stdout | trim == inventory_hostname
-      - m14_node_address in m14_addresses.stdout
+      - (" " ~ m14_node_address ~ "/") in m14_addresses.stdout
       - m14_service_hostname | length > 0
       - m14_service_port | int >= 1024
       - m14_service_port | int <= 65535
@@ -56,25 +56,6 @@
     - todo-keycloak-admin-password
   changed_when: false
 
-- name: Check the application image archives
-  ansible.builtin.stat:
-    path: "{{ m14_bundle_directory }}/images/{{ item }}"
-  loop:
-    - todo-backend-m12.tar
-    - todo-frontend-m12.tar
-    - todo-keycloak-m12.tar
-  register: m14_archives
-
-- name: Require every offline application image archive
-  ansible.builtin.assert:
-    that:
-      - item.stat.exists
-      - item.stat.isreg
-    fail_msg: "Missing offline image archive: {{ item.item }}"
-  loop: "{{ m14_archives.results }}"
-  loop_control:
-    label: "{{ item.item }}"
-
 - name: Check application images
   ansible.builtin.command:
     argv: [podman, image, exists, "{{ item.image }}"]
@@ -90,6 +71,26 @@
   failed_when: m14_image_checks.rc not in [0, 1]
   loop_control:
     label: "{{ item.image }}"
+
+- name: Check the archive for each missing application image
+  ansible.builtin.stat:
+    path: "{{ m14_bundle_directory }}/images/{{ item.item.archive }}"
+  loop: "{{ m14_image_checks.results }}"
+  when: item.rc == 1
+  register: m14_archives
+  loop_control:
+    label: "{{ item.item.archive }}"
+
+- name: Require an archive for each missing application image
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+    fail_msg: "Missing offline image archive: {{ item.item.item.archive }}"
+  loop: "{{ m14_archives.results }}"
+  when: not (item.skipped | default(false))
+  loop_control:
+    label: "{{ item.item.item.archive }}"
 
 - name: Load missing application images
   ansible.builtin.command:
@@ -140,7 +141,8 @@
     - todo-backend.service
     - todo-keycloak.service
   changed_when: false
-  failed_when: false
+  register: m14_service_stopped
+  failed_when: m14_service_stopped.rc not in [0, 5]
   when: >-
     m14_caddy_config.changed or
     m14_quadlets.changed or
@@ -277,14 +279,22 @@
   register: m14_todos
   failed_when: m14_todos.json is not sequence
 
-- name: Export the promoted Caddy public root certificate
+- name: Read the promoted Caddy public root certificate
   ansible.builtin.command:
     argv:
       - podman
-      - cp
-      - todo-frontend:/data/caddy/pki/authorities/local/root.crt
-      - "{{ m14_config_directory }}/todo-caddy-root.crt"
+      - exec
+      - todo-frontend
+      - cat
+      - /data/caddy/pki/authorities/local/root.crt
+  register: m14_caddy_root_certificate
   changed_when: false
+
+- name: Export the promoted Caddy public root certificate
+  ansible.builtin.copy:
+    content: "{{ m14_caddy_root_certificate.stdout | trim }}\n"
+    dest: "{{ m14_config_directory }}/todo-caddy-root.crt"
+    mode: "0644"
 
 - name: Report successful promoted application deployment
   ansible.builtin.debug:

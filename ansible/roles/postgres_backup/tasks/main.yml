@@ -66,8 +66,19 @@
       - /bin/sh
       - docker.io/library/postgres:17.11
       - -ec
-      - umask 077; mkdir -p /backup/base /backup/wal; chmod 0700 /backup /backup/base /backup/wal
-  changed_when: false
+      - >-
+        changed=false;
+        for path in /backup /backup/base /backup/wal; do
+          if [ ! -d "$path" ] || [ "$(stat -c %a "$path")" != 700 ]; then
+            changed=true;
+          fi;
+        done;
+        umask 077;
+        mkdir -p /backup/base /backup/wal;
+        chmod 0700 /backup /backup/base /backup/wal;
+        if $changed; then echo changed; else echo unchanged; fi
+  register: m15_backup_directories
+  changed_when: m15_backup_directories.stdout | trim == "changed"
 
 - name: Install the WAL-archive PostgreSQL Quadlet
   ansible.builtin.template:
@@ -131,7 +142,8 @@
     - todo-backend.service
     - todo-keycloak.service
   changed_when: false
-  failed_when: false
+  register: m15_service_stopped
+  failed_when: m15_service_stopped.rc not in [0, 5]
   when: >-
     m15_postgres_quadlet.changed or
     m15_archive_configured.changed | default(false)
@@ -264,6 +276,7 @@
     m15_archive_verification_required: >-
       {{
         m15_backup_volume_quadlet.changed or
+        m15_backup_directories.changed or
         m15_postgres_quadlet.changed or
         m15_archive_configured.changed | default(false)
       }}

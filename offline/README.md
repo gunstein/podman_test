@@ -92,7 +92,8 @@ checksums. For real distribution, sign the archive or manifest separately with
 an organizational GPG or Sigstore/cosign identity and verify that signature on
 the target before running `install.sh`.
 
-Uninstall while preserving database data:
+Uninstall this M12 bundle while preserving database data. The playbook refuses
+to run if it detects later replication, promotion or backup state:
 
 ```bash
 ANSIBLE_PIPELINING=true ansible-playbook \

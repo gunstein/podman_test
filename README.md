@@ -323,8 +323,9 @@ finished.
 `.github/workflows/clean-install.yml` installs the pinned test dependencies
 against an empty PostgreSQL 17.11 database. It exercises database bootstrap,
 migrations, the explicit database-role privilege matrix and all backend tests.
-A separate matrix syntax-checks all M13-M14 playbooks with Ansible Core 2.14.18 on
-Python 3.9 and the maintained 2.20.8 development version on Python 3.12.
+A matrix syntax-checks all M12-M15 playbooks with Ansible Core 2.14.18 on
+Python 3.9 and the maintained 2.20.8 development version on Python 3.12. A
+separate job runs pinned ansible-lint 26.8.0 against all Ansible content.
 The same matrix runs dependency-free unit tests for M13.5 fencing and promotion
 plus M15 backup and disposable-restore safety boundaries.
 Third-party actions are pinned to immutable commit SHAs and the workflow token
@@ -467,7 +468,11 @@ SHA-256 checks detect modified files only when `SHA256SUMS` itself is trusted.
 They provide integrity, not publisher authenticity. A real distribution process
 should deliver and verify a separately signed manifest or bundle.
 
-## Uninstall
+## M12 uninstall
+
+This playbook is intentionally limited to the single-host M12 deployment. It
+refuses to run when it detects M13-M15 replication, promotion or backup state;
+those hosts require their milestone runbook and an explicit topology decision.
 
 Remove services, containers, application images, network and installed Quadlet
 files while preserving PostgreSQL data:

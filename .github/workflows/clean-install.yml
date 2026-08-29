@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   ansible-syntax:
-    name: M13-M15 syntax (ansible-core ${{ matrix.ansible }})
+    name: M12-M15 syntax (ansible-core ${{ matrix.ansible }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -28,6 +28,17 @@ jobs:
 
       - name: Install Ansible Core
         run: python -m pip install "ansible-core==${{ matrix.ansible }}"
+
+      - name: Syntax-check M12 playbooks
+        shell: bash
+        run: |
+          set -euo pipefail
+          for playbook in ansible/deploy.yml ansible/uninstall.yml; do
+            ansible-playbook \
+              --inventory ansible/inventory.ini \
+              "$playbook" \
+              --syntax-check
+          done
 
       - name: Syntax-check M13 playbooks
         shell: bash
@@ -76,6 +87,26 @@ jobs:
           ! tar -tzf dist/todo-m13-test.tar.gz | \
             grep -Eq 'promoted_application|postgres_backup'
 
+
+  ansible-lint:
+    name: Ansible lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned Ansible tooling
+        run: >-
+          python -m pip install
+          "ansible-core==2.20.8"
+          "ansible-lint==26.8.0"
+
+      - name: Lint Ansible content
+        run: ansible-lint ansible
 
   backend:
     runs-on: ubuntu-latest

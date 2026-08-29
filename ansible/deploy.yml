@@ -296,7 +296,7 @@
       loop: "{{ application_services }}"
       register: services_stopped
       changed_when: false
-      failed_when: false
+      failed_when: services_stopped.rc not in [0, 5]
       when: >-
         secret_created.changed | default(false) or
         runtime_database_secrets_created.changed | default(false) or

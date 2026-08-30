@@ -9,6 +9,7 @@ trap 'rm -rf "$work_directory"' EXIT
 
 mkdir -p "$package_directory/ansible/roles" \
   "$package_directory/scripts" \
+  "$package_directory/offline" \
   "$(dirname "$output")"
 
 cp "$project_root/ansible/M15-BACKUP-PITR.md" \
@@ -18,6 +19,7 @@ cp "$project_root/ansible/M15-BACKUP-PITR.md" \
 cp -r "$project_root/ansible/roles/postgres_backup" \
   "$package_directory/ansible/roles/"
 cp "$project_root/scripts/todo_backup.py" "$package_directory/scripts/"
+cp "$project_root/offline/FAPOLICYD.md" "$package_directory/offline/"
 
 printf '%s\n' M15 > "$package_directory/VERSION"
 tar -czf "$output" -C "$work_directory" "$(basename "$package_directory")"

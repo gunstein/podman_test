@@ -22,8 +22,11 @@ podman save --format oci-archive --output "$bundle_directory/images/postgres-17.
 
 cp -r "$project_root/quadlet" "$bundle_directory/"
 mkdir -p "$bundle_directory/ansible"
-cp "$project_root/ansible/"*.yml "$project_root/ansible/inventory.ini" \
-  "$project_root/ansible/requirements.txt" "$bundle_directory/ansible/"
+cp "$project_root/ansible/deploy.yml" \
+  "$project_root/ansible/uninstall.yml" \
+  "$project_root/ansible/inventory.ini" \
+  "$project_root/ansible/requirements.txt" \
+  "$bundle_directory/ansible/"
 cp "$project_root/offline/install.sh" "$project_root/offline/preflight.sh" \
   "$project_root/offline/README.md" "$project_root/offline/FAPOLICYD.md" \
   "$bundle_directory/"
@@ -38,4 +41,11 @@ printf '%s\n' "M12" > "$bundle_directory/VERSION"
 )
 
 tar -czf "$output" -C "$work_directory" "$(basename "$bundle_directory")"
+output_directory=$(dirname "$output")
+output_name=$(basename "$output")
+(
+  cd "$output_directory"
+  sha256sum "$output_name" > "$output_name.sha256"
+)
 printf 'Created %s\n' "$output"
+printf 'Created %s.sha256\n' "$output"

@@ -2,34 +2,34 @@
 set -euo pipefail
 
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-output=${1:-"$project_root/dist/todo-m13-test.tar.gz"}
+output=${1:-"$project_root/dist/todo-m16-test.tar.gz"}
 work_directory=$(mktemp -d)
-package_directory="$work_directory/todo-m13-test"
+package_directory="$work_directory/todo-m16-test"
 trap 'rm -rf "$work_directory"' EXIT
 
 mkdir -p "$package_directory/ansible/roles" \
   "$package_directory/quadlet" \
-  "$package_directory/scripts" \
-  "$package_directory/offline"
-mkdir -p "$(dirname "$output")"
+  "$package_directory/docs" \
+  "$(dirname "$output")"
 
-cp "$project_root/ansible/"M13*.md \
-  "$project_root/ansible/"*-m13.yml \
-  "$project_root/ansible/inventory-m13.example.ini" \
-  "$project_root/ansible/sync-standby-secrets.yml" \
+cp "$project_root/ansible/M16-RESTORE-REDUNDANCY.md" \
+  "$project_root/ansible/preflight-m16.yml" \
+  "$project_root/ansible/rebuild-standby-m16.yml" \
+  "$project_root/ansible/status-m16.yml" \
+  "$project_root/ansible/inventory-m16.example.ini" \
   "$package_directory/ansible/"
-for role in m13_preflight postgres_primary postgres_standby todo_dr; do
+for role in postgres_redundancy_primary postgres_reseed_standby; do
   cp -r "$project_root/ansible/roles/$role" \
     "$package_directory/ansible/roles/"
 done
-cp -r "$project_root/ansible/tasks" "$package_directory/ansible/"
 cp "$project_root/quadlet/todo.network" \
   "$project_root/quadlet/todo-postgres-data.volume" \
   "$package_directory/quadlet/"
-cp "$project_root/scripts/todo_dr.py" "$package_directory/scripts/"
-cp "$project_root/offline/FAPOLICYD.md" "$package_directory/offline/"
+cp "$project_root/docs/SELINUX.md" \
+  "$project_root/docs/WHAT-YOU-LEARN.md" \
+  "$package_directory/docs/"
 
-printf '%s\n' M13.5 > "$package_directory/VERSION"
+printf '%s\n' M16 > "$package_directory/VERSION"
 tar -czf "$output" -C "$work_directory" "$(basename "$package_directory")"
 output_directory=$(dirname "$output")
 output_name=$(basename "$output")

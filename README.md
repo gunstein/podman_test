@@ -31,10 +31,14 @@ M13     Ansible-provisioned PostgreSQL primary/standby
 M13.5   Python tools for replication status and controlled promotion
 M14     Full application disaster recovery
 M15     Backup, WAL archive and point-in-time recovery
+M16     Rebuild old primary as the new standby (live drill pending)
 ```
 
 See [PROJECT.md](PROJECT.md) for the decisions and verification performed at
-each step.
+each step. The [concept coverage matrix](docs/WHAT-YOU-LEARN.md) explains what
+the demo implements versus deliberately simplifies. The
+[Oracle Linux SELinux guide](docs/SELINUX.md) explains labels, rootless UID
+mapping and how SELinux differs from fapolicyd.
 
 ## Security scope
 
@@ -243,6 +247,12 @@ M14 loads the already staged M12 application images on the promoted standby and
 starts dedicated backend, Keycloak and Caddy Quadlets without running database
 bootstrap, migrations or grants. The stable LAN identity is
 `https://todo.test:8443`. Follow the [M14 failover runbook](ansible/M14-FAILOVER.md).
+The lab copies a newly generated Caddy public root to the client after
+promotion to expose the TLS trust chain. A real DR design should normally
+pre-stage client trust and server certificates, use an organization/public CA,
+or terminate TLS at a stable redundant endpoint so certificate work does not
+consume failover time. The runbook compares these alternatives and their
+private-key, dependency and operational tradeoffs.
 
 Build its source-only package and checksum with:
 
@@ -271,6 +281,24 @@ Build the source-only package with:
 ```bash
 scripts/build-m15-test-package.sh
 ```
+
+## Restore redundancy after failover (M16)
+
+M16 keeps the promoted host as current primary and destructively re-seeds the
+fenced old primary as a database-only standby. It requires stopped services, an
+absent new replication slot and exact fencing/reseed confirmations before old
+data can be removed. Follow the
+[M16 restore-redundancy runbook](ansible/M16-RESTORE-REDUNDANCY.md).
+
+Build its source-only package and checksum with:
+
+```bash
+scripts/build-m16-test-package.sh
+```
+
+The automation and static checks are complete; the live Oracle Linux two-VM
+re-seed, replicated-write and reboot drill remains required before M16 is marked
+complete. Planned failback is deliberately separate from restoring redundancy.
 
 ## Verify HTTP and HTTPS
 
@@ -428,20 +456,28 @@ On a connected machine compatible with the target:
 offline/build-bundle.sh
 ```
 
-This creates `dist/todo-offline-m12.tar.gz` containing:
+This creates `dist/todo-offline-m12.tar.gz` and
+`dist/todo-offline-m12.tar.gz.sha256`. The archive contains:
 
 - Backend, frontend, Keycloak and PostgreSQL OCI image archives
 - Quadlet and Ansible deployment files
 - A target preflight check, installer and SHA-256 checksums
 
-On the offline target:
+On the offline target, copy both files through the trusted transfer path, then
+verify before extraction:
 
 ```bash
+sha256sum -c todo-offline-m12.tar.gz.sha256
 tar -xzf todo-offline-m12.tar.gz
 cd todo-offline-m12
 sh ./preflight.sh
 sh ./install.sh
 ```
+
+The external checksum verifies the archive before any extracted script runs.
+The internal `SHA256SUMS` then verifies every bundled artifact. SHA-256 alone
+provides integrity only when the checksum arrived through a trusted channel; a
+real release should sign the archive or checksum manifest.
 
 The installer verifies every file before loading images and running the same
 Ansible deployment without contacting a registry or Python package index. See

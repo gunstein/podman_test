@@ -1,0 +1,35 @@
+[Unit]
+Description=Todo rebuilt PostgreSQL standby database
+
+[Container]
+Image=docker.io/library/postgres:17.11
+ContainerName=todo-postgres
+Network=todo.network
+Volume=todo-postgres-data.volume:/var/lib/postgresql/data:Z
+Volume={{ m16_config_directory }}/todo-standby-entrypoint.sh:/usr/local/bin/todo-standby-entrypoint:ro,Z
+Secret=todo-replicator-password
+User=postgres
+Entrypoint=/bin/sh
+Exec=/usr/local/bin/todo-standby-entrypoint
+PublishPort=127.0.0.1:5432:5432
+HealthCmd=pg_isready -U todo -d todo
+HealthInterval=10s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartupCmd=pg_isready -U todo -d todo
+HealthStartupInterval=1s
+HealthStartupTimeout=5s
+HealthStartupRetries=60
+HealthStartupSuccess=1
+HealthOnFailure=kill
+NoNewPrivileges=true
+DropCapability=all
+PidsLimit=256
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

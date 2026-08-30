@@ -55,8 +55,10 @@ The expected primary state is `streaming|async`; standby must report recovery
 as `t`. Status also requires an active, usable `todo_standby` slot and reports
 its WAL status, remaining safe WAL bytes and any invalidation reason.
 
-A new bootstrap also installs the M13.5 DR tool. For an already bootstrapped
-standby, install or update it without touching the database:
+A database bootstrap deliberately does not install the M13.5 DR tool. This keeps
+controller-side `fapolicyd` source checks ahead of the one-shot database work.
+After replication is healthy, install or update the DR tool on standby without
+touching the database:
 
 ```bash
 ansible-playbook --inventory ansible/inventory-m13.ini ansible/install-dr-m13.yml

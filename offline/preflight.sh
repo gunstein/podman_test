@@ -114,8 +114,10 @@ then
     failed=1
 fi
 
-available_kib=$(df -Pk . | awk 'NR == 2 {print $4}')
+graph_root=$(podman info --format '{{.Store.GraphRoot}}')
+available_kib=$(df -Pk "$graph_root" | awk 'NR == 2 {print $4}')
 memory_kib=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+echo "INFO: Podman GraphRoot: $graph_root"
 echo "INFO: free disk: $((available_kib / 1024)) MiB"
 echo "INFO: total memory: $((memory_kib / 1024)) MiB"
 echo "INFO: recommended minimum: 10240 MiB free disk and 4096 MiB memory."

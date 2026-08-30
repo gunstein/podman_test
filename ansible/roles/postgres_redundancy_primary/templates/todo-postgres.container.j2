@@ -1,0 +1,36 @@
+[Unit]
+Description=Todo current PostgreSQL primary with WAL archive and replication
+
+[Container]
+Image=docker.io/library/postgres:17.11
+ContainerName=todo-postgres
+Network=todo.network
+Volume=todo-postgres-data.volume:/var/lib/postgresql/data:Z
+Volume=todo-postgres-backup.volume:/var/lib/postgresql/backup:z
+Volume={{ m16_config_directory }}/todo-current-primary-entrypoint.sh:/usr/local/bin/todo-current-primary-entrypoint:ro,Z
+User=postgres
+Entrypoint=/bin/sh
+Exec=/usr/local/bin/todo-current-primary-entrypoint
+PublishPort=127.0.0.1:5432:5432
+PublishPort={{ todo_node_address }}:5432:5432
+HealthCmd=pg_isready -U todo -d todo
+HealthInterval=10s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartupCmd=pg_isready -U todo -d todo
+HealthStartupInterval=1s
+HealthStartupTimeout=5s
+HealthStartupRetries=60
+HealthStartupSuccess=1
+HealthOnFailure=kill
+NoNewPrivileges=true
+DropCapability=all
+PidsLimit=256
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

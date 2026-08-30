@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   ansible-syntax:
-    name: M12-M15 syntax (ansible-core ${{ matrix.ansible }})
+    name: M12-M16 syntax (ansible-core ${{ matrix.ansible }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -71,19 +71,37 @@ jobs:
           ansible/configure-backup-m15.yml
           --syntax-check
 
+      - name: Syntax-check M16 playbooks
+        shell: bash
+        run: |
+          set -euo pipefail
+          for playbook in \
+            ansible/preflight-m16.yml \
+            ansible/rebuild-standby-m16.yml \
+            ansible/status-m16.yml
+          do
+            ansible-playbook \
+              --inventory ansible/inventory-m16.example.ini \
+              "$playbook" \
+              --syntax-check
+          done
+
       - name: Test DR and backup tools
         run: python -m unittest discover --start-directory tests --verbose
       - name: Build and verify milestone packages
         shell: bash
         run: |
           set -euo pipefail
-          for milestone in 13 14 15; do
+          for milestone in 13 14 15 16; do
             "scripts/build-m${milestone}-test-package.sh"
             (
               cd dist
               sha256sum -c "todo-m${milestone}-test.tar.gz.sha256"
             )
           done
+          tar -tzf dist/todo-m13-test.tar.gz | grep 'offline/FAPOLICYD.md' >/dev/null
+          tar -tzf dist/todo-m15-test.tar.gz | grep 'offline/FAPOLICYD.md' >/dev/null
+          tar -tzf dist/todo-m16-test.tar.gz | grep 'M16-RESTORE-REDUNDANCY.md' >/dev/null
           ! tar -tzf dist/todo-m13-test.tar.gz | \
             grep -Eq 'promoted_application|postgres_backup'
 
@@ -135,6 +153,7 @@ jobs:
             scripts/build-m13-test-package.sh \
             scripts/build-m14-test-package.sh \
             scripts/build-m15-test-package.sh \
+            scripts/build-m16-test-package.sh \
             scripts/run-e2e.sh
 
 

@@ -90,7 +90,7 @@ The playbook fails before changing application state unless:
 - `todo-postgres.service` is active;
 - PostgreSQL reports `f|off`, meaning promoted and writable;
 - all three runtime secrets exist;
-- all three M12 application image archives exist.
+- every missing application image has its corresponding staged M12 archive.
 
 It loads only missing images, installs dedicated promoted-host Quadlets, starts
 Keycloak, backend and Caddy, updates the existing Keycloak client to the stable
@@ -102,8 +102,12 @@ On the laptop, add the temporary LAN mapping:
 
 ```bash
 read -rp "Promoted host IPv4 address: " TODO_STANDBY_IP
+sudo sed -i '/[[:space:]]todo\.test\([[:space:]]\|$\)/d' /etc/hosts
 printf '%s %s\n' "$TODO_STANDBY_IP" todo.test | sudo tee -a /etc/hosts
 ```
+
+Removing an old mapping first matters during repeated drills: multiple
+`todo.test` entries can make the client select the fenced address.
 
 Copy Caddy's public root certificate from standby:
 
@@ -118,6 +122,39 @@ sudo update-ca-certificates
 
 Then open <https://todo.test:8443/>. The private CA key remains in the
 `todo-caddy-data` Podman volume; only the public root certificate is copied.
+
+### Certificate lifecycle and DR alternatives
+
+There are two different artifacts and trust directions:
+
+```text
+promoted server: leaf certificate + private key
+client:          public CA root used to verify that leaf certificate
+```
+
+M14 deliberately creates a new Caddy internal CA when the promoted application
+tier first starts. The client can therefore receive the exact public root only
+after M14 deployment. This is simple, works offline and never copies the
+private CA key out of the Caddy volume. Its disadvantage is operational: manual
+certificate distribution consumes failover time, requires a browser restart
+on some clients and does not scale beyond a small lab.
+
+The certificate path should normally be prepared before an incident. Common
+alternatives are:
+
+| Model | How it works | Advantages | Costs and risks |
+|---|---|---|---|
+| Pre-stage Caddy on standby | Before an incident, create the standby Caddy volume and run a restricted certificate-only configuration for `todo.test`; distribute its public root while the application remains unpublished | Keeps the offline internal-CA model and removes trust installation from the failover RTO | The inactive node already holds a CA private key; renewal, backup and permission/SELinux handling become pre-incident responsibilities |
+| Organization internal PKI | Clients trust one organization root in advance; each node receives its own reviewed leaf certificate and private key for `todo.test` | Central trust, revocation and renewal; no client action during failover | Requires PKI and secure certificate/key provisioning; the root private key should not be copied to application nodes |
+| Public CA / ACME | A publicly trusted CA issues `todo.test` or a real DNS name, commonly through automated ACME renewal | Browsers trust it without manual root installation; mature automation | Requires suitable DNS/domain validation and usually network dependencies; it is a poor fit for this intentionally offline lab |
+| TLS-terminating load balancer | A stable, preferably redundant proxy owns the service certificate and routes to the active application node | Database/app failover does not change client TLS identity | Adds infrastructure, health routing and its own HA lifecycle |
+| Copy one Caddy internal CA to both nodes | Securely transfer the existing Caddy CA private material and let both nodes issue from the same root | Clients need trust only once | Expands the private CA key's exposure, couples the nodes and requires protected transfer, backup, file ownership and SELinux labels; avoid casual volume copying |
+
+For this demo, the post-promotion copy is retained because it makes the trust
+chain visible with minimal infrastructure. For a real DR design, prefer
+pre-staged client trust and per-node leaf keys from an organization or public
+CA. Certificate availability and renewal belong in the readiness checklist,
+not in improvised work after the primary has failed.
 
 ## Verify locally on standby
 
@@ -146,3 +183,10 @@ Todo write. A second playbook run completed with `changed=0`. After a VM
 reboot, PostgreSQL, backend, Keycloak and Caddy all returned `active`;
 PostgreSQL remained `f|off`, and the LAN client verified HTTPS readiness and
 the replicated Todo data.
+
+On 2026-08-30, the complete clean-install drill repeated the path with newly
+installed Oracle Linux 9.8 VMs: old primary `192.168.0.102`, promoted host
+`192.168.0.108` and client `192.168.0.100`. The existing Keycloak user survived
+physical replication, authenticated successfully through the stable issuer and
+created `M14 clean failover test`. Idempotent deployment, full promoted-host
+reboot, writable PostgreSQL and client HTTPS checks all passed again.

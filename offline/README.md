@@ -32,20 +32,23 @@ From the project root:
 offline/build-bundle.sh
 ```
 
-This builds the backend, frontend and Keycloak images, pulls PostgreSQL,
-and creates:
+This builds the backend, frontend and Keycloak images, pulls PostgreSQL, and
+creates both the archive and its external checksum:
 
 ```text
 dist/todo-offline-m12.tar.gz
+dist/todo-offline-m12.tar.gz.sha256
 ```
 
 Build the bundle on a machine compatible with the offline target.
 
 ## Install on the offline machine
 
-Copy only the archive to the target, then run:
+Copy the archive and checksum to the target through the trusted transfer path.
+Verify the archive before extracting or running any bundled code:
 
 ```bash
+sha256sum -c todo-offline-m12.tar.gz.sha256
 tar -xzf todo-offline-m12.tar.gz
 cd todo-offline-m12
 sh ./preflight.sh

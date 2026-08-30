@@ -1,0 +1,70 @@
+---
+- name: Run the destructive M16 preflight
+  ansible.builtin.import_playbook: preflight-m16.yml
+
+- name: Prepare promoted database for a rebuilt standby
+  hosts: todo_current_primary
+  gather_facts: false
+  any_errors_fatal: true
+
+  vars:
+    m16_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
+    m16_config_directory: "{{ m16_user_home }}/.config/todo"
+    m16_quadlet_directory: "{{ m16_user_home }}/.config/containers/systemd"
+
+  roles:
+    - role: postgres_redundancy_primary
+
+- name: Destroy old primary data and rebuild it as standby
+  hosts: todo_rebuild_standby
+  gather_facts: false
+  any_errors_fatal: true
+
+  vars:
+    project_root: "{{ playbook_dir }}/.."
+    m16_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
+    m16_config_directory: "{{ m16_user_home }}/.config/todo"
+    m16_quadlet_directory: "{{ m16_user_home }}/.config/containers/systemd"
+
+  roles:
+    - role: postgres_reseed_standby
+
+- name: Verify restored M16 replication
+  hosts: todo_current_primary
+  gather_facts: false
+  any_errors_fatal: true
+
+  tasks:
+    - name: Wait for rebuilt standby streaming state
+      ansible.builtin.command:
+        argv:
+          - podman
+          - exec
+          - todo-postgres
+          - psql
+          - --username
+          - todo
+          - --dbname
+          - postgres
+          - --tuples-only
+          - --no-align
+          - --field-separator=|
+          - --command
+          - >-
+            SELECT application_name, state, sync_state,
+            pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)::bigint
+            FROM pg_stat_replication
+            WHERE application_name = '{{ m16_replication_slot }}';
+      register: m16_final_streaming
+      changed_when: false
+      retries: 30
+      delay: 1
+      until: >-
+        (m16_final_streaming.stdout | trim).split('|') | length == 4 and
+        (m16_final_streaming.stdout | trim).split('|')[1] == 'streaming'
+
+    - name: Report restored database redundancy
+      ansible.builtin.debug:
+        msg: >-
+          M16 restored asynchronous redundancy: {{ m16_final_streaming.stdout | trim }}.
+          The promoted host remains primary; the old primary is now a rebuilt standby.

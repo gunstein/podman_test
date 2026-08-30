@@ -339,7 +339,23 @@
   changed_when: false
   when: m15_archive_verification_required
 
-- name: Wait for the switched WAL segment to be archived
+- name: Wait for the exact switched WAL segment in the archive
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - test
+      - -f
+      - "/var/lib/postgresql/backup/wal/{{ m15_wal_before_switch.stdout | trim }}"
+  register: m15_archived_wal_file
+  changed_when: false
+  retries: 30
+  delay: 1
+  until: m15_archived_wal_file.rc == 0
+  when: m15_archive_verification_required
+
+- name: Read PostgreSQL archiver diagnostics
   ansible.builtin.command:
     argv:
       - podman
@@ -354,12 +370,9 @@
       - --no-align
       - --field-separator=|
       - --command
-      - SELECT COALESCE(last_archived_wal, ''), COALESCE(last_failed_wal, '') FROM pg_stat_archiver;
+      - "SELECT COALESCE(last_archived_wal, ''), COALESCE(last_failed_wal, '') FROM pg_stat_archiver;"
   register: m15_archiver_status
   changed_when: false
-  retries: 30
-  delay: 1
-  until: m15_archiver_status.stdout.split('|')[0] == m15_wal_before_switch.stdout | trim
   when: m15_archive_verification_required
 
 - name: Report healthy continuous archiving

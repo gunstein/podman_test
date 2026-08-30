@@ -109,6 +109,11 @@ or trusting an entire home, extraction or temporary directory.
   or M15 role, which installs the tool through pipelined standard input, and
   register the exact source and deployed paths documented by its runbook.
 
+- **Ansible cannot read `todo_dr/tasks/main.yml`:** The M13.5 role contains its
+  small pipelined Python installer inline. `fapolicyd` can therefore classify
+  that YAML file as executable content. Register both the exact role task file
+  and `scripts/todo_dr.py` in `todo-dr-source`; do not trust the role directory.
+
 - **A previously working tool fails after an update:** Its stored hash is stale.
   Run `--file update` for every registered copy and then
   `fapolicyd-cli --update`.
@@ -136,6 +141,9 @@ and the deployed command on its target:
 ```bash
 sudo fapolicyd-cli --file delete \
   "$HOME/todo-m13-test/scripts/todo_dr.py" \
+  --trust-file todo-dr-source
+sudo fapolicyd-cli --file delete \
+  "$HOME/todo-m13-test/ansible/roles/todo_dr/tasks/main.yml" \
   --trust-file todo-dr-source
 sudo fapolicyd-cli --file delete \
   "$HOME/.config/todo/todo_dr.py" \

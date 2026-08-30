@@ -116,3 +116,12 @@ tool creates verified physical base backups and restores only into fixed,
 disposable Podman resources. Follow
 [M15-BACKUP-PITR.md](M15-BACKUP-PITR.md). The same-VM backup volume is a PITR
 demonstration, not protection against loss of the host.
+
+## Restore redundancy after failover
+
+M16 uses `postgres_redundancy_primary` to preserve M15 archiving while exposing
+a firewalled replication endpoint on the promoted host. The destructive
+`postgres_reseed_standby` role then replaces only the explicitly confirmed old
+primary volume with a fresh base backup. Follow
+[M16-RESTORE-REDUNDANCY.md](M16-RESTORE-REDUNDANCY.md). This restores a second
+database copy; it is not an automatic failback or switchover.

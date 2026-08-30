@@ -1,0 +1,94 @@
+---
+- name: Read restored replication from current primary
+  hosts: todo_current_primary
+  gather_facts: false
+  any_errors_fatal: true
+
+  tasks:
+    - name: Query rebuilt standby connection and physical slot
+      ansible.builtin.command:
+        argv:
+          - podman
+          - exec
+          - todo-postgres
+          - psql
+          - --username
+          - todo
+          - --dbname
+          - postgres
+          - --tuples-only
+          - --no-align
+          - --field-separator=|
+          - --command
+          - >-
+            SELECT r.application_name, r.state, r.sync_state,
+            pg_wal_lsn_diff(pg_current_wal_lsn(), r.replay_lsn)::bigint,
+            s.active, s.wal_status, COALESCE(s.safe_wal_size, -1),
+            COALESCE(s.invalidation_reason, '')
+            FROM pg_stat_replication r
+            JOIN pg_replication_slots s ON s.slot_name = r.application_name
+            WHERE r.application_name = '{{ m16_replication_slot }}';
+      register: m16_status_primary
+      changed_when: false
+
+    - name: Require healthy asynchronous rebuilt standby
+      ansible.builtin.assert:
+        that:
+          - (m16_status_primary.stdout | trim).split('|') | length == 8
+          - (m16_status_primary.stdout | trim).split('|')[1] == 'streaming'
+          - (m16_status_primary.stdout | trim).split('|')[2] == 'async'
+          - (m16_status_primary.stdout | trim).split('|')[4] == 't'
+          - (m16_status_primary.stdout | trim).split('|')[5] in ['reserved', 'extended']
+          - (m16_status_primary.stdout | trim).split('|')[7] == ''
+        fail_msg: Rebuilt standby connection or physical slot is not healthy.
+
+    - name: Show current primary replication state
+      ansible.builtin.debug:
+        msg: >-
+          current primary: application|state|sync|lag_bytes|slot_active|
+          wal_status|safe_wal_bytes|invalidation =
+          {{ m16_status_primary.stdout | trim }}
+
+- name: Read recovery state from rebuilt standby
+  hosts: todo_rebuild_standby
+  gather_facts: false
+  any_errors_fatal: true
+
+  tasks:
+    - name: Query rebuilt standby recovery state
+      ansible.builtin.command:
+        argv:
+          - podman
+          - exec
+          - todo-postgres
+          - psql
+          - --username
+          - todo
+          - --dbname
+          - postgres
+          - --tuples-only
+          - --no-align
+          - --field-separator=|
+          - --command
+          - >-
+            SELECT pg_is_in_recovery(),
+            current_setting('transaction_read_only'),
+            COALESCE(pg_last_wal_receive_lsn()::text, ''),
+            COALESCE(pg_last_wal_replay_lsn()::text, '');
+      register: m16_status_standby
+      changed_when: false
+
+    - name: Require read-only rebuilt standby
+      ansible.builtin.assert:
+        that:
+          - (m16_status_standby.stdout | trim).split('|') | length == 4
+          - (m16_status_standby.stdout | trim).split('|')[0] == 't'
+          - (m16_status_standby.stdout | trim).split('|')[1] == 'on'
+          - (m16_status_standby.stdout | trim).split('|')[2] != ''
+          - (m16_status_standby.stdout | trim).split('|')[3] != ''
+
+    - name: Show rebuilt standby recovery state
+      ansible.builtin.debug:
+        msg: >-
+          rebuilt standby: recovery|read_only|receive_lsn|replay_lsn =
+          {{ m16_status_standby.stdout | trim }}

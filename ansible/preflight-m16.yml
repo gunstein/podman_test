@@ -1,0 +1,146 @@
+---
+- name: Inspect the promoted primary for M16
+  hosts: todo_current_primary
+  gather_facts: false
+  any_errors_fatal: true
+
+  tasks:
+    - name: Read current primary hostname
+      ansible.builtin.command: hostname
+      register: m16_current_hostname
+      changed_when: false
+
+    - name: Read current primary IPv4 addresses
+      ansible.builtin.command: {argv: [ip, -o, -4, address, show, scope, global]}
+      register: m16_current_addresses
+      changed_when: false
+
+    - name: Require active current PostgreSQL
+      ansible.builtin.command: {argv: [systemctl, --user, is-active, todo-postgres.service]}
+      register: m16_current_service
+      changed_when: false
+
+    - name: Require writable current primary and replication role
+      ansible.builtin.command:
+        argv:
+          - podman
+          - exec
+          - todo-postgres
+          - psql
+          - --username
+          - todo
+          - --dbname
+          - postgres
+          - --tuples-only
+          - --no-align
+          - --field-separator=|
+          - --command
+          - >-
+            SELECT pg_is_in_recovery(),
+            current_setting('transaction_read_only'),
+            COALESCE((SELECT rolreplication::text FROM pg_roles
+            WHERE rolname = 'todo_replicator'), '');
+      register: m16_current_database
+      changed_when: false
+
+    - name: Require local replication secret
+      ansible.builtin.command: {argv: [podman, secret, exists, todo-replicator-password]}
+      changed_when: false
+
+    - name: Require existing M15 backup volume
+      ansible.builtin.command: {argv: [podman, volume, exists, todo-postgres-backup]}
+      changed_when: false
+
+    - name: Check the new physical replication slot is absent
+      ansible.builtin.command:
+        argv:
+          - podman
+          - exec
+          - todo-postgres
+          - psql
+          - --username
+          - todo
+          - --dbname
+          - postgres
+          - --tuples-only
+          - --no-align
+          - --command
+          - >-
+            SELECT count(*) FROM pg_replication_slots
+            WHERE slot_name = '{{ m16_replication_slot }}';
+      register: m16_slot_count
+      changed_when: false
+
+    - name: Validate current primary state
+      ansible.builtin.assert:
+        that:
+          - m16_current_hostname.stdout | trim == inventory_hostname
+          - todo_node_address in (m16_current_addresses.stdout | regex_findall('inet ([0-9.]+)/'))
+          - m16_current_service.stdout | trim == 'active'
+          - m16_current_database.stdout | trim == 'f|off|true'
+          - m16_slot_count.stdout | trim == '0'
+          - m16_replication_slot is match('^[a-z][a-z0-9_]{0,62}$')
+        fail_msg: >-
+          Current primary is not ready, or the M16 slot already exists. Never
+          treat a partial M16 run as a clean bootstrap.
+
+- name: Inspect the fenced old primary before destructive reseed
+  hosts: todo_rebuild_standby
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Read rebuild host hostname
+      ansible.builtin.command: hostname
+      register: m16_rebuild_hostname
+      changed_when: false
+
+    - name: Read rebuild host IPv4 addresses
+      ansible.builtin.command: {argv: [ip, -o, -4, address, show, scope, global]}
+      register: m16_rebuild_addresses
+      changed_when: false
+
+    - name: Inspect Todo service states on the rebuild host
+      ansible.builtin.command: {argv: [systemctl, --user, is-active, "{{ item }}"]}
+      loop:
+        - todo-frontend.service
+        - todo-backend.service
+        - todo-keycloak.service
+        - todo-postgres.service
+      register: m16_rebuild_services
+      changed_when: false
+      failed_when: false
+
+    - name: Inspect running PostgreSQL containers on rebuild host
+      ansible.builtin.command:
+        argv:
+          - podman
+          - ps
+          - --filter
+          - name=todo-postgres
+          - --format
+          - "{{ '{{.Names}}' }}"
+      register: m16_rebuild_postgres_container
+      changed_when: false
+
+    - name: Require old database volume and replication secret
+      ansible.builtin.command: {argv: [podman, "{{ item.kind }}", exists, "{{ item.name }}"]}
+      loop:
+        - {kind: volume, name: todo-postgres-data}
+        - {kind: secret, name: todo-replicator-password}
+      changed_when: false
+
+    - name: Validate fenced rebuild host state and confirmations
+      ansible.builtin.assert:
+        that:
+          - m16_rebuild_hostname.stdout | trim == inventory_hostname
+          - todo_node_address in (m16_rebuild_addresses.stdout | regex_findall('inet ([0-9.]+)/'))
+          - groups['todo_current_primary'] | length == 1
+          - groups['todo_rebuild_standby'] | length == 1
+          - hostvars[groups['todo_current_primary'][0]].todo_node_address != todo_node_address
+          - m16_rebuild_services.results | map(attribute='stdout') | map('trim') | select('equalto', 'active') | list | length == 0
+          - m16_rebuild_postgres_container.stdout | trim == ''
+          - m16_confirm_old_primary_fenced | default('') == inventory_hostname ~ ' is fenced'
+          - m16_confirm_reseed | default('') == inventory_hostname
+        fail_msg: >-
+          Rebuild host must remain infrastructure-fenced, all Todo services and
+          containers must be stopped, and both exact confirmations are required.

@@ -1,0 +1,166 @@
+---
+- name: Stop all Todo services before reseed
+  ansible.builtin.command: {argv: [systemctl, --user, stop, "{{ item }}"]}
+  loop:
+    - todo-frontend.service
+    - todo-backend.service
+    - todo-keycloak.service
+    - todo-postgres.service
+  register: m16_reseed_stopped
+  changed_when: false
+  failed_when: m16_reseed_stopped.rc not in [0, 5]
+
+- name: Require PostgreSQL image before destructive reseed
+  ansible.builtin.command: {argv: [podman, image, exists, docker.io/library/postgres:17.11]}
+  changed_when: false
+
+- name: Verify rebuild host can reach current primary replication port
+  ansible.builtin.wait_for:
+    host: "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}"
+    port: 5432
+    connect_timeout: 2
+    timeout: 10
+    state: started
+    msg: >-
+      Rebuild host cannot reach current primary TCP 5432. Keep client traffic
+      fenced, but allow only this standby through the primary host firewall.
+
+- name: Remove application-tier Quadlets from rebuilt standby
+  ansible.builtin.file:
+    path: "{{ m16_quadlet_directory }}/{{ item }}"
+    state: absent
+  loop:
+    - todo-frontend.container
+    - todo-backend.container
+    - todo-keycloak.container
+    - todo-db-setup.container
+    - todo-migrate.container
+    - todo-db-grants.container
+    - todo-caddy-data.volume
+
+- name: Remove the explicitly confirmed old database volume
+  ansible.builtin.command: {argv: [podman, volume, rm, todo-postgres-data]}
+  changed_when: true
+
+- name: Create the empty rebuilt standby volume
+  ansible.builtin.command: {argv: [podman, volume, create, todo-postgres-data]}
+  changed_when: true
+
+- name: Stream a new base backup from the current primary
+  ansible.builtin.command:
+    argv:
+      - podman
+      - run
+      - --rm
+      - --network
+      - host
+      - --user
+      - postgres
+      - --security-opt
+      - no-new-privileges
+      - --cap-drop
+      - all
+      - --pids-limit
+      - "128"
+      - --volume
+      - todo-postgres-data:/var/lib/postgresql/data:U,Z
+      - --secret
+      - todo-replicator-password,type=env,target=PGPASSWORD
+      - docker.io/library/postgres:17.11
+      - pg_basebackup
+      - "--host={{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}"
+      - --port=5432
+      - --username=todo_replicator
+      - --pgdata=/var/lib/postgresql/data
+      - --format=plain
+      - --wal-method=stream
+      - --write-recovery-conf
+      - --create-slot
+      - "--slot={{ m16_replication_slot }}"
+      - --progress
+  changed_when: true
+
+- name: Restrict rebuilt standby data permissions
+  ansible.builtin.command:
+    argv:
+      - podman
+      - run
+      - --rm
+      - --user
+      - postgres
+      - --security-opt
+      - no-new-privileges
+      - --cap-drop
+      - all
+      - --volume
+      - todo-postgres-data:/var/lib/postgresql/data:Z
+      - --entrypoint
+      - chmod
+      - docker.io/library/postgres:17.11
+      - "0700"
+      - /var/lib/postgresql/data
+  changed_when: true
+
+- name: Create rebuilt standby configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - "{{ m16_config_directory }}"
+    - "{{ m16_quadlet_directory }}"
+
+- name: Install shared standby network and volume Quadlets
+  ansible.builtin.copy:
+    src: "{{ project_root }}/quadlet/{{ item }}"
+    dest: "{{ m16_quadlet_directory }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - todo.network
+    - todo-postgres-data.volume
+
+- name: Install rebuilt standby entrypoint
+  ansible.builtin.template:
+    src: todo-standby-entrypoint.sh.j2
+    dest: "{{ m16_config_directory }}/todo-standby-entrypoint.sh"
+    mode: "0644"
+
+- name: Install rebuilt standby PostgreSQL Quadlet
+  ansible.builtin.template:
+    src: todo-postgres.container.j2
+    dest: "{{ m16_quadlet_directory }}/todo-postgres.container"
+    mode: "0644"
+
+- name: Reload rebuilt standby user systemd
+  ansible.builtin.systemd_service:
+    scope: user
+    daemon_reload: true
+
+- name: Start rebuilt PostgreSQL standby
+  ansible.builtin.systemd_service:
+    name: todo-postgres.service
+    scope: user
+    state: started
+
+- name: Wait for healthy rebuilt PostgreSQL standby
+  ansible.builtin.command: {argv: [podman, wait, --condition=healthy, todo-postgres]}
+  changed_when: false
+
+- name: Require rebuilt PostgreSQL recovery mode
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --command
+      - SELECT pg_is_in_recovery();
+  register: m16_reseed_recovery
+  changed_when: false
+  failed_when: m16_reseed_recovery.stdout | trim != 't'

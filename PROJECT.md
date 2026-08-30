@@ -8,7 +8,71 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-M15 — PostgreSQL backup, WAL archive and point-in-time recovery — completed.
+Clean M12-M16 Oracle Linux drill in progress. M12 through M14 have passed on
+newly installed VMs, including controlled promotion, application failover,
+idempotence and reboot. M15 is next. M16 is implemented, but its live
+restore-redundancy drill is still pending.
+
+## Live clean-deployment checkpoint — 2026-08-29–30
+
+Resume from this exact state:
+
+- `todo-primary` is `192.168.0.102`; `todo-standby` is `192.168.0.108`.
+- Both are independently installed Oracle Linux 9.8 VMs with 4 GiB RAM,
+  SELinux enforcing, active `fapolicyd`, rootless Podman, user lingering and
+  clean Proxmox baseline snapshots.
+- Primary-to-standby SSH uses primary's RSA key and passes with
+  `BatchMode=yes`.
+- A clean M12 offline install passed HTTPS, Keycloak login, authenticated Todo
+  creation, reboot and an idempotent rerun with `changed=0`.
+- The database contains `M12 clean deployment test` and
+  `M13 streaming replication test`.
+- M13 bootstrap passed from scratch. Primary reports the physical
+  `todo_standby` slot as active and `streaming|async` with zero measured lag;
+  standby reports recovery mode and matching receive/replay LSNs.
+- The standby resumed recovery and streaming after reboot, and both Todo rows
+  were verified directly in its read-only database.
+- M13.5 was installed separately after replication. On standby,
+  `todo_dr.py status` reports an active healthy standby, read-only database,
+  zero local apply lag and reachable primary `192.168.0.102:5432`.
+- The old `todo-primary` is fenced in Proxmox, stopped and has start-at-boot
+  disabled. Keep it that way until M16 deliberately destroys and re-seeds its
+  old database state.
+- `todo-standby` was promoted in approximately two seconds and verified as
+  `f|off` with a rolled-back writable transaction.
+- M14 deployed the full application tier on the promoted host without database
+  bootstrap, migrations or grants. `todo.test` now maps to `192.168.0.108`.
+- HTTPS health/readiness, the stable Keycloak issuer, the replicated Keycloak
+  user and an authenticated `M14 clean failover test` write all passed.
+- A second M14 deployment completed with `changed=0`; after reboot all four
+  services were active, PostgreSQL remained writable and client HTTPS checks
+  passed.
+
+Exact next safe operation:
+
+1. Keep old `todo-primary` fenced and powered off.
+2. Run the M15 backup/WAL/PITR drill on promoted `todo-standby` at
+   `192.168.0.108`.
+3. After M15 passes, use M16 to quarantine and re-seed the old primary as the
+   new database-only standby; do not boot its old database normally.
+
+New issues found during this drill:
+
+- The M13.5 controller needs exact `fapolicyd` trust for both
+  `scripts/todo_dr.py` and `ansible/roles/todo_dr/tasks/main.yml`. The latter
+  contains the pipelined inline Python installer and was denied as executable
+  content. Both exact files are now recorded in primary's `todo-dr-source`
+  trust file. The runbook and `FAPOLICYD.md` now document both exact paths; do
+  not trust the complete extracted directory.
+- Standby's deployed `~/.config/todo/todo_dr.py` and `todo-dr.json` are recorded
+  in its exact `todo-dr` trust file, and the local status command succeeds.
+- The clean drill exposed that the M12 builder included top-level M13-M16
+  playbooks without their roles. The builder is now restricted to M12's usable
+  `deploy.yml`, `uninstall.yml`, inventory and requirements files.
+- When replacing both example addresses on one inventory line with `sed`, use a
+  global replacement or update `todo_node_address` explicitly; the first test
+  correctly failed read-only preflight when that second value remained
+  `192.0.2.11`.
 
 ## Completed
 
@@ -94,6 +158,7 @@ M15 — PostgreSQL backup, WAL archive and point-in-time recovery — completed.
 - Exact-confirmation cleanup removed only the disposable restore container and volume while preserving the base backup, WAL archive and live data.
 - After a full VM reboot, PostgreSQL remained `f|off|on`, all four application services were active, the base backup persisted, WAL archiving resumed with zero failures, and the M15 playbook completed with `changed=0`.
 - The live drill demonstrated that the same-VM archive grows continuously (337 MiB during testing); off-host transfer, retention and capacity alerts remain production requirements.
+- M16 automation now quarantines and destructively re-seeds the old primary as a database-only standby; static validation is complete and the live two-VM drill is pending.
 
 ## Decisions
 
@@ -176,10 +241,11 @@ Open <http://127.0.0.1:8000> in a browser.
 - M13.5: Small Python tools for replication status and controlled promotion — completed
 - M14: Full application disaster recovery with stable service hostname, shared deployment state and smoke tests — completed
 - M15: PostgreSQL backup, WAL archive and point-in-time recovery — completed
+- M16: Rebuild the old primary as a new standby after failover — implemented; live drill pending
 
 ## Next step
 
-Confirm the documentation-polish commit in GitHub Actions. Then choose whether
-the next milestone should rebuild the old primary as a replica for controlled
-failback, or add off-host backup transfer, retention and capacity monitoring.
-Keep the old primary fenced until the topology is deliberately rebuilt.
+Run the M16 procedure on the two Oracle Linux VMs: keep old primary fenced,
+stop all Todo services there, pass read-only preflight, re-seed it from the
+promoted primary, verify a replicated write and then verify standby/current
+primary behavior across reboot. Do not call M16 complete until this drill passes.

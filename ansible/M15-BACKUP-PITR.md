@@ -88,6 +88,11 @@ creates the separate backup volume, mounts it into PostgreSQL, enables
 PostgreSQL once when required, restores the application tier and verifies that a
 forced WAL segment reaches the archive.
 
+The configured `archive_timeout=60s` is intentionally aggressive so the demo
+produces archived WAL quickly. On an active database it can create roughly one
+full 16 MiB segment per minute; a real retention and capacity policy should
+choose a workload-appropriate value.
+
 Trust the exact installed tool before running it. On a hardened `fapolicyd`
 host, this trust step is also required before a repeat playbook run can read the
 destination and report `changed=0`:

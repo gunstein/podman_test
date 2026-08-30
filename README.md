@@ -31,7 +31,7 @@ M13     Ansible-provisioned PostgreSQL primary/standby
 M13.5   Python tools for replication status and controlled promotion
 M14     Full application disaster recovery
 M15     Backup, WAL archive and point-in-time recovery
-M16     Rebuild old primary as the new standby (live drill pending)
+M16     Rebuild old primary as the new standby
 ```
 
 See [PROJECT.md](PROJECT.md) for the decisions and verification performed at
@@ -296,9 +296,11 @@ Build its source-only package and checksum with:
 scripts/build-m16-test-package.sh
 ```
 
-The automation and static checks are complete; the live Oracle Linux two-VM
-re-seed, replicated-write and reboot drill remains required before M16 is marked
-complete. Planned failback is deliberately separate from restoring redundancy.
+The live Oracle Linux 9.8 two-VM drill passed: the old primary was quarantined
+and re-seeded, an authenticated application write reached the rebuilt standby
+with zero lag, and replication, application readiness and WAL archiving survived
+reboot of both final database nodes. Planned failback remains deliberately
+separate from restoring redundancy.
 
 ## Verify HTTP and HTTPS
 

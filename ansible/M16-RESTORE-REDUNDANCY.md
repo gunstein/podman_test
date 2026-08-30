@@ -85,7 +85,10 @@ cp ansible/inventory-m16.example.ini ansible/inventory-m16.ini
 ```
 
 Edit the two addresses. `todo_current_primary` is the promoted host and
-`todo_rebuild_standby` is the fenced old primary.
+`todo_rebuild_standby` is the fenced old primary. Keep
+`ansible_pipelining=true` enabled: on Oracle Linux with active `fapolicyd`
+this avoids executing transient Ansible module files and does not require
+trusting a temporary directory.
 
 ## Restrict the new replication endpoint
 
@@ -155,6 +158,15 @@ non-empty receive/replay LSNs.
 Create a Todo through `https://todo.test:8443`, then query it on rebuilt standby.
 Finally reboot the rebuilt standby, verify recovery/streaming again, reboot the
 current primary and verify app readiness, archiving and replication again.
+
+## Verified live drill
+
+The clean Oracle Linux 9.8 drill quarantined and re-seeded the old primary,
+replicated an authenticated `M16 restored redundancy test` write with zero lag,
+and verified the final roles directly. After reboot of both nodes, the current
+primary remained writable with archiving and application readiness healthy; the
+rebuilt standby returned in recovery with matching receive/replay LSNs, an active
+usable slot and `streaming|async` replication.
 
 ## Failback is separate
 

@@ -8,10 +8,10 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-Clean M12-M16 Oracle Linux drill in progress. M12 through M15 have passed on
+The clean M12-M16 Oracle Linux drill is complete. All milestones passed on
 newly installed VMs, including controlled promotion, application failover,
-physical backup, isolated PITR, idempotence and reboot. M16 is implemented, but
-its live restore-redundancy drill is still pending.
+physical backup, isolated PITR, destructive re-seeding, restored replication,
+idempotence and reboot of both final database nodes.
 
 ## Live clean-deployment checkpoint — 2026-08-29–30
 
@@ -35,9 +35,9 @@ Resume from this exact state:
 - M13.5 was installed separately after replication. On standby,
   `todo_dr.py status` reports an active healthy standby, read-only database,
   zero local apply lag and reachable primary `192.168.0.102:5432`.
-- The old `todo-primary` is fenced in Proxmox, stopped and has start-at-boot
-  disabled. Keep it that way until M16 deliberately destroys and re-seeds its
-  old database state.
+- The old writable database on `todo-primary` was quarantined and permanently
+  destroyed by M16. That host is now the read-only database-only standby and
+  may start at boot; it must not be treated as primary based on its hostname.
 - `todo-standby` was promoted in approximately two seconds and verified as
   `f|off` with a rolled-back writable transaction.
 - M14 deployed the full application tier on the promoted host without database
@@ -58,16 +58,22 @@ Resume from this exact state:
   volume. After reboot, all services, the base backup, application readiness
   and newly generated WAL archiving were verified again.
 
-Exact next safe operation:
+Exact current operating state:
 
-1. Keep old `todo-primary` fenced while preparing M16.
-2. Boot it only in network quarantine, stop every old Todo service, and permit
-   management/replication connectivity only after PostgreSQL is inactive.
-3. Run the M16 read-only preflight before approving destruction and re-seeding
-   of the old database as the new database-only standby.
+1. `todo-standby` (`192.168.0.108`) remains the writable primary and runs
+   the application plus M15 backup/WAL archiving.
+2. `todo-primary` (`192.168.0.102`) is the rebuilt read-only standby and
+   runs only PostgreSQL.
+3. No failback is required. A later role reversal would be a separately planned
+   switchover with fencing, catch-up and rollback controls.
 
 New issues found during this drill:
 
+- M16 initially failed Ansible module transfer on both hosts because its
+  example inventory omitted `ansible_pipelining=true`. Active `fapolicyd`
+  denied transient `AnsiballZ_*.py` files. Enabling pipelining fixed both
+  local and SSH execution without trusting temporary files; the example is now
+  corrected.
 - The M13.5 controller needs exact `fapolicyd` trust for both
   `scripts/todo_dr.py` and `ansible/roles/todo_dr/tasks/main.yml`. The latter
   contains the pipelined inline Python installer and was denied as executable
@@ -168,7 +174,9 @@ New issues found during this drill:
 - Exact-confirmation cleanup removed only the disposable restore container and volume while preserving the base backup, WAL archive and live data.
 - After a full VM reboot, PostgreSQL remained `f|off|on`, all four application services were active, the base backup persisted, WAL archiving resumed with zero failures, and the M15 playbook completed with `changed=0`.
 - The live drill demonstrated that the same-VM archive grows continuously (337 MiB during testing); off-host transfer, retention and capacity alerts remain production requirements.
-- M16 automation now quarantines and destructively re-seeds the old primary as a database-only standby; static validation is complete and the live two-VM drill is pending.
+- M16 quarantined the old primary, removed its divergent database and application Quadlets, streamed a fresh base backup, and restored it as the database-only standby.
+- An authenticated `M16 restored redundancy test` write reached the rebuilt standby with zero lag; the standby reported `t|on` and only PostgreSQL active.
+- After reboot of both final nodes, current primary remained `f|off|on` with application readiness, persistent backup and zero archive failures; the rebuilt standby resumed `streaming|async` with matching receive/replay LSNs and an active usable slot.
 
 ## Decisions
 
@@ -251,11 +259,11 @@ Open <http://127.0.0.1:8000> in a browser.
 - M13.5: Small Python tools for replication status and controlled promotion — completed
 - M14: Full application disaster recovery with stable service hostname, shared deployment state and smoke tests — completed
 - M15: PostgreSQL backup, WAL archive and point-in-time recovery — completed
-- M16: Rebuild the old primary as a new standby after failover — implemented; live drill pending
+- M16: Rebuild the old primary as a new standby after failover — completed
 
 ## Next step
 
-Run the M16 procedure on the two Oracle Linux VMs: keep old primary fenced,
-stop all Todo services there, pass read-only preflight, re-seed it from the
-promoted primary, verify a replicated write and then verify standby/current
-primary behavior across reboot. Do not call M16 complete until this drill passes.
+Review and package the completed M16 verification, then consolidate the
+milestone-specific inventories into a clearly documented steady-state inventory
+model. Treat any planned failback as a separate future operation, not as part of
+restoring redundancy.

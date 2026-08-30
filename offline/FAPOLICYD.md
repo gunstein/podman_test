@@ -18,9 +18,9 @@ sh ./preflight.sh
 sh ./install.sh
 ```
 
-`install.sh` enables Ansible pipelining. This avoids transferring and executing
-temporary Python modules under `~/.ansible/tmp`, so the M12 bundle needs no
-custom trust entries.
+The package-level `ansible.cfg` enables Ansible pipelining for every local and
+SSH connection. This avoids transferring and executing temporary Python
+modules under `~/.ansible/tmp`, so the M12 bundle needs no custom trust entries.
 
 M13.5 and M15 add project-owned Python tools. Their Ansible roles transfer the
 files through pipelined standard input rather than Ansible's normal temporary
@@ -109,10 +109,10 @@ or trusting an entire home, extraction or temporary directory.
   or M15 role, which installs the tool through pipelined standard input, and
   register the exact source and deployed paths documented by its runbook.
 
-- **Ansible cannot read `todo_dr/tasks/main.yml`:** The M13.5 role contains its
-  small pipelined Python installer inline. `fapolicyd` can therefore classify
-  that YAML file as executable content. Register both the exact role task file
-  and `scripts/todo_dr.py` in `todo-dr-source`; do not trust the role directory.
+- **Ansible cannot read a role YAML file:** Use the current package and its
+  package-level pipelining configuration. The installer no longer embeds Python
+  in task YAML, so role files should remain data and should not need custom
+  trust. Diagnose any remaining `FANOTIFY` denial before adding trust.
 
 - **A previously working tool fails after an update:** Its stored hash is stale.
   Run `--file update` for every registered copy and then
@@ -143,9 +143,6 @@ sudo fapolicyd-cli --file delete \
   "$HOME/todo-m13-test/scripts/todo_dr.py" \
   --trust-file todo-dr-source
 sudo fapolicyd-cli --file delete \
-  "$HOME/todo-m13-test/ansible/roles/todo_dr/tasks/main.yml" \
-  --trust-file todo-dr-source
-sudo fapolicyd-cli --file delete \
   "$HOME/.config/todo/todo_dr.py" \
   --trust-file todo-dr
 sudo fapolicyd-cli --file delete \
@@ -166,6 +163,22 @@ Delete each exact source and deployed path that was registered. Removal from
 the trust database does not delete the file itself. Conversely, deleting the
 file does not intentionally clean up its trust entry, so perform both parts of
 an uninstall.
+
+## Scaling host-side tools beyond the demo
+
+Exact-file trust is intentionally visible in this lab because it teaches the
+policy boundary. For repeated deployment across more hosts, package operational
+tools such as `todo_dr.py` and `todo_backup.py` as a signed RPM and install or
+upgrade it with DNF. The fapolicyd DNF integration can then derive file trust
+from the RPM database instead of requiring a manual hash refresh for every
+copy. Package signature verification and fapolicyd trust are related controls,
+but not the same: verify the configured RPM signing identity and repository
+policy as well. Avoid direct `rpm` installation in this workflow because it can
+bypass the DNF integration that refreshes fapolicyd trust.
+
+The demo keeps exact-file trust rather than adding an RPM build system solely
+for two small tools. This is a deliberate teaching profile, not the recommended
+lifecycle for a fleet.
 
 ## Integrity and authenticity
 

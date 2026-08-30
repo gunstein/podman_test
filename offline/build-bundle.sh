@@ -7,7 +7,7 @@ work_directory=$(mktemp -d)
 bundle_directory="$work_directory/todo-offline-m12"
 trap 'rm -rf "$work_directory"' EXIT
 
-mkdir -p "$bundle_directory/images"
+mkdir -p "$bundle_directory/images" "$bundle_directory/docs"
 mkdir -p "$(dirname "$output")"
 
 podman build --pull --file "$project_root/backend/Containerfile" --tag localhost/todo-backend:m12 "$project_root"
@@ -20,13 +20,22 @@ podman save --format oci-archive --output "$bundle_directory/images/todo-fronten
 podman save --format oci-archive --output "$bundle_directory/images/todo-keycloak-m12.tar" localhost/todo-keycloak:m12
 podman save --format oci-archive --output "$bundle_directory/images/postgres-17.11.tar" docker.io/library/postgres:17.11
 
+cp "$project_root/ansible.cfg" "$bundle_directory/"
+cp "$project_root/docs/SECRETS.md" \
+  "$project_root/docs/SELINUX.md" \
+  "$project_root/docs/WHAT-YOU-LEARN.md" \
+  "$bundle_directory/docs/"
+
 cp -r "$project_root/quadlet" "$bundle_directory/"
-mkdir -p "$bundle_directory/ansible"
+mkdir -p "$bundle_directory/ansible/tasks"
 cp "$project_root/ansible/deploy.yml" \
   "$project_root/ansible/uninstall.yml" \
+  "$project_root/ansible/provision-secrets.yml" \
+  "$project_root/ansible/secrets.example.yml" \
   "$project_root/ansible/inventory.ini" \
   "$project_root/ansible/requirements.txt" \
   "$bundle_directory/ansible/"
+cp "$project_root/ansible/tasks/provision_secret.yml" "$bundle_directory/ansible/tasks/"
 cp "$project_root/offline/install.sh" "$project_root/offline/preflight.sh" \
   "$project_root/offline/README.md" "$project_root/offline/FAPOLICYD.md" \
   "$bundle_directory/"

@@ -6,3 +6,7 @@ dist/
 ansible/inventory-m13.ini
 ansible/inventory-m14.ini
 ansible/inventory-m15.ini
+ansible/inventory-m16.ini
+ansible/inventory-cluster.ini
+ansible/secrets.yml
+ansible/vault*.yml

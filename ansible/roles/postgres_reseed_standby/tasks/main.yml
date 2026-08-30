@@ -25,6 +25,39 @@
       Rebuild host cannot reach current primary TCP 5432. Keep client traffic
       fenced, but allow only this standby through the primary host firewall.
 
+- name: Authenticate replication before destructive reseed
+  ansible.builtin.command:
+    argv:
+      - podman
+      - run
+      - --rm
+      - --network
+      - host
+      - --user
+      - postgres
+      - --security-opt
+      - no-new-privileges
+      - --cap-drop
+      - all
+      - --pids-limit
+      - "64"
+      - --secret
+      - todo-replicator-password,type=env,target=PGPASSWORD
+      - docker.io/library/postgres:17.11
+      - psql
+      - >-
+        --dbname=host={{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}
+        port=5432 user=todo_replicator replication=true connect_timeout=5
+      - --no-psqlrc
+      - --tuples-only
+      - --no-align
+      - --command=IDENTIFY_SYSTEM;
+  register: m16_reseed_replication_probe
+  changed_when: false
+  failed_when: >-
+    m16_reseed_replication_probe.rc != 0 or
+    m16_reseed_replication_probe.stdout | trim == ''
+
 - name: Remove application-tier Quadlets from rebuilt standby
   ansible.builtin.file:
     path: "{{ m16_quadlet_directory }}/{{ item }}"

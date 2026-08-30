@@ -15,7 +15,7 @@ print(json.dumps({"deployment_mode": "offline", "bundle_directory": sys.argv[1]}
 PY
 )
 
-ANSIBLE_PIPELINING=true ansible-playbook \
+ansible-playbook \
   --inventory "$bundle_directory/ansible/inventory.ini" \
   "$bundle_directory/ansible/deploy.yml" \
   --extra-vars "$extra_vars"

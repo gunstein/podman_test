@@ -33,7 +33,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for playbook in ansible/deploy.yml ansible/uninstall.yml; do
+          for playbook in \
+            ansible/deploy.yml \
+            ansible/provision-secrets.yml \
+            ansible/uninstall.yml
+          do
             ansible-playbook \
               --inventory ansible/inventory.ini \
               "$playbook" \
@@ -102,6 +106,14 @@ jobs:
           tar -tzf dist/todo-m13-test.tar.gz | grep 'offline/FAPOLICYD.md' >/dev/null
           tar -tzf dist/todo-m15-test.tar.gz | grep 'offline/FAPOLICYD.md' >/dev/null
           tar -tzf dist/todo-m16-test.tar.gz | grep 'M16-RESTORE-REDUNDANCY.md' >/dev/null
+          for milestone in 13 14 15 16; do
+            tar -tzf "dist/todo-m${milestone}-test.tar.gz" |
+              grep -E "/ansible.cfg$" >/dev/null
+            tar -tzf "dist/todo-m${milestone}-test.tar.gz" |
+              grep -E "/docs/SECRETS.md$" >/dev/null
+          done
+          tar -tzf dist/todo-m16-test.tar.gz |
+            grep -E "/ansible/inventory-cluster.example.ini$" >/dev/null
           ! tar -tzf dist/todo-m13-test.tar.gz | \
             grep -Eq 'promoted_application|postgres_backup'
 

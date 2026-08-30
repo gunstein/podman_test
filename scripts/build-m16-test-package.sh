@@ -12,11 +12,14 @@ mkdir -p "$package_directory/ansible/roles" \
   "$package_directory/docs" \
   "$(dirname "$output")"
 
+cp "$project_root/ansible.cfg" "$package_directory/"
+
 cp "$project_root/ansible/M16-RESTORE-REDUNDANCY.md" \
   "$project_root/ansible/preflight-m16.yml" \
   "$project_root/ansible/rebuild-standby-m16.yml" \
   "$project_root/ansible/status-m16.yml" \
   "$project_root/ansible/inventory-m16.example.ini" \
+  "$project_root/ansible/inventory-cluster.example.ini" \
   "$package_directory/ansible/"
 for role in postgres_redundancy_primary postgres_reseed_standby; do
   cp -r "$project_root/ansible/roles/$role" \
@@ -26,6 +29,7 @@ cp "$project_root/quadlet/todo.network" \
   "$project_root/quadlet/todo-postgres-data.volume" \
   "$package_directory/quadlet/"
 cp "$project_root/docs/SELINUX.md" \
+  "$project_root/docs/SECRETS.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
   "$package_directory/docs/"
 

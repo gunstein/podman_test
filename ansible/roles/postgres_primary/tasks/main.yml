@@ -26,16 +26,12 @@
   ansible.builtin.command:
     argv:
       - podman
-      - run
-      - --rm
-      - --secret
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
       - todo-replicator-password
-      - localhost/todo-backend:m12
-      - python
-      - -c
-      - >-
-        import pathlib, sys;
-        sys.stdout.write(pathlib.Path('/run/secrets/todo-replicator-password').read_text())
   register: replicator_secret_value
   changed_when: false
   no_log: true

@@ -2,7 +2,7 @@
 exclude_paths:
   - ansible/.venv/
 
-# Milestone prefixes (m13_, m14_ and m15_) make the operational sequence
+# Milestone prefixes (m13_, m14_, m15_ and m16_) make the operational sequence
 # clearer than repeating long role directory names in this pedagogical demo.
 # Database restarts remain inline so their ordering is visible in the one-shot
 # bootstrap procedure.

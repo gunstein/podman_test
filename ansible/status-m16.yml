@@ -49,8 +49,60 @@
           wal_status|safe_wal_bytes|invalidation =
           {{ m16_status_primary.stdout | trim }}
 
+    - name: Query current primary and WAL archive health
+      ansible.builtin.command:
+        argv:
+          - podman
+          - exec
+          - todo-postgres
+          - psql
+          - --username
+          - todo
+          - --dbname
+          - postgres
+          - --tuples-only
+          - --no-align
+          - --field-separator=|
+          - --command
+          - >-
+            SELECT pg_is_in_recovery(),
+            current_setting('transaction_read_only'),
+            current_setting('archive_mode'),
+            COALESCE(last_archived_wal, ''),
+            failed_count,
+            CASE
+              WHEN last_failed_time IS NULL OR
+                (last_archived_time IS NOT NULL AND
+                 last_archived_time >= last_failed_time)
+              THEN 'healthy'
+              ELSE 'failed'
+            END
+            FROM pg_stat_archiver;
+      register: m16_status_archive
+      changed_when: false
+
+    - name: Require writable current primary and healthy WAL archiving
+      ansible.builtin.assert:
+        that:
+          - (m16_status_archive.stdout | trim).split('|') | length == 6
+          - (m16_status_archive.stdout | trim).split('|')[0] == 'f'
+          - (m16_status_archive.stdout | trim).split('|')[1] == 'off'
+          - (m16_status_archive.stdout | trim).split('|')[2] == 'on'
+          - (m16_status_archive.stdout | trim).split('|')[3] != ''
+          - (m16_status_archive.stdout | trim).split('|')[5] == 'healthy'
+        fail_msg: >-
+          Current primary is not writable, or WAL archiving has not recovered
+          from its most recent failure.
+
+    - name: Show current primary and archive state
+      ansible.builtin.debug:
+        msg: >-
+          current primary: recovery|read_only|archive_mode|last_archived_wal|
+          historical_failures|current_archive_health =
+          {{ m16_status_archive.stdout | trim }}
+
 - name: Read recovery state from rebuilt standby
-  hosts: todo_rebuild_standby
+  hosts: todo_current_standby
   gather_facts: false
   any_errors_fatal: true
 

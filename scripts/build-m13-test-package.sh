@@ -10,12 +10,17 @@ trap 'rm -rf "$work_directory"' EXIT
 mkdir -p "$package_directory/ansible/roles" \
   "$package_directory/quadlet" \
   "$package_directory/scripts" \
-  "$package_directory/offline"
+  "$package_directory/offline" \
+  "$package_directory/docs"
 mkdir -p "$(dirname "$output")"
+
+cp "$project_root/ansible.cfg" "$package_directory/"
 
 cp "$project_root/ansible/"M13*.md \
   "$project_root/ansible/"*-m13.yml \
   "$project_root/ansible/inventory-m13.example.ini" \
+  "$project_root/ansible/provision-secrets.yml" \
+  "$project_root/ansible/secrets.example.yml" \
   "$project_root/ansible/sync-standby-secrets.yml" \
   "$package_directory/ansible/"
 for role in m13_preflight postgres_primary postgres_standby todo_dr; do
@@ -28,6 +33,10 @@ cp "$project_root/quadlet/todo.network" \
   "$package_directory/quadlet/"
 cp "$project_root/scripts/todo_dr.py" "$package_directory/scripts/"
 cp "$project_root/offline/FAPOLICYD.md" "$package_directory/offline/"
+cp "$project_root/docs/SECRETS.md" \
+  "$project_root/docs/SELINUX.md" \
+  "$project_root/docs/WHAT-YOU-LEARN.md" \
+  "$package_directory/docs/"
 
 printf '%s\n' M13.5 > "$package_directory/VERSION"
 tar -czf "$output" -C "$work_directory" "$(basename "$package_directory")"

@@ -12,7 +12,7 @@ simplification and the normal production concern.
 | SELinux | Enforcing mode, `:Z`, `:z`, `:U`, labels and AVC troubleshooting | No custom SELinux policy module |
 | fapolicyd | RPM trust, exact project-file trust and update/delete lifecycle | Manual trust administration for demo tools |
 | Offline delivery | OCI archives, internal manifest and pre-extraction archive checksum | Real releases should sign artifacts with an organizational identity |
-| Secrets | Local Podman secrets synchronized over SSH without plaintext files | No external Vault/HSM or automated rotation |
+| Secrets | Local Podman runtime secrets, direct Podman inspection, protected Ansible transfer and mismatch checks | Demo bootstrap generates on the first host; moderate deployments should provision from Ansible Vault or an external authoritative source |
 | PostgreSQL privilege | Separate bootstrap, migrator, application, Keycloak and replication roles | One PostgreSQL cluster |
 | Availability | Async physical streaming, slot health, lag and reboot recovery | One standby, no automatic HA manager and no archive-backed `restore_command`; an invalidated slot requires re-seeding |
 | RPO/RTO | Operational targets and measurable local replay state | Async RPO cannot be guaranteed after abrupt loss |

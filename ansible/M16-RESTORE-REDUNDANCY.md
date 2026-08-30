@@ -85,10 +85,10 @@ cp ansible/inventory-m16.example.ini ansible/inventory-m16.ini
 ```
 
 Edit the two addresses. `todo_current_primary` is the promoted host and
-`todo_rebuild_standby` is the fenced old primary. Keep
-`ansible_pipelining=true` enabled: on Oracle Linux with active `fapolicyd`
-this avoids executing transient Ansible module files and does not require
-trusting a temporary directory.
+`todo_rebuild_standby` is the fenced old primary. The package-level
+`ansible.cfg` enables pipelining consistently for local and SSH connections. On
+Oracle Linux with active `fapolicyd`, this avoids executing transient Ansible
+module files without turning a transport setting into inventory data.
 
 ## Restrict the new replication endpoint
 
@@ -117,8 +117,10 @@ ansible-playbook \
 ```
 
 Preflight requires the promoted database to be writable, the replication role
-and secrets to exist, the new slot to be absent, the old data volume to exist,
-and every Todo service/container on the rebuild host to be stopped.
+and secrets to exist, both hosts to have the identical replication credential,
+the new slot to be absent, the old data volume to exist, and every Todo
+service/container on the rebuild host to be stopped. Secret values remain
+under Ansible `no_log`.
 
 ## Destructive rebuild
 
@@ -132,9 +134,11 @@ ansible-playbook \
 ```
 
 The playbook first preserves M15 archiving while adding a restricted LAN
-replication endpoint to the current primary. Only after the rebuild host proves
-that endpoint is reachable does it remove the old volume, create a physical
-slot, stream a new base backup and start PostgreSQL in recovery.
+replication endpoint to the current primary. Before deleting anything, the
+rebuild host both reaches TCP 5432 and authenticates a physical replication
+connection with `IDENTIFY_SYSTEM`. Only then does it remove the old volume,
+create a physical slot, stream a new base backup and start PostgreSQL in
+recovery.
 
 It removes application-tier Quadlets from the rebuilt host. That host now runs
 only PostgreSQL standby; Caddy, Keycloak and the backend stay on current primary.
@@ -151,9 +155,17 @@ ansible-playbook \
   ansible/status-m16.yml
 ```
 
-Current primary must report an active `streaming|async` connection and usable
-physical slot. Rebuilt standby must report `recovery=t`, `read_only=on` and
-non-empty receive/replay LSNs.
+Current primary must report an active `streaming|async` connection, a usable
+physical slot, writable state, `archive_mode=on` and a successful WAL archive
+that is newer than any historical archive failure. Rebuilt standby must report
+`recovery=t`, `read_only=on` and non-empty receive/replay LSNs.
+
+After M16, copy `ansible/inventory-cluster.example.ini` to a site-specific,
+ignored inventory and keep it as the steady-state role map. Machine names remain
+`todo-primary` and `todo-standby`, but the `todo_current_primary` and
+`todo_current_standby` groups state their current database roles. The
+M13--M16 inventory files remain transition/runbook inputs, not competing
+long-term sources of truth.
 
 Create a Todo through `https://todo.test:8443`, then query it on rebuilt standby.
 Finally reboot the rebuilt standby, verify recovery/streaming again, reboot the

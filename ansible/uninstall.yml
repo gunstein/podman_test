@@ -53,7 +53,7 @@
       changed_when: false
       failed_when: replication_secret_state.rc not in [0, 1]
 
-    - name: Check for M13-M15 state outside the M12 uninstaller scope
+    - name: Check for M13-M16 state outside the M12 uninstaller scope
       ansible.builtin.stat:
         path: "{{ item }}"
       loop: "{{ later_milestone_markers }}"
@@ -66,7 +66,7 @@
           - not (later_milestone_state.results | selectattr('stat.exists') | list)
         fail_msg: >-
           uninstall.yml only supports the M12 deployment. This host contains
-          M13-M15 replication, promotion or backup state. Preserve it and use
+          M13-M16 replication, promotion or backup state. Preserve it and use
           the milestone runbook instead of treating it as an M12 host.
 
   tasks:

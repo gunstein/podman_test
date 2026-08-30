@@ -69,17 +69,14 @@ Exact current operating state:
 
 New issues found during this drill:
 
-- M16 initially failed Ansible module transfer on both hosts because its
-  example inventory omitted `ansible_pipelining=true`. Active `fapolicyd`
-  denied transient `AnsiballZ_*.py` files. Enabling pipelining fixed both
-  local and SSH execution without trusting temporary files; the example is now
-  corrected.
-- The M13.5 controller needs exact `fapolicyd` trust for both
-  `scripts/todo_dr.py` and `ansible/roles/todo_dr/tasks/main.yml`. The latter
-  contains the pipelined inline Python installer and was denied as executable
-  content. Both exact files are now recorded in primary's `todo-dr-source`
-  trust file. The runbook and `FAPOLICYD.md` now document both exact paths; do
-  not trust the complete extracted directory.
+- M16 initially failed Ansible module transfer on both hosts because pipelining
+  was not consistently configured. Active `fapolicyd` denied transient
+  `AnsiballZ_*.py` files. Pipelining is now a project-level `ansible.cfg`
+  default for both local and SSH execution, rather than repeated inventory data.
+- The M13.5 drill exposed that embedding Python in a role YAML file caused
+  `fapolicyd` to classify the task file as executable content. The installer now
+  uses RPM-managed shell/core utilities through pipelined stdin, so only the
+  exact Python source and deployed operational files need custom trust.
 - Standby's deployed `~/.config/todo/todo_dr.py` and `todo-dr.json` are recorded
   in its exact `todo-dr` trust file, and the local status command succeeds.
 - The clean drill exposed that the M12 builder included top-level M13-M16
@@ -263,7 +260,8 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-Review and package the completed M16 verification, then consolidate the
-milestone-specific inventories into a clearly documented steady-state inventory
-model. Treat any planned failback as a separate future operation, not as part of
-restoring redundancy.
+Use the consolidated role-based steady-state inventory after M16 and keep
+planned switchover/failback as a separate future operation. The next engineering
+work should be operational consolidation rather than another mandatory
+milestone: authoritative secret provisioning, certificate lifecycle and an RPM/
+DNF delivery profile for host-side tools when the demo is scaled to more hosts.

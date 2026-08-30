@@ -47,6 +47,20 @@
       ansible.builtin.command: {argv: [podman, secret, exists, todo-replicator-password]}
       changed_when: false
 
+    - name: Read current primary replication credential
+      ansible.builtin.command:
+        argv:
+          - podman
+          - secret
+          - inspect
+          - --showsecret
+          - --format
+          - "{{ '{{.SecretData}}' }}"
+          - todo-replicator-password
+      register: m16_current_replication_secret
+      changed_when: false
+      no_log: true
+
     - name: Require existing M15 backup volume
       ansible.builtin.command: {argv: [podman, volume, exists, todo-postgres-backup]}
       changed_when: false
@@ -122,12 +136,37 @@
       register: m16_rebuild_postgres_container
       changed_when: false
 
-    - name: Require old database volume and replication secret
-      ansible.builtin.command: {argv: [podman, "{{ item.kind }}", exists, "{{ item.name }}"]}
-      loop:
-        - {kind: volume, name: todo-postgres-data}
-        - {kind: secret, name: todo-replicator-password}
+    - name: Require old database volume
+      ansible.builtin.command: {argv: [podman, volume, exists, todo-postgres-data]}
       changed_when: false
+
+    - name: Require local replication secret
+      ansible.builtin.command: {argv: [podman, secret, exists, todo-replicator-password]}
+      changed_when: false
+
+    - name: Read rebuild host replication credential
+      ansible.builtin.command:
+        argv:
+          - podman
+          - secret
+          - inspect
+          - --showsecret
+          - --format
+          - "{{ '{{.SecretData}}' }}"
+          - todo-replicator-password
+      register: m16_rebuild_replication_secret
+      changed_when: false
+      no_log: true
+
+    - name: Require identical replication credentials before destructive reseed
+      ansible.builtin.assert:
+        that:
+          - >-
+            m16_rebuild_replication_secret.stdout ==
+            hostvars[groups['todo_current_primary'][0]].m16_current_replication_secret.stdout
+        fail_msg: >-
+          Replication credentials differ between the two hosts. Reconcile them
+          before running M16; no database data has been removed.
 
     - name: Validate fenced rebuild host state and confirmations
       ansible.builtin.assert:

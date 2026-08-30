@@ -1,7 +1,10 @@
 # Ansible deployment
 
 This playbook deploys the complete application to the current user on localhost.
-It uses only modules included with `ansible-core`.
+It uses only modules included with `ansible-core`. The project-level
+`ansible.cfg` pins `/usr/bin/python3` and enables pipelining for local and SSH
+connections. This keeps transport behavior consistent across milestones and
+avoids transient Ansible Python files on hosts protected by `fapolicyd`.
 
 ## Install Ansible
 
@@ -11,6 +14,27 @@ From the project root:
 python3 -m venv ansible/.venv
 ansible/.venv/bin/python -m pip install -r ansible/requirements.txt
 ```
+
+## Optional authoritative secret input
+
+The default lab generates missing credentials on the first host. For a
+moderate Ansible-managed installation, pre-provision the host-local Podman
+secrets from an encrypted input before deployment:
+
+```bash
+cp ansible/secrets.example.yml ansible/secrets.yml
+# Replace placeholders, then encrypt before use.
+ansible-vault encrypt ansible/secrets.yml
+ansible-playbook \
+  --inventory ansible/inventory.ini \
+  --ask-vault-pass \
+  --extra-vars @ansible/secrets.yml \
+  ansible/provision-secrets.yml
+```
+
+The playbook creates only missing secrets and rejects mismatches. Read
+[../docs/SECRETS.md](../docs/SECRETS.md) for two-host provisioning, rotation,
+runtime file-versus-environment delivery and recovery boundaries.
 
 ## Deploy
 
@@ -57,7 +81,8 @@ administration and E2E setup; a real deployment should replace and remove it.
 ## M12 uninstall
 
 `uninstall.yml` is intentionally limited to the single-host M12 deployment. It
-refuses to run when it detects M13-M15 replication, promotion or backup state.
+refuses to run when it detects M13-M16 replication, promotion, backup or
+rebuilt-standby state.
 Do not treat a promoted database or its backup archive as ordinary M12 data.
 
 Remove the deployed services, Quadlet files, containers, network and application
@@ -124,4 +149,6 @@ a firewalled replication endpoint on the promoted host. The destructive
 `postgres_reseed_standby` role then replaces only the explicitly confirmed old
 primary volume with a fresh base backup. Follow
 [M16-RESTORE-REDUNDANCY.md](M16-RESTORE-REDUNDANCY.md). This restores a second
-database copy; it is not an automatic failback or switchover.
+database copy; it is not an automatic failback or switchover. After M16, use
+`inventory-cluster.example.ini` as the template for one role-based steady-state
+inventory; milestone inventories remain transition inputs.

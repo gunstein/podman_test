@@ -99,6 +99,6 @@ Uninstall this M12 bundle while preserving database data. The playbook refuses
 to run if it detects later replication, promotion or backup state:
 
 ```bash
-ANSIBLE_PIPELINING=true ansible-playbook \
+ansible-playbook \
   --inventory ansible/inventory.ini ansible/uninstall.yml
 ```

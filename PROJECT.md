@@ -8,10 +8,10 @@ The project should demonstrate Podman, Quadlet, Ansible and eventually offline i
 
 ## Current milestone
 
-Clean M12-M16 Oracle Linux drill in progress. M12 through M14 have passed on
+Clean M12-M16 Oracle Linux drill in progress. M12 through M15 have passed on
 newly installed VMs, including controlled promotion, application failover,
-idempotence and reboot. M15 is next. M16 is implemented, but its live
-restore-redundancy drill is still pending.
+physical backup, isolated PITR, idempotence and reboot. M16 is implemented, but
+its live restore-redundancy drill is still pending.
 
 ## Live clean-deployment checkpoint — 2026-08-29–30
 
@@ -47,14 +47,24 @@ Resume from this exact state:
 - A second M14 deployment completed with `changed=0`; after reboot all four
   services were active, PostgreSQL remained writable and client HTTPS checks
   passed.
+- M15 enabled continuous WAL archiving on the promoted host and completed an
+  idempotent second deployment with `changed=0`.
+- Verified base backup `base-20260830T062555Z` completed in approximately two
+  seconds and contains a valid `backup_manifest`.
+- Named restore point `m15_before_after` was archived at `0/7000220`. The
+  isolated read-only PITR database contained `M15 before restore point` but not
+  `M15 after restore point`; the writable live database retained both rows.
+- Exact-confirmation cleanup removed the disposable restore container and
+  volume. After reboot, all services, the base backup, application readiness
+  and newly generated WAL archiving were verified again.
 
 Exact next safe operation:
 
-1. Keep old `todo-primary` fenced and powered off.
-2. Run the M15 backup/WAL/PITR drill on promoted `todo-standby` at
-   `192.168.0.108`.
-3. After M15 passes, use M16 to quarantine and re-seed the old primary as the
-   new database-only standby; do not boot its old database normally.
+1. Keep old `todo-primary` fenced while preparing M16.
+2. Boot it only in network quarantine, stop every old Todo service, and permit
+   management/replication connectivity only after PostgreSQL is inactive.
+3. Run the M16 read-only preflight before approving destruction and re-seeding
+   of the old database as the new database-only standby.
 
 New issues found during this drill:
 

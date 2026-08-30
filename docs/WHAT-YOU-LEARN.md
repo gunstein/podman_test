@@ -14,7 +14,7 @@ simplification and the normal production concern.
 | Offline delivery | OCI archives, internal manifest and pre-extraction archive checksum | Real releases should sign artifacts with an organizational identity |
 | Secrets | Local Podman secrets synchronized over SSH without plaintext files | No external Vault/HSM or automated rotation |
 | PostgreSQL privilege | Separate bootstrap, migrator, application, Keycloak and replication roles | One PostgreSQL cluster |
-| Availability | Async physical streaming, slot health, lag and reboot recovery | One standby and no automatic HA manager |
+| Availability | Async physical streaming, slot health, lag and reboot recovery | One standby, no automatic HA manager and no archive-backed `restore_command`; an invalidated slot requires re-seeding |
 | RPO/RTO | Operational targets and measurable local replay state | Async RPO cannot be guaranteed after abrupt loss |
 | Replication security | SCRAM authentication and host firewall boundaries | WAL transport is not TLS-enforced in the trusted demo LAN |
 | Fencing | Mandatory operator confirmation before promotion | VM fencing is performed in Proxmox, not automated by the app |

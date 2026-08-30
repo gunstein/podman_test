@@ -72,9 +72,21 @@ explicit `/bin/sh` entrypoint for the readable standby startup script.
 
 A physical slot retains WAL while standby is disconnected, capped at
 1 GiB to protect primary disk space. Exceeding the cap may invalidate the slot
-and require an explicit standby rebuild. The standby PostgreSQL Quadlet is
-attached to the user `default.target`; enable lingering for the service user when
-it must restart at VM boot without an interactive login.
+and require an explicit standby rebuild. The safe disconnection period is
+therefore determined by WAL volume, not elapsed days: a quiet database may stay
+recoverable for days, while a busy database may consume the allowance quickly.
+
+This demo standby receives WAL only through streaming replication and does not
+use the M15 archive as a fallback source. A more resilient design can retain WAL
+off-host and configure standby `restore_command` to retrieve an older segment
+that primary no longer retains before streaming resumes. That reduces avoidable
+rebuilds but adds archive availability, retention, access-control and monitoring
+requirements. For clarity and primary-disk safety, this demo uses an explicit
+new `pg_basebackup` when the slot can no longer supply the missing WAL.
+
+The standby PostgreSQL Quadlet is attached to the user `default.target`; enable
+lingering for the service user when it must restart at VM boot without an
+interactive login.
 
 A VM cloned from a host with existing rootless Podman storage can inherit stale
 lock allocation metadata. If Podman reports `Refreshing volume .* acquiring lock

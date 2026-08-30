@@ -4,6 +4,11 @@ M15 demonstrates why replication is not backup. It enables continuous WAL
 archiving, creates a verified physical base backup and restores to a named point
 in time inside an isolated disposable container.
 
+The archive is used for backup and PITR, not as a WAL source for the M13/M16
+streaming standby. PostgreSQL can also use an archive through standby
+`restore_command` to bridge WAL gaps, but that additional availability pattern
+is documented rather than implemented in this deliberately small demo.
+
 The live `todo-postgres` container and `todo-postgres-data` volume are never
 restore targets.
 

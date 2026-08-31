@@ -28,15 +28,12 @@ cp "$project_root/docs/SECRETS.md" \
   "$bundle_directory/docs/"
 
 cp -r "$project_root/quadlet" "$bundle_directory/"
-mkdir -p "$bundle_directory/ansible/tasks"
+mkdir -p "$bundle_directory/ansible"
 cp "$project_root/ansible/deploy.yml" \
   "$project_root/ansible/uninstall.yml" \
-  "$project_root/ansible/provision-secrets.yml" \
-  "$project_root/ansible/secrets.example.yml" \
   "$project_root/ansible/inventory.ini" \
   "$project_root/ansible/requirements.txt" \
   "$bundle_directory/ansible/"
-cp "$project_root/ansible/tasks/provision_secret.yml" "$bundle_directory/ansible/tasks/"
 cp "$project_root/offline/install.sh" "$project_root/offline/preflight.sh" \
   "$project_root/offline/README.md" "$project_root/offline/FAPOLICYD.md" \
   "$bundle_directory/"

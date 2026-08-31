@@ -15,30 +15,17 @@ python3 -m venv ansible/.venv
 ansible/.venv/bin/python -m pip install -r ansible/requirements.txt
 ```
 
-## Optional authoritative secret input
+## Podman secrets
 
-The default lab generates missing credentials on the first host. For a
-moderate Ansible-managed installation, pre-provision the host-local Podman
-secrets from an encrypted input before deployment:
+The lab uses Podman secrets throughout. The first deployment creates the
+application credentials on the initial primary. Standby bootstrap transfers
+the required values through protected Ansible tasks and SSH, without a
+plaintext transfer file. Rebuild preflight verifies the replication credential
+before old database data can be removed.
 
-```bash
-cp ansible/secrets.example.yml ansible/secrets.yml
-# Replace placeholders, then encrypt before use.
-ansible-vault encrypt ansible/secrets.yml
-ansible-playbook \
-  --inventory ansible/inventory.ini \
-  --ask-vault-pass \
-  --extra-vars @ansible/secrets.yml \
-  ansible/provision-secrets.yml
-```
-
-With the single-host inventory, the playbook provisions only application
-secrets.
-With an inventory containing `todo_cluster`, it additionally requires and
-provisions `todo-replicator-password` on every database host. It creates only
-missing secrets and rejects mismatches. Read
-[../docs/SECRETS.md](../docs/SECRETS.md) for two-host provisioning, rotation,
-runtime file-versus-environment delivery and recovery boundaries.
+Read [../docs/SECRETS.md](../docs/SECRETS.md) for runtime file-versus-environment
+delivery, synchronization, rotation and the explicit single-node-loss recovery
+boundary.
 
 ## Deploy
 

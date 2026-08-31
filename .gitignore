@@ -5,5 +5,3 @@ __pycache__/
 dist/
 ansible/inventory-initial.ini
 ansible/inventory-recovery.ini
-ansible/secrets.yml
-ansible/vault*.yml

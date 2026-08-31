@@ -34,9 +34,7 @@ cp "$project_root/ansible/README.md" \
   "$project_root/ansible/cluster-status.yml" \
   "$project_root/ansible/inventory-initial.example.ini" \
   "$project_root/ansible/inventory-recovery.example.ini" \
-  "$project_root/ansible/provision-secrets.yml" \
   "$project_root/ansible/requirements.txt" \
-  "$project_root/ansible/secrets.example.yml" \
   "$project_root/ansible/sync-standby-secrets.yml" \
   "$package_directory/ansible/"
 for role in \

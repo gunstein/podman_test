@@ -66,12 +66,6 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertIn("last_archived_wal", status)
         self.assertIn("last_archived_time >= last_failed_time", status)
 
-    def test_replication_secret_is_required_only_for_cluster_inventory(self):
-        playbook = read("ansible/provision-secrets.yml")
-
-        self.assertIn("'todo_cluster' in groups", playbook)
-        self.assertIn("['todo-replicator-password']", playbook)
-
     def test_secret_reads_are_direct_and_suppressed(self):
         promoted_tasks = read(
             "ansible/roles/promoted_application/tasks/main.yml"
@@ -81,16 +75,31 @@ class AnsibleSafetyTests(unittest.TestCase):
         )[1].split(
             "- name: Obtain a short-lived Keycloak administrator token", 1
         )[0]
-        provision_tasks = read("ansible/tasks/provision_secret.yml")
-        mismatch_block = provision_tasks.split(
-            "- name: \"Reject managed secret mismatch", 1
-        )[1].split("- name: \"Create managed secret", 1)[0]
-
         self.assertIn("- secret\n      - inspect", secret_block)
         self.assertIn("--showsecret", secret_block)
         self.assertNotIn("- run", secret_block)
         self.assertIn("no_log: true", secret_block)
-        self.assertIn("no_log: true", mismatch_block)
+
+    def test_vault_provisioning_is_outside_demo_scope(self):
+        for removed_path in (
+            "ansible/provision-secrets.yml",
+            "ansible/secrets.example.yml",
+            "ansible/tasks/provision_secret.yml",
+        ):
+            self.assertFalse((PROJECT_ROOT / removed_path).exists())
+
+        surfaces = "\n".join(
+            read(path)
+            for path in (
+                "ansible/README.md",
+                "docs/SECRETS.md",
+                "offline/build-bundle.sh",
+                "scripts/build-operations-package.sh",
+                ".github/workflows/clean-install.yml",
+            )
+        )
+        self.assertNotIn("ansible-vault", surfaces)
+        self.assertNotIn("provision-secrets", surfaces)
 
     def test_operations_package_records_source_revision(self):
         builder = read("scripts/build-operations-package.sh")

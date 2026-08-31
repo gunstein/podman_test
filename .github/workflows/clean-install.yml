@@ -35,7 +35,6 @@ jobs:
           set -euo pipefail
           for playbook in \
             ansible/deploy.yml \
-            ansible/provision-secrets.yml \
             ansible/uninstall.yml
           do
             ansible-playbook \

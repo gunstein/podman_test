@@ -1,71 +1,37 @@
 # Secrets in the Todo demo
 
-The demo uses two distinct layers. Podman secrets deliver credentials to
-containers at runtime. They are deliberately not treated as the authoritative
-backup or organization-wide source of those credentials.
+The demo uses Podman secrets as its single secret mechanism.
 
 ```text
-authoritative secret source
+initial deployment
         |
-        | deployment-time provisioning
         v
-Podman secret on each required host
+Podman secrets on the initial primary
         |
-        | file or environment delivery
+        | protected Ansible transfer over SSH
         v
-container process
+matching Podman secrets on the standby
+        |
+        v
+container processes
 ```
 
-M12 generates secrets on the first host because that keeps the offline lab
-self-contained. M13 demonstrates that Podman secrets are host-local by copying
-the required values to standby through Ansible memory and SSH. The playbook
-uses `podman secret inspect --showsecret`, marks value-bearing tasks `no_log`,
-creates only missing secrets and rejects mismatched existing values. It never
-writes a plaintext transfer file.
+The initial deployment generates independent credentials for PostgreSQL,
+application roles and Keycloak. Standby bootstrap demonstrates that Podman
+secrets are host-local by copying the required values from the initial primary
+through Ansible memory and SSH. The playbook uses
+`podman secret inspect --showsecret`, marks value-bearing tasks `no_log`, creates
+only missing secrets and rejects mismatched existing values. It never writes a
+plaintext transfer file.
 
-That is a suitable bootstrap lesson, but the first database host should not be
-the long-term secret authority for a larger installation.
-
-The main repository, M12 offline bundle and operations package include a
-runnable optional path:
-
-```bash
-cp ansible/secrets.example.yml ansible/secrets.yml
-# Replace every placeholder with a unique generated value.
-ansible-vault encrypt ansible/secrets.yml
-
-ansible-playbook \
-  --inventory ansible/inventory.ini \
-  --ask-vault-pass \
-  --extra-vars @ansible/secrets.yml \
-  ansible/provision-secrets.yml
-```
-
-With the single-host inventory, the optional path ignores the replication value
-and remains compatible with the single-host uninstaller. Use the
-initial-topology inventory to additionally provision `todo-replicator-password`
-on both DR hosts before bootstrap. A normal deploy or secret-sync run then
-verifies and reuses the values. Existing
-mismatches are rejected; this playbook intentionally does not implement blind
-rotation or `--replace`.
-
-## Recommended model beyond the lab
-
-For a moderate Ansible-managed environment, keep encrypted values in Ansible
-Vault or obtain them from an external secret manager. Provision the same
-required Podman secrets independently to both DR hosts. Keep the Vault password
-or external-manager credential outside Git and outside the deployment bundle.
-
-Ansible Vault protects committed or transported data at rest; after decryption,
-Ansible still handles the plaintext during the run. Continue to use `no_log`,
-restrict controller access and avoid debug output. A dedicated secret manager
-becomes preferable when centralized audit, dynamic credentials, automatic
-rotation or many teams are required.
+After promotion, the surviving node holds the values needed to rebuild the
+other node. Destructive rebuild preflight compares the replication secret on
+both hosts and authenticates a replication connection before deleting old
+database data.
 
 Podman's default `file` driver is reasonable runtime storage for this demo. A
 GPG-backed `pass` driver adds key-agent, boot and recovery requirements, so it
-is not automatically safer operationally. Neither driver replaces an
-authoritative, backed-up secret source.
+is not automatically simpler or safer operationally.
 
 ## Runtime delivery
 
@@ -87,7 +53,8 @@ not copy an organization root private key to application hosts.
 Replacing a Podman secret does not update an already-created container. A
 controlled rotation therefore needs this order:
 
-1. Create or update the credential in its authoritative system.
+1. Create or update the credential on the active node with an explicit
+   rollback plan.
 2. Change the corresponding database, Keycloak or external-service credential
    with an overlap or rollback plan.
 3. Provision the new Podman secret on every host that may run the workload.
@@ -97,15 +64,17 @@ controlled rotation therefore needs this order:
 Automate that workflow per credential; a blind restart of the whole stack is
 not a rotation strategy.
 
-## Backup and recovery
+## Recovery boundary
 
-The M15 PostgreSQL base backup and WAL archive do not back up Podman secrets,
-TLS private keys, Keycloak configuration files or the Ansible secret source.
-Back those up separately with access controls and restore tests. A database
-restore is incomplete if the application cannot recover the credentials needed
-to use it.
+The demonstrated failure model is loss of one database node. The surviving
+node retains the Podman secrets, and the protected synchronization workflow
+restores the required values to the replacement node. Simultaneous loss of
+both database nodes is explicitly outside this demo scope.
 
-Never commit a plaintext secret, Vault password, private key or decrypted
-variable file. See [WHAT-YOU-LEARN.md](WHAT-YOU-LEARN.md) for the demo boundary
-and [the Ansible Vault guide](https://docs.ansible.com/projects/ansible/latest/vault_guide/index.html)
-for the optional authoritative-source model.
+The M15 PostgreSQL base backup and WAL archive do not contain Podman secrets or
+TLS private keys. An organization that wants recovery after loss of every node
+must design separate protected secret and key recovery; that mechanism is not
+implemented here.
+
+Never commit a plaintext secret or private key. See
+[WHAT-YOU-LEARN.md](WHAT-YOU-LEARN.md) for the complete demo boundary.

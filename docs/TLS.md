@@ -73,15 +73,13 @@ private key to an application node.
 Ansible should consume already issued artifacts:
 
 - install the public certificate/full chain as a normal reviewed file;
-- deliver the node-specific private key from Ansible Vault or another
-  authoritative secret source into a Podman secret; and
+- deliver the node-specific private key through a controlled deployment process
+  into a Podman secret; and
 - recreate or reload nginx in a controlled rotation and verify HTTPS before
   retiring the previous certificate.
 
-The current common-secret playbook provisions identical values to all selected
-hosts. Node-specific TLS keys require host-specific encrypted variables or a
-per-host secret mapping; never reuse one leaf private key merely to fit the
-common-secret interface.
+Node-specific TLS keys require a per-host provisioning process; never reuse one
+leaf private key merely to make distribution easier.
 
 ## Proxy contract
 

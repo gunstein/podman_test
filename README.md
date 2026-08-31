@@ -41,8 +41,8 @@ the demo implements versus deliberately simplifies. The
 the recommended pre-provisioned PKI model. The
 [Oracle Linux SELinux guide](docs/SELINUX.md) explains labels, rootless UID
 mapping and how SELinux differs from fapolicyd. The
-[secrets guide](docs/SECRETS.md) separates the demo bootstrap flow from the
-recommended authoritative-source, runtime-delivery and rotation model.
+[secrets guide](docs/SECRETS.md) explains bootstrap, protected synchronization,
+runtime delivery, rotation and the single-node-loss recovery boundary.
 
 ## Security scope
 
@@ -460,6 +460,7 @@ This creates `dist/todo-offline-m12.tar.gz` and
 - Backend, frontend, Keycloak and PostgreSQL OCI image archives
 - Quadlet and Ansible deployment files
 - A target preflight check, installer and SHA-256 checksums
+- A `VERSION` file with source Git revision and clean/dirty build state
 
 On the offline target, copy both files through the trusted transfer path, then
 verify before extraction:
@@ -472,6 +473,8 @@ sh ./preflight.sh
 sh ./install.sh
 ```
 
+The `VERSION` file identifies the source revision; deploy a reviewed `clean`
+build. A `dirty` value is diagnostic provenance, not a release identifier.
 The external checksum verifies the archive before any extracted script runs.
 The internal `SHA256SUMS` then verifies every bundled artifact. SHA-256 alone
 provides integrity only when the checksum arrived through a trusted channel; a

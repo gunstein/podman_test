@@ -38,7 +38,16 @@ cp "$project_root/offline/install.sh" "$project_root/offline/preflight.sh" \
   "$project_root/offline/README.md" "$project_root/offline/FAPOLICYD.md" \
   "$bundle_directory/"
 
-printf '%s\n' "M12" > "$bundle_directory/VERSION"
+source_revision=unknown
+source_state=unknown
+if source_revision=$(git -C "$project_root" rev-parse --verify HEAD 2>/dev/null); then
+  source_state=clean
+  if test -n "$(git -C "$project_root" status --porcelain --untracked-files=normal)"; then
+    source_state=dirty
+  fi
+fi
+printf 'package=todo-offline-m12\nsource_revision=%s\nsource_state=%s\n' \
+  "$source_revision" "$source_state" > "$bundle_directory/VERSION"
 (
   cd "$bundle_directory"
   find . -type f ! -name SHA256SUMS -print0 |

@@ -91,6 +91,8 @@ class AnsibleSafetyTests(unittest.TestCase):
         surfaces = "\n".join(
             read(path)
             for path in (
+                "README.md",
+                "PROJECT.md",
                 "ansible/README.md",
                 "docs/SECRETS.md",
                 "offline/build-bundle.sh",
@@ -101,12 +103,16 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertNotIn("ansible-vault", surfaces)
         self.assertNotIn("provision-secrets", surfaces)
 
-    def test_operations_package_records_source_revision(self):
-        builder = read("scripts/build-operations-package.sh")
-
-        self.assertIn("source_revision=", builder)
-        self.assertIn("source_state=", builder)
-        self.assertIn("rev-parse --verify HEAD", builder)
+    def test_offline_packages_record_source_revision(self):
+        for builder_path, package_name in (
+            ("offline/build-bundle.sh", "todo-offline-m12"),
+            ("scripts/build-operations-package.sh", "todo-operations"),
+        ):
+            builder = read(builder_path)
+            self.assertIn(f"package={package_name}", builder)
+            self.assertIn("source_revision=", builder)
+            self.assertIn("source_state=", builder)
+            self.assertIn("rev-parse --verify HEAD", builder)
 
     def test_operational_surface_has_two_inventories_and_one_package_builder(self):
         inventories = sorted(

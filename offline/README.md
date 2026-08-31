@@ -40,7 +40,10 @@ dist/todo-offline-m12.tar.gz
 dist/todo-offline-m12.tar.gz.sha256
 ```
 
-Build the bundle on a machine compatible with the offline target.
+Build the bundle on a machine compatible with the offline target. Its `VERSION`
+file records the source Git revision and clean/dirty build state. Deploy a
+reviewed `clean` artifact; `dirty` is diagnostic provenance, not a release
+identifier.
 
 ## Install on the offline machine
 

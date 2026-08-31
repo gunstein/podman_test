@@ -24,13 +24,13 @@ M12-M16 destructive lifecycle was not required for this proxy-only migration.
 
 ## Secure operations hardening checkpoint — 2026-08-31
 
-- Optional encrypted secret provisioning now creates the replication credential
-  only for an inventory containing the database cluster. A normal M12
-  single-host provision remains compatible with its guarded uninstaller.
+- The optional Vault provisioning path was removed. The demo deliberately uses
+  Podman secrets only and treats simultaneous loss of both database nodes as
+  outside scope.
 - All operational secret reads use Podman `secret inspect --showsecret`;
   value-bearing reads and mismatch assertions use `no_log`.
-- The operations package records its source Git revision and clean/dirty build
-  state for offline traceability.
+- Both the M12 image bundle and the operations package record their source Git
+  revision and clean/dirty build state for offline traceability.
 - CI now builds the nginx frontend image, runs its non-root OpenSSL certificate
   bootstrap, parses the real configuration with `nginx -t`, verifies the
   `todo.test` SAN and chain, and checks private-key modes. The same smoke passed

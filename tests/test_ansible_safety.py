@@ -66,6 +66,39 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertIn("last_archived_wal", status)
         self.assertIn("last_archived_time >= last_failed_time", status)
 
+    def test_replication_secret_is_required_only_for_cluster_inventory(self):
+        playbook = read("ansible/provision-secrets.yml")
+
+        self.assertIn("'todo_cluster' in groups", playbook)
+        self.assertIn("['todo-replicator-password']", playbook)
+
+    def test_secret_reads_are_direct_and_suppressed(self):
+        promoted_tasks = read(
+            "ansible/roles/promoted_application/tasks/main.yml"
+        )
+        secret_block = promoted_tasks.split(
+            "- name: Read the existing Keycloak administrator secret", 1
+        )[1].split(
+            "- name: Obtain a short-lived Keycloak administrator token", 1
+        )[0]
+        provision_tasks = read("ansible/tasks/provision_secret.yml")
+        mismatch_block = provision_tasks.split(
+            "- name: \"Reject managed secret mismatch", 1
+        )[1].split("- name: \"Create managed secret", 1)[0]
+
+        self.assertIn("- secret\n      - inspect", secret_block)
+        self.assertIn("--showsecret", secret_block)
+        self.assertNotIn("- run", secret_block)
+        self.assertIn("no_log: true", secret_block)
+        self.assertIn("no_log: true", mismatch_block)
+
+    def test_operations_package_records_source_revision(self):
+        builder = read("scripts/build-operations-package.sh")
+
+        self.assertIn("source_revision=", builder)
+        self.assertIn("source_state=", builder)
+        self.assertIn("rev-parse --verify HEAD", builder)
+
     def test_operational_surface_has_two_inventories_and_one_package_builder(self):
         inventories = sorted(
             path.name for path in (PROJECT_ROOT / "ansible").glob("inventory-*.example.ini")

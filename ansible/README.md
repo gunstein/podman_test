@@ -32,7 +32,11 @@ ansible-playbook \
   ansible/provision-secrets.yml
 ```
 
-The playbook creates only missing secrets and rejects mismatches. Read
+With the single-host inventory, the playbook provisions only application
+secrets.
+With an inventory containing `todo_cluster`, it additionally requires and
+provisions `todo-replicator-password` on every database host. It creates only
+missing secrets and rejects mismatches. Read
 [../docs/SECRETS.md](../docs/SECRETS.md) for two-host provisioning, rotation,
 runtime file-versus-environment delivery and recovery boundaries.
 
@@ -119,6 +123,10 @@ failover, backup and standby rebuild:
 ```bash
 scripts/build-operations-package.sh
 ```
+
+The package `VERSION` file records the source Git revision and whether source
+changes were present while it was built. Deploy only a reviewed `clean`
+artifact; `dirty` is diagnostic provenance, not a release identifier.
 
 The package provides two inventory templates:
 

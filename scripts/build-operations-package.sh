@@ -65,7 +65,16 @@ cp "$project_root/docs/SECRETS.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
   "$package_directory/docs/"
 
-printf '%s\n' operations > "$package_directory/VERSION"
+source_revision=unknown
+source_state=unknown
+if source_revision=$(git -C "$project_root" rev-parse --verify HEAD 2>/dev/null); then
+  source_state=clean
+  if test -n "$(git -C "$project_root" status --porcelain --untracked-files=normal)"; then
+    source_state=dirty
+  fi
+fi
+printf 'package=todo-operations\nsource_revision=%s\nsource_state=%s\n' \
+  "$source_revision" "$source_state" > "$package_directory/VERSION"
 tar -czf "$output" -C "$work_directory" "$(basename "$package_directory")"
 output_directory=$(dirname "$output")
 output_name=$(basename "$output")

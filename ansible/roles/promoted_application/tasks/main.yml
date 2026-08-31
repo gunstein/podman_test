@@ -222,15 +222,12 @@
   ansible.builtin.command:
     argv:
       - podman
-      - run
-      - --rm
-      - --secret
-      - todo-keycloak-admin-password,type=env,target=TODO_ADMIN_PASSWORD
-      - --entrypoint
-      - /bin/sh
-      - docker.io/library/postgres:17.11
-      - -c
-      - 'printf "%s" "$TODO_ADMIN_PASSWORD"'
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
+      - todo-keycloak-admin-password
   register: m14_keycloak_admin_password
   changed_when: false
   no_log: true

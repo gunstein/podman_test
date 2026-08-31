@@ -26,7 +26,8 @@ writes a plaintext transfer file.
 That is a suitable bootstrap lesson, but the first database host should not be
 the long-term secret authority for a larger installation.
 
-The main repository and M12/M13 packages include a runnable optional path:
+The main repository, M12 offline bundle and operations package include a
+runnable optional path:
 
 ```bash
 cp ansible/secrets.example.yml ansible/secrets.yml
@@ -40,8 +41,11 @@ ansible-playbook \
   ansible/provision-secrets.yml
 ```
 
-Use the initial-topology inventory instead to provision both DR hosts before bootstrap. A
-normal deploy or secret-sync run then verifies and reuses the values. Existing
+With the single-host inventory, the optional path ignores the replication value
+and remains compatible with the single-host uninstaller. Use the
+initial-topology inventory to additionally provision `todo-replicator-password`
+on both DR hosts before bootstrap. A normal deploy or secret-sync run then
+verifies and reuses the values. Existing
 mismatches are rejected; this playbook intentionally does not implement blind
 rotation or `--replace`.
 

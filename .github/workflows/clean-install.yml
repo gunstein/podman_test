@@ -115,10 +115,15 @@ jobs:
             todo-operations/scripts/todo_backup.py \
             todo-operations/offline/FAPOLICYD.md \
             todo-operations/docs/SECRETS.md \
-            todo-operations/docs/TLS.md
+            todo-operations/docs/TLS.md \
+            todo-operations/VERSION
           do
             tar -tzf "$archive" | grep -Fx "$required" >/dev/null
           done
+          version=$(tar -xOf "$archive" todo-operations/VERSION)
+          grep -Fx "package=todo-operations" <<<"$version" >/dev/null
+          grep -Eq "^source_revision=[0-9a-f]{40}$" <<<"$version"
+          grep -Fx "source_state=clean" <<<"$version" >/dev/null
 
 
   ansible-lint:
@@ -142,7 +147,7 @@ jobs:
         run: ansible-lint ansible
 
   script-quality:
-    name: Python and shell lint
+    name: Scripts and nginx smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -168,6 +173,46 @@ jobs:
             frontend/todo-nginx-entrypoint.sh \
             scripts/build-operations-package.sh \
             scripts/run-e2e.sh
+
+      - name: Smoke-test nginx and TLS bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="todo-frontend-ci:${GITHUB_SHA}"
+          volume="todo-nginx-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker volume rm --force "$volume" >/dev/null 2>&1 || true' EXIT
+
+          docker build \
+            --file frontend/Containerfile \
+            --tag "$image" \
+            .
+          docker volume create "$volume" >/dev/null
+          docker run --rm \
+            --user root \
+            --volume "$volume:/var/lib/todo-tls" \
+            --entrypoint chown \
+            "$image" \
+            nginx:nginx /var/lib/todo-tls
+          docker run --rm \
+            --add-host todo-backend:127.0.0.1 \
+            --add-host todo-keycloak:127.0.0.1 \
+            --env TODO_TLS_HOSTNAME=todo.test \
+            --volume "$volume:/var/lib/todo-tls" \
+            "$image" \
+            nginx -t
+          docker run --rm \
+            --volume "$volume:/var/lib/todo-tls:ro" \
+            --entrypoint sh \
+            "$image" \
+            -ec '
+              openssl x509 -in /var/lib/todo-tls/server.crt \
+                -noout -checkhost todo.test
+              openssl verify \
+                -CAfile /var/lib/todo-tls/ca.crt \
+                /var/lib/todo-tls/server.crt
+              test "$(stat -c "%a" /var/lib/todo-tls/ca.key)" = 600
+              test "$(stat -c "%a" /var/lib/todo-tls/server.key)" = 600
+            '
 
 
   backend:

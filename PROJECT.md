@@ -22,6 +22,22 @@ through M14, followed by HTTPS, browser, idempotence, reboot, M15 and M16 checks
 A future from-zero drill will therefore start with nginx; repeating the complete
 M12-M16 destructive lifecycle was not required for this proxy-only migration.
 
+## Secure operations hardening checkpoint — 2026-08-31
+
+- Optional encrypted secret provisioning now creates the replication credential
+  only for an inventory containing the database cluster. A normal M12
+  single-host provision remains compatible with its guarded uninstaller.
+- All operational secret reads use Podman `secret inspect --showsecret`;
+  value-bearing reads and mismatch assertions use `no_log`.
+- The operations package records its source Git revision and clean/dirty build
+  state for offline traceability.
+- CI now builds the nginx frontend image, runs its non-root OpenSSL certificate
+  bootstrap, parses the real configuration with `nginx -t`, verifies the
+  `todo.test` SAN and chain, and checks private-key modes. The same smoke passed
+  locally with Docker.
+- One final from-zero M12--M16 nginx drill remains a manual acceptance test, not
+  a prerequisite for each incremental hardening change.
+
 ## Live nginx migration checkpoint — 2026-08-31
 
 - The verified offline frontend archive replaced the Caddy-tagged image with an
@@ -296,8 +312,8 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-Use the consolidated role-based steady-state inventory after M16 and keep
-planned switchover/failback as a separate future operation. The next engineering
-work should be operational consolidation rather than another mandatory
-milestone: authoritative secret provisioning, certificate lifecycle and an RPM/
-DNF delivery profile for host-side tools when the demo is scaled to more hosts.
+Run one final from-zero M12--M16 acceptance drill with nginx when a destructive
+validation window is available. Keep planned switchover/failback separate. For a
+larger deployment, the next optional profiles are organization-managed
+certificate lifecycle and RPM/DNF delivery of host-side operational tools; they
+are documented scaling directions, not missing demo milestones.

@@ -214,10 +214,9 @@ scripts/build-operations-package.sh
 This creates `dist/todo-operations.tar.gz` and a matching
 `dist/todo-operations.tar.gz.sha256`. The archive contains all standby,
 promotion, application-failover, backup and rebuild workflows, both example
-inventories, the operational Python tools and
-shared documentation. It contains no site-specific inventory, SSH key, secret,
-image or database data. Verify the checksum against a value
-received through a trusted channel before trusting extracted files. Replication
+inventories, the operational Python tools and shared documentation. It contains no site-specific inventory, SSH key, secret,
+image or database data. The archive `VERSION` file records the source Git
+revision and marks builds from modified source files as `dirty`. Verify the checksum against a value received through a trusted channel before trusting extracted files. Replication
 is availability protection, not backup.
 
 The demo targets database RTO within 15 minutes and an operational RPO of at

@@ -1,6 +1,6 @@
 ---
-- name: Run the destructive M16 preflight
-  ansible.builtin.import_playbook: preflight-m16.yml
+- name: Run the destructive standby rebuild preflight
+  ansible.builtin.import_playbook: preflight-standby-rebuild.yml
 
 - name: Prepare promoted database for a rebuilt standby
   hosts: todo_current_primary
@@ -29,7 +29,7 @@
   roles:
     - role: postgres_reseed_standby
 
-- name: Verify restored M16 replication
+- name: Verify restored replication
   hosts: todo_current_primary
   gather_facts: false
   any_errors_fatal: true
@@ -54,7 +54,7 @@
             SELECT application_name, state, sync_state,
             pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)::bigint
             FROM pg_stat_replication
-            WHERE application_name = '{{ m16_replication_slot }}';
+            WHERE application_name = '{{ todo_rebuild_replication_slot }}';
       register: m16_final_streaming
       changed_when: false
       retries: 30
@@ -66,5 +66,5 @@
     - name: Report restored database redundancy
       ansible.builtin.debug:
         msg: >-
-          M16 restored asynchronous redundancy: {{ m16_final_streaming.stdout | trim }}.
+          Restored asynchronous redundancy: {{ m16_final_streaming.stdout | trim }}.
           The promoted host remains primary; the old primary is now a rebuilt standby.

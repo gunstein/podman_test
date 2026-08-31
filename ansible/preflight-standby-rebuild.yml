@@ -1,5 +1,5 @@
 ---
-- name: Inspect the promoted primary for M16
+- name: Inspect the current promoted primary before standby rebuild
   hosts: todo_current_primary
   gather_facts: false
   any_errors_fatal: true
@@ -61,7 +61,7 @@
       changed_when: false
       no_log: true
 
-    - name: Require existing M15 backup volume
+    - name: Require existing backup volume
       ansible.builtin.command: {argv: [podman, volume, exists, todo-postgres-backup]}
       changed_when: false
 
@@ -81,7 +81,7 @@
           - --command
           - >-
             SELECT count(*) FROM pg_replication_slots
-            WHERE slot_name = '{{ m16_replication_slot }}';
+            WHERE slot_name = '{{ todo_rebuild_replication_slot }}';
       register: m16_slot_count
       changed_when: false
 
@@ -93,10 +93,10 @@
           - m16_current_service.stdout | trim == 'active'
           - m16_current_database.stdout | trim == 'f|off|true'
           - m16_slot_count.stdout | trim == '0'
-          - m16_replication_slot is match('^[a-z][a-z0-9_]{0,62}$')
+          - todo_rebuild_replication_slot is match('^[a-z][a-z0-9_]{0,62}$')
         fail_msg: >-
-          Current primary is not ready, or the M16 slot already exists. Never
-          treat a partial M16 run as a clean bootstrap.
+          Current primary is not ready, or the rebuild slot already exists.
+          Never treat a partial rebuild as a clean bootstrap.
 
 - name: Inspect the fenced old primary before destructive reseed
   hosts: todo_rebuild_standby
@@ -166,7 +166,7 @@
             hostvars[groups['todo_current_primary'][0]].m16_current_replication_secret.stdout
         fail_msg: >-
           Replication credentials differ between the two hosts. Reconcile them
-          before running M16; no database data has been removed.
+          before rebuilding; no database data has been removed.
 
     - name: Validate fenced rebuild host state and confirmations
       ansible.builtin.assert:
@@ -178,8 +178,8 @@
           - hostvars[groups['todo_current_primary'][0]].todo_node_address != todo_node_address
           - m16_rebuild_services.results | map(attribute='stdout') | map('trim') | select('equalto', 'active') | list | length == 0
           - m16_rebuild_postgres_container.stdout | trim == ''
-          - m16_confirm_old_primary_fenced | default('') == inventory_hostname ~ ' is fenced'
-          - m16_confirm_reseed | default('') == inventory_hostname
+          - todo_confirm_old_primary_fenced | default('') == inventory_hostname ~ ' is fenced'
+          - todo_confirm_reseed | default('') == inventory_hostname
         fail_msg: >-
           Rebuild host must remain infrastructure-fenced, all Todo services and
           containers must be stopped, and both exact confirmations are required.

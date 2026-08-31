@@ -1,4 +1,6 @@
-# M14 application failover
+# Application failover
+
+This is learning stage M14.
 
 M14 starts the application tier on an already promoted PostgreSQL standby. It
 does not initialize PostgreSQL, run migrations, change database roles or create
@@ -16,22 +18,23 @@ to the promoted host address.
 
 ## Stage before an incident
 
-Keep the M14 source package and the M12 offline image bundle on standby before
-an incident. The package contains no secrets, images or inventory.
+Keep the operations package and the M12 offline image bundle on standby before
+an incident. The package contains no secrets, images, site-specific inventory or
+database data.
 
 Build, verify and transfer the package from the trusted source host while
 primary is healthy:
 
 ```bash
-scripts/build-m14-test-package.sh
+scripts/build-operations-package.sh
 (
   cd dist
-  sha256sum -c todo-m14-test.tar.gz.sha256
+  sha256sum -c todo-operations.tar.gz.sha256
 )
 read -rp "Standby IPv4 address: " TODO_STANDBY_IP
 scp \
-  dist/todo-m14-test.tar.gz \
-  dist/todo-m14-test.tar.gz.sha256 \
+  dist/todo-operations.tar.gz \
+  dist/todo-operations.tar.gz.sha256 \
   "gunstein@${TODO_STANDBY_IP}:"
 ```
 
@@ -39,11 +42,11 @@ On standby, verify and stage it before an incident:
 
 ```bash
 cd "$HOME"
-sha256sum -c todo-m14-test.tar.gz.sha256
-mkdir -p todo-m14-test
-tar -xzf todo-m14-test.tar.gz \
+sha256sum -c todo-operations.tar.gz.sha256
+mkdir -p todo-operations
+tar -xzf todo-operations.tar.gz \
   --strip-components=1 \
-  --directory todo-m14-test
+  --directory todo-operations
 ```
 
 ## Host firewall
@@ -70,18 +73,18 @@ localhost for local smoke tests.
 Verify that primary remains powered off. On the promoted standby:
 
 ```bash
-cd "$HOME/todo-m14-test"
+cd "$HOME/todo-operations"
 read -rp "Promoted host IPv4 address: " TODO_STANDBY_IP
-cp ansible/inventory-m14.example.ini ansible/inventory-m14.ini
-sed -i "s/192.0.2.11/${TODO_STANDBY_IP}/" ansible/inventory-m14.ini
+cp ansible/inventory-recovery.example.ini ansible/inventory-recovery.ini
+sed -i "s/192.0.2.11/${TODO_STANDBY_IP}/" ansible/inventory-recovery.ini
 ```
 
 Then run:
 
 ```bash
 ansible-playbook \
-  --inventory ansible/inventory-m14.ini \
-  ansible/deploy-promoted-m14.yml
+  --inventory ansible/inventory-recovery.ini \
+  ansible/deploy-promoted-application.yml
 ```
 
 The playbook fails before changing application state unless:

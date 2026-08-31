@@ -27,7 +27,7 @@
             COALESCE(s.invalidation_reason, '')
             FROM pg_stat_replication r
             JOIN pg_replication_slots s ON s.slot_name = r.application_name
-            WHERE r.application_name = '{{ m16_replication_slot }}';
+            WHERE r.application_name = '{{ todo_rebuild_replication_slot }}';
       register: m16_status_primary
       changed_when: false
 

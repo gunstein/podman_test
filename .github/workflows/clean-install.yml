@@ -44,80 +44,81 @@ jobs:
               --syntax-check
           done
 
-      - name: Syntax-check M13 playbooks
+      - name: Syntax-check initial standby playbooks
         shell: bash
         run: |
           set -euo pipefail
           for playbook in \
-            ansible/preflight-m13.yml \
+            ansible/preflight-standby.yml \
             ansible/sync-standby-secrets.yml \
-            ansible/bootstrap-m13.yml \
-            ansible/install-dr-m13.yml \
-            ansible/status-m13.yml
+            ansible/bootstrap-standby.yml \
+            ansible/install-dr-tool.yml \
+            ansible/replication-status.yml
           do
             ansible-playbook \
-              --inventory ansible/inventory-m13.example.ini \
+              --inventory ansible/inventory-initial.example.ini \
               "$playbook" \
               --syntax-check
           done
 
-      - name: Syntax-check M14 playbook
+      - name: Syntax-check promoted application playbook
         run: >-
           ansible-playbook
-          --inventory ansible/inventory-m14.example.ini
-          ansible/deploy-promoted-m14.yml
+          --inventory ansible/inventory-recovery.example.ini
+          ansible/deploy-promoted-application.yml
           --syntax-check
 
-      - name: Syntax-check M15 playbook
+      - name: Syntax-check backup playbook
         run: >-
           ansible-playbook
-          --inventory ansible/inventory-m14.example.ini
-          ansible/configure-backup-m15.yml
+          --inventory ansible/inventory-recovery.example.ini
+          ansible/configure-backup.yml
           --syntax-check
 
-      - name: Syntax-check M16 playbooks
+      - name: Syntax-check standby rebuild playbooks
         shell: bash
         run: |
           set -euo pipefail
           for playbook in \
-            ansible/preflight-m16.yml \
-            ansible/rebuild-standby-m16.yml \
-            ansible/status-m16.yml
+            ansible/preflight-standby-rebuild.yml \
+            ansible/rebuild-standby.yml \
+            ansible/cluster-status.yml
           do
             ansible-playbook \
-              --inventory ansible/inventory-m16.example.ini \
+              --inventory ansible/inventory-recovery.example.ini \
               "$playbook" \
               --syntax-check
           done
 
       - name: Test DR and backup tools
         run: python -m unittest discover --start-directory tests --verbose
-      - name: Build and verify milestone packages
+      - name: Build and verify the operations package
         shell: bash
         run: |
           set -euo pipefail
-          for milestone in 13 14 15 16; do
-            "scripts/build-m${milestone}-test-package.sh"
-            (
-              cd dist
-              sha256sum -c "todo-m${milestone}-test.tar.gz.sha256"
-            )
+          scripts/build-operations-package.sh
+          (
+            cd dist
+            sha256sum -c todo-operations.tar.gz.sha256
+          )
+          archive=dist/todo-operations.tar.gz
+          for required in \
+            todo-operations/ansible.cfg \
+            todo-operations/ansible/inventory-initial.example.ini \
+            todo-operations/ansible/inventory-recovery.example.ini \
+            todo-operations/ansible/deploy-promoted-application.yml \
+            todo-operations/ansible/configure-backup.yml \
+            todo-operations/ansible/rebuild-standby.yml \
+            todo-operations/ansible/roles/promoted_application/tasks/main.yml \
+            todo-operations/ansible/roles/postgres_backup/tasks/main.yml \
+            todo-operations/scripts/todo_dr.py \
+            todo-operations/scripts/todo_backup.py \
+            todo-operations/offline/FAPOLICYD.md \
+            todo-operations/docs/SECRETS.md \
+            todo-operations/docs/TLS.md
+          do
+            tar -tzf "$archive" | grep -Fx "$required" >/dev/null
           done
-          tar -tzf dist/todo-m13-test.tar.gz | grep 'offline/FAPOLICYD.md' >/dev/null
-          tar -tzf dist/todo-m15-test.tar.gz | grep 'offline/FAPOLICYD.md' >/dev/null
-          tar -tzf dist/todo-m16-test.tar.gz | grep 'M16-RESTORE-REDUNDANCY.md' >/dev/null
-          for milestone in 13 14 15 16; do
-            tar -tzf "dist/todo-m${milestone}-test.tar.gz" |
-              grep -E "/ansible.cfg$" >/dev/null
-            tar -tzf "dist/todo-m${milestone}-test.tar.gz" |
-              grep -E "/docs/SECRETS.md$" >/dev/null
-            tar -tzf "dist/todo-m${milestone}-test.tar.gz" |
-              grep -E "/docs/TLS.md$" >/dev/null
-          done
-          tar -tzf dist/todo-m16-test.tar.gz |
-            grep -E "/ansible/inventory-cluster.example.ini$" >/dev/null
-          ! tar -tzf dist/todo-m13-test.tar.gz | \
-            grep -Eq 'promoted_application|postgres_backup'
 
 
   ansible-lint:
@@ -165,10 +166,7 @@ jobs:
             offline/install.sh \
             offline/preflight.sh \
             frontend/todo-nginx-entrypoint.sh \
-            scripts/build-m13-test-package.sh \
-            scripts/build-m14-test-package.sh \
-            scripts/build-m15-test-package.sh \
-            scripts/build-m16-test-package.sh \
+            scripts/build-operations-package.sh \
             scripts/run-e2e.sh
 
 

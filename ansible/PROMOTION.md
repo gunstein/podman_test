@@ -1,4 +1,6 @@
-# M13.5 controlled PostgreSQL promotion
+# Controlled PostgreSQL promotion
+
+This is learning stage M13.5.
 
 M13.5 installs a small Python tool on standby. Ansible provisions the file and
 host-specific configuration, but status, preflight and promotion run locally on
@@ -19,19 +21,19 @@ it does not claim to enforce or prove that bound after primary loss.
 
 ## Install before an incident
 
-Build and verify the source-only M13/M13.5 package on the trusted source host:
+Build and verify the shared source-only operations package on the trusted source host:
 
 ```bash
-scripts/build-m13-test-package.sh
+scripts/build-operations-package.sh
 (
   cd dist
-  sha256sum -c todo-m13-test.tar.gz.sha256
+  sha256sum -c todo-operations.tar.gz.sha256
 )
 
 read -rp "Primary IPv4 address: " TODO_PRIMARY_IP
 scp \
-  dist/todo-m13-test.tar.gz \
-  dist/todo-m13-test.tar.gz.sha256 \
+  dist/todo-operations.tar.gz \
+  dist/todo-operations.tar.gz.sha256 \
   "gunstein@${TODO_PRIMARY_IP}:"
 ```
 
@@ -40,9 +42,9 @@ Ansible controller. On primary, verify and extract the package:
 
 ```bash
 cd "$HOME"
-sha256sum -c todo-m13-test.tar.gz.sha256
-tar -xzf todo-m13-test.tar.gz
-cd todo-m13-test
+sha256sum -c todo-operations.tar.gz.sha256
+tar -xzf todo-operations.tar.gz
+cd todo-operations
 ```
 
 A checksum file copied beside a modified archive does not establish
@@ -53,7 +55,7 @@ Python source that Ansible must read:
 
 ```bash
 sudo fapolicyd-cli --file add \
-  "$HOME/todo-m13-test/scripts/todo_dr.py" \
+  "$HOME/todo-operations/scripts/todo_dr.py" \
   --trust-file todo-dr-source
 sudo fapolicyd-cli --update
 ```
@@ -62,7 +64,7 @@ After a later source update, refresh its recorded hash and reload trust:
 
 ```bash
 sudo fapolicyd-cli --file update \
-  "$HOME/todo-m13-test/scripts/todo_dr.py" \
+  "$HOME/todo-operations/scripts/todo_dr.py" \
   --trust-file todo-dr-source
 sudo fapolicyd-cli --update
 ```
@@ -79,8 +81,8 @@ Run this from primary while primary is still the Ansible controller:
 
 ```bash
 ansible-playbook \
-  --inventory ansible/inventory-m13.ini \
-  ansible/install-dr-m13.yml
+  --inventory ansible/inventory-initial.ini \
+  ansible/install-dr-tool.yml
 ```
 
 This installs two non-secret files on standby:

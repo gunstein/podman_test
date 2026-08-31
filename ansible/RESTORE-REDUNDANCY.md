@@ -1,4 +1,6 @@
-# M16 restore database redundancy after failover
+# Restore database redundancy after failover
+
+This is learning stage M16.
 
 M16 restores a second database copy after M13.5 promotion and M14 application
 failover. It does not move service back to the machine that was originally
@@ -22,7 +24,7 @@ to serve clients or replicate as primary. Keep it fenced at the Proxmox layer.
 Powering it on is safe only with client/database traffic still blocked and for
 the purpose of stopping its services and rebuilding it.
 
-The M16 playbook permanently deletes `todo-postgres-data` on the old primary.
+The rebuild playbook permanently deletes `todo-postgres-data` on the old primary.
 It requires both exact values:
 
 ```text
@@ -58,15 +60,15 @@ All four services must be inactive and no `todo-postgres` container may run.
 Fencing is an infrastructure property; an unreachable TCP port alone is not
 proof that the VM cannot serve other clients.
 
-## Stage the M16 package
+## Stage the operations package
 
 Build and verify on the trusted source host:
 
 ```bash
-scripts/build-m16-test-package.sh
+scripts/build-operations-package.sh
 (
   cd dist
-  sha256sum -c todo-m16-test.tar.gz.sha256
+  sha256sum -c todo-operations.tar.gz.sha256
 )
 ```
 
@@ -75,13 +77,13 @@ the inventory example:
 
 ```bash
 cd "$HOME"
-sha256sum -c todo-m16-test.tar.gz.sha256
-mkdir -p todo-m16-test
-tar -xzf todo-m16-test.tar.gz \
+sha256sum -c todo-operations.tar.gz.sha256
+mkdir -p todo-operations
+tar -xzf todo-operations.tar.gz \
   --strip-components=1 \
-  --directory todo-m16-test
-cd todo-m16-test
-cp ansible/inventory-m16.example.ini ansible/inventory-m16.ini
+  --directory todo-operations
+cd todo-operations
+cp ansible/inventory-recovery.example.ini ansible/inventory-recovery.ini
 ```
 
 Edit the two addresses. `todo_current_primary` is the promoted host and
@@ -92,7 +94,7 @@ module files without turning a transport setting into inventory data.
 
 ## Restrict the new replication endpoint
 
-Before M16 publishes PostgreSQL on the current primary LAN address, allow only
+Before the rebuild workflow publishes PostgreSQL on the current primary LAN address, allow only
 the rebuilt standby through firewalld. Substitute the two addresses:
 
 ```bash
@@ -111,9 +113,9 @@ From the current primary:
 
 ```bash
 ansible-playbook \
-  --inventory ansible/inventory-m16.ini \
-  ansible/preflight-m16.yml \
-  --extra-vars '{"m16_confirm_old_primary_fenced":"todo-primary is fenced","m16_confirm_reseed":"todo-primary"}'
+  --inventory ansible/inventory-recovery.ini \
+  ansible/preflight-standby-rebuild.yml \
+  --extra-vars '{"todo_confirm_old_primary_fenced":"todo-primary is fenced","todo_confirm_reseed":"todo-primary"}'
 ```
 
 Preflight requires the promoted database to be writable, the replication role
@@ -128,9 +130,9 @@ Read the recap and confirmations again, then run:
 
 ```bash
 ansible-playbook \
-  --inventory ansible/inventory-m16.ini \
-  ansible/rebuild-standby-m16.yml \
-  --extra-vars '{"m16_confirm_old_primary_fenced":"todo-primary is fenced","m16_confirm_reseed":"todo-primary"}'
+  --inventory ansible/inventory-recovery.ini \
+  ansible/rebuild-standby.yml \
+  --extra-vars '{"todo_confirm_old_primary_fenced":"todo-primary is fenced","todo_confirm_reseed":"todo-primary"}'
 ```
 
 The playbook first preserves M15 archiving while adding a restricted LAN
@@ -151,8 +153,8 @@ then perform explicit cleanup before another attempt.
 
 ```bash
 ansible-playbook \
-  --inventory ansible/inventory-m16.ini \
-  ansible/status-m16.yml
+  --inventory ansible/inventory-recovery.ini \
+  ansible/cluster-status.yml
 ```
 
 Current primary must report an active `streaming|async` connection, a usable
@@ -160,12 +162,11 @@ physical slot, writable state, `archive_mode=on` and a successful WAL archive
 that is newer than any historical archive failure. Rebuilt standby must report
 `recovery=t`, `read_only=on` and non-empty receive/replay LSNs.
 
-After M16, copy `ansible/inventory-cluster.example.ini` to a site-specific,
-ignored inventory and keep it as the steady-state role map. Machine names remain
+After the rebuild, copy `ansible/inventory-recovery.example.ini` to a
+site-specific, ignored inventory and keep it as the steady-state role map. Machine names remain
 `todo-primary` and `todo-standby`, but the `todo_current_primary` and
-`todo_current_standby` groups state their current database roles. The
-M13--M16 inventory files remain transition/runbook inputs, not competing
-long-term sources of truth.
+`todo_current_standby` groups state their current database roles. The initial-topology inventory remains an input to first bootstrap; the
+recovery inventory becomes the single role-based source of truth after promotion.
 
 Create a Todo through `https://todo.test:8443`, then query it on rebuilt standby.
 Finally reboot the rebuilt standby, verify recovery/streaming again, reboot the
@@ -190,5 +191,5 @@ todo-primary = standby
 ```
 
 Returning primary service to `todo-primary` would be a planned switchover with
-its own fencing, catch-up, service-address and rollback procedure. M16 does not
+its own fencing, catch-up, service-address and rollback procedure. This rebuild workflow does not
 automatically perform that separate operation.

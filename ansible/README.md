@@ -111,35 +111,57 @@ The second command permanently deletes all Todo and Keycloak data.
 Both uninstall modes remove `todo-nginx-data`. A reinstall creates a new
 demo CA, so any previously trusted demo root certificate must be replaced.
 
+## Operations package and inventories
+
+Build one source-only package for standby bootstrap, promotion, application
+failover, backup and standby rebuild:
+
+```bash
+scripts/build-operations-package.sh
+```
+
+The package provides two inventory templates:
+
+- `inventory-initial.example.ini` describes the original primary and standby
+  before the first replication bootstrap.
+- `inventory-recovery.example.ini` describes current roles after promotion and
+  remains the steady-state inventory for failover, backup and rebuild work.
+
+Copy the relevant template to its ignored `.ini` name and edit the addresses.
+Hostnames identify machines; inventory groups identify their current database
+roles. The M13--M16 labels remain learning stages, not operational filenames.
+
 ## PostgreSQL standby and DR tool
 
-M13 uses roles for host-specific database provisioning: `m13_preflight`,
+M13 uses roles for host-specific database provisioning: `standby_preflight`,
 `postgres_primary`, `postgres_standby` and `todo_dr`. Prepare and bootstrap the
-two-host topology with the files documented in [M13.md](M13.md) and
-[M13-BOOTSTRAP.md](M13-BOOTSTRAP.md). Install or update only the local DR tool
+two-host topology with the files documented in
+[STANDBY-ARCHITECTURE.md](STANDBY-ARCHITECTURE.md) and
+[STANDBY-BOOTSTRAP.md](STANDBY-BOOTSTRAP.md). Install or update only the local
+DR tool
 on an existing standby with:
 
 ```bash
 ansible/.venv/bin/ansible-playbook \
-  --inventory ansible/inventory-m13.ini \
-  ansible/install-dr-m13.yml
+  --inventory ansible/inventory-initial.ini \
+  ansible/install-dr-tool.yml
 ```
 
 The promotion operation itself is intentionally local Python, not Ansible. Read
-[M13.5-PROMOTION.md](M13.5-PROMOTION.md) before testing it.
+[PROMOTION.md](PROMOTION.md) before testing it.
 
 ## Promoted application and backup
 
 M14 uses the `promoted_application` role to deploy the existing application
-release only after PostgreSQL has been promoted and verified writable. Follow
-[M14-FAILOVER.md](M14-FAILOVER.md); it deliberately does not bootstrap roles or
+release only after PostgreSQL has been promoted and verified writable. Follow [APPLICATION-FAILOVER.md](APPLICATION-FAILOVER.md); it deliberately does
+not bootstrap roles or
 run migrations during an incident.
 
 M15 uses the `postgres_backup` role to add a separate backup volume and
 continuous WAL archiving to that promoted host. The local `todo_backup.py`
 tool creates verified physical base backups and restores only into fixed,
 disposable Podman resources. Follow
-[M15-BACKUP-PITR.md](M15-BACKUP-PITR.md). The same-VM backup volume is a PITR
+[BACKUP-PITR.md](BACKUP-PITR.md). The same-VM backup volume is a PITR
 demonstration, not protection against loss of the host.
 
 ## Restore redundancy after failover
@@ -148,7 +170,8 @@ M16 uses `postgres_redundancy_primary` to preserve M15 archiving while exposing
 a firewalled replication endpoint on the promoted host. The destructive
 `postgres_reseed_standby` role then replaces only the explicitly confirmed old
 primary volume with a fresh base backup. Follow
-[M16-RESTORE-REDUNDANCY.md](M16-RESTORE-REDUNDANCY.md). This restores a second
-database copy; it is not an automatic failback or switchover. After M16, use
-`inventory-cluster.example.ini` as the template for one role-based steady-state
-inventory; milestone inventories remain transition inputs.
+[RESTORE-REDUNDANCY.md](RESTORE-REDUNDANCY.md). This restores a second
+database copy; it is not an automatic failback or switchover. After rebuilding,
+keep a site-specific copy of
+`inventory-recovery.example.ini` as the single role-based steady-state
+inventory.

@@ -1,4 +1,6 @@
-# M15 physical backup, WAL archive and PITR
+# Physical backup, WAL archive and PITR
+
+This is learning stage M15.
 
 M15 demonstrates why replication is not backup. It enables continuous WAL
 archiving, creates a verified physical base backup and restores to a named point
@@ -37,15 +39,15 @@ Keep the old primary fenced. On the trusted source host, build, verify and
 transfer the package:
 
 ```bash
-scripts/build-m15-test-package.sh
+scripts/build-operations-package.sh
 (
   cd dist
-  sha256sum -c todo-m15-test.tar.gz.sha256
+  sha256sum -c todo-operations.tar.gz.sha256
 )
 read -rp "Promoted host IPv4 address: " TODO_PROMOTED_IP
 scp \
-  dist/todo-m15-test.tar.gz \
-  dist/todo-m15-test.tar.gz.sha256 \
+  dist/todo-operations.tar.gz \
+  dist/todo-operations.tar.gz.sha256 \
   "gunstein@${TODO_PROMOTED_IP}:"
 ```
 
@@ -53,12 +55,12 @@ On the promoted host, verify and extract both files:
 
 ```bash
 cd "$HOME"
-sha256sum -c todo-m15-test.tar.gz.sha256
-mkdir -p todo-m15-test
-tar -xzf todo-m15-test.tar.gz \
+sha256sum -c todo-operations.tar.gz.sha256
+mkdir -p todo-operations
+tar -xzf todo-operations.tar.gz \
   --strip-components=1 \
-  --directory todo-m15-test
-cd todo-m15-test
+  --directory todo-operations
+cd todo-operations
 ```
 
 On Oracle Linux with active `fapolicyd`, trust the verified extracted Python
@@ -66,25 +68,26 @@ source:
 
 ```bash
 sudo fapolicyd-cli --file add \
-  "$HOME/todo-m15-test/scripts/todo_backup.py" \
+  "$HOME/todo-operations/scripts/todo_backup.py" \
   --trust-file todo-backup-source
 sudo fapolicyd-cli --update
 ```
 
-Reuse the promoted-host inventory from M14 or copy the included example:
+Reuse the recovery inventory created for application failover, or copy the
+included example:
 
 ```bash
 read -rp "Promoted host IPv4 address: " TODO_PROMOTED_IP
-cp ansible/inventory-m14.example.ini ansible/inventory-m15.ini
-sed -i "s/192.0.2.11/${TODO_PROMOTED_IP}/" ansible/inventory-m15.ini
+cp ansible/inventory-recovery.example.ini ansible/inventory-recovery.ini
+sed -i "s/192.0.2.11/${TODO_PROMOTED_IP}/" ansible/inventory-recovery.ini
 ```
 
 Then:
 
 ```bash
 ansible-playbook \
-  --inventory ansible/inventory-m15.ini \
-  ansible/configure-backup-m15.yml
+  --inventory ansible/inventory-recovery.ini \
+  ansible/configure-backup.yml
 ```
 
 The playbook refuses to continue unless the live database reports `f|off`. It
@@ -121,7 +124,7 @@ After an update, refresh both registered copies and reload the trust database:
 
 ```bash
 sudo fapolicyd-cli --file update \
-  "$HOME/todo-m15-test/scripts/todo_backup.py" \
+  "$HOME/todo-operations/scripts/todo_backup.py" \
   --trust-file todo-backup-source
 sudo fapolicyd-cli --file update \
   "$HOME/.config/todo/todo_backup.py" \

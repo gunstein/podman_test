@@ -40,7 +40,7 @@ ansible-playbook \
   ansible/provision-secrets.yml
 ```
 
-Use the M13 inventory instead to provision both DR hosts before bootstrap. A
+Use the initial-topology inventory instead to provision both DR hosts before bootstrap. A
 normal deploy or secret-sync run then verifies and reuses the values. Existing
 mismatches are rejected; this playbook intentionally does not implement blind
 rotation or `--replace`.

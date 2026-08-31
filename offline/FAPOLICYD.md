@@ -140,7 +140,7 @@ and the deployed command on its target:
 
 ```bash
 sudo fapolicyd-cli --file delete \
-  "$HOME/todo-m13-test/scripts/todo_dr.py" \
+  "$HOME/todo-operations/scripts/todo_dr.py" \
   --trust-file todo-dr-source
 sudo fapolicyd-cli --file delete \
   "$HOME/.config/todo/todo_dr.py" \
@@ -150,7 +150,7 @@ sudo fapolicyd-cli --file delete \
   --trust-file todo-dr
 
 sudo fapolicyd-cli --file delete \
-  "$HOME/todo-m15-test/scripts/todo_backup.py" \
+  "$HOME/todo-operations/scripts/todo_backup.py" \
   --trust-file todo-backup-source
 sudo fapolicyd-cli --file delete \
   "$HOME/.config/todo/todo_backup.py" \

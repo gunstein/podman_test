@@ -201,20 +201,22 @@ the Ansible controller, while the standby remains locally operable if primary
 is lost. M13.5 adds a small standard-library Python tool that runs locally on
 standby and never depends on primary during a disaster. Start with:
 
-- [Primary/standby preparation](ansible/M13.md)
-- [Replication bootstrap and verification](ansible/M13-BOOTSTRAP.md)
-- [Controlled promotion runbook](ansible/M13.5-PROMOTION.md)
+- [Primary/standby preparation](ansible/STANDBY-ARCHITECTURE.md)
+- [Replication bootstrap and verification](ansible/STANDBY-BOOTSTRAP.md)
+- [Controlled promotion runbook](ansible/PROMOTION.md)
 
-Build the small source-only transfer package with:
+Build the shared source-only operations package with:
 
 ```bash
-scripts/build-m13-test-package.sh
+scripts/build-operations-package.sh
 ```
 
-This creates `dist/todo-m13-test.tar.gz` and a matching
-`dist/todo-m13-test.tar.gz.sha256`. The archive contains the M13/M13.5 Ansible
-files, DR tool and shared PostgreSQL Quadlets; it contains no inventory, SSH
-key, secret, image or database data. Verify the checksum against a value
+This creates `dist/todo-operations.tar.gz` and a matching
+`dist/todo-operations.tar.gz.sha256`. The archive contains all standby,
+promotion, application-failover, backup and rebuild workflows, both example
+inventories, the operational Python tools and
+shared documentation. It contains no site-specific inventory, SSH key, secret,
+image or database data. Verify the checksum against a value
 received through a trusted channel before trusting extracted files. Replication
 is availability protection, not backup.
 
@@ -230,8 +232,8 @@ On an active `fapolicyd` controller, first trust the verified extracted
 
 ```bash
 ansible-playbook \
-  --inventory ansible/inventory-m13.ini \
-  ansible/install-dr-m13.yml
+  --inventory ansible/inventory-initial.ini \
+  ansible/install-dr-tool.yml
 ```
 
 A normal, non-mutating check is then run on standby:
@@ -252,7 +254,7 @@ the complete application RTO.
 M14 loads the already staged M12 application images on the promoted standby and
 starts dedicated backend, Keycloak and nginx Quadlets without running database
 bootstrap, migrations or grants. The stable LAN identity is
-`https://todo.test:8443`. Follow the [M14 failover runbook](ansible/M14-FAILOVER.md).
+`https://todo.test:8443`. Follow the [M14 failover runbook](ansible/APPLICATION-FAILOVER.md).
 The lab copies the newly generated local OpenSSL public root to the client after
 promotion to expose the TLS trust chain. A real DR design should normally
 pre-stage client trust and server certificates, use an organization/public CA,
@@ -260,14 +262,9 @@ or terminate TLS at a stable redundant endpoint so certificate work does not
 consume failover time. The runbook compares these alternatives and their
 private-key, dependency and operational tradeoffs.
 
-Build its source-only package and checksum with:
-
-```bash
-scripts/build-m14-test-package.sh
-```
-
-The package contains no secrets, inventory, images or database data. The M12
-offline image bundle must already be present on standby. The earlier clean drill used Caddy. On 2026-08-31, the promoted Oracle Linux 9.8
+Use the same operations package described above. It contains no secrets,
+site-specific inventory, images or database data. The M12 offline image bundle must already be present on standby. The earlier clean
+drill used Caddy. On 2026-08-31, the promoted Oracle Linux 9.8
 host was migrated to the verified nginx image. HTTPS, the stable Keycloak
 issuer, authenticated browser writes, an idempotent M14 rerun, reboot recovery,
 M15 archive health and M16 streaming replication all passed. A future from-zero
@@ -278,17 +275,13 @@ did not need to be repeated for this proxy-only migration.
 
 M15 uses a separate Podman volume for physical base backups and continuously
 archived WAL, then restores to an isolated disposable container without touching
-the live database. See the [M15 backup and PITR runbook](ansible/M15-BACKUP-PITR.md).
+the live database. See the [M15 backup and PITR runbook](ansible/BACKUP-PITR.md).
 The local backup volume demonstrates recovery from logical damage; it is not
 protection against loss of the VM or physical host. A live Oracle Linux 9.8 drill
 verified the base backup manifest, named-point recovery with before/after data,
 disposable cleanup, persistence across reboot and an idempotent Ansible rerun.
 
-Build the source-only package with:
-
-```bash
-scripts/build-m15-test-package.sh
-```
+Use the same operations package described above.
 
 ## Restore redundancy after failover (M16)
 
@@ -296,13 +289,9 @@ M16 keeps the promoted host as current primary and destructively re-seeds the
 fenced old primary as a database-only standby. It requires stopped services, an
 absent new replication slot and exact fencing/reseed confirmations before old
 data can be removed. Follow the
-[M16 restore-redundancy runbook](ansible/M16-RESTORE-REDUNDANCY.md).
+[M16 restore-redundancy runbook](ansible/RESTORE-REDUNDANCY.md).
 
-Build its source-only package and checksum with:
-
-```bash
-scripts/build-m16-test-package.sh
-```
+Use the same operations package described above.
 
 The live Oracle Linux 9.8 two-VM drill passed: the old primary was quarantined
 and re-seeded, an authenticated application write reached the rebuilt standby

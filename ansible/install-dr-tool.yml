@@ -1,5 +1,5 @@
 ---
-- name: Install the local M13.5 disaster-recovery tool on standby
+- name: Install the local disaster-recovery tool on standby
   hosts: todo_standby
   gather_facts: false
   any_errors_fatal: true

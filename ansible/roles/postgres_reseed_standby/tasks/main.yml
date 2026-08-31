@@ -109,7 +109,7 @@
       - --wal-method=stream
       - --write-recovery-conf
       - --create-slot
-      - "--slot={{ m16_replication_slot }}"
+      - "--slot={{ todo_rebuild_replication_slot }}"
       - --progress
   changed_when: true
 

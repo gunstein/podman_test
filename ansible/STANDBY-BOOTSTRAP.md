@@ -3,7 +3,7 @@
 Run the read-only preflight before changing either database host:
 
 ```bash
-ansible-playbook --inventory ansible/inventory-m13.ini ansible/preflight-m13.yml
+ansible-playbook --inventory ansible/inventory-initial.ini ansible/preflight-standby.yml
 ```
 
 By default, the M12 offline bundle must still exist on standby under
@@ -36,19 +36,19 @@ creates the replication credential and role, publishes primary PostgreSQL,
 takes one streamed base backup and starts standby in recovery mode:
 
 ```bash
-ansible-playbook --inventory ansible/inventory-m13.ini ansible/bootstrap-m13.yml
+ansible-playbook --inventory ansible/inventory-initial.ini ansible/bootstrap-standby.yml
 ```
 
 The bootstrap verifies connectivity before creating the standby volume.
 
-`bootstrap-m13.yml` is a one-time operation and refuses to overwrite an
+`bootstrap-standby.yml` is a one-time operation and refuses to overwrite an
 existing standby volume. If it fails after creating the volume or physical slot,
 do not rerun it blindly: inspect the partial state first. Dropping the slot or
 deleting the volume is an explicit destructive recovery operation, never an
 automatic playbook cleanup. After bootstrap, inspect replication with:
 
 ```bash
-ansible-playbook --inventory ansible/inventory-m13.ini ansible/status-m13.yml
+ansible-playbook --inventory ansible/inventory-initial.ini ansible/replication-status.yml
 ```
 
 The expected primary state is `streaming|async`; standby must report recovery
@@ -61,10 +61,10 @@ After replication is healthy, install or update the DR tool on standby without
 touching the database:
 
 ```bash
-ansible-playbook --inventory ansible/inventory-m13.ini ansible/install-dr-m13.yml
+ansible-playbook --inventory ansible/inventory-initial.ini ansible/install-dr-tool.yml
 ```
 
-See [the controlled promotion runbook](M13.5-PROMOTION.md) before using it.
+See [the controlled promotion runbook](PROMOTION.md) before using it.
 
 The Oracle Linux 9.8 verification also required `0700` on the basebackup
 directory, an explicit `:Z` SELinux label on its Quadlet volume mount and an

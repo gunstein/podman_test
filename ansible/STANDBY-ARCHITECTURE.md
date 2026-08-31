@@ -7,7 +7,7 @@ not depend on the primary still being available.
 Copy and edit the example inventory on primary:
 
 ```bash
-cp ansible/inventory-m13.example.ini ansible/inventory-m13.ini
+cp ansible/inventory-initial.example.ini ansible/inventory-initial.ini
 ```
 
 Replace the example standby address and adjust `ansible_user` if necessary. The
@@ -23,7 +23,7 @@ existing credentials from primary to standby:
 
 ```bash
 ansible-playbook \
-  --inventory ansible/inventory-m13.ini \
+  --inventory ansible/inventory-initial.ini \
   ansible/sync-standby-secrets.yml
 ```
 

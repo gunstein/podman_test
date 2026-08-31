@@ -1,11 +1,11 @@
 ---
-- name: Inspect both M13 database hosts without changing them
+- name: Inspect both initial database hosts without changing them
   hosts: todo_cluster
   gather_facts: false
   any_errors_fatal: true
 
   roles:
-    - role: m13_preflight
+    - role: standby_preflight
 
 - name: Validate the primary and standby relationship
   hosts: todo_primary
@@ -23,7 +23,7 @@
         that:
           - groups['todo_primary'] | length == 1
           - groups['todo_standby'] | length == 1
-        fail_msg: This M13 demo requires exactly one primary and one standby.
+        fail_msg: This standby demo requires exactly one primary and one standby.
 
     - name: Require unique hostnames, machine IDs and addresses
       ansible.builtin.assert:
@@ -50,9 +50,9 @@
           not overwrite it. Inspect or remove it explicitly before bootstrap.
       when: m13_require_empty_standby | bool
 
-    - name: Report successful M13 preflight
+    - name: Report successful standby preflight
       ansible.builtin.debug:
         msg: >-
-          M13 preflight passed for {{ primary_host }}
+          Standby preflight passed for {{ primary_host }}
           ({{ hostvars[primary_host].todo_node_address }}) and {{ standby_host }}
           ({{ hostvars[standby_host].todo_node_address }}). No state was changed.

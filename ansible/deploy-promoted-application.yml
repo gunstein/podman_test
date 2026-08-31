@@ -1,5 +1,5 @@
 ---
-- name: Deploy the application tier on the promoted M14 host
+- name: Deploy the application tier on the promoted host
   hosts: todo_promoted
   gather_facts: false
   any_errors_fatal: true

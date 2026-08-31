@@ -45,5 +45,5 @@
       - (" " ~ todo_node_address ~ "/") in m13_ipv4_addresses.stdout
       - m13_machine_id.stdout | length == 32
     fail_msg: >-
-      Host identity does not match the M13 inventory. Check hostname,
+      Host identity does not match the initial-topology inventory. Check hostname,
       todo_node_address and /etc/machine-id before continuing.

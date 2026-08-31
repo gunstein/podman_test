@@ -21,7 +21,7 @@
       - "'..' not in m14_service_hostname"
       - m14_service_port | int >= 1024
       - m14_service_port | int <= 65535
-    fail_msg: Check the M14 inventory hostname, address, service name and port.
+    fail_msg: Check the recovery inventory hostname, address, service name and port.
 
 - name: Require active promoted PostgreSQL
   ansible.builtin.command:
@@ -123,9 +123,9 @@
         ) == 'nginx'
     fail_msg: >-
       The staged localhost/todo-frontend:m12 image predates the nginx migration.
-      Load the frontend archive from the current verified M12 bundle before M14.
+      Load the frontend archive from the current verified offline bundle before failover.
 
-- name: Create M14 configuration directories
+- name: Create promoted-application configuration directories
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory

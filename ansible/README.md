@@ -108,8 +108,8 @@ ansible/.venv/bin/ansible-playbook \
 
 The second command permanently deletes all Todo and Keycloak data.
 
-Both uninstall modes remove `todo-caddy-data`. A reinstall creates a new local
-Caddy CA, so any previously trusted demo root certificate must be replaced.
+Both uninstall modes remove `todo-nginx-data`. A reinstall creates a new
+demo CA, so any previously trusted demo root certificate must be replaced.
 
 ## PostgreSQL standby and DR tool
 

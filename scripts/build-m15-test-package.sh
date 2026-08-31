@@ -24,6 +24,7 @@ cp -r "$project_root/ansible/roles/postgres_backup" \
 cp "$project_root/scripts/todo_backup.py" "$package_directory/scripts/"
 cp "$project_root/offline/FAPOLICYD.md" "$package_directory/offline/"
 cp "$project_root/docs/SECRETS.md" \
+  "$project_root/docs/TLS.md" \
   "$project_root/docs/SELINUX.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
   "$package_directory/docs/"

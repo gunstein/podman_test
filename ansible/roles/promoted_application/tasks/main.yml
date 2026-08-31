@@ -17,6 +17,8 @@
       - m14_hostname.stdout | trim == inventory_hostname
       - (" " ~ m14_node_address ~ "/") in m14_addresses.stdout
       - m14_service_hostname | length > 0
+      - m14_service_hostname is match('^[A-Za-z0-9.-]+$')
+      - "'..' not in m14_service_hostname"
       - m14_service_port | int >= 1024
       - m14_service_port | int <= 65535
     fail_msg: Check the M14 inventory hostname, address, service name and port.
@@ -106,6 +108,23 @@
   loop_control:
     label: "{{ item.item.image }}"
 
+- name: Inspect the frontend proxy implementation
+  ansible.builtin.command:
+    argv: [podman, image, inspect, localhost/todo-frontend:m12]
+  register: m14_frontend_image_inspection
+  changed_when: false
+
+- name: Require the nginx frontend image
+  ansible.builtin.assert:
+    that:
+      - >-
+        (m14_frontend_image_inspection.stdout | from_json | first).Labels.get(
+          'io.todo.proxy', ''
+        ) == 'nginx'
+    fail_msg: >-
+      The staged localhost/todo-frontend:m12 image predates the nginx migration.
+      Load the frontend archive from the current verified M12 bundle before M14.
+
 - name: Create M14 configuration directories
   ansible.builtin.file:
     path: "{{ item }}"
@@ -115,12 +134,21 @@
     - "{{ m14_config_directory }}"
     - "{{ m14_quadlet_directory }}"
 
-- name: Install the stable-name Caddy configuration
+- name: Remove obsolete Caddy runtime files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ m14_config_directory }}/Caddyfile"
+    - "{{ m14_quadlet_directory }}/todo-caddy-data.volume"
+  register: m14_obsolete_proxy_files
+
+- name: Install the stable-name nginx configuration
   ansible.builtin.template:
-    src: Caddyfile.j2
-    dest: "{{ m14_config_directory }}/Caddyfile"
+    src: nginx.conf.j2
+    dest: "{{ m14_config_directory }}/nginx.conf"
     mode: "0644"
-  register: m14_caddy_config
+  register: m14_nginx_config
 
 - name: Install promoted application Quadlets
   ansible.builtin.template:
@@ -128,7 +156,7 @@
     dest: "{{ m14_quadlet_directory }}/{{ item }}"
     mode: "0644"
   loop:
-    - todo-caddy-data.volume
+    - todo-nginx-data.volume
     - todo-backend.container
     - todo-keycloak.container
     - todo-frontend.container
@@ -145,7 +173,8 @@
   register: m14_service_stopped
   failed_when: m14_service_stopped.rc not in [0, 5]
   when: >-
-    m14_caddy_config.changed or
+    m14_nginx_config.changed or
+    m14_obsolete_proxy_files.changed or
     m14_quadlets.changed or
     m14_images_loaded.changed | default(false)
 
@@ -160,7 +189,7 @@
     scope: user
     state: started
 
-- name: Wait for backend health through local Caddy
+- name: Wait for backend health through local nginx
   ansible.builtin.uri:
     url: http://127.0.0.1:8080/health
     return_content: true
@@ -169,7 +198,7 @@
   retries: 30
   delay: 1
 
-- name: Wait for database readiness through local Caddy
+- name: Wait for database readiness through local nginx
   ansible.builtin.uri:
     url: http://127.0.0.1:8080/ready
     return_content: true
@@ -178,7 +207,7 @@
   retries: 30
   delay: 1
 
-- name: Wait for Keycloak discovery through local Caddy
+- name: Wait for Keycloak discovery through local nginx
   ansible.builtin.uri:
     url: http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
     return_content: true
@@ -272,7 +301,7 @@
     m14_client.json.webOrigins != [m14_service_origin]
   no_log: true
 
-- name: Verify public Todo reads through local Caddy
+- name: Verify public Todo reads through local nginx
   ansible.builtin.uri:
     url: http://127.0.0.1:8080/api/todos
     return_content: true
@@ -280,21 +309,21 @@
   register: m14_todos
   failed_when: m14_todos.json is not sequence
 
-- name: Read the promoted Caddy public root certificate
+- name: Read the promoted nginx public root certificate
   ansible.builtin.command:
     argv:
       - podman
       - exec
       - todo-frontend
       - cat
-      - /data/caddy/pki/authorities/local/root.crt
-  register: m14_caddy_root_certificate
+      - /var/lib/todo-tls/ca.crt
+  register: m14_nginx_root_certificate
   changed_when: false
 
-- name: Export the promoted Caddy public root certificate
+- name: Export the promoted nginx public root certificate
   ansible.builtin.copy:
-    content: "{{ m14_caddy_root_certificate.stdout | trim }}\n"
-    dest: "{{ m14_config_directory }}/todo-caddy-root.crt"
+    content: "{{ m14_nginx_root_certificate.stdout | trim }}\n"
+    dest: "{{ m14_config_directory }}/todo-nginx-root.crt"
     mode: "0644"
 
 - name: Report successful promoted application deployment

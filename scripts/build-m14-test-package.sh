@@ -20,6 +20,7 @@ cp "$project_root/ansible/M14-FAILOVER.md" \
 cp -r "$project_root/ansible/roles/promoted_application" \
   "$package_directory/ansible/roles/"
 cp "$project_root/docs/SECRETS.md" \
+  "$project_root/docs/TLS.md" \
   "$project_root/docs/SELINUX.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
   "$package_directory/docs/"

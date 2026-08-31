@@ -8,6 +8,7 @@
     quadlet_files:
       - todo.network
       - todo-postgres-data.volume
+      - todo-nginx-data.volume
       - todo-caddy-data.volume
       - todo-postgres.container
       - todo-db-setup.container
@@ -242,26 +243,24 @@
       changed_when: true
       when: item.rc == 0
 
-    - name: Check whether the Caddy data volume exists
+    - name: Check whether proxy TLS data volumes exist
       ansible.builtin.command:
-        argv:
-          - podman
-          - volume
-          - exists
-          - todo-caddy-data
-      register: caddy_data_volume
+        argv: [podman, volume, exists, "{{ item }}"]
+      loop:
+        - todo-nginx-data
+        - todo-caddy-data
+      register: proxy_data_volumes
       changed_when: false
-      failed_when: caddy_data_volume.rc not in [0, 1]
+      failed_when: proxy_data_volumes.rc not in [0, 1]
 
-    - name: Remove the Caddy data volume
+    - name: Remove proxy TLS data volumes
       ansible.builtin.command:
-        argv:
-          - podman
-          - volume
-          - rm
-          - todo-caddy-data
+        argv: [podman, volume, rm, "{{ item.item }}"]
+      loop: "{{ proxy_data_volumes.results }}"
+      loop_control:
+        label: "{{ item.item }}"
       changed_when: true
-      when: caddy_data_volume.rc == 0
+      when: item.rc == 0
 
     - name: Report preserved database data
       ansible.builtin.debug:

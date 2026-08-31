@@ -93,10 +93,18 @@ creates the separate backup volume, mounts it into PostgreSQL, enables
 PostgreSQL once when required, restores the application tier and verifies that a
 forced WAL segment reaches the archive.
 
-The configured `archive_timeout=60s` is intentionally aggressive so the demo
-produces archived WAL quickly. On an active database it can create roughly one
-full 16 MiB segment per minute; a real retention and capacity policy should
-choose a workload-appropriate value.
+The demo defaults to `archive_timeout=1h`. PostgreSQL archives complete 16 MiB
+segments even when a forced early segment switch contains little useful WAL, so
+the previous 60-second setting could consume about 23 GiB per day under even
+small recurring writes. One hour limits that worst-case time-driven growth to
+about 384 MiB per day. The `mark` command and the Ansible verification still
+force an explicit WAL switch, so drills do not need an aggressive timeout.
+
+The archive remains intentionally non-circular: PostgreSQL must never silently
+discard WAL that belongs to the retained recovery window. After creating and
+verifying a replacement base backup, an operator must explicitly expire older
+base backups and WAL, or copy them to off-host storage. Monitoring free space is
+still required.
 
 Trust the exact installed tool before running it. On a hardened `fapolicyd`
 host, this trust step is also required before a repeat playbook run can read the

@@ -110,7 +110,7 @@ class TodoBackup:
                 "SELECT current_setting('archive_mode'), "
                 "COALESCE(last_archived_wal, ''), "
                 "COALESCE(last_failed_wal, ''), "
-                "archived_count, failed_count "
+                "current_setting('archive_timeout'), archived_count, failed_count "
                 "FROM pg_stat_archiver;",
             ],
             "WAL archive status query",
@@ -119,7 +119,7 @@ class TodoBackup:
     def status_lines(self) -> list[str]:
         recovery, read_only = self.database_state()
         archive = self.archive_status().split("|")
-        if len(archive) != 5:
+        if len(archive) != 6:
             raise BackupError(f"Unexpected WAL archive status: {'|'.join(archive)!r}")
         return [
             f"Database recovery mode: {'yes' if recovery else 'no'}",
@@ -127,8 +127,9 @@ class TodoBackup:
             f"Archive mode: {archive[0]}",
             f"Last archived WAL: {archive[1] or 'none'}",
             f"Last failed WAL: {archive[2] or 'none'}",
-            f"Archived segments: {archive[3]}",
-            f"Failed archive attempts: {archive[4]}",
+            f"Archive timeout: {archive[3]}",
+            f"Archived segments: {archive[4]}",
+            f"Failed archive attempts: {archive[5]}",
             f"Backup volume: {BACKUP_VOLUME}",
         ]
 

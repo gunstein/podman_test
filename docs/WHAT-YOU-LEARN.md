@@ -19,8 +19,8 @@ simplification and the normal production concern.
 | Replication security | SCRAM authentication and host firewall boundaries | WAL transport is not TLS-enforced in the trusted demo LAN |
 | Fencing | Mandatory operator confirmation before promotion | VM fencing is performed in Proxmox, not automated by the app |
 | Promotion | Local preflight, explicit confirmations and writable verification | No automatic failover |
-| Application failover | Stable hostname, issuer, Caddy and promoted app tier | Client name/IP mapping is manual |
-| TLS identity during DR | Server/private-key versus client/root trust, hostname validation and explicit Caddy root export | M14 creates a new internal CA after promotion; production should pre-stage trust, use managed PKI/public ACME or terminate TLS at a redundant stable endpoint |
+| Application failover | Stable hostname, issuer, nginx and promoted app tier | Client name/IP mapping is manual |
+| TLS identity during DR | Server/private-key versus client/root trust, hostname validation and explicit nginx root export | M14 creates a new local OpenSSL demo CA after promotion; production should pre-stage trust, use managed PKI/public ACME or terminate TLS at a redundant stable endpoint |
 | Restore redundancy | Re-seed the old primary as the new standby | Full re-seed is preferred over `pg_rewind` for clarity |
 | Backup/PITR | Base backup, continuous WAL, named restore point and isolated restore test | Backup volume is on the same VM |
 | Backup operations | Archive status, safe disposable cleanup and documented growth | Off-host copy, retention, encryption and alerts are documented, not implemented |

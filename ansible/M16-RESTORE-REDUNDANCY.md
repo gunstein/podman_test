@@ -141,7 +141,7 @@ create a physical slot, stream a new base backup and start PostgreSQL in
 recovery.
 
 It removes application-tier Quadlets from the rebuilt host. That host now runs
-only PostgreSQL standby; Caddy, Keycloak and the backend stay on current primary.
+only PostgreSQL standby; nginx, Keycloak and the backend stay on current primary.
 
 This is a one-shot workflow. If it fails after volume removal or slot creation,
 do not rerun blindly. Inspect the slot, partial volume and `pg_basebackup` error,

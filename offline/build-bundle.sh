@@ -22,6 +22,7 @@ podman save --format oci-archive --output "$bundle_directory/images/postgres-17.
 
 cp "$project_root/ansible.cfg" "$bundle_directory/"
 cp "$project_root/docs/SECRETS.md" \
+  "$project_root/docs/TLS.md" \
   "$project_root/docs/SELINUX.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
   "$bundle_directory/docs/"

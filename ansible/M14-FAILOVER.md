@@ -10,7 +10,7 @@ The stable demo identity is:
 https://todo.test:8443
 ```
 
-The same name must be used by Caddy, Keycloak, the backend issuer check and the
+The same name must be used by nginx, Keycloak, the backend issuer check and the
 Keycloak frontend client. During this two-VM LAN drill, the client maps the name
 to the promoted host address.
 
@@ -93,7 +93,7 @@ The playbook fails before changing application state unless:
 - every missing application image has its corresponding staged M12 archive.
 
 It loads only missing images, installs dedicated promoted-host Quadlets, starts
-Keycloak, backend and Caddy, updates the existing Keycloak client to the stable
+Keycloak, backend and nginx, updates the existing Keycloak client to the stable
 origin, and checks health, readiness, discovery and public Todo reads.
 
 ## Client name and certificate
@@ -109,19 +109,18 @@ printf '%s %s\n' "$TODO_STANDBY_IP" todo.test | sudo tee -a /etc/hosts
 Removing an old mapping first matters during repeated drills: multiple
 `todo.test` entries can make the client select the fenced address.
 
-Copy Caddy's public root certificate from standby:
+Copy the local OpenSSL demo CA public root certificate from standby:
 
 ```bash
 read -rp "Promoted host IPv4 address: " TODO_STANDBY_IP
 scp \
-  "gunstein@${TODO_STANDBY_IP}:.config/todo/todo-caddy-root.crt" \
+  "gunstein@${TODO_STANDBY_IP}:.config/todo/todo-nginx-root.crt" \
   /tmp/
-sudo cp /tmp/todo-caddy-root.crt /usr/local/share/ca-certificates/todo-m14.crt
+sudo cp /tmp/todo-nginx-root.crt /usr/local/share/ca-certificates/todo-m14.crt
 sudo update-ca-certificates
 ```
 
-Then open <https://todo.test:8443/>. The private CA key remains in the
-`todo-caddy-data` Podman volume; only the public root certificate is copied.
+Then open <https://todo.test:8443/>. The private demo CA key remains in the `todo-nginx-data` Podman volume; only the public root certificate is copied.
 
 ### Certificate lifecycle and DR alternatives
 
@@ -132,10 +131,9 @@ promoted server: leaf certificate + private key
 client:          public CA root used to verify that leaf certificate
 ```
 
-M14 deliberately creates a new Caddy internal CA when the promoted application
-tier first starts. The client can therefore receive the exact public root only
+When the promoted nginx container first starts, its entrypoint uses the image-packaged OpenSSL to create a local demo CA and a `todo.test` server certificate. The client can therefore receive the exact public root only
 after M14 deployment. This is simple, works offline and never copies the
-private CA key out of the Caddy volume. Its disadvantage is operational: manual
+private demo CA key out of the TLS data volume. Its disadvantage is operational: manual
 certificate distribution consumes failover time, requires a browser restart
 on some clients and does not scale beyond a small lab.
 
@@ -144,11 +142,11 @@ alternatives are:
 
 | Model | How it works | Advantages | Costs and risks |
 |---|---|---|---|
-| Pre-stage Caddy on standby | Before an incident, create the standby Caddy volume and run a restricted certificate-only configuration for `todo.test`; distribute its public root while the application remains unpublished | Keeps the offline internal-CA model and removes trust installation from the failover RTO | The inactive node already holds a CA private key; renewal, backup and permission/SELinux handling become pre-incident responsibilities |
+| Pre-stage the local demo CA on standby | Before an incident, create the standby TLS volume with a controlled certificate-initialization run for `todo.test`; distribute its public root while the application remains unpublished | Keeps the offline internal-CA model and removes trust installation from the failover RTO | The inactive node already holds a CA private key; renewal, backup and permission/SELinux handling become pre-incident responsibilities |
 | Organization internal PKI | Clients trust one organization root in advance; each node receives its own reviewed leaf certificate and private key for `todo.test` | Central trust, revocation and renewal; no client action during failover | Requires PKI and secure certificate/key provisioning; the root private key should not be copied to application nodes |
 | Public CA / ACME | A publicly trusted CA issues `todo.test` or a real DNS name, commonly through automated ACME renewal | Browsers trust it without manual root installation; mature automation | Requires suitable DNS/domain validation and usually network dependencies; it is a poor fit for this intentionally offline lab |
 | TLS-terminating load balancer | A stable, preferably redundant proxy owns the service certificate and routes to the active application node | Database/app failover does not change client TLS identity | Adds infrastructure, health routing and its own HA lifecycle |
-| Copy one Caddy internal CA to both nodes | Securely transfer the existing Caddy CA private material and let both nodes issue from the same root | Clients need trust only once | Expands the private CA key's exposure, couples the nodes and requires protected transfer, backup, file ownership and SELinux labels; avoid casual volume copying |
+| Copy one local demo CA to both nodes | Securely transfer the existing demo CA private material and let both nodes issue from the same root | Clients need trust only once | Expands the private CA key's exposure, couples the nodes and requires protected transfer, backup, file ownership and SELinux labels; avoid casual volume copying |
 
 For this demo, the post-promotion copy is retained because it makes the trust
 chain visible with minimal infrastructure. For a real DR design, prefer
@@ -190,3 +188,7 @@ installed Oracle Linux 9.8 VMs: old primary `192.168.0.102`, promoted host
 physical replication, authenticated successfully through the stable issuer and
 created `M14 clean failover test`. Idempotent deployment, full promoted-host
 reboot, writable PostgreSQL and client HTTPS checks all passed again.
+
+These verified drills used Caddy. The nginx replacement has passed local image,
+configuration, proxy and HTTPS tests, but this two-VM acceptance drill must be
+repeated before recording equivalent live evidence.

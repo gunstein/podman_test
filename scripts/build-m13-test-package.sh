@@ -34,6 +34,7 @@ cp "$project_root/quadlet/todo.network" \
 cp "$project_root/scripts/todo_dr.py" "$package_directory/scripts/"
 cp "$project_root/offline/FAPOLICYD.md" "$package_directory/offline/"
 cp "$project_root/docs/SECRETS.md" \
+  "$project_root/docs/TLS.md" \
   "$project_root/docs/SELINUX.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
   "$package_directory/docs/"

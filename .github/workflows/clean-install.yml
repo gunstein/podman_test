@@ -111,6 +111,8 @@ jobs:
               grep -E "/ansible.cfg$" >/dev/null
             tar -tzf "dist/todo-m${milestone}-test.tar.gz" |
               grep -E "/docs/SECRETS.md$" >/dev/null
+            tar -tzf "dist/todo-m${milestone}-test.tar.gz" |
+              grep -E "/docs/TLS.md$" >/dev/null
           done
           tar -tzf dist/todo-m16-test.tar.gz |
             grep -E "/ansible/inventory-cluster.example.ini$" >/dev/null
@@ -162,6 +164,7 @@ jobs:
             offline/build-bundle.sh \
             offline/install.sh \
             offline/preflight.sh \
+            frontend/todo-nginx-entrypoint.sh \
             scripts/build-m13-test-package.sh \
             scripts/build-m14-test-package.sh \
             scripts/build-m15-test-package.sh \

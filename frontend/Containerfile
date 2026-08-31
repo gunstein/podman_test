@@ -1,14 +1,20 @@
-FROM docker.io/library/caddy:2.11.4-alpine
+FROM docker.io/library/nginx:1.30.4-alpine
+LABEL io.todo.proxy="nginx"
 
-RUN setcap -r /usr/bin/caddy
+RUN apk add --no-cache openssl \
+    && mkdir -p /var/lib/todo-tls \
+    && chown nginx:nginx /var/lib/todo-tls
 
-COPY frontend/Caddyfile /etc/caddy/Caddyfile
-COPY frontend/index.html /srv/index.html
-COPY frontend/app.js /srv/app.js
-COPY frontend/style.css /srv/style.css
-COPY frontend/vendor /srv/vendor
+COPY frontend/nginx.conf /etc/nginx/nginx.conf
+COPY frontend/todo-proxy-headers.conf /etc/nginx/todo-proxy-headers.conf
+COPY --chmod=0755 frontend/todo-nginx-entrypoint.sh /usr/local/bin/todo-nginx-entrypoint
+COPY frontend/index.html /usr/share/nginx/html/index.html
+COPY frontend/app.js /usr/share/nginx/html/app.js
+COPY frontend/style.css /usr/share/nginx/html/style.css
+COPY frontend/vendor /usr/share/nginx/html/vendor
 
-USER 1000
+USER nginx
 EXPOSE 8080 8443
 
-CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+ENTRYPOINT ["/usr/local/bin/todo-nginx-entrypoint"]
+CMD ["nginx", "-g", "daemon off;"]

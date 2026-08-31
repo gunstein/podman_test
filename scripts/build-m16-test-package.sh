@@ -30,6 +30,7 @@ cp "$project_root/quadlet/todo.network" \
   "$package_directory/quadlet/"
 cp "$project_root/docs/SELINUX.md" \
   "$project_root/docs/SECRETS.md" \
+  "$project_root/docs/TLS.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
   "$package_directory/docs/"
 

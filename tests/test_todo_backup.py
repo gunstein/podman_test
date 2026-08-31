@@ -18,7 +18,7 @@ def completed(stdout="", stderr="", returncode=0):
 class FakeRunner:
     def __init__(
         self, recovery="f|off", containers=None, volumes=None,
-        archive_status="on|000000010000000000000001||1|0",
+        archive_status="on|000000010000000000000001||1h|1|0",
     ):
         self.recovery = recovery
         self.containers = set(containers or ())
@@ -63,6 +63,7 @@ class TodoBackupTests(unittest.TestCase):
         output = "\n".join(self.tool(FakeRunner()).status_lines())
         self.assertIn("Database writable: yes", output)
         self.assertIn("Archive mode: on", output)
+        self.assertIn("Archive timeout: 1h", output)
         self.assertIn("Failed archive attempts: 0", output)
 
     def test_create_backup_runs_basebackup_and_verification(self):
@@ -90,7 +91,7 @@ class TodoBackupTests(unittest.TestCase):
     def test_restore_point_accepts_success_after_historical_archive_failure(self):
         runner = FakeRunner(
             archive_status=(
-                "on|000000010000000000000001|000000010000000000000000|2|1"
+                "on|000000010000000000000001|000000010000000000000000|1h|2|1"
             )
         )
         self.tool(runner).create_restore_point("after_old_failure")
@@ -124,7 +125,7 @@ class TodoBackupTests(unittest.TestCase):
 
     def test_restore_point_checks_exact_wal_file_after_archiver_advances(self):
         runner = FakeRunner(
-            archive_status="on|000000010000000000000002||2|0"
+            archive_status="on|000000010000000000000002||1h|2|0"
         )
         self.tool(runner).create_restore_point("archiver_advanced")
         expected = "/var/lib/postgresql/backup/wal/000000010000000000000001"

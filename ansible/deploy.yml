@@ -12,7 +12,7 @@
     quadlet_files:
       - todo.network
       - todo-postgres-data.volume
-      - todo-caddy-data.volume
+      - todo-nginx-data.volume
       - todo-postgres.container
       - todo-db-setup.container
       - todo-migrate.container
@@ -216,6 +216,24 @@
         - frontend_image.rc == 1
         - deployment_mode == "offline"
 
+    - name: Inspect the frontend proxy implementation
+      ansible.builtin.command:
+        argv: [podman, image, inspect, localhost/todo-frontend:m12]
+      register: frontend_image_inspection
+      changed_when: false
+
+    - name: Require the nginx frontend image
+      ansible.builtin.assert:
+        that:
+          - >-
+            (frontend_image_inspection.stdout | from_json | first).Labels.get(
+              'io.todo.proxy', ''
+            ) == 'nginx'
+        fail_msg: >-
+          The existing localhost/todo-frontend:m12 image predates the nginx
+          migration. In build mode rerun with refresh_images=true; in offline
+          mode load the frontend archive from the new verified bundle.
+
     - name: Check whether the Keycloak image exists
       ansible.builtin.command:
         argv: [podman, image, exists, "localhost/todo-keycloak:m12"]
@@ -289,6 +307,12 @@
         state: directory
         mode: "0700"
 
+    - name: Remove the obsolete Caddy volume Quadlet
+      ansible.builtin.file:
+        path: "{{ quadlet_directory }}/todo-caddy-data.volume"
+        state: absent
+      register: obsolete_proxy_quadlet_removed
+
     - name: Install the Quadlet files
       ansible.builtin.copy:
         src: "{{ project_root }}/quadlet/{{ item }}"
@@ -320,6 +344,7 @@
         keycloak_loaded.changed | default(false) or
         postgres_pulled.changed | default(false) or
         postgres_loaded.changed | default(false) or
+        obsolete_proxy_quadlet_removed.changed or
         quadlet_installed.changed
 
     - name: Reload generated user systemd units
@@ -333,7 +358,7 @@
         scope: user
         state: started
 
-    - name: Wait for backend health through Caddy
+    - name: Wait for backend health through nginx
       ansible.builtin.uri:
         url: http://127.0.0.1:8080/health
         return_content: true
@@ -342,7 +367,7 @@
       retries: 15
       delay: 1
 
-    - name: Verify database readiness through Caddy
+    - name: Verify database readiness through nginx
       ansible.builtin.uri:
         url: http://127.0.0.1:8080/ready
         return_content: true
@@ -351,7 +376,7 @@
       retries: 15
       delay: 1
 
-    - name: Verify Keycloak discovery through Caddy
+    - name: Verify Keycloak discovery through nginx
       ansible.builtin.uri:
         url: http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
         return_content: true

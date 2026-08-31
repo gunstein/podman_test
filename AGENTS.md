@@ -8,7 +8,7 @@ Constraints:
 - Runtime: rootless Podman.
 - Service management: Quadlet/systemd.
 - Deployment: Ansible.
-- Reverse proxy: Caddy.
+- Reverse proxy: nginx.
 - Offline install must eventually work from a tar.gz bundle.
 - Authentication with Keycloak will be added last.
 - Keep Bash scripts small and simple.

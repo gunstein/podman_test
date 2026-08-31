@@ -127,12 +127,12 @@
       - --command
       - "ALTER SYSTEM SET archive_command = '{{ m15_archive_command }}';"
       - --command
-      - ALTER SYSTEM SET archive_timeout = '60s';
+      - "ALTER SYSTEM SET archive_timeout = '{{ m15_archive_timeout }}';"
   register: m15_archive_configured
   changed_when: true
   when: >-
     m15_archive_settings.stdout | trim !=
-    "on|" ~ m15_archive_command ~ "|1min"
+    "on|" ~ m15_archive_command ~ "|" ~ m15_archive_timeout
 
 - name: Stop the application tier before PostgreSQL restart
   ansible.builtin.command:
@@ -192,7 +192,7 @@
   changed_when: false
   failed_when: >-
     m15_archive_verified.stdout | trim !=
-    "f|off|on|" ~ m15_archive_command ~ "|1min"
+    "f|off|on|" ~ m15_archive_command ~ "|" ~ m15_archive_timeout
 
 - name: Start the application tier after PostgreSQL restart
   ansible.builtin.systemd_service:

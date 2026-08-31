@@ -69,7 +69,7 @@
     - todo-db-setup.container
     - todo-migrate.container
     - todo-db-grants.container
-    - todo-caddy-data.volume
+    - todo-nginx-data.volume
 
 - name: Remove the explicitly confirmed old database volume
   ansible.builtin.command: {argv: [podman, volume, rm, todo-postgres-data]}

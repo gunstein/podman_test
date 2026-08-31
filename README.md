@@ -8,7 +8,7 @@ Ansible, offline installation, HTTPS and Keycloak.
 - Plain HTML, CSS and JavaScript in the browser
 - FastAPI backend
 - PostgreSQL database
-- Caddy serving static files, HTTPS and reverse proxy routes
+- nginx serving static files, HTTPS and reverse proxy routes
 - Keycloak authentication
 - Rootless Podman containers managed by Quadlet and user systemd
 - Ansible deployment, including an offline bundle
@@ -23,7 +23,7 @@ The complete stack is intentionally the result of small milestones:
 
 ```text
 M1-M2   HTML/JavaScript, FastAPI, PostgreSQL and CRUD
-M3-M5   Containerfiles, manual rootless Podman and Caddy
+M3-M5   Containerfiles, manual rootless Podman and nginx
 M6-M8   Quadlet, Podman secrets and Ansible
 M9-M11  Offline bundle, HTTPS and Keycloak
 M12     Least privilege, image policy, tests and container hardening
@@ -37,6 +37,8 @@ M16     Rebuild old primary as the new standby
 See [PROJECT.md](PROJECT.md) for the decisions and verification performed at
 each step. The [concept coverage matrix](docs/WHAT-YOU-LEARN.md) explains what
 the demo implements versus deliberately simplifies. The
+[nginx and TLS guide](docs/TLS.md) separates the local offline demo CA from
+the recommended pre-provisioned PKI model. The
 [Oracle Linux SELinux guide](docs/SELINUX.md) explains labels, rootless UID
 mapping and how SELinux differs from fapolicyd. The
 [secrets guide](docs/SECRETS.md) separates the demo bootstrap flow from the
@@ -54,7 +56,7 @@ remove development-only ports, restrict Keycloak administration in the reverse
 proxy, use trusted TLS, define backup and secret-rotation procedures, and
 establish vulnerability scanning.
 
-`E2E_IGNORE_HTTPS_ERRORS=true` is only for the local browser test using Caddy's
+`E2E_IGNORE_HTTPS_ERRORS=true` is only for the local browser test using nginx's
 development CA. It must not become an application or production setting.
 
 ## Prerequisites
@@ -121,7 +123,7 @@ Direct Python dependencies and base-image patch versions are pinned in Git.
 Updating them is deliberate: change the reviewed pins, run the refresh
 deployment, execute the tests and then build a new offline bundle.
 
-Open the application at <https://localhost:8443>. Caddy uses its internal CA, so
+Open the application at <https://localhost:8443>. The nginx entrypoint uses OpenSSL to create a local demo CA, so
 an untrusted-certificate warning is expected until its local root certificate is
 trusted. HTTP remains available at <http://127.0.0.1:8080>, but Keycloak login is
 configured for the HTTPS address.
@@ -168,7 +170,7 @@ PostgreSQL healthy
   -> migrations complete
   -> final runtime grants
   -> backend and Keycloak start
-  -> Caddy/frontend starts
+  -> nginx/frontend starts
 ```
 
 Systemd ordering means the long-running processes have started, not necessarily
@@ -248,10 +250,10 @@ the complete application RTO.
 ## Application failover (M14)
 
 M14 loads the already staged M12 application images on the promoted standby and
-starts dedicated backend, Keycloak and Caddy Quadlets without running database
+starts dedicated backend, Keycloak and nginx Quadlets without running database
 bootstrap, migrations or grants. The stable LAN identity is
 `https://todo.test:8443`. Follow the [M14 failover runbook](ansible/M14-FAILOVER.md).
-The lab copies a newly generated Caddy public root to the client after
+The lab copies the newly generated local OpenSSL public root to the client after
 promotion to expose the TLS trust chain. A real DR design should normally
 pre-stage client trust and server certificates, use an organization/public CA,
 or terminate TLS at a stable redundant endpoint so certificate work does not
@@ -265,10 +267,11 @@ scripts/build-m14-test-package.sh
 ```
 
 The package contains no secrets, inventory, images or database data. The M12
-offline image bundle must already be present on standby. A live Oracle Linux
-9.8 drill verified authenticated browser writes, a second deployment with
-`changed=0`, and automatic startup of PostgreSQL, backend, Keycloak and Caddy
-after reboot while PostgreSQL remained `f|off`.
+offline image bundle must already be present on standby. The earlier Caddy-based
+Oracle Linux 9.8 drill verified authenticated browser writes, idempotent
+deployment and reboot recovery. The nginx replacement has passed local image,
+configuration, HTTP proxy and HTTPS chain tests; repeat the two-VM Oracle Linux
+M14 drill before making the same live claim for nginx.
 
 ## Backup and point-in-time recovery (M15)
 
@@ -313,16 +316,16 @@ curl --fail http://127.0.0.1:8080/health
 curl --fail http://127.0.0.1:8080/ready
 curl --fail http://127.0.0.1:8080/api/todos
 
-podman cp todo-frontend:/data/caddy/pki/authorities/local/root.crt \
-  /tmp/todo-caddy-root.crt
-curl --fail --cacert /tmp/todo-caddy-root.crt \
+podman cp todo-frontend:/var/lib/todo-tls/ca.crt \
+  /tmp/todo-nginx-root.crt
+curl --fail --cacert /tmp/todo-nginx-root.crt \
   https://localhost:8443/health
 ```
 
 `/health` verifies that the backend process is alive. `/ready` additionally
 checks its database connection.
 
-The Caddy CA private key remains in the `todo-caddy-data` volume. Only the
+The local OpenSSL CA private key remains in the `todo-nginx-data` volume. Only the
 public root certificate should be copied out. Never commit CA keys or secrets.
 
 ## Automated backend tests
@@ -368,7 +371,7 @@ Third-party actions are pinned to immutable commit SHAs and the workflow token
 has read-only repository access.
 
 CI deliberately does not emulate user systemd, rootless Quadlet, Keycloak,
-Caddy or browser E2E. Those integration layers are tested locally with the
+nginx or browser E2E. Those integration layers are tested locally with the
 Ansible deployment and `scripts/run-e2e.sh`.
 
 ## End-to-end browser tests
@@ -532,8 +535,8 @@ existing PostgreSQL or Keycloak database still requires its existing
 credentials. They are deleted together with the database only when
 `remove_data=true`.
 
-Standard uninstall always removes `todo-caddy-data`. Reinstalling therefore
-creates a new local Caddy CA; remove the previously trusted demo certificate and
+Standard uninstall always removes `todo-nginx-data`. Reinstalling therefore
+creates a new local OpenSSL demo CA; remove the previously trusted demo certificate and
 trust the new public root certificate if you had installed it locally.
 
 Permanently delete the PostgreSQL volume and all Todo and Keycloak data:

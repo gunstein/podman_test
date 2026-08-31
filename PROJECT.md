@@ -13,6 +13,34 @@ newly installed VMs, including controlled promotion, application failover,
 physical backup, isolated PITR, destructive re-seeding, restored replication,
 idempotence and reboot of both final database nodes.
 
+## Current proxy implementation
+
+The completed M12-M16 clean drill below originally used Caddy. The active source
+now uses a pinned, non-root nginx image with explicit forwarded headers and a
+container-local OpenSSL demo CA. The live promoted Oracle Linux host was migrated
+through M14, followed by HTTPS, browser, idempotence, reboot, M15 and M16 checks.
+A future from-zero drill will therefore start with nginx; repeating the complete
+M12-M16 destructive lifecycle was not required for this proxy-only migration.
+
+## Live nginx migration checkpoint — 2026-08-31
+
+- The verified offline frontend archive replaced the Caddy-tagged image with an
+  image labelled `io.todo.proxy=nginx`. M14 rejected stale proxy images before
+  changing runtime state.
+- M14 removed obsolete Caddy runtime files, installed the nginx configuration
+  and persistent TLS volume, and completed with `failed=0`.
+- Local health, readiness, public API and Keycloak discovery passed through
+  nginx. The external issuer remained
+  `https://todo.test:8443/auth/realms/todo`.
+- The new nginx demo root was installed on the Ubuntu test client. Replacing the
+  old CA path required `update-ca-certificates --fresh`; direct system-trust HTTPS
+  then passed without `--cacert` or an insecure bypass.
+- Browser login and authenticated Todo creation passed. A repeat M14 deployment
+  reported `changed=0`.
+- After reboot all four application services were active, `nginx -t` and HTTPS
+  readiness passed, PostgreSQL remained `f|off|on|1h`, and the M16 rebuilt
+  standby resumed `streaming|async` in read-only recovery.
+
 ## Live clean-deployment checkpoint — 2026-08-29–30
 
 Resume from this exact state:
@@ -69,6 +97,14 @@ Exact current operating state:
 
 New issues found during this drill:
 
+- The original M15 `archive_timeout=60s` produced 1,001 mostly empty 16 MiB
+  archive segments and filled the 18 GiB rootless Podman filesystem during an
+  otherwise nearly idle soak test. A newly verified base backup was retained,
+  older WAL was expired with `pg_archivecleanup`, and service readiness
+  recovered. M15 now defaults to one hour, exposes the timeout in backup status
+  and retains explicit operator control over destructive recovery-history
+  expiration.
+
 - M16 initially failed Ansible module transfer on both hosts because pipelining
   was not consistently configured. Active `fapolicyd` denied transient
   `AnsiballZ_*.py` files. Pipelining is now a project-level `ansible.cfg`
@@ -122,7 +158,7 @@ New issues found during this drill:
 - Oracle Linux 9 offline installation was verified with SELinux enforcing, active `fapolicyd` and RPM-managed `ansible-core`.
 - Offline installation was verified after removing all three local images and blocking registry and package-index access with invalid proxies.
 - PostgreSQL data survived the offline reinstall.
-- Caddy serves locally issued HTTPS on `https://localhost:8443` while retaining HTTP on port 8080 for development.
+- Caddy served locally issued HTTPS on `https://localhost:8443` while retaining HTTP on port 8080 for development.
 - Caddy's internal CA persists in a dedicated rootless Podman volume.
 - TLS hostname, certificate chain, health, readiness and Chromium E2E behavior were verified.
 - M1 through M10 are complete.
@@ -170,7 +206,7 @@ New issues found during this drill:
 - The restored database contained `M15 before restore point` but excluded `M15 after restore point`; the writable live database retained both rows.
 - Exact-confirmation cleanup removed only the disposable restore container and volume while preserving the base backup, WAL archive and live data.
 - After a full VM reboot, PostgreSQL remained `f|off|on`, all four application services were active, the base backup persisted, WAL archiving resumed with zero failures, and the M15 playbook completed with `changed=0`.
-- The live drill demonstrated that the same-VM archive grows continuously (337 MiB during testing); off-host transfer, retention and capacity alerts remain production requirements.
+- A longer soak test demonstrated that a 60-second archive timeout could fill the 18 GiB rootless Podman filesystem with mostly empty WAL segments. The demo now uses a one-hour timeout; off-host transfer, explicit retention and capacity alerts remain production requirements.
 - M16 quarantined the old primary, removed its divergent database and application Quadlets, streamed a fresh base backup, and restored it as the database-only standby.
 - An authenticated `M16 restored redundancy test` write reached the rebuilt standby with zero lag; the standby reported `t|on` and only PostgreSQL active.
 - After reboot of both final nodes, current primary remained `f|off|on` with application readiness, persistent backup and zero archive failures; the rebuilt standby resumed `streaming|async` with matching receive/replay LSNs and an active usable slot.
@@ -186,7 +222,7 @@ New issues found during this drill:
 - Keep FastAPI running locally through M2; containerize it in M3.
 - Add Keycloak last.
 - Keep liveness and readiness checks separate.
-- Use one Caddy-based frontend container to serve static files and proxy backend routes.
+- Use one nginx-based frontend container to serve static files and proxy backend routes.
 - Keep Playwright and Chromium as separate test-only dependencies.
 - Mount the database password as a file from rootless Podman secret storage.
 - Keep `DATABASE_URL` for local development and tests; containers use separate non-secret settings plus `DATABASE_PASSWORD_FILE`.
@@ -199,8 +235,8 @@ New issues found during this drill:
 - Use the operating system's trusted Ansible package on hardened targets instead of executing a bundled Python runtime from a user-writable directory.
 - Build platform-specific offline bundles on a machine compatible with the target.
 - Verify every bundled artifact with SHA-256 before installation.
-- Use Caddy's internal CA for offline-compatible local HTTPS without automatically modifying host trust.
-- Persist Caddy's private CA material in a dedicated volume and expose only its public root certificate for explicit trust.
+- Use a container-local OpenSSL demo CA for offline-compatible local HTTPS without automatically modifying host trust.
+- Persist the local demo CA material in a dedicated volume and expose only its public root certificate for explicit trust.
 - Never commit secrets.
 - Keep authentication authorization simple: all authenticated users may write all Todos; per-user ownership is outside this demo.
 - Keep browser tokens in memory and use Authorization Code with PKCE S256 for the public frontend client.

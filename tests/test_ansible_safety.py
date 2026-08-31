@@ -52,6 +52,14 @@ class AnsibleSafetyTests(unittest.TestCase):
             self.assertNotIn("import pathlib", tasks)
             self.assertIn("base64 --decode", tasks)
 
+    def test_m15_uses_capacity_safe_archive_timeout(self):
+        playbook = read("ansible/configure-backup-m15.yml")
+        tasks = read("ansible/roles/postgres_backup/tasks/main.yml")
+
+        self.assertIn("m15_archive_timeout: 1h", playbook)
+        self.assertIn("m15_archive_timeout", tasks)
+        self.assertNotIn("archive_timeout = '60s'", tasks)
+
     def test_m16_status_preserves_backup_health(self):
         status = read("ansible/status-m16.yml")
 

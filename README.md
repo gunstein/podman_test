@@ -267,11 +267,12 @@ scripts/build-m14-test-package.sh
 ```
 
 The package contains no secrets, inventory, images or database data. The M12
-offline image bundle must already be present on standby. The earlier Caddy-based
-Oracle Linux 9.8 drill verified authenticated browser writes, idempotent
-deployment and reboot recovery. The nginx replacement has passed local image,
-configuration, HTTP proxy and HTTPS chain tests; repeat the two-VM Oracle Linux
-M14 drill before making the same live claim for nginx.
+offline image bundle must already be present on standby. The earlier clean drill used Caddy. On 2026-08-31, the promoted Oracle Linux 9.8
+host was migrated to the verified nginx image. HTTPS, the stable Keycloak
+issuer, authenticated browser writes, an idempotent M14 rerun, reboot recovery,
+M15 archive health and M16 streaming replication all passed. A future from-zero
+drill will therefore start with nginx; the complete destructive M12-M16 sequence
+did not need to be repeated for this proxy-only migration.
 
 ## Backup and point-in-time recovery (M15)
 

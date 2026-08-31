@@ -116,8 +116,10 @@ read -rp "Promoted host IPv4 address: " TODO_STANDBY_IP
 scp \
   "gunstein@${TODO_STANDBY_IP}:.config/todo/todo-nginx-root.crt" \
   /tmp/
-sudo cp /tmp/todo-nginx-root.crt /usr/local/share/ca-certificates/todo-m14.crt
-sudo update-ca-certificates
+sudo rm -f /usr/local/share/ca-certificates/todo-m14.crt
+sudo cp /tmp/todo-nginx-root.crt /usr/local/share/ca-certificates/todo-nginx-root.crt
+sudo update-ca-certificates --fresh
+openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt /tmp/todo-nginx-root.crt
 ```
 
 Then open <https://todo.test:8443/>. The private demo CA key remains in the `todo-nginx-data` Podman volume; only the public root certificate is copied.
@@ -189,6 +191,15 @@ physical replication, authenticated successfully through the stable issuer and
 created `M14 clean failover test`. Idempotent deployment, full promoted-host
 reboot, writable PostgreSQL and client HTTPS checks all passed again.
 
-These verified drills used Caddy. The nginx replacement has passed local image,
-configuration, proxy and HTTPS tests, but this two-VM acceptance drill must be
-repeated before recording equivalent live evidence.
+Those two complete failover drills used Caddy and remain historical evidence.
+
+On 2026-08-31, the active promoted host at `192.168.0.108` was migrated from
+the Caddy-tagged frontend image to the verified nginx image. M14 removed obsolete
+Caddy runtime files, installed nginx and its persistent local TLS volume, and
+passed health, readiness, public API and stable Keycloak issuer checks. The
+Ubuntu client installed the exported nginx root under a distinct filename and
+rebuilt its trust store with `update-ca-certificates --fresh`. System-trust HTTPS,
+browser login and an authenticated Todo write passed. A repeat M14 deployment
+reported `changed=0`; after reboot all four services, `nginx -t`, HTTPS, M15
+archive health and M16 asynchronous streaming replication remained healthy. A
+future from-zero drill will start with nginx.

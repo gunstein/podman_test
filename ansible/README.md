@@ -69,7 +69,7 @@ The Keycloak account created from the prompted password is its temporary
 bootstrap administrator. This localhost demo retains it for repeatable
 administration and E2E setup; a real deployment should replace and remove it.
 
-## M12 uninstall
+## Single-host uninstall
 
 `uninstall.yml` is intentionally limited to the single-host M12 deployment. It
 refuses to run when it detects M13-M16 replication, promotion, backup or
@@ -124,11 +124,11 @@ The package provides two inventory templates:
 
 Copy the relevant template to its ignored `.ini` name and edit the addresses.
 Hostnames identify machines; inventory groups identify their current database
-roles. The M13--M16 labels remain learning stages, not operational filenames.
+roles. Historical milestone labels remain in PROJECT.md; operational filenames describe actions and roles.
 
-## PostgreSQL standby and DR tool
+## Initial standby and DR tool
 
-M13 uses roles for host-specific database provisioning: `standby_preflight`,
+The standby bootstrap uses roles for host-specific database provisioning: `standby_preflight`,
 `postgres_primary`, `postgres_standby` and `todo_dr`. Prepare and bootstrap the
 two-host topology with the files documented in
 [STANDBY-ARCHITECTURE.md](STANDBY-ARCHITECTURE.md) and
@@ -147,12 +147,12 @@ The promotion operation itself is intentionally local Python, not Ansible. Read
 
 ## Promoted application and backup
 
-M14 uses the `promoted_application` role to deploy the existing application
+The application failover uses the `promoted_application` role to deploy the existing application
 release only after PostgreSQL has been promoted and verified writable. Follow [APPLICATION-FAILOVER.md](APPLICATION-FAILOVER.md); it deliberately does
 not bootstrap roles or
 run migrations during an incident.
 
-M15 uses the `postgres_backup` role to add a separate backup volume and
+The backup workflow uses the `postgres_backup` role to add a separate backup volume and
 continuous WAL archiving to that promoted host. The local `todo_backup.py`
 tool creates verified physical base backups and restores only into fixed,
 disposable Podman resources. Follow
@@ -161,7 +161,7 @@ demonstration, not protection against loss of the host.
 
 ## Restore redundancy after failover
 
-M16 uses `postgres_redundancy_primary` to preserve M15 archiving while exposing
+The redundancy workflow uses `postgres_redundancy_primary` to preserve M15 archiving while exposing
 a firewalled replication endpoint on the promoted host. The destructive
 `postgres_reseed_standby` role then replaces only the explicitly confirmed old
 primary volume with a fresh base backup. Follow

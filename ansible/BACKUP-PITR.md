@@ -1,6 +1,5 @@
 # Physical backup, WAL archive and PITR
 
-This is learning stage M15.
 
 M15 demonstrates why replication is not backup. It enables continuous WAL
 archiving, creates a verified physical base backup and restores to a named point
@@ -236,16 +235,9 @@ python3 "$HOME/.config/todo/todo_backup.py" cleanup-restore \
 The exact confirmation is required. Cleanup never addresses
 `todo-postgres-data` or `todo-postgres-backup`.
 
-## Verified Oracle Linux drill
+## Acceptance evidence
 
-The live Oracle Linux 9.8 drill used promoted host `192.168.0.109` and created
-and verified `base-20260829T102943Z`. It archived a named restore point and
-restored it into the isolated disposable container. The restored database
-contained the before-target row and excluded the after-target row, while the
-live database retained both. Cleanup removed only disposable restore state.
-After a full VM reboot, PostgreSQL remained writable with archiving enabled,
-the backup persisted, all application services recovered, and a repeat
-playbook run completed with `changed=0`.
+The canonical base-backup, named-point restore, isolated comparison, cleanup, idempotence, capacity and reboot results are recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). The 60-second WAL growth incident and design history remain in [../PROJECT.md](../PROJECT.md).
 
 ## Operational follow-up
 

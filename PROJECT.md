@@ -1,26 +1,49 @@
-# Project status
+# Development journal
 
 ## Goal
 
 Learn rootless Podman by building and deploying a small Todo application.
 
-The project should demonstrate Podman, Quadlet, Ansible and eventually offline installation in small, understandable steps.
+The project demonstrates Podman, Quadlet, Ansible and offline installation in small, understandable steps.
 
-## Current milestone
+## Current status
 
-The clean M12-M16 Oracle Linux drill is complete. All milestones passed on
-newly installed VMs, including controlled promotion, application failover,
-physical backup, isolated PITR, destructive re-seeding, restored replication,
-idempotence and reboot of both final database nodes.
+The rootless Podman, Quadlet, nginx, Ansible and offline-installation reference
+is complete. A full clean Oracle Linux 9.8 acceptance drill passed from initial
+deployment through standby bootstrap, fencing, promotion, application failover,
+backup/PITR, destructive re-seed and reboot of both final database nodes.
 
-## Current proxy implementation
+The reusable procedure and pass criteria now live in
+[docs/LAB-ACCEPTANCE.md](docs/LAB-ACCEPTANCE.md). This file remains the
+development journal: it records why the current design exists and preserves
+historical experiments that a new operator does not need for normal use.
 
-The completed M12-M16 clean drill below originally used Caddy. The active source
-now uses a pinned, non-root nginx image with explicit forwarded headers and a
-container-local OpenSSL demo CA. The live promoted Oracle Linux host was migrated
-through M14, followed by HTTPS, browser, idempotence, reboot, M15 and M16 checks.
-A future from-zero drill will therefore start with nginx; repeating the complete
-M12-M16 destructive lifecycle was not required for this proxy-only migration.
+## Clean nginx acceptance checkpoint - 2026-09-01
+
+- Both offline artifacts were built from clean revision
+  `d8506f75721f92b704eec0669bf2dda36ff18bdb`, and their extracted `VERSION`
+  metadata matched the archives on both hosts.
+- The initial nginx deployment passed trusted HTTPS, two Playwright tests,
+  persistent authenticated data, reboot and idempotent reinstall.
+- Standby bootstrap passed with protected Podman-secret synchronization,
+  `streaming|async`, an active usable slot and zero measured lag.
+- The local DR tool passed exact-file `fapolicyd` trust, reboot, zero-lag
+  fencing preflight and controlled promotion to `f|off`.
+- Application failover loaded only the staged offline images, retained stable
+  issuer `https://todo.test:8443/auth/realms/todo`, passed authenticated write,
+  idempotence, reboot and unchanged nginx CA identity.
+- Base backup `base-20260901T160954Z` passed `pg_verifybackup`. Named-point
+  PITR exposed only the before-row in the isolated read-only restore while the
+  live database retained both rows.
+- The divergent old primary was quarantined and re-seeded only after secret
+  equality, TCP reachability and authenticated replication checks.
+- Final state passed reboot of rebuilt standby followed by current primary:
+  `.108` reported `f|off|on|1h`, healthy archiving and all application
+  services; `.102` reported `t|on`, matching receive/replay LSNs and zero
+  measured streaming lag.
+- Final backup use was 52 MiB base plus 161 MiB WAL with 16 GiB free. The
+  one-hour archive timeout prevented recurrence of the earlier low-traffic
+  capacity incident.
 
 ## Secure operations hardening checkpoint — 2026-08-31
 
@@ -35,8 +58,7 @@ M12-M16 destructive lifecycle was not required for this proxy-only migration.
   bootstrap, parses the real configuration with `nginx -t`, verifies the
   `todo.test` SAN and chain, and checks private-key modes. The same smoke passed
   locally with Docker.
-- One final from-zero M12--M16 nginx drill remains a manual acceptance test, not
-  a prerequisite for each incremental hardening change.
+- The final from-zero nginx drill was completed on 2026-09-01; its reusable procedure and evidence moved to docs/LAB-ACCEPTANCE.md.
 
 ## Live nginx migration checkpoint — 2026-08-31
 
@@ -140,6 +162,9 @@ New issues found during this drill:
   `192.0.2.11`.
 
 ## Completed
+
+The list below preserves historical milestones, including the former Caddy implementation. The accepted runtime is nginx.
+
 
 - `GET /health` returns `{"status": "ok"}`.
 - PostgreSQL runs in a rootless Podman container with a named volume.
@@ -312,8 +337,12 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-Run one final from-zero M12--M16 acceptance drill with nginx when a destructive
-validation window is available. Keep planned switchover/failback separate. For a
-larger deployment, the next optional profiles are organization-managed
-certificate lifecycle and RPM/DNF delivery of host-side operational tools; they
-are documented scaling directions, not missing demo milestones.
+The accepted Quadlet implementation is a stable rollback point. Documentation
+is organized around the finished system, and the full clean nginx drill no
+longer remains outstanding.
+
+A Podman Compose implementation may now be explored on a separate branch as a
+feasibility experiment. It must not replace this reference until provider
+pinning, offline installation, rootless SELinux behavior, secrets, dependency
+ordering, systemd boot ownership and the complete recovery lifecycle are proven.
+Planned switchover/failback remains separate from restoring redundancy.

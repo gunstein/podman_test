@@ -1,8 +1,6 @@
 # Controlled PostgreSQL promotion
 
-This is learning stage M13.5.
-
-M13.5 installs a small Python tool on standby. Ansible provisions the file and
+The operations package installs a small Python tool on standby. Ansible provisions the file and
 host-specific configuration, but status, preflight and promotion run locally on
 standby. A disaster operation therefore does not depend on primary or SSH.
 
@@ -15,7 +13,7 @@ The operational targets for this demo are:
 The RPO is an operational target, not a guaranteed upper bound. After primary
 is lost, standby can measure received-but-unreplayed WAL, but it cannot detect
 transactions that committed on primary and were never transmitted. Regular
-monitoring of M13 streaming state is therefore part of the RPO assumption.
+monitoring of streaming state is therefore part of the RPO assumption.
 The local `status` command labels this configured RPO target as informational;
 it does not claim to enforce or prove that bound after primary loss.
 
@@ -181,15 +179,8 @@ podman exec todo-postgres \
 
 Expected SQL output is `f|off`.
 
-## Verified drill
+## Acceptance evidence
 
-On 2026-08-29, the Oracle Linux 9.8 standby passed preflight after the primary
-VM was fenced, promoted in approximately two seconds, reported `f|off`, and
-accepted a Todo insert inside a rolled-back transaction. The measurement covers
-the promotion command, not the complete application RTO. The old primary was
-left powered off for M14.
+The complete clean nginx lifecycle, including controlled promotion with zero local apply lag and a verified writable transaction, is recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). Development history remains in [../PROJECT.md](../PROJECT.md).
 
-Never start the old primary against this topology after promotion. It must be
-rebuilt or deliberately configured as a replica of the promoted database before
-it can rejoin. M13.5 promotes only PostgreSQL; starting Keycloak, backend, nginx
-and moving the stable service address belong to M14.
+Never start the old primary against this topology after promotion. It must be rebuilt as a replica before it can rejoin. Promotion changes only PostgreSQL; application failover is a separate operation.

@@ -1,4 +1,4 @@
-# M13 PostgreSQL replication bootstrap
+# PostgreSQL standby bootstrap
 
 Run the read-only preflight before changing either database host:
 
@@ -25,7 +25,7 @@ dedicated replication role access from that internal Podman subnet. In the
 verified Oracle Linux environment PostgreSQL saw `10.89.0.0/24`, not the
 standby LAN address; firewalld enforces the real machine boundary.
 
-M13 authenticates replication with SCRAM-SHA-256 but does not configure or
+The demo authenticates replication with SCRAM-SHA-256 but does not configure or
 require encrypted PostgreSQL transport. It is intended for this isolated,
 trusted demo LAN. A networked deployment should add PostgreSQL TLS with
 `hostssl` and `sslmode=verify-full`, or use a separately protected replication

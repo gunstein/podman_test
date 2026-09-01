@@ -5,6 +5,8 @@ pretending that a two-VM lab is a complete production platform. A topic is
 covered when the repository either demonstrates it or states the deliberate
 simplification and the normal production concern.
 
+For a dependency-ordered walkthrough, use [LEARNING-GUIDE.md](LEARNING-GUIDE.md). For the destructive build-from-zero verification, use [LAB-ACCEPTANCE.md](LAB-ACCEPTANCE.md).
+
 | Topic | Demonstrated here | Deliberate simplification / production concern |
 |---|---|---|
 | Rootless Podman | User namespaces, images, networks, volumes, ports and secrets | One service user and one application stack |

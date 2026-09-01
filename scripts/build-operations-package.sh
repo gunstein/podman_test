@@ -61,6 +61,8 @@ cp "$project_root/docs/SECRETS.md" \
   "$project_root/docs/TLS.md" \
   "$project_root/docs/SELINUX.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
+  "$project_root/docs/LEARNING-GUIDE.md" \
+  "$project_root/docs/LAB-ACCEPTANCE.md" \
   "$package_directory/docs/"
 
 source_revision=unknown

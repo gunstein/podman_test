@@ -1,6 +1,5 @@
 # Restore database redundancy after failover
 
-This is learning stage M16.
 
 M16 restores a second database copy after M13.5 promotion and M14 application
 failover. It does not move service back to the machine that was originally
@@ -172,14 +171,9 @@ Create a Todo through `https://todo.test:8443`, then query it on rebuilt standby
 Finally reboot the rebuilt standby, verify recovery/streaming again, reboot the
 current primary and verify app readiness, archiving and replication again.
 
-## Verified live drill
+## Acceptance evidence
 
-The clean Oracle Linux 9.8 drill quarantined and re-seeded the old primary,
-replicated an authenticated `M16 restored redundancy test` write with zero lag,
-and verified the final roles directly. After reboot of both nodes, the current
-primary remained writable with archiving and application readiness healthy; the
-rebuilt standby returned in recovery with matching receive/replay LSNs, an active
-usable slot and `streaming|async` replication.
+The canonical destructive re-seed, replicated application write and two-node reboot results are recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). Development history remains in [../PROJECT.md](../PROJECT.md).
 
 ## Failback is separate
 

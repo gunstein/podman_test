@@ -1,4 +1,4 @@
-# M13 primary and standby preparation
+# Initial primary and standby preparation
 
 The primary host is the Ansible controller during normal operation. The standby
 must nevertheless contain everything needed for local promotion; failover must
@@ -38,5 +38,6 @@ value, the playbook stops instead of overwriting it. No plaintext secret file or
 command-line password is created. After provisioning, each host has its own
 local Podman secret objects, so standby does not need primary during failover.
 
-This is bootstrap transfer, not secret backup. Recovery after loss of both
-hosts requires a separately protected credential backup, planned for M15.
+This is bootstrap transfer, not a centralized secret backup. The demo assumes
+at least one database node survives with the required Podman secrets. Simultaneous
+loss of both nodes is outside scope; see [Secrets](../docs/SECRETS.md).

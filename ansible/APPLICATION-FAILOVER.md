@@ -1,6 +1,5 @@
 # Application failover
 
-This is learning stage M14.
 
 M14 starts the application tier on an already promoted PostgreSQL standby. It
 does not initialize PostgreSQL, run migrations, change database roles or create
@@ -176,33 +175,6 @@ The discovery document issuer must be
 The old primary must remain fenced. Rejoining or failing back is a separate
 operation that starts by rebuilding it as a replica of the promoted database.
 
-## Verified drill
+## Acceptance evidence
 
-On 2026-08-29, the Oracle Linux 9.8 drill used promoted host
-`192.168.0.109` and client `192.168.0.100`. The promoted host loaded all three
-staged M12 application images, started the complete application tier and
-exposed the stable `todo.test` issuer. It accepted an authenticated browser
-Todo write. A second playbook run completed with `changed=0`. After a VM
-reboot, PostgreSQL, backend, Keycloak and Caddy all returned `active`;
-PostgreSQL remained `f|off`, and the LAN client verified HTTPS readiness and
-the replicated Todo data.
-
-On 2026-08-30, the complete clean-install drill repeated the path with newly
-installed Oracle Linux 9.8 VMs: old primary `192.168.0.102`, promoted host
-`192.168.0.108` and client `192.168.0.100`. The existing Keycloak user survived
-physical replication, authenticated successfully through the stable issuer and
-created `M14 clean failover test`. Idempotent deployment, full promoted-host
-reboot, writable PostgreSQL and client HTTPS checks all passed again.
-
-Those two complete failover drills used Caddy and remain historical evidence.
-
-On 2026-08-31, the active promoted host at `192.168.0.108` was migrated from
-the Caddy-tagged frontend image to the verified nginx image. M14 removed obsolete
-Caddy runtime files, installed nginx and its persistent local TLS volume, and
-passed health, readiness, public API and stable Keycloak issuer checks. The
-Ubuntu client installed the exported nginx root under a distinct filename and
-rebuilt its trust store with `update-ca-certificates --fresh`. System-trust HTTPS,
-browser login and an authenticated Todo write passed. A repeat M14 deployment
-reported `changed=0`; after reboot all four services, `nginx -t`, HTTPS, M15
-archive health and M16 asynchronous streaming replication remained healthy. A
-future from-zero drill will start with nginx.
+The canonical clean nginx failover test, including trusted HTTPS, stable Keycloak issuer, authenticated write, idempotence and reboot, is recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). Earlier Caddy and migration experiments remain in [../PROJECT.md](../PROJECT.md).

@@ -42,3 +42,9 @@ The isolated gates now feed the canonical
 manifests preserve the accepted DNS and systemd service names and can replace
 only the stateless application tier while the validated PostgreSQL and DR
 implementation remains unchanged.
+
+The stable-name gate in [name-contract/README.md](name-contract/README.md)
+proves that Podman 5.8.2 can preserve an existing container name through
+`--no-pod-prefix`. The canonical runtime uses that contract for the separate,
+controlled current-primary PostgreSQL migration described in
+[POSTGRES-KUBE-MIGRATION.md](../ansible/POSTGRES-KUBE-MIGRATION.md).

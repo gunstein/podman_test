@@ -164,6 +164,13 @@ previous units. Follow
 [APPLICATION-KUBE-MIGRATION.md](APPLICATION-KUBE-MIGRATION.md) and do not use
 the migration as part of an active failover incident.
 
+The current writable PostgreSQL primary has a separate controlled migration
+and rollback. It preserves the `todo-postgres.service` and `todo-postgres`
+container contracts, reuses both persistent volumes, and requires healthy
+archiving plus a caught-up standby before any service is stopped. Follow
+[POSTGRES-KUBE-MIGRATION.md](POSTGRES-KUBE-MIGRATION.md). This does not yet
+authorize standby or DR workflow migration.
+
 The backup workflow uses the `postgres_backup` role to add a separate backup volume and
 continuous WAL archiving to that promoted host. The local `todo_backup.py`
 tool creates verified physical base backups and restores only into fixed,

@@ -19,8 +19,9 @@ spec:
         exec:
           command:
             - test
-            - -r
-            - /proc/1/status
+            - "!"
+            - -e
+            - /tmp/todo-kube-force-unhealthy
         initialDelaySeconds: 2
         periodSeconds: 10
         timeoutSeconds: 2

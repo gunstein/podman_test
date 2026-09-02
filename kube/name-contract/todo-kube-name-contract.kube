@@ -10,6 +10,7 @@ LogDriver=journald
 SetWorkingDirectory=yaml
 
 [Service]
+ExecStartPost=/usr/bin/podman update --health-on-failure=kill todo-kube-name-contract
 Restart=on-failure
 RestartSec=5s
 TimeoutStartSec=120

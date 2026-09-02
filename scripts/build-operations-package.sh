@@ -23,6 +23,7 @@ cp "$project_root/ansible/README.md" \
   "$project_root/ansible/PROMOTION.md" \
   "$project_root/ansible/APPLICATION-FAILOVER.md" \
   "$project_root/ansible/APPLICATION-KUBE-MIGRATION.md" \
+  "$project_root/ansible/POSTGRES-KUBE-MIGRATION.md" \
   "$project_root/ansible/BACKUP-PITR.md" \
   "$project_root/ansible/RESTORE-REDUNDANCY.md" \
   "$project_root/ansible/preflight-standby.yml" \
@@ -36,6 +37,8 @@ cp "$project_root/ansible/README.md" \
   "$project_root/ansible/cluster-status.yml" \
   "$project_root/ansible/migrate-application-to-kube.yml" \
   "$project_root/ansible/rollback-application-to-container-quadlets.yml" \
+  "$project_root/ansible/migrate-postgres-primary-to-kube.yml" \
+  "$project_root/ansible/rollback-postgres-primary-to-container-quadlet.yml" \
   "$project_root/ansible/inventory-initial.example.ini" \
   "$project_root/ansible/inventory-recovery.example.ini" \
   "$project_root/ansible/requirements.txt" \
@@ -51,7 +54,9 @@ for role in \
   postgres_redundancy_primary \
   postgres_reseed_standby \
   kube_application_migration \
-  kube_application_rollback
+  kube_application_rollback \
+  kube_postgres_primary_migration \
+  kube_postgres_primary_rollback
 do
   cp -r "$project_root/ansible/roles/$role" \
     "$package_directory/ansible/roles/"

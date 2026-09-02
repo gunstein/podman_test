@@ -1,0 +1,25 @@
+[Unit]
+Description=Todo current PostgreSQL primary Podman Kube workload
+Requires=todo-postgres-data-volume.service todo-postgres-backup-volume.service
+After=todo-postgres-data-volume.service todo-postgres-backup-volume.service
+
+[Kube]
+Yaml=postgres.yaml
+ConfigMap=config-runtime.yaml
+Network=todo.network
+PublishPort=127.0.0.1:5432:5432
+PublishPort={{ todo_kube_database_node_address }}:5432:5432
+PodmanArgs=--no-pod-prefix
+ExitCodePropagation=any
+LogDriver=journald
+SetWorkingDirectory=yaml
+
+[Service]
+ExecStartPost=/usr/bin/podman update --health-on-failure=kill todo-postgres
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=180
+TimeoutStopSec=90
+
+[Install]
+WantedBy=default.target

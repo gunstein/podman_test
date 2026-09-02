@@ -34,6 +34,11 @@ class KubeNameContractTests(unittest.TestCase):
 
         self.assertIn("PodmanArgs=--no-pod-prefix", unit)
         self.assertIn("ExitCodePropagation=any", unit)
+        self.assertIn(
+            "ExecStartPost=/usr/bin/podman update "
+            "--health-on-failure=kill todo-kube-name-contract",
+            unit,
+        )
         self.assertIn("Restart=on-failure", unit)
 
     def test_contract_has_no_persistent_or_network_side_effects(self):
@@ -45,6 +50,7 @@ class KubeNameContractTests(unittest.TestCase):
         self.assertNotIn("PersistentVolumeClaim", manifest)
         self.assertNotIn("kind: Secret", manifest)
         self.assertIn("Network=none", unit)
+        self.assertIn("/tmp/todo-kube-force-unhealthy", manifest)
 
 
 if __name__ == "__main__":

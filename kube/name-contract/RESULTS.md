@@ -9,6 +9,13 @@ by the exact name `todo-kube-name-contract`. `podman inspect` reported the
 container healthy, `podman exec` worked through the stable name, and the
 process ran as UID/GID 1000.
 
+The extended gate set the effective health failure action to `kill`, created
+the manifest's failure marker and observed the original container become
+unhealthy and exit. The `.kube` service propagated that failure to systemd,
+which recreated the workload after its configured delay. The replacement had
+a different container ID, returned to healthy, retained `Action=kill`, and
+left no failed user units.
+
 A normal systemd stop removed both Podman objects. The Quadlet directory and
 generated unit were then removed, while all four accepted Todo services stayed
 active and application readiness passed.

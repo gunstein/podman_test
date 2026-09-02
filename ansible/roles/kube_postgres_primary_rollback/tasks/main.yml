@@ -1,0 +1,238 @@
+---
+- name: Read the database rollback host identity
+  ansible.builtin.command:
+    argv: [hostname]
+  register: todo_kube_database_rollback_hostname
+  changed_when: false
+
+- name: Require the intended database rollback host
+  ansible.builtin.assert:
+    that:
+      - todo_kube_database_rollback_hostname.stdout | trim == inventory_hostname
+      - todo_confirm_postgres_quadlet_rollback | default("") == inventory_hostname
+      - todo_kube_database_replication_application is match('^[A-Za-z0-9_]+$')
+    fail_msg: >-
+      Pass todo_confirm_postgres_quadlet_rollback equal to the current-primary
+      inventory hostname before restoring its per-container database Quadlet.
+
+- name: Inspect the preserved database container Quadlet
+  ansible.builtin.stat:
+    path: "{{ todo_kube_database_backup_directory }}/todo-postgres.container"
+  register: todo_kube_database_rollback_source
+
+- name: Inspect the installed Kube database runtime
+  ansible.builtin.stat:
+    path: "{{ todo_kube_database_runtime_directory }}/todo-postgres.kube"
+  register: todo_kube_database_rollback_runtime
+
+- name: Require complete database rollback inputs
+  ansible.builtin.assert:
+    that:
+      - todo_kube_database_rollback_source.stat.exists
+      - todo_kube_database_rollback_runtime.stat.exists
+    fail_msg: >-
+      The preserved container Quadlet and installed Kube database unit are both
+      required. No service or persistent resource was changed.
+
+- name: Require the persistent database and backup volumes
+  ansible.builtin.command:
+    argv: [podman, volume, exists, "{{ item }}"]
+  loop:
+    - todo-postgres-data
+    - todo-postgres-backup
+  changed_when: false
+
+- name: Read database identity before rollback when available
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --command
+      - SELECT system_identifier FROM pg_control_system();
+  register: todo_kube_database_rollback_identity_before
+  changed_when: false
+  failed_when: false
+
+- name: Stop the application tier before database rollback
+  ansible.builtin.command:
+    argv: [systemctl, --user, stop, "{{ item }}"]
+  loop:
+    - todo-frontend.service
+    - todo-backend.service
+    - todo-keycloak.service
+  register: todo_kube_database_rollback_app_stops
+  changed_when: false
+  failed_when: todo_kube_database_rollback_app_stops.rc not in [0, 5]
+
+- name: Stop the Kube PostgreSQL service
+  ansible.builtin.command:
+    argv: [systemctl, --user, stop, todo-postgres.service]
+  register: todo_kube_database_rollback_postgres_stop
+  changed_when: false
+  failed_when: todo_kube_database_rollback_postgres_stop.rc not in [0, 5]
+
+- name: Remove the Kube database runtime files
+  ansible.builtin.file:
+    path: "{{ todo_kube_database_runtime_directory }}"
+    state: absent
+
+- name: Restore the preserved PostgreSQL container Quadlet
+  ansible.builtin.copy:
+    src: "{{ todo_kube_database_rollback_source.stat.path }}"
+    dest: "{{ todo_kube_database_quadlet_directory }}/todo-postgres.container"
+    remote_src: true
+    mode: "0644"
+  no_log: true
+
+- name: Reload the user systemd generator after database rollback
+  ansible.builtin.systemd_service:
+    scope: user
+    daemon_reload: true
+
+- name: Remove the unused Kube database secret
+  ansible.builtin.command:
+    argv: [podman, secret, rm, todo-kube-postgres-secret]
+  register: todo_kube_database_rollback_secret_removal
+  changed_when: todo_kube_database_rollback_secret_removal.rc == 0
+  failed_when: todo_kube_database_rollback_secret_removal.rc not in [0, 1]
+
+- name: Start PostgreSQL through the restored container Quadlet
+  ansible.builtin.systemd_service:
+    name: todo-postgres.service
+    scope: user
+    state: started
+
+- name: Wait for healthy PostgreSQL after rollback
+  ansible.builtin.command:
+    argv: [podman, healthcheck, run, todo-postgres]
+  register: todo_kube_database_rollback_health
+  changed_when: false
+  retries: 60
+  delay: 1
+  until: todo_kube_database_rollback_health.rc == 0
+
+- name: Verify writable database identity and archive mode after rollback
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - >-
+        SELECT pg_is_in_recovery(),
+        current_setting('transaction_read_only'),
+        current_setting('archive_mode'),
+        system_identifier
+        FROM pg_control_system();
+  register: todo_kube_database_rollback_identity_after
+  changed_when: false
+  failed_when: >-
+    (todo_kube_database_rollback_identity_after.stdout | trim).split('|') | length != 4
+    or (todo_kube_database_rollback_identity_after.stdout | trim).split('|')[0:3]
+    != ['f', 'off', 'on']
+    or (
+      todo_kube_database_rollback_identity_before.rc == 0
+      and
+      (todo_kube_database_rollback_identity_after.stdout | trim).split('|')[3]
+      != todo_kube_database_rollback_identity_before.stdout | trim
+    )
+
+- name: Wait for the rebuilt standby after database rollback
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - >-
+        SELECT r.state, r.sync_state,
+        pg_wal_lsn_diff(pg_current_wal_lsn(), r.replay_lsn)::bigint,
+        s.active, s.wal_status
+        FROM pg_stat_replication r
+        JOIN pg_replication_slots s
+          ON s.slot_name = r.application_name
+        WHERE r.application_name =
+        '{{ todo_kube_database_replication_application }}';
+  register: todo_kube_database_rollback_replication
+  changed_when: false
+  retries: 60
+  delay: 1
+  until: >-
+    todo_kube_database_rollback_replication.stdout | trim
+    == 'streaming|async|0|t|reserved'
+
+- name: Read the restored PostgreSQL service source
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - --user
+      - show
+      - todo-postgres.service
+      - --property=SourcePath
+      - --value
+  register: todo_kube_database_rollback_unit_source
+  changed_when: false
+
+- name: Require the restored per-container database unit
+  ansible.builtin.assert:
+    that:
+      - >-
+        todo_kube_database_rollback_unit_source.stdout | trim
+        == todo_kube_database_quadlet_directory ~ '/todo-postgres.container'
+
+- name: Start the application tier after database rollback
+  ansible.builtin.systemd_service:
+    name: todo-frontend.service
+    scope: user
+    state: started
+
+- name: Wait for application readiness after database rollback
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/ready
+    return_content: true
+  register: todo_kube_database_rollback_readiness
+  until: >-
+    todo_kube_database_rollback_readiness.status == 200
+    and todo_kube_database_rollback_readiness.json.status == "ready"
+  retries: 30
+  delay: 1
+
+- name: Wait for Keycloak discovery after database rollback
+  ansible.builtin.uri:
+    url: >-
+      http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
+  register: todo_kube_database_rollback_discovery
+  until: todo_kube_database_rollback_discovery.status == 200
+  retries: 90
+  delay: 2
+
+- name: Report successful PostgreSQL primary rollback
+  ansible.builtin.debug:
+    msg: >-
+      The current primary PostgreSQL per-container Quadlet was restored.
+      Database and backup volumes, database identity, replication and
+      application readiness were preserved.

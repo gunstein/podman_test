@@ -21,6 +21,12 @@ The manifest deliberately avoids a multiline embedded script: libmagic can
 otherwise classify the complete YAML file as executable source, which a
 fapolicyd policy may reject before Podman can read it.
 
+The liveness check can be forced to fail by creating a marker inside the
+container. `ExecStartPost` then sets Podman's health-on-failure action to
+`kill`. Together with `ExitCodePropagation=any` and systemd
+`Restart=on-failure`, this must replace the failed container and return it to a
+healthy state.
+
 ## Install
 
 Run on the Oracle Linux test host as the rootless Todo service user:
@@ -61,11 +67,66 @@ podman inspect \
   todo-kube-name-contract
 
 podman exec todo-kube-name-contract id
+
+podman inspect \
+  --format 'Action={{.Config.HealthcheckOnFailureAction}}' \
+  todo-kube-name-contract
 ```
 
 The generated `ExecStart` must contain `--no-pod-prefix`. The service must be
 active, both Podman objects must resolve by the exact shared name, the container
 must become healthy, and it must run as UID/GID 1000.
+
+## Verify unhealthy recovery
+
+```bash
+old_id=$(podman inspect --format '{{.Id}}' todo-kube-name-contract)
+
+podman exec \
+  todo-kube-name-contract \
+  touch /tmp/todo-kube-force-unhealthy
+
+for attempt in {1..60}
+do
+  if podman container exists todo-kube-name-contract
+  then
+    new_id=$(podman inspect --format '{{.Id}}' todo-kube-name-contract)
+    health=$(podman inspect \
+      --format '{{.State.Health.Status}}' \
+      todo-kube-name-contract)
+  else
+    new_id=absent
+    health=absent
+  fi
+
+  service_state=$(systemctl --user show \
+    todo-kube-name-contract.service \
+    --property=ActiveState \
+    --value)
+
+  printf 'Attempt %02d: service=%s container=%.12s health=%s\n' \
+    "$attempt" "$service_state" "$new_id" "$health"
+
+  test "$new_id" != absent &&
+    test "$new_id" != "$old_id" &&
+    test "$health" = healthy &&
+    break
+
+  sleep 1
+done
+
+test "$new_id" != "$old_id" &&
+  test "$health" = healthy &&
+  echo "Health failure recovery: OK"
+
+systemctl --user --failed --no-pager
+
+unset old_id new_id health service_state
+```
+
+The marker lives only in the failed container, so the replacement must become
+healthy without manual repair. This proves that health failure, exit-code
+propagation and systemd restart form one recovery chain.
 
 ## Clean up
 

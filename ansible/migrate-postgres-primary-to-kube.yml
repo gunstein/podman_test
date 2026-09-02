@@ -1,0 +1,22 @@
+---
+- name: Migrate the current PostgreSQL primary to Podman Kube
+  hosts: todo_current_primary
+  gather_facts: false
+  any_errors_fatal: true
+
+  vars:
+    project_root: "{{ playbook_dir }}/.."
+    todo_kube_database_user_home: >-
+      {{ todo_user_home | default("/home/" ~ ansible_user) }}
+    todo_kube_database_quadlet_directory: >-
+      {{ todo_kube_database_user_home }}/.config/containers/systemd
+    todo_kube_database_runtime_directory: >-
+      {{ todo_kube_database_quadlet_directory }}/todo-kube-database-runtime
+    todo_kube_database_backup_directory: >-
+      {{ todo_kube_database_user_home }}/.config/todo/quadlet-database-backup
+    todo_kube_database_node_address: "{{ todo_node_address }}"
+    todo_kube_database_replication_application: >-
+      {{ todo_rebuild_replication_slot | default("todo_rebuilt_standby") }}
+
+  roles:
+    - role: kube_postgres_primary_migration

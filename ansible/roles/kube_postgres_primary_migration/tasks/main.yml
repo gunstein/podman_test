@@ -1,0 +1,520 @@
+---
+- name: Read the database migration host identity
+  ansible.builtin.command:
+    argv: [hostname]
+  register: todo_kube_database_hostname
+  changed_when: false
+
+- name: Read the database migration host IPv4 addresses
+  ansible.builtin.command:
+    argv: [ip, -4, -o, address, show, scope, global]
+  register: todo_kube_database_addresses
+  changed_when: false
+
+- name: Read Podman Kube options
+  ansible.builtin.command:
+    argv: [podman, kube, play, --help]
+  register: todo_kube_database_play_help
+  changed_when: false
+
+- name: Read Podman container update options
+  ansible.builtin.command:
+    argv: [podman, update, --help]
+  register: todo_kube_database_update_help
+  changed_when: false
+
+- name: Require the intended current primary and stable-name support
+  ansible.builtin.assert:
+    that:
+      - todo_kube_database_hostname.stdout | trim == inventory_hostname
+      - (" " ~ todo_kube_database_node_address ~ "/") in todo_kube_database_addresses.stdout
+      - todo_confirm_postgres_kube_migration | default("") == inventory_hostname
+      - "'--no-pod-prefix' in todo_kube_database_play_help.stdout"
+      - "'--health-on-failure' in todo_kube_database_update_help.stdout"
+      - todo_kube_database_replication_application is match('^[A-Za-z0-9_]+$')
+    fail_msg: >-
+      Check the current-primary identity and pass
+      todo_confirm_postgres_kube_migration equal to the inventory hostname.
+      The supported Podman must provide --no-pod-prefix and
+      --health-on-failure.
+
+- name: Require active PostgreSQL and application services
+  ansible.builtin.command:
+    argv: [systemctl, --user, is-active, "{{ item }}"]
+  loop:
+    - todo-postgres.service
+    - todo-backend.service
+    - todo-keycloak.service
+    - todo-frontend.service
+  register: todo_kube_database_services_before
+  changed_when: false
+  failed_when: todo_kube_database_services_before.stdout | trim != "active"
+
+- name: Read writable database identity and archive mode
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - >-
+        SELECT pg_is_in_recovery(),
+        current_setting('transaction_read_only'),
+        current_setting('archive_mode'),
+        system_identifier
+        FROM pg_control_system();
+  register: todo_kube_database_identity_before
+  changed_when: false
+  failed_when: >-
+    (todo_kube_database_identity_before.stdout | trim).split('|') | length != 4
+    or (todo_kube_database_identity_before.stdout | trim).split('|')[0:3]
+    != ['f', 'off', 'on']
+
+- name: Preserve the database system identifier for comparison
+  ansible.builtin.set_fact:
+    todo_kube_database_system_id_before: >-
+      {{ (todo_kube_database_identity_before.stdout | trim).split('|')[3] }}
+
+- name: Require healthy WAL archiver before migration
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --command
+      - >-
+        SELECT CASE
+        WHEN last_failed_time IS NULL
+          OR last_archived_time > last_failed_time
+        THEN 'healthy' ELSE 'failed' END
+        FROM pg_stat_archiver;
+  register: todo_kube_database_archiver_before
+  changed_when: false
+  failed_when: todo_kube_database_archiver_before.stdout | trim != "healthy"
+
+- name: Require caught-up asynchronous standby before migration
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - >-
+        SELECT r.state, r.sync_state,
+        pg_wal_lsn_diff(pg_current_wal_lsn(), r.replay_lsn)::bigint,
+        s.active, s.wal_status
+        FROM pg_stat_replication r
+        JOIN pg_replication_slots s
+          ON s.slot_name = r.application_name
+        WHERE r.application_name =
+        '{{ todo_kube_database_replication_application }}';
+  register: todo_kube_database_replication_before
+  changed_when: false
+  failed_when: >-
+    todo_kube_database_replication_before.stdout | trim
+    != 'streaming|async|0|t|reserved'
+
+- name: Require the PostgreSQL image and source secret
+  ansible.builtin.command:
+    argv: "{{ item }}"
+  loop:
+    - [podman, image, exists, docker.io/library/postgres:17.11]
+    - [podman, secret, exists, todo-db-password]
+  changed_when: false
+
+- name: Require existing database and backup volumes
+  ansible.builtin.command:
+    argv: [podman, volume, exists, "{{ item }}"]
+  loop:
+    - todo-postgres-data
+    - todo-postgres-backup
+  changed_when: false
+
+- name: Inspect installed database Quadlet files
+  ansible.builtin.stat:
+    path: "{{ todo_kube_database_quadlet_directory }}/{{ item }}"
+  loop:
+    - todo-postgres.container
+    - todo-postgres-data.volume
+    - todo-postgres-backup.volume
+  register: todo_kube_database_source_quadlets
+
+- name: Inspect the candidate database runtime directory
+  ansible.builtin.stat:
+    path: "{{ todo_kube_database_runtime_directory }}"
+  register: todo_kube_database_runtime_before
+
+- name: Require a complete per-container source and no partial Kube runtime
+  ansible.builtin.assert:
+    that:
+      - todo_kube_database_source_quadlets.results | map(attribute='stat.exists') | min
+      - not todo_kube_database_runtime_before.stat.exists
+    fail_msg: >-
+      The installed database container and volume Quadlets must be complete,
+      and the Kube database runtime directory must be absent before migration.
+
+- name: Read the source database password
+  ansible.builtin.command:
+    argv:
+      - podman
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
+      - todo-db-password
+  register: todo_kube_database_password
+  changed_when: false
+  no_log: true
+
+- name: Construct the Kube database secret in memory
+  ansible.builtin.set_fact:
+    todo_kube_database_secret_payload: >-
+      {{
+        {
+          'apiVersion': 'v1',
+          'kind': 'Secret',
+          'metadata': {'name': 'todo-kube-postgres-secret'},
+          'data': {
+            'database-password': todo_kube_database_password.stdout | b64encode
+          }
+        } | to_json
+      }}
+  no_log: true
+
+- name: Check the Kube database secret
+  ansible.builtin.command:
+    argv: [podman, secret, exists, todo-kube-postgres-secret]
+  register: todo_kube_database_secret_check
+  changed_when: false
+  failed_when: todo_kube_database_secret_check.rc not in [0, 1]
+
+- name: Read an existing Kube database secret
+  ansible.builtin.command:
+    argv:
+      - podman
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
+      - todo-kube-postgres-secret
+  register: todo_kube_existing_database_secret
+  changed_when: false
+  no_log: true
+  when: todo_kube_database_secret_check.rc == 0
+
+- name: Compare the Kube database secret with its source
+  ansible.builtin.set_fact:
+    todo_kube_database_secret_matches: >-
+      {{
+        todo_kube_database_secret_check.rc == 0
+        and
+        (todo_kube_existing_database_secret.stdout | default('{}') | from_json)
+        == (todo_kube_database_secret_payload | from_json)
+      }}
+  no_log: true
+
+- name: Create the database Quadlet backup directory
+  ansible.builtin.file:
+    path: "{{ todo_kube_database_backup_directory }}"
+    state: directory
+    mode: "0700"
+
+- name: Preserve the installed database container Quadlet for rollback
+  ansible.builtin.copy:
+    src: "{{ todo_kube_database_quadlet_directory }}/todo-postgres.container"
+    dest: "{{ todo_kube_database_backup_directory }}/todo-postgres.container"
+    remote_src: true
+    force: true
+    mode: "0600"
+  no_log: true
+
+- name: Remove an outdated Kube database secret
+  ansible.builtin.command:
+    argv: [podman, secret, rm, todo-kube-postgres-secret]
+  changed_when: true
+  when:
+    - todo_kube_database_secret_check.rc == 0
+    - not todo_kube_database_secret_matches
+
+- name: Create the Kube database secret
+  ansible.builtin.command:
+    argv: [podman, secret, create, todo-kube-postgres-secret, "-"]
+    stdin: "{{ todo_kube_database_secret_payload }}"
+    stdin_add_newline: false
+  changed_when: true
+  no_log: true
+  when: not todo_kube_database_secret_matches
+
+- name: Stage the Kube database runtime directory
+  ansible.builtin.file:
+    path: "{{ todo_kube_database_runtime_directory }}"
+    state: directory
+    mode: "0700"
+
+- name: Stage the shared PostgreSQL workload
+  ansible.builtin.copy:
+    src: "{{ project_root }}/kube/runtime/postgres.yaml"
+    dest: "{{ todo_kube_database_runtime_directory }}/postgres.yaml"
+    mode: "0644"
+
+- name: Stage the PostgreSQL runtime ConfigMap
+  ansible.builtin.template:
+    src: config-runtime.yaml.j2
+    dest: "{{ todo_kube_database_runtime_directory }}/config-runtime.yaml"
+    mode: "0600"
+
+- name: Stage the PostgreSQL Kube unit
+  ansible.builtin.template:
+    src: todo-postgres.kube.j2
+    dest: "{{ todo_kube_database_runtime_directory }}/todo-postgres.kube"
+    mode: "0644"
+
+- name: Stop the application tier before database replacement
+  ansible.builtin.command:
+    argv: [systemctl, --user, stop, "{{ item }}"]
+  loop:
+    - todo-frontend.service
+    - todo-backend.service
+    - todo-keycloak.service
+  changed_when: false
+
+- name: Stop the per-container PostgreSQL service
+  ansible.builtin.command:
+    argv: [systemctl, --user, stop, todo-postgres.service]
+  changed_when: false
+
+- name: Remove the replaced PostgreSQL container Quadlet
+  ansible.builtin.file:
+    path: "{{ todo_kube_database_quadlet_directory }}/todo-postgres.container"
+    state: absent
+
+- name: Reload the user systemd generator for database migration
+  ansible.builtin.systemd_service:
+    scope: user
+    daemon_reload: true
+
+- name: Start PostgreSQL through the Kube unit
+  ansible.builtin.systemd_service:
+    name: todo-postgres.service
+    scope: user
+    state: started
+
+- name: Wait for healthy PostgreSQL through the stable container name
+  ansible.builtin.command:
+    argv: [podman, healthcheck, run, todo-postgres]
+  register: todo_kube_database_health_after
+  changed_when: false
+  retries: 60
+  delay: 1
+  until: todo_kube_database_health_after.rc == 0
+
+- name: Read the PostgreSQL health failure action
+  ansible.builtin.command:
+    argv: [podman, inspect, todo-postgres]
+  register: todo_kube_database_inspect_after
+  changed_when: false
+
+- name: Require systemd-integrated PostgreSQL health failure handling
+  ansible.builtin.assert:
+    that:
+      - >-
+        (todo_kube_database_inspect_after.stdout | from_json | first)
+        ['Config']['HealthcheckOnFailureAction'] == 'kill'
+
+- name: Verify writable database identity and archive mode after migration
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - >-
+        SELECT pg_is_in_recovery(),
+        current_setting('transaction_read_only'),
+        current_setting('archive_mode'),
+        system_identifier
+        FROM pg_control_system();
+  register: todo_kube_database_identity_after
+  changed_when: false
+  failed_when: >-
+    todo_kube_database_identity_after.stdout | trim
+    != 'f|off|on|' ~ todo_kube_database_system_id_before
+
+- name: Wait for the rebuilt standby after database migration
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - >-
+        SELECT r.state, r.sync_state,
+        pg_wal_lsn_diff(pg_current_wal_lsn(), r.replay_lsn)::bigint,
+        s.active, s.wal_status
+        FROM pg_stat_replication r
+        JOIN pg_replication_slots s
+          ON s.slot_name = r.application_name
+        WHERE r.application_name =
+        '{{ todo_kube_database_replication_application }}';
+  register: todo_kube_database_replication_after
+  changed_when: false
+  retries: 60
+  delay: 1
+  until: >-
+    todo_kube_database_replication_after.stdout | trim
+    == 'streaming|async|0|t|reserved'
+
+- name: Read the current WAL segment before archive verification
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --command
+      - SELECT pg_walfile_name(pg_current_wal_lsn());
+  register: todo_kube_database_wal_before_switch
+  changed_when: false
+
+- name: Switch WAL to verify the existing backup mount
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --command
+      - SELECT pg_switch_wal();
+  changed_when: false
+
+- name: Wait for the exact switched WAL segment in the backup volume
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - test
+      - -f
+      - >-
+        /var/lib/postgresql/backup/wal/{{ todo_kube_database_wal_before_switch.stdout | trim }}
+  register: todo_kube_database_wal_archived
+  changed_when: false
+  retries: 30
+  delay: 1
+  until: todo_kube_database_wal_archived.rc == 0
+
+- name: Read the generated PostgreSQL service source
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - --user
+      - show
+      - todo-postgres.service
+      - --property=SourcePath
+      - --value
+  register: todo_kube_database_unit_source
+  changed_when: false
+
+- name: Require the Kube service, pod and stable container name
+  ansible.builtin.assert:
+    that:
+      - >-
+        todo_kube_database_unit_source.stdout | trim
+        is match('^.*/todo-kube-database-runtime/todo-postgres\\.kube$')
+
+- name: Require the PostgreSQL Kube pod
+  ansible.builtin.command:
+    argv: [podman, pod, exists, todo-postgres]
+  changed_when: false
+
+- name: Require the stable PostgreSQL container name
+  ansible.builtin.command:
+    argv: [podman, container, exists, todo-postgres]
+  changed_when: false
+
+- name: Start the application tier after database migration
+  ansible.builtin.systemd_service:
+    name: todo-frontend.service
+    scope: user
+    state: started
+
+- name: Wait for application readiness after database migration
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/ready
+    return_content: true
+  register: todo_kube_database_readiness
+  until: >-
+    todo_kube_database_readiness.status == 200
+    and todo_kube_database_readiness.json.status == "ready"
+  retries: 30
+  delay: 1
+
+- name: Wait for Keycloak discovery after database migration
+  ansible.builtin.uri:
+    url: >-
+      http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
+  register: todo_kube_database_discovery
+  until: todo_kube_database_discovery.status == 200
+  retries: 90
+  delay: 2
+
+- name: Report successful PostgreSQL primary Kube migration
+  ansible.builtin.debug:
+    msg: >-
+      PostgreSQL now uses Podman Kube YAML with the stable todo-postgres
+      service, pod and container names. Database identity, asynchronous
+      replication and WAL archiving were verified. Rollback source:
+      {{ todo_kube_database_backup_directory }}/todo-postgres.container.

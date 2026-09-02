@@ -73,13 +73,15 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertEqual(
             names,
             {
+                "todo-postgres-config",
                 "todo-backend-config",
                 "todo-keycloak-config",
                 "todo-nginx-env",
                 "todo-nginx-config",
             },
         )
-        for name in names:
+        application_names = names - {"todo-postgres-config"}
+        for name in application_names:
             self.assertIn(f"name: {name}", template)
         self.assertIn("{{ todo_kube_service_origin }}", template)
         self.assertIn("{{ todo_kube_service_hostname }}", template)
@@ -89,7 +91,8 @@ class KubeRuntimeTests(unittest.TestCase):
         ).replace("{{ todo_kube_service_hostname }}", "todo.test")
         rendered_documents = list(yaml.safe_load_all(rendered))
         self.assertEqual(
-            {doc["metadata"]["name"] for doc in rendered_documents}, names
+            {doc["metadata"]["name"] for doc in rendered_documents},
+            application_names,
         )
 
     def test_frontend_runtime_unit_maps_external_port_to_container_tls(self):
@@ -155,6 +158,12 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("migrate-application-to-kube.yml", operations)
         self.assertIn(
             "rollback-application-to-container-quadlets.yml", operations
+        )
+        self.assertIn("kube_postgres_primary_migration", operations)
+        self.assertIn("kube_postgres_primary_rollback", operations)
+        self.assertIn("migrate-postgres-primary-to-kube.yml", operations)
+        self.assertIn(
+            "rollback-postgres-primary-to-container-quadlet.yml", operations
         )
         self.assertIn(
             'cp -r "$project_root/kube/runtime" "$bundle_directory/kube/"',

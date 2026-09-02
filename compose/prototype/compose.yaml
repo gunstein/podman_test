@@ -1,0 +1,42 @@
+services:
+  probe:
+    image: docker.io/library/postgres:17.11
+    container_name: todo-compose-probe
+    user: "999:999"
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        test -s /run/secrets/todo-compose-probe-secret
+        printf 'compose probe\n' > /probe/result
+        exec sleep infinity
+    secrets:
+      - source: todo-compose-probe-secret
+        uid: "999"
+        gid: "999"
+        # podman-compose 1.0.6 otherwise serializes YAML's octal value as
+        # decimal 288, which Podman rejects as an invalid secret mode.
+        mode: "0440"
+    volumes:
+      - todo-compose-probe-data:/probe:U,Z
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - test -s /run/secrets/todo-compose-probe-secret && test -s /probe/result
+      interval: 1s
+      timeout: 2s
+      retries: 15
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    restart: "no"
+
+secrets:
+  todo-compose-probe-secret:
+    external: true
+
+volumes:
+  todo-compose-probe-data:
+    external: true

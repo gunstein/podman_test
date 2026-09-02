@@ -1,0 +1,23 @@
+---
+- name: Migrate the application tier to Podman Kube
+  hosts: todo_promoted
+  gather_facts: false
+  any_errors_fatal: true
+
+  vars:
+    project_root: "{{ playbook_dir }}/.."
+    todo_kube_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
+    todo_kube_quadlet_directory: >-
+      {{ todo_kube_user_home }}/.config/containers/systemd
+    todo_kube_runtime_directory: >-
+      {{ todo_kube_quadlet_directory }}/todo-kube-runtime
+    todo_kube_backup_directory: >-
+      {{ todo_kube_user_home }}/.config/todo/quadlet-application-backup
+    todo_kube_service_hostname: '{{ todo_service_hostname | default("todo.test") }}'
+    todo_kube_service_port: "{{ todo_service_port | default(8443) }}"
+    todo_kube_service_origin: >-
+      https://{{ todo_kube_service_hostname }}:{{ todo_kube_service_port }}
+    todo_kube_node_address: "{{ todo_node_address }}"
+
+  roles:
+    - role: kube_application_migration

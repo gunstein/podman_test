@@ -7,7 +7,8 @@ work_directory=$(mktemp -d)
 bundle_directory="$work_directory/todo-offline-m12"
 trap 'rm -rf "$work_directory"' EXIT
 
-mkdir -p "$bundle_directory/images" "$bundle_directory/docs"
+mkdir -p "$bundle_directory/images" "$bundle_directory/docs" \
+  "$bundle_directory/kube"
 mkdir -p "$(dirname "$output")"
 
 podman build --pull --file "$project_root/backend/Containerfile" --tag localhost/todo-backend:m12 "$project_root"
@@ -30,6 +31,7 @@ cp "$project_root/docs/SECRETS.md" \
   "$bundle_directory/docs/"
 
 cp -r "$project_root/quadlet" "$bundle_directory/"
+cp -r "$project_root/kube/runtime" "$bundle_directory/kube/"
 mkdir -p "$bundle_directory/ansible"
 cp "$project_root/ansible/deploy.yml" \
   "$project_root/ansible/uninstall.yml" \

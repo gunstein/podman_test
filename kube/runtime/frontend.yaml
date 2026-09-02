@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: todo-nginx-data
+  annotations:
+    volume.podman.io/uid: "101"
+    volume.podman.io/gid: "101"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: todo-frontend
+  labels:
+    app.kubernetes.io/name: todo
+    app.kubernetes.io/component: frontend
+  annotations:
+    io.podman.annotations.pids-limit/nginx: "128"
+spec:
+  restartPolicy: Never
+  containers:
+    - name: nginx
+      image: localhost/todo-frontend:m12
+      imagePullPolicy: Never
+      args:
+        - nginx
+        - -c
+        - /etc/todo-nginx/nginx.conf
+        - -g
+        - daemon off;
+      ports:
+        - name: http
+          containerPort: 8080
+        - name: https
+          containerPort: 8443
+      envFrom:
+        - configMapRef:
+            name: todo-nginx-env
+            optional: false
+      volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/todo-nginx
+          readOnly: true
+        - name: tls-data
+          mountPath: /var/lib/todo-tls
+      livenessProbe:
+        exec:
+          command:
+            - nginx
+            - -t
+            - -c
+            - /etc/todo-nginx/nginx.conf
+        initialDelaySeconds: 10
+        periodSeconds: 10
+        timeoutSeconds: 3
+        failureThreshold: 3
+      resources:
+        limits:
+          memory: 128Mi
+      securityContext:
+        runAsUser: 101
+        runAsGroup: 101
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+  volumes:
+    - name: nginx-config
+      configMap:
+        name: todo-nginx-config
+        optional: false
+        defaultMode: 0444
+    - name: tls-data
+      persistentVolumeClaim:
+        claimName: todo-nginx-data

@@ -1,0 +1,398 @@
+---
+- name: Read the migration host identity
+  ansible.builtin.command:
+    argv: [hostname]
+  register: todo_kube_migration_hostname
+  changed_when: false
+
+- name: Read the migration host IPv4 addresses
+  ansible.builtin.command:
+    argv: [ip, -4, -o, address, show, scope, global]
+  register: todo_kube_migration_addresses
+  changed_when: false
+
+- name: Require the intended Kube migration host
+  ansible.builtin.assert:
+    that:
+      - todo_kube_migration_hostname.stdout | trim == inventory_hostname
+      - (" " ~ todo_kube_node_address ~ "/") in todo_kube_migration_addresses.stdout
+      - todo_confirm_application_kube_migration | default("") == inventory_hostname
+      - todo_kube_service_hostname is match('^[A-Za-z0-9.-]+$')
+      - "'..' not in todo_kube_service_hostname"
+      - todo_kube_service_port | int >= 1024
+      - todo_kube_service_port | int <= 65535
+    fail_msg: >-
+      Check the target host, stable service identity and pass
+      todo_confirm_application_kube_migration equal to the inventory hostname.
+
+- name: Require active accepted PostgreSQL
+  ansible.builtin.command:
+    argv: [systemctl, --user, is-active, todo-postgres.service]
+  register: todo_kube_postgres_service
+  changed_when: false
+  failed_when: todo_kube_postgres_service.stdout | trim != "active"
+
+- name: Require a writable accepted database
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - SELECT pg_is_in_recovery(), current_setting('transaction_read_only');
+  register: todo_kube_database_role
+  changed_when: false
+  failed_when: todo_kube_database_role.stdout | trim != "f|off"
+
+- name: Require application images
+  ansible.builtin.command:
+    argv: [podman, image, exists, "{{ item }}"]
+  loop:
+    - localhost/todo-backend:m12
+    - localhost/todo-keycloak:m12
+    - localhost/todo-frontend:m12
+  changed_when: false
+
+- name: Require source Podman secrets
+  ansible.builtin.command:
+    argv: [podman, secret, exists, "{{ item }}"]
+  loop:
+    - todo-app-password
+    - todo-keycloak-db-password
+    - todo-keycloak-admin-password
+  changed_when: false
+
+- name: Read the source application password
+  ansible.builtin.command:
+    argv:
+      - podman
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
+      - todo-app-password
+  register: todo_kube_app_password
+  changed_when: false
+  no_log: true
+
+- name: Read the source Keycloak database password
+  ansible.builtin.command:
+    argv:
+      - podman
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
+      - todo-keycloak-db-password
+  register: todo_kube_keycloak_db_password
+  changed_when: false
+  no_log: true
+
+- name: Read the source Keycloak administrator password
+  ansible.builtin.command:
+    argv:
+      - podman
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
+      - todo-keycloak-admin-password
+  register: todo_kube_keycloak_admin_password
+  changed_when: false
+  no_log: true
+
+- name: Construct Kube-compatible secret payloads in memory
+  ansible.builtin.set_fact:
+    todo_kube_backend_secret_payload: >-
+      {{
+        {
+          'apiVersion': 'v1',
+          'kind': 'Secret',
+          'metadata': {'name': 'todo-kube-backend-secret'},
+          'data': {
+            'database-password': todo_kube_app_password.stdout | b64encode
+          }
+        } | to_json
+      }}
+    todo_kube_keycloak_secret_payload: >-
+      {{
+        {
+          'apiVersion': 'v1',
+          'kind': 'Secret',
+          'metadata': {'name': 'todo-kube-keycloak-secret'},
+          'data': {
+            'database-password': todo_kube_keycloak_db_password.stdout | b64encode,
+            'bootstrap-admin-password': todo_kube_keycloak_admin_password.stdout | b64encode
+          }
+        } | to_json
+      }}
+  no_log: true
+
+- name: Check Kube-compatible application secrets
+  ansible.builtin.command:
+    argv: [podman, secret, exists, "{{ item }}"]
+  loop:
+    - todo-kube-backend-secret
+    - todo-kube-keycloak-secret
+  register: todo_kube_secret_checks
+  changed_when: false
+  failed_when: todo_kube_secret_checks.rc not in [0, 1]
+
+- name: Read an existing Kube backend secret
+  ansible.builtin.command:
+    argv:
+      - podman
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
+      - todo-kube-backend-secret
+  register: todo_kube_existing_backend_secret
+  changed_when: false
+  no_log: true
+  when: todo_kube_secret_checks.results[0].rc == 0
+
+- name: Read an existing Kube Keycloak secret
+  ansible.builtin.command:
+    argv:
+      - podman
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
+      - todo-kube-keycloak-secret
+  register: todo_kube_existing_keycloak_secret
+  changed_when: false
+  no_log: true
+  when: todo_kube_secret_checks.results[1].rc == 0
+
+- name: Compare Kube-compatible secrets with their sources
+  ansible.builtin.set_fact:
+    todo_kube_backend_secret_matches: >-
+      {{
+        todo_kube_secret_checks.results[0].rc == 0
+        and
+        (todo_kube_existing_backend_secret.stdout | default('{}') | from_json)
+        == (todo_kube_backend_secret_payload | from_json)
+      }}
+    todo_kube_keycloak_secret_matches: >-
+      {{
+        todo_kube_secret_checks.results[1].rc == 0
+        and
+        (todo_kube_existing_keycloak_secret.stdout | default('{}') | from_json)
+        == (todo_kube_keycloak_secret_payload | from_json)
+      }}
+  no_log: true
+
+- name: Inspect installed per-container application Quadlets
+  ansible.builtin.stat:
+    path: "{{ todo_kube_quadlet_directory }}/{{ item }}"
+  loop:
+    - todo-backend.container
+    - todo-keycloak.container
+    - todo-frontend.container
+  register: todo_kube_source_quadlets
+
+- name: Require the rollback source files
+  ansible.builtin.assert:
+    that:
+      - todo_kube_source_quadlets.results | map(attribute='stat.exists') | min
+    fail_msg: >-
+      All three installed per-container application Quadlets must exist before
+      the one-time migration. Use the rollback or inspect partial state first.
+
+- name: Create the application Quadlet backup directory
+  ansible.builtin.file:
+    path: "{{ todo_kube_backup_directory }}"
+    state: directory
+    mode: "0700"
+
+- name: Preserve the installed application Quadlets for rollback
+  ansible.builtin.copy:
+    src: "{{ item.stat.path }}"
+    dest: "{{ todo_kube_backup_directory }}/{{ item.item }}"
+    remote_src: true
+    force: false
+    mode: "0600"
+  loop: "{{ todo_kube_source_quadlets.results }}"
+  no_log: true
+
+- name: Stop the per-container application tier
+  ansible.builtin.command:
+    argv: [systemctl, --user, stop, "{{ item }}"]
+  loop:
+    - todo-frontend.service
+    - todo-backend.service
+    - todo-keycloak.service
+  changed_when: false
+
+- name: Remove the replaced per-container Quadlets
+  ansible.builtin.file:
+    path: "{{ todo_kube_quadlet_directory }}/{{ item }}"
+    state: absent
+  loop:
+    - todo-backend.container
+    - todo-keycloak.container
+    - todo-frontend.container
+
+- name: Remove an outdated Kube backend secret
+  ansible.builtin.command:
+    argv: [podman, secret, rm, todo-kube-backend-secret]
+  changed_when: true
+  when:
+    - todo_kube_secret_checks.results[0].rc == 0
+    - not todo_kube_backend_secret_matches
+
+- name: Remove an outdated Kube Keycloak secret
+  ansible.builtin.command:
+    argv: [podman, secret, rm, todo-kube-keycloak-secret]
+  changed_when: true
+  when:
+    - todo_kube_secret_checks.results[1].rc == 0
+    - not todo_kube_keycloak_secret_matches
+
+- name: Create the Kube backend secret
+  ansible.builtin.command:
+    argv: [podman, secret, create, todo-kube-backend-secret, "-"]
+    stdin: "{{ todo_kube_backend_secret_payload }}"
+    stdin_add_newline: false
+  changed_when: true
+  no_log: true
+  when: not todo_kube_backend_secret_matches
+
+- name: Create the Kube Keycloak secret
+  ansible.builtin.command:
+    argv: [podman, secret, create, todo-kube-keycloak-secret, "-"]
+    stdin: "{{ todo_kube_keycloak_secret_payload }}"
+    stdin_add_newline: false
+  changed_when: true
+  no_log: true
+  when: not todo_kube_keycloak_secret_matches
+
+- name: Create the Kube application runtime directory
+  ansible.builtin.file:
+    path: "{{ todo_kube_runtime_directory }}"
+    state: directory
+    mode: "0700"
+
+- name: Install shared Kube application workloads
+  ansible.builtin.copy:
+    src: "{{ project_root }}/kube/runtime/{{ item }}"
+    dest: "{{ todo_kube_runtime_directory }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - backend.yaml
+    - keycloak.yaml
+    - frontend.yaml
+    - todo-backend.kube
+    - todo-keycloak.kube
+
+- name: Install the runtime application ConfigMaps
+  ansible.builtin.template:
+    src: config-runtime.yaml.j2
+    dest: "{{ todo_kube_runtime_directory }}/config-runtime.yaml"
+    mode: "0600"
+
+- name: Install the public frontend Kube unit
+  ansible.builtin.template:
+    src: todo-frontend.kube.j2
+    dest: "{{ todo_kube_runtime_directory }}/todo-frontend.kube"
+    mode: "0644"
+
+- name: Reload the user systemd generator after Kube migration
+  ansible.builtin.systemd_service:
+    scope: user
+    daemon_reload: true
+
+- name: Start the Kube application tier
+  ansible.builtin.systemd_service:
+    name: todo-frontend.service
+    scope: user
+    state: started
+
+- name: Wait for backend health through Kube nginx
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/health
+    return_content: true
+  register: todo_kube_health
+  until: todo_kube_health.status == 200 and todo_kube_health.json.status == "ok"
+  retries: 30
+  delay: 1
+
+- name: Wait for database readiness through Kube nginx
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/ready
+    return_content: true
+  register: todo_kube_readiness
+  until: >-
+    todo_kube_readiness.status == 200
+    and todo_kube_readiness.json.status == "ready"
+  retries: 30
+  delay: 1
+
+- name: Wait for Keycloak discovery through Kube nginx
+  ansible.builtin.uri:
+    url: >-
+      http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
+    return_content: true
+  register: todo_kube_discovery
+  until:
+    - todo_kube_discovery.status == 200
+    - >-
+      todo_kube_discovery.json.issuer
+      == todo_kube_service_origin ~ "/auth/realms/todo"
+  retries: 90
+  delay: 2
+
+- name: Read application unit source paths
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - --user
+      - show
+      - "{{ item }}"
+      - --property=SourcePath
+      - --value
+  loop:
+    - todo-backend.service
+    - todo-keycloak.service
+    - todo-frontend.service
+  register: todo_kube_unit_sources
+  changed_when: false
+
+- name: Require all application services to come from Kube units
+  ansible.builtin.assert:
+    that:
+      - item.stdout | trim is match('^.*/todo-kube-runtime/.*\\.kube$')
+  loop: "{{ todo_kube_unit_sources.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Require all Kube application pods
+  ansible.builtin.command:
+    argv: [podman, pod, exists, "{{ item }}"]
+  loop:
+    - todo-backend
+    - todo-keycloak
+    - todo-frontend
+  changed_when: false
+
+- name: Report successful Kube application migration
+  ansible.builtin.debug:
+    msg: >-
+      Backend, Keycloak and nginx now use Podman Kube YAML. PostgreSQL,
+      replication, backup data and the accepted database volume were not
+      modified. Rollback files are in {{ todo_kube_backup_directory }}.

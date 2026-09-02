@@ -152,6 +152,18 @@ release only after PostgreSQL has been promoted and verified writable. Follow [A
 not bootstrap roles or
 run migrations during an incident.
 
+## Controlled Podman Kube application migration
+
+The accepted per-container Quadlets remain the supported reference while the
+Kube implementation is validated. After all isolated gates have passed, the
+current writable primary can migrate only backend, Keycloak and nginx through
+`migrate-application-to-kube.yml`. The playbook preserves the exact installed
+application Quadlets before making changes and leaves PostgreSQL and all
+persistent database state untouched. A separate rollback playbook restores the
+previous units. Follow
+[APPLICATION-KUBE-MIGRATION.md](APPLICATION-KUBE-MIGRATION.md) and do not use
+the migration as part of an active failover incident.
+
 The backup workflow uses the `postgres_backup` role to add a separate backup volume and
 continuous WAL archiving to that promoted host. The local `todo_backup.py`
 tool creates verified physical base backups and restores only into fixed,

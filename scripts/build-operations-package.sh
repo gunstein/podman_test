@@ -9,6 +9,7 @@ trap 'rm -rf "$work_directory"' EXIT
 
 mkdir -p "$package_directory/ansible/roles" \
   "$package_directory/quadlet" \
+  "$package_directory/kube" \
   "$package_directory/scripts" \
   "$package_directory/offline" \
   "$package_directory/docs"
@@ -21,6 +22,7 @@ cp "$project_root/ansible/README.md" \
   "$project_root/ansible/STANDBY-BOOTSTRAP.md" \
   "$project_root/ansible/PROMOTION.md" \
   "$project_root/ansible/APPLICATION-FAILOVER.md" \
+  "$project_root/ansible/APPLICATION-KUBE-MIGRATION.md" \
   "$project_root/ansible/BACKUP-PITR.md" \
   "$project_root/ansible/RESTORE-REDUNDANCY.md" \
   "$project_root/ansible/preflight-standby.yml" \
@@ -32,6 +34,8 @@ cp "$project_root/ansible/README.md" \
   "$project_root/ansible/preflight-standby-rebuild.yml" \
   "$project_root/ansible/rebuild-standby.yml" \
   "$project_root/ansible/cluster-status.yml" \
+  "$project_root/ansible/migrate-application-to-kube.yml" \
+  "$project_root/ansible/rollback-application-to-container-quadlets.yml" \
   "$project_root/ansible/inventory-initial.example.ini" \
   "$project_root/ansible/inventory-recovery.example.ini" \
   "$project_root/ansible/requirements.txt" \
@@ -45,7 +49,9 @@ for role in \
   promoted_application \
   postgres_backup \
   postgres_redundancy_primary \
-  postgres_reseed_standby
+  postgres_reseed_standby \
+  kube_application_migration \
+  kube_application_rollback
 do
   cp -r "$project_root/ansible/roles/$role" \
     "$package_directory/ansible/roles/"
@@ -54,6 +60,7 @@ cp -r "$project_root/ansible/tasks" "$package_directory/ansible/"
 cp "$project_root/quadlet/todo.network" \
   "$project_root/quadlet/todo-postgres-data.volume" \
   "$package_directory/quadlet/"
+cp -r "$project_root/kube/runtime" "$package_directory/kube/"
 cp "$project_root/scripts/todo_dr.py" \
   "$project_root/scripts/todo_backup.py" "$package_directory/scripts/"
 cp "$project_root/offline/FAPOLICYD.md" "$package_directory/offline/"

@@ -1,0 +1,111 @@
+---
+- name: Read the rollback host identity
+  ansible.builtin.command:
+    argv: [hostname]
+  register: todo_kube_rollback_hostname
+  changed_when: false
+
+- name: Require the intended rollback host
+  ansible.builtin.assert:
+    that:
+      - todo_kube_rollback_hostname.stdout | trim == inventory_hostname
+      - todo_confirm_application_quadlet_rollback | default("") == inventory_hostname
+    fail_msg: >-
+      Pass todo_confirm_application_quadlet_rollback equal to the inventory
+      hostname before restoring the per-container application Quadlets.
+
+- name: Require active accepted PostgreSQL before rollback
+  ansible.builtin.command:
+    argv: [systemctl, --user, is-active, todo-postgres.service]
+  register: todo_kube_rollback_postgres
+  changed_when: false
+  failed_when: todo_kube_rollback_postgres.stdout | trim != "active"
+
+- name: Inspect preserved application Quadlets
+  ansible.builtin.stat:
+    path: "{{ todo_kube_backup_directory }}/{{ item }}"
+  loop:
+    - todo-backend.container
+    - todo-keycloak.container
+    - todo-frontend.container
+  register: todo_kube_rollback_sources
+
+- name: Require the complete rollback set
+  ansible.builtin.assert:
+    that:
+      - todo_kube_rollback_sources.results | map(attribute='stat.exists') | min
+    fail_msg: >-
+      The complete application Quadlet backup is required. No runtime changes
+      were made.
+
+- name: Stop the Kube application tier
+  ansible.builtin.command:
+    argv: [systemctl, --user, stop, "{{ item }}"]
+  loop:
+    - todo-frontend.service
+    - todo-backend.service
+    - todo-keycloak.service
+  register: todo_kube_rollback_stops
+  changed_when: false
+  failed_when: todo_kube_rollback_stops.rc not in [0, 5]
+
+- name: Remove the Kube application runtime files
+  ansible.builtin.file:
+    path: "{{ todo_kube_runtime_directory }}"
+    state: absent
+
+- name: Restore the preserved per-container Quadlets
+  ansible.builtin.copy:
+    src: "{{ item.stat.path }}"
+    dest: "{{ todo_kube_quadlet_directory }}/{{ item.item }}"
+    remote_src: true
+    mode: "0644"
+  loop: "{{ todo_kube_rollback_sources.results }}"
+  no_log: true
+
+- name: Reload the user systemd generator after rollback
+  ansible.builtin.systemd_service:
+    scope: user
+    daemon_reload: true
+
+- name: Remove the unused Kube-compatible secrets
+  ansible.builtin.command:
+    argv: [podman, secret, rm, "{{ item }}"]
+  loop:
+    - todo-kube-backend-secret
+    - todo-kube-keycloak-secret
+  register: todo_kube_rollback_secret_removal
+  changed_when: todo_kube_rollback_secret_removal.rc == 0
+  failed_when: todo_kube_rollback_secret_removal.rc not in [0, 1]
+
+- name: Start the restored per-container application tier
+  ansible.builtin.systemd_service:
+    name: todo-frontend.service
+    scope: user
+    state: started
+
+- name: Wait for restored application readiness
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/ready
+    return_content: true
+  register: todo_kube_rollback_readiness
+  until: >-
+    todo_kube_rollback_readiness.status == 200
+    and todo_kube_rollback_readiness.json.status == "ready"
+  retries: 30
+  delay: 1
+
+- name: Wait for restored Keycloak discovery
+  ansible.builtin.uri:
+    url: >-
+      http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
+  register: todo_kube_rollback_discovery
+  until: todo_kube_rollback_discovery.status == 200
+  retries: 90
+  delay: 2
+
+- name: Report successful application rollback
+  ansible.builtin.debug:
+    msg: >-
+      The per-container application Quadlets were restored. PostgreSQL and all
+      persistent data were left unchanged.

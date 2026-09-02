@@ -1,0 +1,22 @@
+[Unit]
+Description=Todo nginx frontend Podman Kube workload
+Requires=todo-backend.service todo-keycloak.service
+After=todo-backend.service todo-keycloak.service
+
+[Kube]
+Yaml=frontend.yaml
+ConfigMap=config-runtime.yaml
+Network=todo.network
+PublishPort=127.0.0.1:8080:8080
+PublishPort=127.0.0.1:8443:8443
+ExitCodePropagation=any
+LogDriver=journald
+SetWorkingDirectory=yaml
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=Todo FastAPI backend Podman Kube workload
+Requires=todo-postgres.service
+After=todo-postgres.service
+
+[Kube]
+Yaml=backend.yaml
+ConfigMap=config-runtime.yaml
+Network=todo.network
+ExitCodePropagation=any
+LogDriver=journald
+SetWorkingDirectory=yaml
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=120

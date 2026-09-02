@@ -1,0 +1,18 @@
+[Unit]
+Description=Todo Keycloak Podman Kube workload
+Requires=todo-postgres.service
+After=todo-postgres.service
+
+[Kube]
+Yaml=keycloak.yaml
+ConfigMap=config-runtime.yaml
+Network=todo.network
+ExitCodePropagation=any
+LogDriver=journald
+SetWorkingDirectory=yaml
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=240
+TimeoutStopSec=60

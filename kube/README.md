@@ -36,3 +36,9 @@ After the isolated persistence gate, [replication/README.md](replication/README.
 defines a separate two-host primary/standby gate. It validates Kube init
 containers, physical replication slots and restart-safe base-backup behavior
 before any accepted database workload is migrated.
+
+The isolated gates now feed the canonical
+[runtime application tier](runtime/README.md). Its backend, Keycloak and nginx
+manifests preserve the accepted DNS and systemd service names and can replace
+only the stateless application tier while the validated PostgreSQL and DR
+implementation remains unchanged.

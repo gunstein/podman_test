@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: todo-keycloak-config
+data:
+  KC_BOOTSTRAP_ADMIN_USERNAME: admin
+  KC_DB: postgres
+  KC_DB_URL_HOST: todo-postgres
+  KC_DB_URL_PORT: "5432"
+  KC_DB_URL_DATABASE: todo
+  KC_DB_SCHEMA: keycloak
+  KC_DB_USERNAME: keycloak_app
+  KC_HTTP_ENABLED: "true"
+  KC_HTTP_RELATIVE_PATH: /auth
+  KC_HOSTNAME: https://todo.test:8443/auth
+  KC_PROXY_HEADERS: xforwarded
+  KC_HEALTH_ENABLED: "true"
+  KC_CACHE: ispn
+  KC_CACHE_STACK: jdbc-ping
+  KC_SPI_CACHE_EMBEDDED__DEFAULT__NODE_NAME: todo-kube-keycloak

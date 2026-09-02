@@ -22,3 +22,7 @@ secret contract in parallel with the accepted backend.
 The next isolated workload is [nginx/README.md](nginx/README.md). It verifies
 the frontend, reverse-proxy routes and persistent TLS state on alternate
 loopback ports.
+
+The third isolated workload is [keycloak/README.md](keycloak/README.md). It
+joins the accepted identity service temporarily as a second `jdbc-ping`
+cluster node and verifies environment-secret delivery and graceful shutdown.

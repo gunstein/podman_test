@@ -6,6 +6,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 POC = ROOT / "kube" / "poc"
 BACKEND = ROOT / "kube" / "backend"
 NGINX = ROOT / "kube" / "nginx"
+KEYCLOAK = ROOT / "kube" / "keycloak"
 
 
 def read(name: str) -> str:
@@ -207,6 +208,71 @@ class NginxKubeCandidateTests(unittest.TestCase):
         self.assertIn("Network=todo.network", unit)
         self.assertIn("ExitCodePropagation=any", unit)
         self.assertIn("Restart=on-failure", unit)
+
+
+class KeycloakKubeCandidateTests(unittest.TestCase):
+    def test_candidate_uses_explicit_cluster_configuration(self):
+        config = (KEYCLOAK / "config-lab.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("KC_CACHE: ispn", config)
+        self.assertIn("KC_CACHE_STACK: jdbc-ping", config)
+        self.assertIn(
+            "KC_SPI_CACHE_EMBEDDED__DEFAULT__NODE_NAME: todo-kube-keycloak",
+            config,
+        )
+        self.assertIn("KC_DB_URL_HOST: todo-postgres", config)
+        self.assertIn("KC_DB_SCHEMA: keycloak", config)
+
+    def test_candidate_uses_external_environment_secrets(self):
+        manifest = (KEYCLOAK / "keycloak.yaml").read_text(encoding="utf-8")
+        all_yaml = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in KEYCLOAK.glob("*.yaml")
+        )
+
+        self.assertIn("name: KCRAW_DB_PASSWORD", manifest)
+        self.assertIn("name: KCRAW_BOOTSTRAP_ADMIN_PASSWORD", manifest)
+        self.assertIn("secretKeyRef:", manifest)
+        self.assertIn("name: todo-kube-keycloak-secret", manifest)
+        self.assertNotIn("kind: Secret", all_yaml)
+        self.assertNotIn("stringData:", all_yaml)
+
+    def test_candidate_health_uses_tools_present_in_image(self):
+        manifest = (KEYCLOAK / "keycloak.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("/usr/bin/bash", manifest)
+        self.assertIn("/dev/tcp/127.0.0.1/9000", manifest)
+        self.assertIn("/auth/health/live", manifest)
+        self.assertIn("GET /auth/health/live HTTP/1.1", manifest)
+        self.assertIn("timeout 2 grep", manifest)
+        self.assertNotIn("curl", manifest)
+        self.assertNotIn("wget", manifest)
+        self.assertNotIn("tcpSocket:", manifest)
+
+        guide = (KEYCLOAK / "README.md").read_text(encoding="utf-8")
+        self.assertIn("/auth/health/ready", guide)
+
+    def test_candidate_preserves_image_identity_and_limits(self):
+        manifest = (KEYCLOAK / "keycloak.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("runAsUser: 1000", manifest)
+        self.assertIn("runAsGroup: 0", manifest)
+        self.assertIn("allowPrivilegeEscalation: false", manifest)
+        self.assertIn("memory: 1Gi", manifest)
+        self.assertNotIn("cpu:", manifest)
+        self.assertIn("io.podman.annotations.pids-limit/keycloak", manifest)
+
+    def test_candidate_systemd_lifecycle_is_explicit(self):
+        unit = (KEYCLOAK / "todo-kube-keycloak.kube").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("ConfigMap=config-lab.yaml", unit)
+        self.assertIn("Network=todo.network", unit)
+        self.assertIn("ExitCodePropagation=any", unit)
+        self.assertIn("LogDriver=journald", unit)
+        self.assertIn("Restart=on-failure", unit)
+        self.assertIn("TimeoutStopSec=60", unit)
 
 
 if __name__ == "__main__":

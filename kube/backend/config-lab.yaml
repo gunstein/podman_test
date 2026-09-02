@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: todo-backend-config
+data:
+  DATABASE_HOST: todo-postgres
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: todo
+  DATABASE_USER: todo_app
+  OIDC_ISSUER: https://todo.test:8443/auth/realms/todo
+  OIDC_JWKS_URL: http://todo-keycloak:8080/auth/realms/todo/protocol/openid-connect/certs
+  OIDC_AUDIENCE: todo-frontend

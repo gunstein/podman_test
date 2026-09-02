@@ -14,3 +14,7 @@ install a Kubernetes cluster and does not claim Kubernetes or OpenShift
 portability.
 
 Start with [poc/README.md](poc/README.md).
+
+After the lifecycle PoC has passed, the first isolated application migration
+is [backend/README.md](backend/README.md). It exercises the real database and
+secret contract in parallel with the accepted backend.

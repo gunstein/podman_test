@@ -4,6 +4,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 POC = ROOT / "kube" / "poc"
+BACKEND = ROOT / "kube" / "backend"
 
 
 def read(name: str) -> str:
@@ -92,6 +93,71 @@ class KubePocTests(unittest.TestCase):
         self.assertIn("claimName: todo-kube-poc-data", consumer)
         self.assertIn("podman volume rm todo-kube-poc-data", readme)
         self.assertNotIn("podman kube play --down --force", readme)
+
+
+class BackendKubeCandidateTests(unittest.TestCase):
+    def test_candidate_is_parallel_and_has_no_host_port(self):
+        manifest = (BACKEND / "backend.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("name: todo-kube-backend", manifest)
+        self.assertIn("containerPort: 8000", manifest)
+        self.assertNotIn("hostPort:", manifest)
+        self.assertIn("restartPolicy: Never", manifest)
+        self.assertIn("imagePullPolicy: Never", manifest)
+
+    def test_candidate_preserves_backend_runtime_contract(self):
+        manifest = (BACKEND / "backend.yaml").read_text(encoding="utf-8")
+        config = (BACKEND / "config-lab.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("DATABASE_PASSWORD_FILE", manifest)
+        self.assertIn("/run/secrets/todo-backend/database-password", manifest)
+        self.assertIn("secretName: todo-kube-backend-secret", manifest)
+        self.assertIn("configMapRef:", manifest)
+        self.assertIn("name: todo-backend-config", manifest)
+        self.assertIn("DATABASE_HOST: todo-postgres", config)
+        self.assertIn("DATABASE_USER: todo_app", config)
+        self.assertIn("OIDC_JWKS_URL: http://todo-keycloak:8080", config)
+
+    def test_candidate_security_and_health_are_explicit(self):
+        manifest = (BACKEND / "backend.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("runAsUser: 1000", manifest)
+        self.assertIn("runAsGroup: 1000", manifest)
+        self.assertIn("allowPrivilegeEscalation: false", manifest)
+        self.assertIn("capabilities:\n          drop:\n            - ALL", manifest)
+        self.assertIn("memory: 256Mi", manifest)
+        self.assertNotIn("cpu:", manifest)
+        self.assertIn("livenessProbe:\n        exec:", manifest)
+
+    def test_candidate_quadlet_uses_external_inputs_and_systemd_restart(self):
+        unit = (BACKEND / "todo-kube-backend.kube").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Yaml=backend.yaml", unit)
+        self.assertIn("ConfigMap=config-lab.yaml", unit)
+        self.assertIn("Network=todo.network", unit)
+        self.assertIn("ExitCodePropagation=any", unit)
+        self.assertIn("LogDriver=journald", unit)
+        self.assertIn("Restart=on-failure", unit)
+
+    def test_candidate_does_not_store_secret_material(self):
+        yaml_text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in BACKEND.glob("*.yaml")
+        )
+
+        self.assertNotIn("kind: Secret", yaml_text)
+        self.assertNotIn("stringData:", yaml_text)
+        self.assertIn("kind: ConfigMap", yaml_text)
+
+    def test_candidate_test_is_non_destructive_to_reference(self):
+        readme = (BACKEND / "README.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("systemctl --user stop todo-backend.service", readme)
+        self.assertNotIn("podman rm todo-backend", readme)
+        self.assertIn("podman secret rm todo-kube-backend-secret", readme)
+        self.assertIn("curl --fail http://127.0.0.1:8080/ready", readme)
 
 
 if __name__ == "__main__":

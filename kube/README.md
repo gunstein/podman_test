@@ -26,3 +26,8 @@ loopback ports.
 The third isolated workload is [keycloak/README.md](keycloak/README.md). It
 joins the accepted identity service temporarily as a second `jdbc-ping`
 cluster node and verifies environment-secret delivery and graceful shutdown.
+
+The fourth isolated workload is [postgres/README.md](postgres/README.md). It
+uses a separate database, secret, loopback port and persistent volume to prove
+fresh initialization, rootless storage and crash recovery without touching the
+accepted database or DR state.

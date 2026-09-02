@@ -7,6 +7,7 @@ POC = ROOT / "kube" / "poc"
 BACKEND = ROOT / "kube" / "backend"
 NGINX = ROOT / "kube" / "nginx"
 KEYCLOAK = ROOT / "kube" / "keycloak"
+POSTGRES = ROOT / "kube" / "postgres"
 
 
 def read(name: str) -> str:
@@ -273,6 +274,87 @@ class KeycloakKubeCandidateTests(unittest.TestCase):
         self.assertIn("LogDriver=journald", unit)
         self.assertIn("Restart=on-failure", unit)
         self.assertIn("TimeoutStopSec=60", unit)
+
+
+class PostgresKubeCandidateTests(unittest.TestCase):
+    def test_candidate_is_isolated_from_accepted_database_state(self):
+        manifest = (POSTGRES / "postgres.yaml").read_text(encoding="utf-8")
+        unit = (POSTGRES / "todo-kube-postgres.kube").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("name: todo-kube-postgres", manifest)
+        self.assertIn("name: todo-kube-postgres-data", manifest)
+        self.assertNotIn("todo-postgres-data", manifest)
+        self.assertIn("PublishPort=127.0.0.1:15432:5432", unit)
+        self.assertNotIn("PublishPort=127.0.0.1:5432:5432", unit)
+
+    def test_candidate_uses_pinned_image_and_external_inputs(self):
+        manifest = (POSTGRES / "postgres.yaml").read_text(encoding="utf-8")
+        config = (POSTGRES / "config-lab.yaml").read_text(encoding="utf-8")
+        all_yaml = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in POSTGRES.glob("*.yaml")
+        )
+
+        self.assertIn("image: docker.io/library/postgres:17.11", manifest)
+        self.assertIn("imagePullPolicy: Never", manifest)
+        self.assertIn("configMapRef:", manifest)
+        self.assertIn("name: todo-postgres-config", manifest)
+        self.assertIn("POSTGRES_DB: todo", config)
+        self.assertIn("POSTGRES_USER: todo", config)
+        self.assertIn("secretName: todo-kube-postgres-secret", manifest)
+        self.assertIn("POSTGRES_PASSWORD_FILE", manifest)
+        self.assertNotIn("kind: Secret", all_yaml)
+        self.assertNotIn("stringData:", all_yaml)
+
+    def test_candidate_volume_has_explicit_postgres_ownership(self):
+        manifest = (POSTGRES / "postgres.yaml").read_text(encoding="utf-8")
+        readme = (POSTGRES / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("kind: PersistentVolumeClaim", manifest)
+        self.assertIn('volume.podman.io/uid: "999"', manifest)
+        self.assertIn('volume.podman.io/gid: "999"', manifest)
+        self.assertIn("mountPath: /var/lib/postgresql/data", manifest)
+        self.assertIn("podman unshare", readme)
+        self.assertIn("podman volume rm todo-kube-postgres-data", readme)
+
+    def test_candidate_security_health_and_resources_are_explicit(self):
+        manifest = (POSTGRES / "postgres.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("restartPolicy: Never", manifest)
+        self.assertIn("runAsUser: 999", manifest)
+        self.assertIn("runAsGroup: 999", manifest)
+        self.assertIn("allowPrivilegeEscalation: false", manifest)
+        self.assertIn("capabilities:\n          drop:\n            - ALL", manifest)
+        self.assertIn("memory: 512Mi", manifest)
+        self.assertNotIn("cpu:", manifest)
+        self.assertIn("livenessProbe:\n        exec:", manifest)
+        self.assertIn("- pg_isready", manifest)
+
+    def test_candidate_systemd_lifecycle_is_explicit(self):
+        unit = (POSTGRES / "todo-kube-postgres.kube").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Yaml=postgres.yaml", unit)
+        self.assertIn("ConfigMap=config-lab.yaml", unit)
+        self.assertIn("Network=todo.network", unit)
+        self.assertIn("ExitCodePropagation=any", unit)
+        self.assertIn("LogDriver=journald", unit)
+        self.assertIn("Restart=on-failure", unit)
+        self.assertIn("TimeoutStopSec=60", unit)
+
+    def test_candidate_test_preserves_accepted_runtime(self):
+        readme = (POSTGRES / "README.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("systemctl --user stop todo-postgres.service", readme)
+        self.assertNotIn("podman volume rm todo-postgres-data", readme)
+        self.assertIn("podman kill todo-kube-postgres-postgres", readme)
+        self.assertIn("definitely-wrong-password", readme)
+        self.assertIn("system_identifier FROM pg_control_system()", readme)
+        self.assertIn("survives-container-recreation", readme)
+        self.assertIn("curl --fail http://127.0.0.1:8080/ready", readme)
 
 
 if __name__ == "__main__":

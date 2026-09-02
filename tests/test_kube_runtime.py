@@ -111,6 +111,7 @@ class KubeRuntimeTests(unittest.TestCase):
 
         self.assertLess(preserve, stop)
         self.assertLess(stop, remove)
+        self.assertIn("force: true", tasks[preserve:stop])
         self.assertIn("todo_confirm_application_kube_migration", tasks)
         self.assertIn('failed_when: todo_kube_database_role.stdout | trim != "f|off"', tasks)
 

@@ -23,16 +23,42 @@ dependencies pull in backend and Keycloak. Both Ansible playbooks pass
 syntax-check, all embedded YAML parses, the operations package contains the
 runtime, roles and runbook, and the complete local test suite passes.
 
-## Oracle Linux integrated migration gate — pending
+## Oracle Linux integrated migration gate — passed
 
-The controlled target test must still prove:
+The controlled migration and rollback were exercised on Oracle Linux 9 with
+rootless Podman 5.8.2. The current writable primary was the physical
+`todo-standby` host; the physical `todo-primary` host remained the accepted
+rebuilt standby throughout the test.
 
-- the three application services move from `.container` to `.kube` sources;
-- PostgreSQL keeps the same container, systemd unit and database system ID;
-- the existing nginx TLS identity survives the workload replacement;
-- backend readiness, Keycloak issuer, public HTTPS and browser E2E remain valid;
-- all services and data survive a host reboot; and
-- the dedicated rollback restores the exact saved per-container Quadlets.
+The migration changed only the application tier:
 
-This application-tier gate does not authorize PostgreSQL, replication, backup,
-PITR or disaster-recovery migration.
+- `todo-postgres.service` retained its `.container` source, running container
+  and database system identifier `7680265831322587170`;
+- `todo-backend.service`, `todo-keycloak.service` and
+  `todo-frontend.service` moved to the canonical `.kube` sources;
+- the three independent Kube pods and their health checks were healthy;
+- the original raw secrets remained present while the two Kube-compatible
+  derived secrets were delivered without plaintext files;
+- the nginx root certificate retained SHA-256
+  `a9b4ec01d39da1e5d1ef698308faf357655444867013c28c702da01a3f8a9e13`;
+- local health, readiness, Todo data and the stable Keycloak issuer passed;
+- public HTTPS and both browser E2E tests passed before and after reboot; and
+- replication stayed `streaming|async` with zero-byte lag, the rebuilt standby
+  stayed read-only, and continuous WAL archiving remained healthy.
+
+After reboot, all four canonical services were active and the three Kube pods
+were running. PostgreSQL kept the same database system identifier and nginx
+kept the same TLS identity. An early Keycloak health probe briefly produced a
+failed transient healthcheck unit while Keycloak was starting; the next
+automatic probe reported healthy and systemd removed the failed state without
+manual intervention.
+
+The dedicated rollback then restored the exact preserved per-container
+application Quadlets. It removed the Kube runtime directory, pods and derived
+secrets while keeping the PostgreSQL container, database system identifier,
+nginx TLS identity, raw secrets and application data unchanged. All restored
+services, health endpoints and the stable issuer passed.
+
+The application-tier migration, reboot and rollback gate is therefore passed.
+This result does not yet authorize PostgreSQL, backup, PITR or disaster-recovery
+migration to Kube YAML; those operational contracts remain a separate gate.

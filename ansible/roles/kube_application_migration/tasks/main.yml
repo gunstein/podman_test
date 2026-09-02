@@ -225,7 +225,7 @@
     src: "{{ item.stat.path }}"
     dest: "{{ todo_kube_backup_directory }}/{{ item.item }}"
     remote_src: true
-    force: false
+    force: true
     mode: "0600"
   loop: "{{ todo_kube_source_quadlets.results }}"
   no_log: true

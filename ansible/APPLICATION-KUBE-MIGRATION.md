@@ -60,8 +60,10 @@ The role copies the installed `.container` files to:
 ~/.config/todo/quadlet-application-backup/
 ```
 
-before stopping any application service. It then installs the shared workload
-YAML and generated runtime ConfigMaps below:
+before stopping any application service. A later migration run refreshes this
+backup from the currently installed per-container Quadlets, so rollback always
+matches the runtime that the migration actually replaced. It then installs the
+shared workload YAML and generated runtime ConfigMaps below:
 
 ```text
 ~/.config/containers/systemd/todo-kube-runtime/

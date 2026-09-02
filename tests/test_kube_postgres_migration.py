@@ -71,9 +71,14 @@ class KubePostgresMigrationTests(unittest.TestCase):
         remove_source = tasks.index(
             "- name: Remove the replaced PostgreSQL container Quadlet"
         )
+        relabel = tasks.index(
+            "- name: Apply the shared SELinux label required by rootless Kube volumes"
+        )
 
         self.assertLess(preserve, stop_application)
         self.assertLess(stop_application, stop_database)
+        self.assertLess(stop_database, relabel)
+        self.assertLess(relabel, remove_source)
         self.assertLess(stop_database, remove_source)
         self.assertIn("force: true", tasks[preserve:stop_application])
         self.assertIn("todo_confirm_postgres_kube_migration", tasks)
@@ -82,6 +87,11 @@ class KubePostgresMigrationTests(unittest.TestCase):
         self.assertIn("podman, healthcheck, run, todo-postgres", tasks)
         self.assertNotIn("--condition=healthy", tasks)
         self.assertNotIn("podman, volume, rm", tasks)
+        self.assertIn("Refusing recursive SELinux relabel", tasks)
+        self.assertIn("--type=container_file_t", tasks)
+        self.assertIn("--range=s0", tasks)
+        self.assertNotIn("chmod", tasks)
+        self.assertNotIn("chown", tasks)
 
     def test_migration_verifies_identity_replication_archive_and_stable_name(self):
         tasks = read(MIGRATION / "tasks" / "main.yml")

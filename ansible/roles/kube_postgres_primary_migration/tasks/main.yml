@@ -17,6 +17,12 @@
   register: todo_kube_database_play_help
   changed_when: false
 
+- name: Read SELinux relabel options inside the Podman user namespace
+  ansible.builtin.command:
+    argv: [podman, unshare, chcon, --help]
+  register: todo_kube_database_chcon_help
+  changed_when: false
+
 - name: Read Podman container update options
   ansible.builtin.command:
     argv: [podman, update, --help]
@@ -32,11 +38,12 @@
       - "'--no-pod-prefix' in todo_kube_database_play_help.stdout"
       - "'--health-on-failure' in todo_kube_database_update_help.stdout"
       - todo_kube_database_replication_application is match('^[A-Za-z0-9_]+$')
+      - "'--range' in todo_kube_database_chcon_help.stdout"
     fail_msg: >-
       Check the current-primary identity and pass
       todo_confirm_postgres_kube_migration equal to the inventory hostname.
       The supported Podman must provide --no-pod-prefix and
-      --health-on-failure.
+      --health-on-failure, and chcon must support --range.
 
 - name: Require active PostgreSQL and application services
   ansible.builtin.command:
@@ -152,6 +159,50 @@
     - todo-postgres-data
     - todo-postgres-backup
   changed_when: false
+
+- name: Read persistent volume mountpoints
+  ansible.builtin.command:
+    argv:
+      - podman
+      - volume
+      - inspect
+      - --format
+      - "{{ '{{.Mountpoint}}' }}"
+      - "{{ item }}"
+  loop:
+    - todo-postgres-data
+    - todo-postgres-backup
+  register: todo_kube_database_volume_mountpoints
+  changed_when: false
+
+- name: Require exact Podman-owned persistent volume paths
+  ansible.builtin.assert:
+    that:
+      - >-
+        item.stdout | trim ==
+        todo_kube_database_volume_root ~ '/' ~ item.item ~ '/_data'
+  loop: "{{ todo_kube_database_volume_mountpoints.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  fail_msg: >-
+    Refusing recursive SELinux relabel outside the exact Podman volume path.
+
+- name: Read existing persistent volume SELinux labels
+  ansible.builtin.command:
+    argv:
+      - podman
+      - unshare
+      - stat
+      - --format=%C
+      - "{{ item.stdout | trim }}"
+  loop: "{{ todo_kube_database_volume_mountpoints.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: todo_kube_database_volume_labels_before
+  changed_when: false
+  failed_when: >-
+    (todo_kube_database_volume_labels_before.stdout | trim)
+    is not match('^.*:object_r:container_file_t:s0(:c[0-9]+,c[0-9]+)?$')
 
 - name: Inspect installed database Quadlet files
   ansible.builtin.stat:
@@ -307,6 +358,38 @@
   ansible.builtin.command:
     argv: [systemctl, --user, stop, todo-postgres.service]
   changed_when: false
+
+- name: Apply the shared SELinux label required by rootless Kube volumes
+  ansible.builtin.command:
+    argv:
+      - podman
+      - unshare
+      - chcon
+      - --recursive
+      - --type=container_file_t
+      - --range=s0
+      - "{{ item.stdout | trim }}"
+  loop: "{{ todo_kube_database_volume_mountpoints.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  changed_when: true
+
+- name: Verify shared SELinux labels on persistent volume roots
+  ansible.builtin.command:
+    argv:
+      - podman
+      - unshare
+      - stat
+      - --format=%C
+      - "{{ item.stdout | trim }}"
+  loop: "{{ todo_kube_database_volume_mountpoints.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: todo_kube_database_volume_labels_after
+  changed_when: false
+  failed_when: >-
+    (todo_kube_database_volume_labels_after.stdout | trim)
+    is not match('^.*:object_r:container_file_t:s0$')
 
 - name: Remove the replaced PostgreSQL container Quadlet
   ansible.builtin.file:

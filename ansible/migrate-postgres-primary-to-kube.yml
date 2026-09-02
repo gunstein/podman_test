@@ -14,6 +14,9 @@
       {{ todo_kube_database_quadlet_directory }}/todo-kube-database-runtime
     todo_kube_database_backup_directory: >-
       {{ todo_kube_database_user_home }}/.config/todo/quadlet-database-backup
+    todo_kube_database_volume_root: >-
+      {{ todo_kube_database_user_home
+         }}/.local/share/containers/storage/volumes
     todo_kube_database_node_address: "{{ todo_node_address }}"
     todo_kube_database_replication_application: >-
       {{ todo_rebuild_replication_slot | default("todo_rebuilt_standby") }}

@@ -46,6 +46,15 @@ the playbook requires the same database system identifier, writable/archive
 state, stable pod/container name, zero-byte replication lag and an exact newly
 archived WAL segment before restarting the application.
 
+The accepted database volume uses a private SELinux MCS label because its
+per-container Quadlet mounts it with `:Z`. A replacement pod receives a new
+MCS label and cannot use that private label. The migration therefore resolves
+and verifies the exact Podman-owned mountpoints before downtime, then changes
+only those stopped volume trees to the shared `container_file_t:s0` label.
+It never changes their Unix ownership or modes. The preserved container
+Quadlet restores its private `:Z` label if rollback is required; the backup
+volume continues to use its existing shared `:z` policy.
+
 ## Run
 
 Use the role-based recovery inventory from the current primary:

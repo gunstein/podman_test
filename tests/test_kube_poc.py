@@ -8,6 +8,7 @@ BACKEND = ROOT / "kube" / "backend"
 NGINX = ROOT / "kube" / "nginx"
 KEYCLOAK = ROOT / "kube" / "keycloak"
 POSTGRES = ROOT / "kube" / "postgres"
+REPLICATION = ROOT / "kube" / "replication"
 
 
 def read(name: str) -> str:
@@ -355,6 +356,95 @@ class PostgresKubeCandidateTests(unittest.TestCase):
         self.assertIn("system_identifier FROM pg_control_system()", readme)
         self.assertIn("survives-container-recreation", readme)
         self.assertIn("curl --fail http://127.0.0.1:8080/ready", readme)
+
+
+class ReplicationKubeCandidateTests(unittest.TestCase):
+    def test_candidate_uses_isolated_names_ports_and_volumes(self):
+        primary = (REPLICATION / "primary.yaml").read_text(encoding="utf-8")
+        standby = (REPLICATION / "standby.yaml").read_text(encoding="utf-8")
+        units = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in REPLICATION.glob("*.kube")
+        )
+
+        self.assertIn("name: todo-kube-repl-primary", primary)
+        self.assertIn("name: todo-kube-repl-standby", standby)
+        self.assertIn("todo-kube-repl-primary-data", primary)
+        self.assertIn("todo-kube-repl-standby-data", standby)
+        self.assertNotIn("todo-postgres-data", primary + standby)
+        self.assertIn("192.168.0.108:15432:5432", units)
+        self.assertIn("127.0.0.1:15433:5432", units)
+        self.assertNotIn("PublishPort=127.0.0.1:5432:5432", units)
+
+    def test_primary_creates_only_candidate_replication_contract(self):
+        manifest = (REPLICATION / "primary.yaml").read_text(encoding="utf-8")
+        config = (REPLICATION / "primary-config-lab.yaml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("todo_kube_replicator", config)
+        self.assertIn("LOGIN REPLICATION NOSUPERUSER", config)
+        self.assertIn("NOINHERIT", config)
+        self.assertIn("TODO_REPLICATION_HBA_CIDR", config)
+        self.assertIn("scram-sha-256", config)
+        self.assertIn("max_slot_wal_keep_size=1GB", manifest)
+        self.assertNotIn("todo_replicator", config)
+        self.assertNotIn("todo_standby", config)
+
+    def test_standby_init_is_destructive_only_for_empty_volume(self):
+        standby = (REPLICATION / "standby.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("initContainers:", standby)
+        self.assertIn("pg_basebackup", standby)
+        self.assertIn("--write-recovery-conf", standby)
+        self.assertIn("--create-slot", standby)
+        self.assertIn("--slot=\"$TODO_REPLICATION_SLOT\"", standby)
+        self.assertIn('test -s "$PGDATA/PG_VERSION"', standby)
+        self.assertIn("base backup skipped", standby)
+        self.assertIn("Refusing non-empty partial standby data", standby)
+        self.assertNotIn("rm -rf", standby)
+
+    def test_standby_runtime_uses_slot_and_secret_passfile(self):
+        standby = (REPLICATION / "standby.yaml").read_text(encoding="utf-8")
+        config = (REPLICATION / "standby-config-lab.yaml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("primary_conninfo=", standby)
+        self.assertIn("primary_slot_name=$TODO_REPLICATION_SLOT", standby)
+        self.assertIn("passfile=$pgpass", standby)
+        self.assertIn("umask 077", standby)
+        self.assertIn("TODO_PRIMARY_HOST: 192.168.0.108", config)
+        self.assertIn("TODO_REPLICATION_SLOT: todo_kube_standby", config)
+
+    def test_secrets_are_external_and_volumes_are_owned(self):
+        manifests = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in REPLICATION.glob("*.yaml")
+        )
+
+        self.assertNotIn("kind: Secret", manifests)
+        self.assertNotIn("stringData:", manifests)
+        self.assertIn("secretName: todo-kube-repl-primary-secret", manifests)
+        self.assertIn("secretName: todo-kube-repl-standby-secret", manifests)
+        self.assertEqual(manifests.count('volume.podman.io/uid: "999"'), 2)
+        self.assertEqual(manifests.count('volume.podman.io/gid: "999"'), 2)
+
+    def test_systemd_owns_restart_and_propagates_failures(self):
+        for path in REPLICATION.glob("*.kube"):
+            unit = path.read_text(encoding="utf-8")
+            self.assertIn("ExitCodePropagation=any", unit)
+            self.assertIn("LogDriver=journald", unit)
+            self.assertIn("Restart=on-failure", unit)
+            self.assertIn("StartLimitBurst=3", unit)
+            self.assertIn("TimeoutStopSec=60", unit)
+
+        manifests = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in REPLICATION.glob("*.yaml")
+        )
+        self.assertEqual(manifests.count("restartPolicy: Never"), 2)
+        self.assertNotIn("cpu:", manifests)
 
 
 if __name__ == "__main__":

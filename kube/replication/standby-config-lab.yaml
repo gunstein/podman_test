@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: todo-kube-repl-standby-config
+data:
+  TODO_PRIMARY_HOST: 192.168.0.108
+  TODO_PRIMARY_PORT: "15432"
+  TODO_REPLICATION_USER: todo_kube_replicator
+  TODO_REPLICATION_SLOT: todo_kube_standby
+  TODO_STANDBY_APPLICATION_NAME: todo_kube_standby

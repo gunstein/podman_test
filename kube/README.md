@@ -31,3 +31,8 @@ The fourth isolated workload is [postgres/README.md](postgres/README.md). It
 uses a separate database, secret, loopback port and persistent volume to prove
 fresh initialization, rootless storage and crash recovery without touching the
 accepted database or DR state.
+
+After the isolated persistence gate, [replication/README.md](replication/README.md)
+defines a separate two-host primary/standby gate. It validates Kube init
+containers, physical replication slots and restart-safe base-backup behavior
+before any accepted database workload is migrated.

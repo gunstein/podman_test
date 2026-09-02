@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: todo-kube-repl-primary-config
+data:
+  POSTGRES_DB: todo
+  POSTGRES_USER: todo
+  POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+  TODO_REPLICATION_HBA_CIDR: 10.89.0.0/24
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: todo-kube-repl-primary-init
+data:
+  10-create-replication.sh: |
+    #!/bin/sh
+    set -eu
+
+    replication_password=$(
+      cat /run/secrets/todo-kube-repl/replication-password
+    )
+
+    case "$replication_password" in
+      ""|*[!A-Za-z0-9]*)
+        echo "Replication password must be alphanumeric" >&2
+        exit 1
+        ;;
+    esac
+
+    if [ "${#replication_password}" -ne 32 ]; then
+      echo "Replication password must contain exactly 32 characters" >&2
+      exit 1
+    fi
+
+    psql \
+      --set ON_ERROR_STOP=1 \
+      --set replication_password="$replication_password" \
+      --username "$POSTGRES_USER" \
+      --dbname postgres <<'SQL'
+    CREATE ROLE todo_kube_replicator
+      WITH LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT
+      PASSWORD :'replication_password';
+    SQL
+
+    printf '%s\n' \
+      "host replication todo_kube_replicator $TODO_REPLICATION_HBA_CIDR scram-sha-256" \
+      >> "$PGDATA/pg_hba.conf"

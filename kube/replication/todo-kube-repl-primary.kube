@@ -1,0 +1,23 @@
+[Unit]
+Description=Todo isolated PostgreSQL Kube replication primary
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Kube]
+Yaml=primary.yaml
+ConfigMap=primary-config-lab.yaml
+Network=todo.network
+PublishPort=127.0.0.1:15432:5432
+PublishPort=192.168.0.108:15432:5432
+ExitCodePropagation=any
+LogDriver=journald
+SetWorkingDirectory=yaml
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=180
+TimeoutStopSec=60
+
+[Install]
+WantedBy=default.target

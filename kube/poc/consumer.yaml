@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: todo-kube-poc-consumer
+  labels:
+    app.kubernetes.io/name: todo-kube-poc
+    app.kubernetes.io/component: consumer
+spec:
+  restartPolicy: Never
+  containers:
+    - name: consumer
+      image: localhost/todo-backend:m12
+      imagePullPolicy: Never
+      command:
+        - sleep
+        - infinity
+      env:
+        - name: TODO_POC_SECRET_FILE
+          value: /run/secrets/todo-kube-poc/token
+      volumeMounts:
+        - name: external-secret
+          mountPath: /run/secrets/todo-kube-poc
+          readOnly: true
+        - name: persistent-data
+          mountPath: /data
+      resources:
+        limits:
+          memory: 128Mi
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+  volumes:
+    - name: external-secret
+      secret:
+        secretName: todo-kube-poc-secret
+        optional: false
+        defaultMode: 0444
+    - name: persistent-data
+      persistentVolumeClaim:
+        claimName: todo-kube-poc-data

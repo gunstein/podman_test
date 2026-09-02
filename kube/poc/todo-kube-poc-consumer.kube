@@ -1,0 +1,18 @@
+[Unit]
+Description=Todo Podman Kube PoC consumer
+Requires=todo-kube-poc-server.service
+After=todo-kube-poc-server.service
+
+[Kube]
+Yaml=consumer.yaml
+Network=todo-kube-poc.network
+ExitCodePropagation=any
+LogDriver=journald
+SetWorkingDirectory=yaml
+
+[Service]
+Restart=no
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: todo-kube-poc-server
+  labels:
+    app.kubernetes.io/name: todo-kube-poc
+    app.kubernetes.io/component: server
+spec:
+  restartPolicy: Never
+  containers:
+    - name: server
+      image: localhost/todo-backend:m12
+      imagePullPolicy: Never
+      ports:
+        - name: http
+          containerPort: 8000
+      livenessProbe:
+        exec:
+          command:
+            - python
+            - -c
+            - >-
+              import socket;
+              socket.create_connection(("127.0.0.1", 8000), 1).close()
+        initialDelaySeconds: 2
+        periodSeconds: 10
+        timeoutSeconds: 2
+        failureThreshold: 3
+      resources:
+        limits:
+          memory: 128Mi
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL

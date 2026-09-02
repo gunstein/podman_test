@@ -5,6 +5,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 POC = ROOT / "kube" / "poc"
 BACKEND = ROOT / "kube" / "backend"
+NGINX = ROOT / "kube" / "nginx"
 
 
 def read(name: str) -> str:
@@ -158,6 +159,54 @@ class BackendKubeCandidateTests(unittest.TestCase):
         self.assertNotIn("podman rm todo-backend", readme)
         self.assertIn("podman secret rm todo-kube-backend-secret", readme)
         self.assertIn("curl --fail http://127.0.0.1:8080/ready", readme)
+
+
+class NginxKubeCandidateTests(unittest.TestCase):
+    def test_candidate_uses_isolated_ports_and_stable_hostname(self):
+        manifest = (NGINX / "nginx.yaml").read_text(encoding="utf-8")
+        config = (NGINX / "config-lab.yaml").read_text(encoding="utf-8")
+        unit = (NGINX / "todo-kube-nginx.kube").read_text(encoding="utf-8")
+
+        self.assertIn("name: todo-kube-nginx", manifest)
+        self.assertNotIn("hostPort:", manifest)
+        self.assertIn("PublishPort=127.0.0.1:18080:8080", unit)
+        self.assertIn("PublishPort=127.0.0.1:18443:8443", unit)
+        self.assertIn("TODO_TLS_HOSTNAME: todo.test", config)
+        self.assertIn("server_name todo.test;", config)
+
+    def test_candidate_preserves_proxy_routes_and_headers(self):
+        config = (NGINX / "config-lab.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("server todo-backend:8000;", config)
+        self.assertIn("server todo-keycloak:8080;", config)
+        for route in ("/auth/", "/api/", "/health", "/ready"):
+            self.assertIn(route, config)
+        self.assertIn("/etc/nginx/todo-proxy-headers.conf", config)
+
+    def test_candidate_tls_volume_is_persistent_and_owned(self):
+        manifest = (NGINX / "nginx.yaml").read_text(encoding="utf-8")
+        readme = (NGINX / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("kind: PersistentVolumeClaim", manifest)
+        self.assertIn("name: todo-kube-nginx-data", manifest)
+        self.assertIn('volume.podman.io/uid: "101"', manifest)
+        self.assertIn('volume.podman.io/gid: "101"', manifest)
+        self.assertNotIn("KubeDownForce=true", readme)
+        self.assertIn("podman volume rm todo-kube-nginx-data", readme)
+
+    def test_candidate_security_lifecycle_and_inputs_are_explicit(self):
+        manifest = (NGINX / "nginx.yaml").read_text(encoding="utf-8")
+        unit = (NGINX / "todo-kube-nginx.kube").read_text(encoding="utf-8")
+
+        self.assertIn("runAsUser: 101", manifest)
+        self.assertIn("runAsGroup: 101", manifest)
+        self.assertIn("allowPrivilegeEscalation: false", manifest)
+        self.assertIn("memory: 128Mi", manifest)
+        self.assertNotIn("cpu:", manifest)
+        self.assertIn("ConfigMap=config-lab.yaml", unit)
+        self.assertIn("Network=todo.network", unit)
+        self.assertIn("ExitCodePropagation=any", unit)
+        self.assertIn("Restart=on-failure", unit)
 
 
 if __name__ == "__main__":

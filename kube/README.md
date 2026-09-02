@@ -18,3 +18,7 @@ Start with [poc/README.md](poc/README.md).
 After the lifecycle PoC has passed, the first isolated application migration
 is [backend/README.md](backend/README.md). It exercises the real database and
 secret contract in parallel with the accepted backend.
+
+The next isolated workload is [nginx/README.md](nginx/README.md). It verifies
+the frontend, reverse-proxy routes and persistent TLS state on alternate
+loopback ports.

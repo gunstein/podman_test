@@ -93,6 +93,17 @@ class KubePostgresMigrationTests(unittest.TestCase):
         self.assertNotIn("chmod", tasks)
         self.assertNotIn("chown", tasks)
 
+    def test_volume_path_assertion_has_valid_ansible_structure(self):
+        tasks = yaml.safe_load(read(MIGRATION / "tasks" / "main.yml"))
+        task = next(
+            item
+            for item in tasks
+            if item["name"] == "Require exact Podman-owned persistent volume paths"
+        )
+
+        self.assertNotIn("fail_msg", task)
+        self.assertIn("fail_msg", task["ansible.builtin.assert"])
+
     def test_migration_verifies_identity_replication_archive_and_stable_name(self):
         tasks = read(MIGRATION / "tasks" / "main.yml")
 

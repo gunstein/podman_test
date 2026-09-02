@@ -181,11 +181,11 @@
       - >-
         item.stdout | trim ==
         todo_kube_database_volume_root ~ '/' ~ item.item ~ '/_data'
+    fail_msg: >-
+      Refusing recursive SELinux relabel outside the exact Podman volume path.
   loop: "{{ todo_kube_database_volume_mountpoints.results }}"
   loop_control:
     label: "{{ item.item }}"
-  fail_msg: >-
-    Refusing recursive SELinux relabel outside the exact Podman volume path.
 
 - name: Read existing persistent volume SELinux labels
   ansible.builtin.command:

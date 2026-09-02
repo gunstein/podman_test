@@ -1,0 +1,16 @@
+[Unit]
+Description=Todo Podman Kube stable database name contract
+
+[Kube]
+Yaml=contract.yaml
+Network=none
+PodmanArgs=--no-pod-prefix
+ExitCodePropagation=any
+LogDriver=journald
+SetWorkingDirectory=yaml
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=120
+TimeoutStopSec=30

@@ -47,6 +47,12 @@ openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt todo-nginx-root.crt
 The final command must report `OK`. Do not use `curl -k`; it bypasses the trust
 property this test is intended to verify.
 
+The Playwright Chromium build can use a certificate store different from the
+Ubuntu system store. Consequently, a successful trusted `curl` request is the
+lab's CA-trust assertion, while `scripts/run-e2e.sh` uses
+`E2E_IGNORE_HTTPS_ERRORS=true` only to exercise the browser application flows.
+Do not interpret the Playwright setting as proof of certificate trust.
+
 ## Recommended moderate-deployment mode
 
 Use an organizational certificate source with this trust shape:

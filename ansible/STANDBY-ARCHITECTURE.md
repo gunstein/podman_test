@@ -12,11 +12,25 @@ cp ansible/inventory-initial.example.ini ansible/inventory-initial.ini
 
 Replace the example standby address and adjust `ansible_user` if necessary. The
 primary entry deliberately uses a local connection. Test SSH with host-key
-checking before running Ansible:
+checking before running Ansible. After restoring a VM snapshot, verify the
+standby's current host-key fingerprint from its console before accepting a new
+key on primary; do not use an unverified `ssh-keyscan` result as trust evidence.
+
+The primary also needs a non-interactive user key for Ansible. Re-create and
+install it if the clean snapshot predates SSH setup:
 
 ```bash
-ssh gunstein@<standby-address> hostname
+test -f "$HOME/.ssh/id_rsa" || ssh-keygen \
+  -t rsa -b 3072 -N '' \
+  -C 'todo-primary-to-standby' \
+  -f "$HOME/.ssh/id_rsa"
+ssh-copy-id -i "$HOME/.ssh/id_rsa.pub" gunstein@<standby-address>
+ssh -o BatchMode=yes gunstein@<standby-address> hostname
 ```
+
+The final command must return the standby hostname without asking for a
+password. Keep the private key only on primary and never add it to an archive or
+the repository.
 
 Ensure the pinned PostgreSQL 17.11 image is available on both hosts. Then copy the
 existing credentials from primary to standby:

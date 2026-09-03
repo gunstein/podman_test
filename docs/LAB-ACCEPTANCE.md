@@ -59,6 +59,11 @@ podman secret ls
 Pass when identities differ, security services are active, SELinux is enforcing,
 Podman is rootless, user systemd is available and no Todo state exists. A VM
 snapshot is a lab convenience, not part of the application recovery model.
+Container creation times close to VM boot do not prove a clean restore: any
+Todo container, volume or secret means the selected snapshot is not this
+baseline. Restore both matching pre-install snapshots instead of manually
+deleting visible resources, because systemd, firewall and policy state must be
+reset as well.
 
 ## 2. Build and stage artifacts
 
@@ -119,6 +124,10 @@ curl --fail http://127.0.0.1:8080/ready
 
 Export only the public demo root, trust it on the client, verify HTTPS, run both
 Playwright flows and leave one persistent authenticated Todo marker.
+Use `curl` without `-k` for the system-trust assertion. The project's
+`run-e2e.sh` deliberately sets `E2E_IGNORE_HTTPS_ERRORS=true` because the
+Playwright Chromium build may not consume the Ubuntu system CA store; that
+browser setting is not a substitute for the separate trusted `curl` check.
 
 Reboot the VM. Verify services, marker data and TLS CA persistence, then rerun
 `sh ./install.sh`. Pass when the second deployment reports `changed=0`.
@@ -137,6 +146,16 @@ sed -i \
 ansible-inventory --inventory ansible/inventory-initial.ini --graph
 ansible --inventory ansible/inventory-initial.ini todo_cluster -m ping
 ```
+
+Before these Ansible commands, require passwordless primary-to-standby SSH:
+
+```bash
+ssh -o BatchMode=yes gunstein@192.168.0.108 hostname
+```
+
+If a snapshot restore changed or removed SSH state, verify the standby host-key
+fingerprint from its console, then follow `ansible/STANDBY-ARCHITECTURE.md` to
+install primary's public automation key. Do not weaken host-key checking.
 
 Allow only standby to reach the initial replication endpoint:
 

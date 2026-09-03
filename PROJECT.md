@@ -18,6 +18,43 @@ The reusable procedure and pass criteria now live in
 development journal: it records why the current design exists and preserves
 historical experiments that a new operator does not need for normal use.
 
+## Paused DR runner validation - 2026-09-03
+
+Resume from this safety checkpoint:
+
+- Source artifact revision is `def82c88febe35b65406cb9899de38832e63cdff`; both
+  offline and operations packages reported `source_state=clean`.
+- `todo-standby` (`192.168.0.108`, Proxmox VM 108) is the promoted writable
+  primary and runs the per-container application. Health, readiness, trusted
+  HTTPS, issuer, authenticated writes, idempotence and reboot passed.
+- The nginx demo CA SHA-256 is
+  `6caf47b1fd085a3de4bd98483bc9bc5e74b1699da70ed651aeb1c3c7ac9d4fae`.
+- Persistent rows include the M12, M13, M14 and both M15 restore-point markers.
+- WAL archiving is healthy with `archive_timeout=1h`, zero failures and verified
+  base backup `base-20260903T174645Z`. Named-point PITR at
+  `m15_before_after` passed; its disposable container and volume were removed.
+- DR runner state on `.108` has `promotion` and `application` completed; rebuild
+  and both Kube migrations remain pending. Keep that state file.
+- `todo-primary` (`192.168.0.102`, Proxmox VM 107) is the fenced, powered-off
+  divergent old primary. Do not boot it with unrestricted workload traffic.
+- Proxmox quarantine rules and the `.108` inbound replication rule for `.102`
+  were discussed but not confirmed. Verify them before booting VM 107.
+- Do not run `rebuild` until all old-host Todo services are stopped and the
+  runner read-only rebuild preflight passes.
+
+Known automation gaps found during this run:
+
+- The runner requires the M15 backup boundary before rebuild but has no
+  backup/PITR stage. The full M15 workflow was therefore completed manually.
+- Repeated drills need a coordinated DR-ready snapshot pair after deployment,
+  replication, inventories, SSH keys and trust setup; an OS-clean snapshot makes
+  every drill unnecessarily long.
+- The console-based quarantine instructions are impractical in this lab. Replace
+  them with a tested Proxmox firewall procedure or separately authorized API
+  automation while retaining external fencing.
+- Recovery-direction SSH and exact `fapolicyd` trust for `todo_dr_run.py` must be
+  pre-staged and checked by a future runner preparation command.
+
 ## Clean nginx acceptance checkpoint - 2026-09-01
 
 - Both offline artifacts were built from clean revision

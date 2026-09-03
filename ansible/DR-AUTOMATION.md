@@ -10,6 +10,16 @@ The runner executes one stage at a time and records completion in
 and the inventory path, but no credentials. Copy the verified operations
 package and prepare the role-based recovery inventory before an incident.
 
+On a host with active `fapolicyd`, trust only the verified runner file before
+Python reads it from the extracted operations package:
+
+```bash
+sudo fapolicyd-cli --file add \
+  "$HOME/todo-operations/scripts/todo_dr_run.py" \
+  --trust-file todo-dr-run-source
+sudo fapolicyd-cli --update
+```
+
 ## 1. Fence and promote
 
 Power off and independently verify the old primary as described in

@@ -132,6 +132,7 @@ sudo fapolicyd-cli --update
 For this demo, the possible custom trust sources are:
 
 - `todo-dr-source` and `todo-dr` for M13.5
+- `todo-dr-run-source` for the resumable DR runner
 - `todo-backup-source` and `todo-backup` for M15
 
 Using the standard runbook paths, remove them only after the corresponding tool
@@ -148,6 +149,10 @@ sudo fapolicyd-cli --file delete \
 sudo fapolicyd-cli --file delete \
   "$HOME/.config/todo/todo-dr.json" \
   --trust-file todo-dr
+
+sudo fapolicyd-cli --file delete \
+  "$HOME/todo-operations/scripts/todo_dr_run.py" \
+  --trust-file todo-dr-run-source
 
 sudo fapolicyd-cli --file delete \
   "$HOME/todo-operations/scripts/todo_backup.py" \

@@ -89,7 +89,7 @@ Follow the partial-rebuild diagnostics in `RESTORE-REDUNDANCY.md` if it fails.
 ## 4. Return the current primary to Kube and verify
 
 After streaming replication and WAL archiving have returned, migrate the
-current primary back to the accepted four-pod Kube runtime:
+current primary back to the three-workload Kube candidate:
 
 ```bash
 python3 scripts/todo_dr_run.py \
@@ -102,8 +102,9 @@ python3 scripts/todo_dr_run.py \
 ```
 
 `migrate-kube` migrates PostgreSQL first, while the caught-up rebuilt standby
-provides the required safety boundary, and then migrates backend, Keycloak and
-nginx. `verify` runs the existing replication and WAL archive assertions.
+provides the required safety boundary, and then migrates backend and nginx
+into one app pod while Keycloak remains independent. `verify` runs the
+existing replication and WAL archive assertions.
 
 Show resumable progress at any time:
 

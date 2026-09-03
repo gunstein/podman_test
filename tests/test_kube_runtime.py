@@ -17,9 +17,9 @@ def read(path: pathlib.Path) -> str:
 class KubeRuntimeTests(unittest.TestCase):
     def test_runtime_yaml_parses_and_uses_canonical_pod_names(self):
         expected = {
-            "backend.yaml": "todo-backend",
+            "app.yaml": "todo-app",
             "keycloak.yaml": "todo-keycloak",
-            "frontend.yaml": "todo-frontend",
+            "postgres.yaml": "todo-postgres",
         }
 
         for filename, pod_name in expected.items():
@@ -29,6 +29,24 @@ class KubeRuntimeTests(unittest.TestCase):
             self.assertEqual(pods[0]["metadata"]["name"], pod_name)
             self.assertEqual(pods[0]["spec"]["restartPolicy"], "Never")
 
+    def test_app_pod_groups_migration_backend_and_frontend(self):
+        documents = list(yaml.safe_load_all(read(RUNTIME / "app.yaml")))
+        pod = next(doc for doc in documents if doc["kind"] == "Pod")
+
+        self.assertEqual(
+            [container["name"] for container in pod["spec"]["initContainers"]],
+            ["migrate"],
+        )
+        self.assertEqual(
+            [container["name"] for container in pod["spec"]["containers"]],
+            ["backend", "frontend"],
+        )
+        migrate = pod["spec"]["initContainers"][0]
+        self.assertEqual(migrate["args"], ["python", "-m", "backend.migrate", "up"])
+        self.assertIn("todo_migrator", str(migrate["env"]))
+        self.assertIn("migrator-secret", str(migrate["volumeMounts"]))
+        self.assertNotIn("migrator-secret", str(pod["spec"]["containers"]))
+
     def test_runtime_keeps_secrets_external(self):
         manifests = "\n".join(
             read(path) for path in RUNTIME.glob("*.yaml")
@@ -37,31 +55,59 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertNotIn("kind: Secret", manifests)
         self.assertNotIn("stringData:", manifests)
         self.assertIn("secretName: todo-kube-backend-secret", manifests)
+        self.assertIn("secretName: todo-kube-migrator-secret", manifests)
         self.assertIn("name: todo-kube-keycloak-secret", manifests)
 
     def test_frontend_reuses_the_accepted_tls_volume(self):
-        frontend = read(RUNTIME / "frontend.yaml")
+        app = read(RUNTIME / "app.yaml")
 
-        self.assertIn("name: todo-nginx-data", frontend)
-        self.assertNotIn("todo-kube-nginx-data", frontend)
-        self.assertIn('volume.podman.io/uid: "101"', frontend)
-        self.assertIn('volume.podman.io/gid: "101"', frontend)
+        self.assertIn("name: todo-nginx-data", app)
+        self.assertNotIn("todo-kube-nginx-data", app)
+        self.assertIn('volume.podman.io/uid: "101"', app)
+        self.assertIn('volume.podman.io/gid: "101"', app)
+        self.assertIn("claimName: todo-nginx-data", app)
 
-    def test_systemd_keeps_existing_service_and_dependency_names(self):
-        backend = read(RUNTIME / "todo-backend.kube")
+    def test_systemd_represents_the_three_workload_boundaries(self):
+        app = read(RUNTIME / "todo-app.kube")
         keycloak = read(RUNTIME / "todo-keycloak.kube")
-        frontend = read(RUNTIME / "todo-frontend.kube")
+        postgres = read(RUNTIME / "todo-postgres.kube")
 
-        self.assertIn("Requires=todo-postgres.service", backend)
-        self.assertIn("Requires=todo-postgres.service", keycloak)
         self.assertIn(
-            "Requires=todo-backend.service todo-keycloak.service", frontend
+            "Requires=todo-postgres.service todo-keycloak.service", app
         )
-        self.assertNotIn("[Install]", backend + keycloak)
-        self.assertIn("WantedBy=default.target", frontend)
-        for unit in (backend, keycloak, frontend):
+        self.assertIn("Requires=todo-postgres.service", keycloak)
+        self.assertNotIn("[Install]", keycloak)
+        self.assertIn("WantedBy=default.target", app)
+        for unit in (app, keycloak, postgres):
             self.assertIn("ExitCodePropagation=any", unit)
             self.assertIn("Restart=on-failure", unit)
+
+    def test_app_proxy_uses_loopback_and_shared_services_use_network_dns(self):
+        development = read(RUNTIME / "config-dev.yaml")
+        template = read(MIGRATION / "templates" / "config-runtime.yaml.j2")
+
+        for config in (development, template):
+            self.assertIn("server 127.0.0.1:8000;", config)
+            self.assertIn("server todo-keycloak:8080;", config)
+            self.assertIn("DATABASE_HOST: todo-postgres", config)
+
+    def test_migration_delivers_separate_least_privilege_secrets(self):
+        tasks = read(MIGRATION / "tasks" / "main.yml")
+        rollback = read(ROLLBACK / "tasks" / "main.yml")
+
+        self.assertIn("todo-migrator-password", tasks)
+        self.assertIn("todo-kube-migrator-secret", tasks)
+        self.assertIn("todo_kube_migrator_secret_payload", tasks)
+        self.assertIn("todo-kube-migrator-secret", rollback)
+
+    def test_superseded_separate_app_workloads_are_removed(self):
+        for filename in (
+            "backend.yaml",
+            "frontend.yaml",
+            "todo-backend.kube",
+            "todo-frontend.kube",
+        ):
+            self.assertFalse((RUNTIME / filename).exists())
 
     def test_development_and_runtime_config_have_the_same_objects(self):
         development = list(
@@ -97,7 +143,7 @@ class KubeRuntimeTests(unittest.TestCase):
 
     def test_frontend_runtime_unit_maps_external_port_to_container_tls(self):
         template = read(
-            MIGRATION / "templates" / "todo-frontend.kube.j2"
+            MIGRATION / "templates" / "todo-app.kube.j2"
         )
 
         self.assertIn("127.0.0.1:8080:8080", template)
@@ -141,9 +187,10 @@ class KubeRuntimeTests(unittest.TestCase):
     def test_documentation_explains_podman_container_names(self):
         guide = read(RUNTIME / "README.md")
 
-        self.assertIn("todo-backend-backend", guide)
-        self.assertIn("todo-backend.service", guide)
-        self.assertIn("same YAML used in production", guide)
+        self.assertIn("todo-app-backend", guide)
+        self.assertIn("todo-app-frontend", guide)
+        self.assertIn("todo-app.service", guide)
+        self.assertIn("same workload YAML", guide)
 
     def test_release_packages_include_the_shared_runtime(self):
         operations = read(ROOT / "scripts" / "build-operations-package.sh")

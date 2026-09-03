@@ -66,6 +66,7 @@
     argv: [podman, secret, exists, "{{ item }}"]
   loop:
     - todo-app-password
+    - todo-migrator-password
     - todo-keycloak-db-password
     - todo-keycloak-admin-password
   changed_when: false
@@ -81,6 +82,20 @@
       - "{{ '{{.SecretData}}' }}"
       - todo-app-password
   register: todo_kube_app_password
+  changed_when: false
+  no_log: true
+
+- name: Read the source migrator password
+  ansible.builtin.command:
+    argv:
+      - podman
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
+      - todo-migrator-password
+  register: todo_kube_migrator_password
   changed_when: false
   no_log: true
 
@@ -125,6 +140,17 @@
           }
         } | to_json
       }}
+    todo_kube_migrator_secret_payload: >-
+      {{
+        {
+          'apiVersion': 'v1',
+          'kind': 'Secret',
+          'metadata': {'name': 'todo-kube-migrator-secret'},
+          'data': {
+            'database-password': todo_kube_migrator_password.stdout | b64encode
+          }
+        } | to_json
+      }}
     todo_kube_keycloak_secret_payload: >-
       {{
         {
@@ -144,6 +170,7 @@
     argv: [podman, secret, exists, "{{ item }}"]
   loop:
     - todo-kube-backend-secret
+    - todo-kube-migrator-secret
     - todo-kube-keycloak-secret
   register: todo_kube_secret_checks
   changed_when: false
@@ -164,6 +191,21 @@
   no_log: true
   when: todo_kube_secret_checks.results[0].rc == 0
 
+- name: Read an existing Kube migrator secret
+  ansible.builtin.command:
+    argv:
+      - podman
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
+      - todo-kube-migrator-secret
+  register: todo_kube_existing_migrator_secret
+  changed_when: false
+  no_log: true
+  when: todo_kube_secret_checks.results[1].rc == 0
+
 - name: Read an existing Kube Keycloak secret
   ansible.builtin.command:
     argv:
@@ -177,7 +219,7 @@
   register: todo_kube_existing_keycloak_secret
   changed_when: false
   no_log: true
-  when: todo_kube_secret_checks.results[1].rc == 0
+  when: todo_kube_secret_checks.results[2].rc == 0
 
 - name: Compare Kube-compatible secrets with their sources
   ansible.builtin.set_fact:
@@ -188,9 +230,16 @@
         (todo_kube_existing_backend_secret.stdout | default('{}') | from_json)
         == (todo_kube_backend_secret_payload | from_json)
       }}
-    todo_kube_keycloak_secret_matches: >-
+    todo_kube_migrator_secret_matches: >-
       {{
         todo_kube_secret_checks.results[1].rc == 0
+        and
+        (todo_kube_existing_migrator_secret.stdout | default('{}') | from_json)
+        == (todo_kube_migrator_secret_payload | from_json)
+      }}
+    todo_kube_keycloak_secret_matches: >-
+      {{
+        todo_kube_secret_checks.results[2].rc == 0
         and
         (todo_kube_existing_keycloak_secret.stdout | default('{}') | from_json)
         == (todo_kube_keycloak_secret_payload | from_json)
@@ -256,12 +305,20 @@
     - todo_kube_secret_checks.results[0].rc == 0
     - not todo_kube_backend_secret_matches
 
+- name: Remove an outdated Kube migrator secret
+  ansible.builtin.command:
+    argv: [podman, secret, rm, todo-kube-migrator-secret]
+  changed_when: true
+  when:
+    - todo_kube_secret_checks.results[1].rc == 0
+    - not todo_kube_migrator_secret_matches
+
 - name: Remove an outdated Kube Keycloak secret
   ansible.builtin.command:
     argv: [podman, secret, rm, todo-kube-keycloak-secret]
   changed_when: true
   when:
-    - todo_kube_secret_checks.results[1].rc == 0
+    - todo_kube_secret_checks.results[2].rc == 0
     - not todo_kube_keycloak_secret_matches
 
 - name: Create the Kube backend secret
@@ -272,6 +329,15 @@
   changed_when: true
   no_log: true
   when: not todo_kube_backend_secret_matches
+
+- name: Create the Kube migrator secret
+  ansible.builtin.command:
+    argv: [podman, secret, create, todo-kube-migrator-secret, "-"]
+    stdin: "{{ todo_kube_migrator_secret_payload }}"
+    stdin_add_newline: false
+  changed_when: true
+  no_log: true
+  when: not todo_kube_migrator_secret_matches
 
 - name: Create the Kube Keycloak secret
   ansible.builtin.command:
@@ -294,10 +360,8 @@
     dest: "{{ todo_kube_runtime_directory }}/{{ item }}"
     mode: "0644"
   loop:
-    - backend.yaml
+    - app.yaml
     - keycloak.yaml
-    - frontend.yaml
-    - todo-backend.kube
     - todo-keycloak.kube
 
 - name: Install the runtime application ConfigMaps
@@ -306,10 +370,10 @@
     dest: "{{ todo_kube_runtime_directory }}/config-runtime.yaml"
     mode: "0600"
 
-- name: Install the public frontend Kube unit
+- name: Install the grouped application Kube unit
   ansible.builtin.template:
-    src: todo-frontend.kube.j2
-    dest: "{{ todo_kube_runtime_directory }}/todo-frontend.kube"
+    src: todo-app.kube.j2
+    dest: "{{ todo_kube_runtime_directory }}/todo-app.kube"
     mode: "0644"
 
 - name: Reload the user systemd generator after Kube migration
@@ -319,7 +383,7 @@
 
 - name: Start the Kube application tier
   ansible.builtin.systemd_service:
-    name: todo-frontend.service
+    name: todo-app.service
     scope: user
     state: started
 
@@ -367,9 +431,8 @@
       - --property=SourcePath
       - --value
   loop:
-    - todo-backend.service
+    - todo-app.service
     - todo-keycloak.service
-    - todo-frontend.service
   register: todo_kube_unit_sources
   changed_when: false
 
@@ -385,14 +448,15 @@
   ansible.builtin.command:
     argv: [podman, pod, exists, "{{ item }}"]
   loop:
-    - todo-backend
+    - todo-app
     - todo-keycloak
-    - todo-frontend
   changed_when: false
 
 - name: Report successful Kube application migration
   ansible.builtin.debug:
     msg: >-
-      Backend, Keycloak and nginx now use Podman Kube YAML. PostgreSQL,
+      The migration init container, backend and frontend now share the
+      todo-app Podman Kube pod. Keycloak remains an independent Kube pod.
+      PostgreSQL,
       replication, backup data and the accepted database volume were not
       modified. Rollback files are in {{ todo_kube_backup_directory }}.

@@ -18,6 +18,12 @@ The reusable procedure and pass criteria now live in
 development journal: it records why the current design exists and preserves
 historical experiments that a new operator does not need for normal use.
 
+The current candidate replaces the earlier four-independent-pod Kube model with
+three explicit workload boundaries: a grouped `todo-app` pod containing a
+migration init container, backend and frontend; an independent Keycloak pod;
+and an independent PostgreSQL pod. Static tests pass, but this candidate has not
+yet repeated the Oracle Linux migration, reboot, rollback and DR gates.
+
 ## Paused DR runner validation - 2026-09-03
 
 Resume from this safety checkpoint:
@@ -374,12 +380,11 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-The accepted Quadlet implementation is a stable rollback point. Documentation
-is organized around the finished system, and the full clean nginx drill no
-longer remains outstanding.
+The accepted per-container Quadlet implementation remains the stable rollback
+point. Complete the paused DR runner validation without changing its live state.
+Then build fresh packages from this branch and repeat the application Kube
+migration gate for the grouped `todo-app` model: init-migration failure, normal
+startup, HTTPS and E2E, reboot, database restart, rollback, replication and WAL
+archive health must all pass before the candidate can replace the reference.
 
-A Podman Compose implementation may now be explored on a separate branch as a
-feasibility experiment. It must not replace this reference until provider
-pinning, offline installation, rootless SELinux behavior, secrets, dependency
-ordering, systemd boot ownership and the complete recovery lifecycle are proven.
 Planned switchover/failback remains separate from restoring redundancy.

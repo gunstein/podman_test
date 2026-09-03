@@ -1,6 +1,17 @@
+# Grouped application redesign status
+
+The canonical manifests now define three workload boundaries: `todo-app`
+(migration init, backend and frontend), `todo-keycloak`, and `todo-postgres`.
+Static YAML and regression tests pass locally. The grouped model has **not yet**
+passed the Oracle Linux migration, reboot, rollback, replication or full DR
+acceptance gates.
+
+The results below are retained as historical evidence for the superseded
+four-pod model. They do not approve the grouped model.
+
 # Canonical Kube application runtime results
 
-## Static integration gate — passed
+## Historical four-pod static integration gate — passed
 
 The shared backend, Keycloak and frontend manifests parse as Podman-supported
 Kube YAML. The development and rendered runtime ConfigMaps contain the same
@@ -23,7 +34,7 @@ dependencies pull in backend and Keycloak. Both Ansible playbooks pass
 syntax-check, all embedded YAML parses, the operations package contains the
 runtime, roles and runbook, and the complete local test suite passes.
 
-## Oracle Linux integrated migration gate — passed
+## Historical four-pod Oracle Linux migration gate — passed
 
 The controlled migration and rollback were exercised on Oracle Linux 9 with
 rootless Podman 5.8.2. The current writable primary was the physical
@@ -63,7 +74,7 @@ The application-tier migration, reboot and rollback gate is therefore passed.
 This result does not yet authorize PostgreSQL, backup, PITR or disaster-recovery
 migration to Kube YAML; those operational contracts remain a separate gate.
 
-## Full-stack Kube integration gate — passed
+## Historical four-pod full-stack gate — passed
 
 After the corrected PostgreSQL migration passed independently, the application
 migration was repeated on top of the canonical PostgreSQL Kube service. The

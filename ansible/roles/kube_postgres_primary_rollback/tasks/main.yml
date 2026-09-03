@@ -61,10 +61,34 @@
   changed_when: false
   failed_when: false
 
+- name: Detect the grouped application service
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - --user
+      - show
+      - todo-app.service
+      - --property=LoadState
+      - --value
+  register: todo_kube_database_rollback_grouped_application
+  changed_when: false
+  failed_when: false
+
+- name: Select the application entry service
+  ansible.builtin.set_fact:
+    todo_kube_database_rollback_application_entry: >-
+      {{
+        'todo-app.service'
+        if (todo_kube_database_rollback_grouped_application.stdout | trim)
+        == 'loaded'
+        else 'todo-frontend.service'
+      }}
+
 - name: Stop the application tier before database rollback
   ansible.builtin.command:
     argv: [systemctl, --user, stop, "{{ item }}"]
   loop:
+    - todo-app.service
     - todo-frontend.service
     - todo-backend.service
     - todo-keycloak.service
@@ -206,7 +230,7 @@
 
 - name: Start the application tier after database rollback
   ansible.builtin.systemd_service:
-    name: todo-frontend.service
+    name: "{{ todo_kube_database_rollback_application_entry }}"
     scope: user
     state: started
 

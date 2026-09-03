@@ -2,9 +2,11 @@
 
 Use this controlled migration only on the current writable primary after the
 isolated backend, Keycloak, nginx, PostgreSQL and replication Kube gates have
-passed. It replaces the backend, Keycloak and frontend runtime definitions.
-PostgreSQL, its container, systemd unit, volumes, replication, WAL archive and
-DR tools remain unchanged.
+passed. It replaces the backend, Keycloak and frontend runtime definitions with
+one `todo-app` pod plus an independent `todo-keycloak` pod. The app pod runs the
+idempotent database migration as an init container before backend and frontend
+start. PostgreSQL, its container, systemd unit, volumes, replication, WAL archive
+and DR tools remain unchanged.
 
 ## Preconditions
 
@@ -12,13 +14,15 @@ DR tools remain unchanged.
 - The current host name and `todo_node_address` must identify that host.
 - `todo-postgres.service` must be active and the database must report
   `f|off` for recovery and read-only state.
-- The three application images and existing raw Podman secrets must exist.
+- The three application images and the application, migrator and Keycloak raw
+  Podman secrets must exist.
 - All three installed per-container application Quadlets must still exist.
 - Keep the client mapping for `todo.test` on the current primary.
 
 The migration creates no plaintext secret file. It reads the existing raw
-secrets with `no_log`, constructs the Kube Secret objects in memory and sends
-them directly to `podman secret create` over stdin.
+secrets with `no_log`, constructs three least-privilege Kube Secret objects in
+memory and sends them directly to `podman secret create` over stdin. The
+migrator object is mounted only in the init container.
 
 ## Preserve pre-migration evidence
 
@@ -69,41 +73,34 @@ shared workload YAML and generated runtime ConfigMaps below:
 ~/.config/containers/systemd/todo-kube-runtime/
 ```
 
-Expected service names remain:
+The resulting application service boundaries are:
 
 ```text
-todo-backend.service
-todo-keycloak.service
-todo-frontend.service
+todo-app.service       # migration init, backend and frontend
+todo-keycloak.service  # independent shared identity service
 ```
 
-Podman container names change because Kube combines pod and container names:
+Podman combines pod and regular-container names:
 
 ```text
-todo-backend-backend
+todo-app-backend
+todo-app-frontend
 todo-keycloak-keycloak
-todo-frontend-nginx
 ```
+
+The `todo-app-migrate` init container is type `once` and is removed after a
+successful run. If migration fails, backend and frontend do not start.
 
 ## Verify
 
 ```bash
 systemctl --user is-active \
   todo-postgres.service \
-  todo-backend.service \
   todo-keycloak.service \
-  todo-frontend.service
+  todo-app.service
 
 systemctl --user show \
-  todo-backend.service \
-  --property=SourcePath
-
-systemctl --user show \
-  todo-keycloak.service \
-  --property=SourcePath
-
-systemctl --user show \
-  todo-frontend.service \
+  todo-app.service todo-keycloak.service \
   --property=SourcePath
 
 podman pod ps \
@@ -114,7 +111,7 @@ curl --fail http://127.0.0.1:8080/ready
 echo
 ```
 
-The three application source paths must end in `.kube`; PostgreSQL must still
+Both application source paths must end in `.kube`; PostgreSQL must still
 come from its accepted `.container` definition. Verify the public HTTPS routes,
 stable Keycloak issuer and browser E2E flow before testing a reboot.
 
@@ -125,7 +122,7 @@ podman exec todo-postgres \
   psql --username todo --dbname postgres --tuples-only --no-align \
   --command 'SELECT system_identifier FROM pg_control_system();'
 
-podman exec todo-frontend-nginx \
+podman exec todo-app-frontend \
   sha256sum /var/lib/todo-tls/ca.crt
 ```
 
@@ -142,7 +139,7 @@ ansible-playbook \
 ```
 
 The rollback requires all three preserved source files before stopping
-anything. It removes only the Kube application runtime and its two derived
+anything. It removes only the Kube application runtime and its three derived
 Kube-compatible secrets, restores the exact saved `.container` files and
 starts the previous application chain. It does not remove or recreate any
 volume, raw secret, PostgreSQL resource or backup file.

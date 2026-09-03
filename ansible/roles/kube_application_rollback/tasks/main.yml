@@ -42,8 +42,7 @@
   ansible.builtin.command:
     argv: [systemctl, --user, stop, "{{ item }}"]
   loop:
-    - todo-frontend.service
-    - todo-backend.service
+    - todo-app.service
     - todo-keycloak.service
   register: todo_kube_rollback_stops
   changed_when: false
@@ -73,6 +72,7 @@
     argv: [podman, secret, rm, "{{ item }}"]
   loop:
     - todo-kube-backend-secret
+    - todo-kube-migrator-secret
     - todo-kube-keycloak-secret
   register: todo_kube_rollback_secret_removal
   changed_when: todo_kube_rollback_secret_removal.rc == 0

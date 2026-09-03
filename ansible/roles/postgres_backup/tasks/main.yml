@@ -134,10 +134,33 @@
     m15_archive_settings.stdout | trim !=
     "on|" ~ m15_archive_command ~ "|" ~ m15_archive_timeout
 
+- name: Detect the grouped application service
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - --user
+      - show
+      - todo-app.service
+      - --property=LoadState
+      - --value
+  register: m15_grouped_application_service
+  changed_when: false
+  failed_when: false
+
+- name: Select the application entry service
+  ansible.builtin.set_fact:
+    m15_application_entry_service: >-
+      {{
+        'todo-app.service'
+        if m15_grouped_application_service.stdout | trim == 'loaded'
+        else 'todo-frontend.service'
+      }}
+
 - name: Stop the application tier before PostgreSQL restart
   ansible.builtin.command:
     argv: [systemctl, --user, stop, "{{ item }}"]
   loop:
+    - todo-app.service
     - todo-frontend.service
     - todo-backend.service
     - todo-keycloak.service
@@ -196,7 +219,7 @@
 
 - name: Start the application tier after PostgreSQL restart
   ansible.builtin.systemd_service:
-    name: todo-frontend.service
+    name: "{{ m15_application_entry_service }}"
     scope: user
     state: started
 

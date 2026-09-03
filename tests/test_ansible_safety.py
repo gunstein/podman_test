@@ -170,7 +170,6 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertIn("ansible/DR-AUTOMATION.md", builder)
         self.assertIn("scripts/todo_dr_run.py", builder)
 
-
     def test_rebuild_installs_role_reversed_dr_configuration(self):
         rebuild = read("ansible/rebuild-standby.yml")
         dr_role = read("ansible/roles/todo_dr/tasks/main.yml")
@@ -178,6 +177,17 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertIn("todo_dr_primary_group: todo_current_primary", rebuild)
         self.assertIn("todo_dr_standby_group: todo_rebuild_standby", rebuild)
         self.assertIn("todo_dr_primary_group | default(", dr_role)
+
+    def test_postgres_operations_support_grouped_application_entrypoint(self):
+        for tasks_file in (
+            "ansible/roles/postgres_backup/tasks/main.yml",
+            "ansible/roles/postgres_redundancy_primary/tasks/main.yml",
+            "ansible/roles/kube_postgres_primary_rollback/tasks/main.yml",
+        ):
+            tasks = read(tasks_file)
+            self.assertIn("- todo-app.service", tasks)
+            self.assertIn("'todo-app.service'", tasks)
+            self.assertIn("else 'todo-frontend.service'", tasks)
 
 
 if __name__ == "__main__":

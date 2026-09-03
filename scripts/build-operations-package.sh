@@ -26,6 +26,7 @@ cp "$project_root/ansible/README.md" \
   "$project_root/ansible/POSTGRES-KUBE-MIGRATION.md" \
   "$project_root/ansible/BACKUP-PITR.md" \
   "$project_root/ansible/RESTORE-REDUNDANCY.md" \
+  "$project_root/ansible/DR-AUTOMATION.md" \
   "$project_root/ansible/preflight-standby.yml" \
   "$project_root/ansible/bootstrap-standby.yml" \
   "$project_root/ansible/install-dr-tool.yml" \
@@ -67,6 +68,7 @@ cp "$project_root/quadlet/todo.network" \
   "$package_directory/quadlet/"
 cp -r "$project_root/kube/runtime" "$package_directory/kube/"
 cp "$project_root/scripts/todo_dr.py" \
+  "$project_root/scripts/todo_dr_run.py" \
   "$project_root/scripts/todo_backup.py" "$package_directory/scripts/"
 cp "$project_root/offline/FAPOLICYD.md" "$package_directory/offline/"
 cp "$project_root/docs/SECRETS.md" \

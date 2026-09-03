@@ -28,6 +28,11 @@
 
   roles:
     - role: postgres_reseed_standby
+    - role: todo_dr
+      vars:
+        m13_config_directory: "{{ m16_config_directory }}"
+        todo_dr_primary_group: todo_current_primary
+        todo_dr_standby_group: todo_rebuild_standby
 
 - name: Verify restored replication
   hosts: todo_current_primary

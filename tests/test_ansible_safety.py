@@ -165,6 +165,20 @@ class AnsibleSafetyTests(unittest.TestCase):
         )
         self.assertEqual(builders, ["build-operations-package.sh"])
 
+    def test_operations_package_contains_resumable_dr_runner(self):
+        builder = read("scripts/build-operations-package.sh")
+        self.assertIn("ansible/DR-AUTOMATION.md", builder)
+        self.assertIn("scripts/todo_dr_run.py", builder)
+
+
+    def test_rebuild_installs_role_reversed_dr_configuration(self):
+        rebuild = read("ansible/rebuild-standby.yml")
+        dr_role = read("ansible/roles/todo_dr/tasks/main.yml")
+        self.assertIn("- role: todo_dr", rebuild)
+        self.assertIn("todo_dr_primary_group: todo_current_primary", rebuild)
+        self.assertIn("todo_dr_standby_group: todo_rebuild_standby", rebuild)
+        self.assertIn("todo_dr_primary_group | default(", dr_role)
+
 
 if __name__ == "__main__":
     unittest.main()

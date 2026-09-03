@@ -189,3 +189,8 @@ database copy; it is not an automatic failback or switchover. After rebuilding,
 keep a site-specific copy of
 `inventory-recovery.example.ini` as the single role-based steady-state
 inventory.
+
+For repeated drills, [DR-AUTOMATION.md](DR-AUTOMATION.md) wraps promotion,
+application recovery, destructive reseed, return to the Kube runtime and final
+verification as resumable stages. External fencing, quarantine and firewall
+changes remain explicit operator boundaries.

@@ -96,6 +96,13 @@ podman exec todo-postgres pg_isready --username todo --dbname todo
 python3 "$HOME/.config/todo/todo_backup.py" status
 ```
 
+After a deliberate unclean PostgreSQL stop, `pg_stat_archiver` cumulative
+statistics can start empty even though the persistent backup volume and its
+archived WAL files are intact. Inspect the mounted backup volume first. Then
+require an exact newly archived WAL segment before treating archiving as
+recovered; `cluster-status.yml` intentionally rejects an empty
+`last_archived_wal`.
+
 Verify public HTTPS, browser E2E, reboot, replication and backup/PITR behavior
 before treating this candidate as accepted.
 

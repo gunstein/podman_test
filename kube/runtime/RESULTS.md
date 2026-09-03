@@ -62,3 +62,30 @@ services, health endpoints and the stable issuer passed.
 The application-tier migration, reboot and rollback gate is therefore passed.
 This result does not yet authorize PostgreSQL, backup, PITR or disaster-recovery
 migration to Kube YAML; those operational contracts remain a separate gate.
+
+## Full-stack Kube integration gate — passed
+
+After the corrected PostgreSQL migration passed independently, the application
+migration was repeated on top of the canonical PostgreSQL Kube service. The
+resulting production runtime used four independent Kube pods and the existing
+stable user-systemd service names:
+
+```text
+todo-postgres.service
+todo-backend.service
+todo-keycloak.service
+todo-frontend.service
+```
+
+The application migration did not recreate PostgreSQL. Its container identity
+and database system identifier `7680265831322587170` were unchanged, and nginx
+retained the same TLS root. Local routes, Todo data, the stable Keycloak issuer,
+public HTTPS and both browser E2E tests passed. A full host reboot restored all
+four services and all four pods; every container became healthy and no failed
+user units remained after the normal Keycloak startup probe transition.
+
+The final cross-host check reported the rebuilt standby `t|on`, asynchronous
+streaming with zero-byte lag, writable primary state `f|off|on`, WAL
+`00000002000000000000003D`, and zero archive failures. Full-stack startup and
+application behavior are therefore validated. Fresh backup/PITR and the full
+fencing, promotion and standby-rebuild sequence remain separate acceptance

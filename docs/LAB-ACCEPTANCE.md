@@ -22,9 +22,17 @@ After promotion and rebuild, machine names stay fixed while roles reverse:
 | Primary, application and backup | `todo-standby` | `192.168.0.108` |
 | Database-only standby | `todo-primary` | `192.168.0.102` |
 
-The validated baseline uses Oracle Linux 9.8, SELinux enforcing, active
-`fapolicyd` and firewalld, rootless Podman 4.9.3, RPM-managed Ansible Core
-2.14.18, user lingering, 4 GiB memory and an 18 GiB home filesystem per VM.
+Both runtimes use Oracle Linux 9.8, SELinux enforcing, active `fapolicyd` and
+firewalld, RPM-managed Ansible Core 2.14.18, user lingering, 4 GiB memory and
+an 18 GiB home filesystem per VM.
+
+| Runtime | Podman requirement |
+|---|---|
+| Accepted per-container Quadlet baseline | Rootless Podman 4.9.3 validated |
+| Grouped Podman Kube candidate | Rootless Podman 5.8.2 required; platform features tested |
+
+The candidate requires Podman 5.8.2 because its PostgreSQL `.kube` unit uses
+`--no-pod-prefix` to preserve the operational container name.
 
 ## Acceptance rules
 

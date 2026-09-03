@@ -91,6 +91,9 @@ class KubeRuntimeTests(unittest.TestCase):
         for unit in (app, keycloak, postgres):
             self.assertIn("ExitCodePropagation=any", unit)
             self.assertIn("Restart=on-failure", unit)
+            self.assertIn("ConfigMap=config-runtime.yaml", unit)
+
+        self.assertNotIn("ConfigMap=config-dev.yaml", postgres)
 
     def test_app_proxy_uses_loopback_and_shared_services_use_network_dns(self):
         development = read(RUNTIME / "config-dev.yaml")
@@ -218,6 +221,24 @@ class KubeRuntimeTests(unittest.TestCase):
             "todo.network",
         ):
             self.assertIn(filename, guide)
+
+    def test_kube_index_routes_readers_to_the_current_runtime(self):
+        index = read(ROOT / "kube" / "README.md")
+
+        self.assertIn("Start with the [canonical runtime]", index)
+        self.assertIn("three-workload candidate", index)
+        self.assertIn("RESULTS-FOUR-POD-HISTORICAL.md", index)
+        self.assertNotIn("Start with [poc/README.md]", index)
+
+    def test_current_results_do_not_embed_four_pod_history(self):
+        current = read(RUNTIME / "RESULTS.md")
+        historical = read(
+            RUNTIME / "RESULTS-FOUR-POD-HISTORICAL.md"
+        )
+
+        self.assertIn("Grouped Podman Kube runtime results", current)
+        self.assertNotIn("four-pod static integration gate", current)
+        self.assertIn("four-pod static integration gate", historical)
 
     def test_release_packages_include_the_shared_runtime(self):
         operations = read(ROOT / "scripts" / "build-operations-package.sh")

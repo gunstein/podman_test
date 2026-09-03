@@ -1,5 +1,9 @@
 # Learning guide
 
+This guide describes the accepted per-container Quadlet reference. For the
+grouped Podman Kube candidate, start with
+[`kube/runtime/README.md`](../kube/runtime/README.md).
+
 This guide explains the finished system in dependency order. Each section says
 what to understand, where to look and what to try on a running lab. Commands are
 observational unless the section explicitly links to a runbook.

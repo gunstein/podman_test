@@ -5,7 +5,7 @@ After=todo-postgres-data-volume.service todo-postgres-backup-volume.service
 
 [Kube]
 Yaml=postgres.yaml
-ConfigMap=config-dev.yaml
+ConfigMap=config-runtime.yaml
 Network=todo.network
 PublishPort=127.0.0.1:5432:5432
 PodmanArgs=--no-pod-prefix

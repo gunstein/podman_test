@@ -7,6 +7,11 @@ simplification and the normal production concern.
 
 For a dependency-ordered walkthrough, use [LEARNING-GUIDE.md](LEARNING-GUIDE.md). For the destructive build-from-zero verification, use [LAB-ACCEPTANCE.md](LAB-ACCEPTANCE.md).
 
+The table and tool responsibilities below describe the accepted per-container
+Quadlet reference. In the grouped candidate, Kube YAML defines pod contents,
+`.kube` Quadlet connects each workload to Podman and systemd, and systemd owns
+its lifecycle. See [`kube/runtime/README.md`](../kube/runtime/README.md).
+
 | Topic | Demonstrated here | Deliberate simplification / production concern |
 |---|---|---|
 | Rootless Podman | User namespaces, images, networks, volumes, ports and secrets | One service user and one application stack |

@@ -13,38 +13,44 @@ Podman Kube YAML is used here as a Podman workload format. This project does not
 install a Kubernetes cluster and does not claim Kubernetes or OpenShift
 portability.
 
-Start with [poc/README.md](poc/README.md).
+## Current architecture
 
-After the lifecycle PoC has passed, the first isolated application migration
-is [backend/README.md](backend/README.md). It exercises the real database and
-secret contract in parallel with the accepted backend.
+Start with the [canonical runtime](runtime/README.md). It defines the current
+three-workload candidate:
 
-The next isolated workload is [nginx/README.md](nginx/README.md). It verifies
-the frontend, reverse-proxy routes and persistent TLS state on alternate
-loopback ports.
+```text
+todo-app pod       migration init + backend + frontend
+todo-keycloak pod  shared identity service
+todo-postgres pod  shared persistent database
+        |
+        +---------- todo.network
+```
 
-The third isolated workload is [keycloak/README.md](keycloak/README.md). It
-joins the accepted identity service temporarily as a second `jdbc-ping`
-cluster node and verifies environment-secret delivery and graceful shutdown.
+The runtime guide identifies the small set of workload, ConfigMap, Quadlet and
+network files that define this architecture. It also separates that core from
+the Todo-specific backup, replication and disaster-recovery contracts. Current
+status belongs in [runtime/RESULTS.md](runtime/RESULTS.md).
 
-The fourth isolated workload is [postgres/README.md](postgres/README.md). It
-uses a separate database, secret, loopback port and persistent volume to prove
-fresh initialization, rootless storage and crash recovery without touching the
-accepted database or DR state.
+The candidate is production-shaped but remains unaccepted until the grouped
+model passes the Oracle Linux migration, cold-reboot, rollback, replication and
+full DR gates. The accepted per-container reference remains recoverable from
+`quadlet-reference-v1`.
 
-After the isolated persistence gate, [replication/README.md](replication/README.md)
-defines a separate two-host primary/standby gate. It validates Kube init
-containers, physical replication slots and restart-safe base-backup behavior
-before any accepted database workload is migrated.
+## Isolated evidence and history
 
-The isolated gates now feed the canonical
-[runtime application tier](runtime/README.md). Its backend, Keycloak and nginx
-manifests preserve the accepted DNS and systemd service names and can replace
-only the stateless application tier while the validated PostgreSQL and DR
-implementation remains unchanged.
+These directories explain how individual contracts were established. They are
+not the recommended reading order or the current deployment topology:
 
-The stable-name gate in [name-contract/README.md](name-contract/README.md)
-proves that Podman 5.8.2 can preserve an existing container name through
-`--no-pod-prefix`. The canonical runtime uses that contract for the separate,
-controlled current-primary PostgreSQL migration described in
+- [poc/](poc/README.md) proves the basic Podman Kube lifecycle;
+- [backend/](backend/README.md), [nginx/](nginx/README.md),
+  [keycloak/](keycloak/README.md) and [postgres/](postgres/README.md) preserve
+  isolated component gates;
+- [replication/](replication/README.md) proves the two-host physical replication
+  contract used by the operational layer;
+- [name-contract/](name-contract/README.md) proves the stable PostgreSQL name
+  required by existing DR and backup commands; and
+- [historical runtime results](runtime/RESULTS-FOUR-POD-HISTORICAL.md)
+  retain evidence for superseded runtime shapes.
+
+The controlled current-primary database migration is documented separately in
 [POSTGRES-KUBE-MIGRATION.md](../ansible/POSTGRES-KUBE-MIGRATION.md).

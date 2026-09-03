@@ -75,8 +75,16 @@ The core relationship is only app, identity, database, network, persistence and
 external secrets. Replication, WAL archiving, backup, PITR, promotion and
 standby rebuild are a separate operational layer built around that core.
 
-The PostgreSQL workload is the deliberate exception. Its pod and container are
-both named `todo-postgres`, and its `.kube` unit passes `--no-pod-prefix` so the
+The PostgreSQL workload deliberately carries two Todo-specific resilience
+details which are not required for a basic PostgreSQL Kube workload: the
+`todo-postgres-backup` claim/mount preserves the existing physical backup and
+WAL archive, and `max_slot_wal_keep_size=1GB` bounds WAL retained for the
+physical replication slot. A minimal educational workload would keep only the
+data claim; this production-shaped candidate keeps both details so migration
+does not weaken the already validated backup and replication contracts.
+
+Its pod and container are both named `todo-postgres`, and its `.kube` unit
+passes `--no-pod-prefix` so the
 existing DR, backup and Ansible commands retain the exact container name. This
 requires the tested Podman 5.8.2 platform.
 

@@ -47,6 +47,23 @@ connects each concept to source files and safe commands using a consistent
 The shorter [concept coverage matrix](docs/WHAT-YOU-LEARN.md) states what the
 demo implements, what it simplifies and which production concerns remain.
 
+## Podman Kube candidate: start here
+
+The accepted deployment remains the recoverable per-container Quadlet reference.
+The current candidate shows its Podman-native workload boundaries in these files:
+
+| Boundary | Files |
+|---|---|
+| Grouped application | [`app.yaml`](kube/runtime/app.yaml), [`todo-app.kube`](kube/runtime/todo-app.kube) |
+| Shared identity | [`keycloak.yaml`](kube/runtime/keycloak.yaml), [`todo-keycloak.kube`](kube/runtime/todo-keycloak.kube) |
+| Persistent database | [`postgres.yaml`](kube/runtime/postgres.yaml), [`todo-postgres.kube`](kube/runtime/todo-postgres.kube) |
+| Development inputs | [`config-dev.yaml`](kube/runtime/config-dev.yaml) |
+| Shared network | [`todo.network`](quadlet/todo.network) |
+
+Start with the [Kube runtime guide](kube/runtime/README.md). PoCs, migrations,
+DR automation and historical results are evidence and operations around this
+core. The grouped candidate still requires the Oracle Linux acceptance gates.
+
 ## Requirements
 
 The deployed baseline requires:
@@ -185,7 +202,9 @@ Never commit passwords, private keys, local inventories or generated bundles.
 
 ## Tests
 
-Backend tests use an isolated database whose name must end in `_test`:
+Database-free migration startup retry tests live in `backend/unit_tests/`.
+Backend integration tests use an isolated database whose name must end in
+`_test`:
 
 ```bash
 podman exec todo-postgres createdb -U todo -O todo todo_test
@@ -215,6 +234,7 @@ manual lab acceptance test.
 
 | Need | Document |
 |---|---|
+| Understand the current Podman Kube architecture | [Kube runtime](kube/runtime/README.md) |
 | Learn the system in dependency order | [Learning guide](docs/LEARNING-GUIDE.md) |
 | Build and accept the complete lab | [Lab acceptance](docs/LAB-ACCEPTANCE.md) |
 | Check demonstrated versus simplified concepts | [What you learn](docs/WHAT-YOU-LEARN.md) |

@@ -88,8 +88,10 @@ todo-app-frontend
 todo-keycloak-keycloak
 ```
 
-The `todo-app-migrate` init container is type `once` and is removed after a
-successful run. If migration fails, backend and frontend do not start.
+The `todo-app-migrate` init container waits for transient PostgreSQL startup
+failures for at most 120 seconds. It is type `once` and is removed after a
+successful run. Authentication and SQL errors fail immediately;
+if migration fails or times out, backend and frontend do not start.
 
 ## Verify
 

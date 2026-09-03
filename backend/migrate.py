@@ -1,12 +1,19 @@
 import argparse
+import math
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
+
+import psycopg
 
 from backend.main import connect
 
 DIRECTORY = Path(__file__).parent / "migrations"
 PATTERN = re.compile(r"^(\d+)_(.+)\.(up|down)\.sql$")
+# SQLSTATE 57P03 means PostgreSQL is running but not ready for connections.
+RETRYABLE_CONNECT_SQLSTATES = {None, "57P03"}
+CONNECT_RETRY_INTERVAL_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -53,8 +60,37 @@ def applied_versions(connection) -> set[int]:
     return {row["version"] for row in rows}
 
 
-def migrate_up() -> None:
-    with connect() as connection:
+def parse_connect_timeout(value: str) -> float:
+    seconds = float(value)
+    if not math.isfinite(seconds) or seconds < 0:
+        raise argparse.ArgumentTypeError(
+            "connect timeout must be a finite, non-negative number"
+        )
+    return seconds
+
+
+def connect_with_retry(timeout_seconds: float):
+    if not math.isfinite(timeout_seconds) or timeout_seconds < 0:
+        raise ValueError("connect timeout must be finite and non-negative")
+    if timeout_seconds == 0:
+        return connect()
+
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            return connect()
+        except psycopg.OperationalError as error:
+            if error.sqlstate not in RETRYABLE_CONNECT_SQLSTATES:
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+            print("Database is not ready; retrying connection", flush=True)
+            time.sleep(min(CONNECT_RETRY_INTERVAL_SECONDS, remaining))
+
+
+def migrate_up(connect_timeout: float = 0) -> None:
+    with connect_with_retry(connect_timeout) as connection:
         applied = applied_versions(connection)
         for migration in load_migrations():
             if migration.version in applied:
@@ -97,9 +133,18 @@ def show_status() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run database migrations")
+    parser.add_argument(
+        "--connect-timeout",
+        type=parse_connect_timeout,
+        default=0,
+        help="wait this many seconds for a transient database connection failure",
+    )
     parser.add_argument("command", choices=("status", "up", "down"))
-    command = parser.parse_args().command
-    {"status": show_status, "up": migrate_up, "down": migrate_down}[command]()
+    args = parser.parse_args()
+    if args.command == "up":
+        migrate_up(args.connect_timeout)
+    else:
+        {"status": show_status, "down": migrate_down}[args.command]()
 
 
 if __name__ == "__main__":

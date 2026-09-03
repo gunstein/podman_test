@@ -243,6 +243,9 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install -r backend/requirements-test.txt
 
+      - name: Test migration startup retry
+        run: python -m unittest discover --start-directory backend/unit_tests --verbose
+
       - name: Exercise clean role setup and migrations
         shell: bash
         run: |

@@ -340,6 +340,33 @@ Pass only when final status reports writable primary, healthy archiving,
 `streaming|async`, active usable slot, zero measured lag, read-only recovery
 standby, and healthy application through trusted HTTPS.
 
+## 11. Grouped Podman Kube candidate
+
+Only after redundancy and backup health are restored, run the DR runner
+`migrate-kube` and `verify` stages. Require exactly these workload services and
+pods on the current primary:
+
+```text
+todo-app.service       todo-app pod
+todo-keycloak.service  todo-keycloak pod
+todo-postgres.service  todo-postgres pod
+```
+
+Require the schema migrations to be applied, both regular app containers to be
+healthy, nginx-to-backend traffic through loopback, and app access to Keycloak
+and PostgreSQL through `todo.network`. Confirm PostgreSQL identity, persistent
+Todo data, replication and WAL archive health are unchanged.
+
+Reboot only the current primary while the rebuilt standby remains available.
+After boot, require `NRestarts=0` for `todo-app.service`, no failed user units,
+application readiness, the stable issuer and trusted browser E2E. Inspect the
+app journal: a transient database-startup error may produce bounded retry logs,
+but backend and frontend must start only after the migration init succeeds.
+
+Exercise the dedicated application rollback and confirm the preserved
+per-container units, data, TLS identity, replication and archive health. Repeat
+the Kube migration before declaring the grouped candidate accepted.
+
 ## Verified clean nginx drill - 2026-09-01
 
 The full procedure passed from clean Oracle Linux 9.8 snapshots using source

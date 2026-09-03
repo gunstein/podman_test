@@ -3,16 +3,37 @@
 These manifests are the production-shaped replacement candidates for the
 accepted per-container Quadlets. They make the lifecycle boundaries explicit:
 frontend and backend share one application pod, while PostgreSQL and Keycloak
-remain independent shared services on the user-defined network.
-PostgreSQL migration remains a separate safety gate
+remain independent shared services on the user-defined network. PostgreSQL
+migration remains a separate safety gate
 from the application tier and from the disaster-recovery workflows.
 
-The workload files are shared:
+## Core architecture
 
 ```text
-app.yaml       -> todo-app pod (migration init, backend and frontend)
-keycloak.yaml  -> todo-keycloak pod
-postgres.yaml  -> todo-postgres pod, data PVC and backup PVC
+                         todo.network
+                              |
+             +----------------+----------------+
+             |                |                |
+             v                v                v
+          todo-app       todo-keycloak    todo-postgres
+     +---------------+        pod              pod
+     | migrate init  |                           |
+     | backend       |                           +-- persistent data
+     | frontend      |
+     +---------------+
+```
+
+The files that define this architecture are:
+
+```text
+app.yaml                 -> migration init, backend and frontend
+keycloak.yaml            -> independent identity service
+postgres.yaml            -> independent database and persistent volumes
+config-dev.yaml          -> shared development configuration
+todo-app.kube            -> application pod systemd lifecycle
+todo-keycloak.kube       -> identity pod systemd lifecycle
+todo-postgres.kube       -> database pod systemd lifecycle
+../../quadlet/todo.network -> shared rootless network
 ```
 
 Development supplies `config-dev.yaml` directly to `podman kube play`.
@@ -25,21 +46,15 @@ by one `todo-app.service`. Nginx reaches its colocated backend on
 `127.0.0.1:8000`; both containers reach the independent `todo-postgres` and
 `todo-keycloak` pods through `todo.network`.
 
-The `migrate` init container runs `python -m backend.migrate up` before either
-regular application container starts. Podman creates Kube init containers as
-type `once`: a failed migration prevents the app pod from starting, while a
-successful init container is removed after it completes. The migrations are
+The `migrate` init container runs
+`python -m backend.migrate --connect-timeout 120 up` before either regular
+application container starts. It retries only transient connection failures
+while PostgreSQL is unavailable or still starting. Authentication and SQL
+errors fail immediately. Podman creates Kube init containers as type `once`: a failed
+or timed-out migration prevents the app pod from starting, while a successful
+init container is removed after it completes. The migrations are
 idempotent, but database role bootstrap and grants remain separate operational
 steps.
-
-The PostgreSQL workload is the deliberate exception. Its pod and container are
-both named `todo-postgres`, and its `.kube` unit passes `--no-pod-prefix` so the
-existing DR, backup and Ansible commands retain the exact container name. This
-requires the tested Podman 5.8.2 platform.
-
-Its `.kube` unit also applies `--health-on-failure=kill` after each creation.
-This preserves the accepted health failure contract: Podman terminates a
-persistently unhealthy database container and systemd recreates the workload.
 
 The workloads expect four externally provisioned Kube-compatible Podman
 secrets:
@@ -53,6 +68,21 @@ secrets:
 
 Secret values are never stored in these files. The controlled Ansible
 migrations construct the objects from the existing raw Podman secrets.
+
+## Operational resilience
+
+The core relationship is only app, identity, database, network, persistence and
+external secrets. Replication, WAL archiving, backup, PITR, promotion and
+standby rebuild are a separate operational layer built around that core.
+
+The PostgreSQL workload is the deliberate exception. Its pod and container are
+both named `todo-postgres`, and its `.kube` unit passes `--no-pod-prefix` so the
+existing DR, backup and Ansible commands retain the exact container name. This
+requires the tested Podman 5.8.2 platform.
+
+Its `.kube` unit also applies `--health-on-failure=kill` after each creation.
+This preserves the accepted health failure contract: Podman terminates a
+persistently unhealthy database container and systemd recreates the workload.
 
 The application migration is intentionally separate from PostgreSQL. Run it
 only through `ansible/migrate-application-to-kube.yml`, with the exact

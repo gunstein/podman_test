@@ -42,7 +42,17 @@ class KubeRuntimeTests(unittest.TestCase):
             ["backend", "frontend"],
         )
         migrate = pod["spec"]["initContainers"][0]
-        self.assertEqual(migrate["args"], ["python", "-m", "backend.migrate", "up"])
+        self.assertEqual(
+            migrate["args"],
+            [
+                "python",
+                "-m",
+                "backend.migrate",
+                "--connect-timeout",
+                "120",
+                "up",
+            ],
+        )
         self.assertIn("todo_migrator", str(migrate["env"]))
         self.assertIn("migrator-secret", str(migrate["volumeMounts"]))
         self.assertNotIn("migrator-secret", str(pod["spec"]["containers"]))
@@ -191,6 +201,23 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("todo-app-frontend", guide)
         self.assertIn("todo-app.service", guide)
         self.assertIn("same workload YAML", guide)
+
+    def test_runtime_guide_separates_core_from_resilience(self):
+        guide = read(RUNTIME / "README.md")
+
+        self.assertIn("## Core architecture", guide)
+        self.assertIn("## Operational resilience", guide)
+        for filename in (
+            "app.yaml",
+            "keycloak.yaml",
+            "postgres.yaml",
+            "config-dev.yaml",
+            "todo-app.kube",
+            "todo-keycloak.kube",
+            "todo-postgres.kube",
+            "todo.network",
+        ):
+            self.assertIn(filename, guide)
 
     def test_release_packages_include_the_shared_runtime(self):
         operations = read(ROOT / "scripts" / "build-operations-package.sh")

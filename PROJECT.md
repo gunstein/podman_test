@@ -21,8 +21,9 @@ historical experiments that a new operator does not need for normal use.
 The current candidate replaces the earlier four-independent-pod Kube model with
 three explicit workload boundaries: a grouped `todo-app` pod containing a
 migration init container, backend and frontend; an independent Keycloak pod;
-and an independent PostgreSQL pod. Static tests pass, but this candidate has not
-yet repeated the Oracle Linux migration, reboot, rollback and DR gates.
+and an independent PostgreSQL pod. Static tests and bounded
+migration-connection retry pass, but this candidate has not yet repeated the
+Oracle Linux migration, reboot, rollback and DR gates.
 
 ## Paused DR runner validation - 2026-09-03
 

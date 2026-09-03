@@ -27,6 +27,8 @@ spec:
         - python
         - -m
         - backend.migrate
+        - --connect-timeout
+        - "120"
         - up
       envFrom:
         - configMapRef:

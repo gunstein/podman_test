@@ -2,9 +2,10 @@
 
 The canonical manifests now define three workload boundaries: `todo-app`
 (migration init, backend and frontend), `todo-keycloak`, and `todo-postgres`.
-Static YAML and regression tests pass locally. The grouped model has **not yet**
-passed the Oracle Linux migration, reboot, rollback, replication or full DR
-acceptance gates.
+Static YAML and regression tests pass locally, including bounded connection
+retry and immediate failure for authentication and SQL errors. The grouped
+model has **not yet** passed the Oracle Linux migration, reboot, rollback,
+replication or full DR acceptance gates.
 
 The results below are retained as historical evidence for the superseded
 four-pod model. They do not approve the grouped model.

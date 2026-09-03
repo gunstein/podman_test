@@ -87,5 +87,11 @@ user units remained after the normal Keycloak startup probe transition.
 The final cross-host check reported the rebuilt standby `t|on`, asynchronous
 streaming with zero-byte lag, writable primary state `f|off|on`, WAL
 `00000002000000000000003D`, and zero archive failures. Full-stack startup and
-application behavior are therefore validated. Fresh backup/PITR and the full
-fencing, promotion and standby-rebuild sequence remain separate acceptance
+application behavior are therefore validated.
+
+A subsequent fresh physical backup and isolated named-point PITR drill passed
+without changing the live Kube runtime. The restore was network-isolated,
+contained only the before-target row, and exact cleanup preserved all live and
+backup state. The full fencing, promotion and standby-rebuild sequence remains
+the final separate acceptance gate before the Kube implementation can replace
+the reference.

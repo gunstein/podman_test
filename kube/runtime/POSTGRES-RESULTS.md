@@ -61,5 +61,22 @@ all containers became healthy, the nginx TLS root retained SHA-256
 public HTTPS and both browser E2E tests passed, and the final replication,
 archive and backup status remained healthy.
 
+## Backup and isolated PITR gate — passed
+
+With the complete application and database runtime still on Kube YAML, a new
+physical backup `base-20260903T135400Z` completed through the unchanged
+`todo_backup.py` interface and passed `pg_verifybackup`. `LATEST` selected the
+new backup and its SHA-256 backup manifest was present on the retained backup
+volume.
+
+The live database received one row before and one row after restore point
+`kube_fullstack_20260903T135524Z`. The tool waited for the exact restore-point
+WAL at `0/40002D98`, restored into the fixed disposable container with
+`Network=none`, and paused at `recovery|paused|read_only = t|t|on`. The restored
+view contained only the before-row, while the live Kube database retained both
+rows and remained ready. Exact-confirmation cleanup removed only the disposable
+container and volume; the live data volume, backup volume, fresh base backup
+and all four Kube services remained present and healthy.
+
 This gate migrates only the current primary. It does not authorize the rebuilt
-standby, promotion, PITR or standby-reseed workflows to use Kube YAML yet.
+standby, promotion or standby-reseed workflows to use Kube YAML yet.

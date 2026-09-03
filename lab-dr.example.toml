@@ -1,0 +1,28 @@
+version = 1
+
+[proxmox]
+# Use a dedicated account restricted to qm operations for VM 107 and 108.
+ssh_target = "labdr@proxmox"
+# Optional when ssh-agent or the default SSH identity is configured.
+# identity_file = "/home/operator/.ssh/id_ed25519_proxmox_lab"
+command_timeout_seconds = 600
+wait_timeout_seconds = 300
+poll_interval_seconds = 2
+
+[guest_ssh]
+user = "gunstein"
+# identity_file = "/home/operator/.ssh/id_ed25519_todo_lab"
+
+[nodes.primary]
+vmid = 107
+proxmox_name = "todo-primary-clean"
+hostname = "todo-primary"
+address = "192.168.0.102"
+clean_snapshot = "ol9-clean-primary"
+
+[nodes.standby]
+vmid = 108
+proxmox_name = "todo-standby-clean"
+hostname = "todo-standby"
+address = "192.168.0.108"
+clean_snapshot = "ol9-clean-standby"

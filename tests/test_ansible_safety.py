@@ -116,6 +116,27 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertIn("docs/LAB-ACCEPTANCE.md", readme)
         self.assertIn("Development journal", readme)
 
+    def test_legacy_quadlet_retirement_is_explicitly_gated(self):
+        guide = read("quadlet/QUADLET-REFERENCE.md")
+
+        self.assertIn("source for the accepted deployment", guide)
+        self.assertIn("rollback\nboundary", guide)
+        self.assertIn("not the target architecture", guide)
+        self.assertIn("quadlet-reference-v1", guide)
+        self.assertIn("## Retirement gate", guide)
+        for gate in (
+            "clean install",
+            "cold",
+            "reboot",
+            "replication",
+            "standby rebuild",
+            "full DR acceptance",
+        ):
+            self.assertIn(gate, guide)
+        self.assertIn("Remove the seven legacy `.container` files", guide)
+        self.assertIn("no production path refers to the legacy files", guide)
+
+    def test_documentation_keeps_operational_safety_boundaries(self):
         operational_docs = "\n".join(
             read(path)
             for path in (

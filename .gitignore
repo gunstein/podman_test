@@ -5,3 +5,5 @@ __pycache__/
 dist/
 ansible/inventory-initial.ini
 ansible/inventory-recovery.ini
+lab-dr.local.toml
+lab-dr.*.local.toml

@@ -49,7 +49,7 @@ demo implements, what it simplifies and which production concerns remain.
 
 ## Podman Kube candidate: start here
 
-The accepted deployment remains the recoverable per-container Quadlet reference.
+The accepted deployment remains the recoverable [per-container Quadlet reference](quadlet/QUADLET-REFERENCE.md).
 The current candidate shows its Podman-native workload boundaries in these files:
 
 | Boundary | Files |
@@ -77,8 +77,7 @@ The deployed baseline requires:
 
 The full Oracle Linux acceptance drill uses two 4 GiB VMs, SELinux enforcing,
 active `fapolicyd`, firewalld and a separate client machine. Tested versions and
-site assumptions are recorded in
-[docs/LAB-ACCEPTANCE.md](docs/LAB-ACCEPTANCE.md).
+site assumptions are recorded in [docs/LAB-ACCEPTANCE.md](docs/LAB-ACCEPTANCE.md).
 
 ## Quick start
 
@@ -235,6 +234,7 @@ manual lab acceptance test.
 | Need | Document |
 |---|---|
 | Understand the current Podman Kube architecture | [Kube runtime](kube/runtime/README.md) |
+| Automate disposable Proxmox lab reset | [Lab DR automation](docs/LAB-DR-AUTOMATION.md) |
 | Learn the system in dependency order | [Learning guide](docs/LEARNING-GUIDE.md) |
 | Build and accept the complete lab | [Lab acceptance](docs/LAB-ACCEPTANCE.md) |
 | Check demonstrated versus simplified concepts | [What you learn](docs/WHAT-YOU-LEARN.md) |

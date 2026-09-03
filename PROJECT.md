@@ -25,9 +25,70 @@ and an independent PostgreSQL pod. Static tests and bounded
 migration-connection retry pass, but this candidate has not yet repeated the
 Oracle Linux migration, reboot, rollback and DR gates.
 
-## Paused DR runner validation - 2026-09-03
+## Operator-side DR automation - local implementation
 
-Resume from this safety checkpoint:
+`scripts/lab_dr_acceptance.py` now implements the first `reset-check` profile:
+validated Proxmox VM/snapshot allowlists, explicit destructive confirmation,
+resumable private operator state, snapshot rollback, QGA/SSH readiness and a
+read-only clean Oracle Linux/Podman preflight. Twelve focused unit tests and the
+full local regression suite pass. The controller has not been run against the
+lab yet. Install, replication, fencing, promotion, quarantine, rebuild and the
+full profiles remain future stages; the manual runbook remains authoritative.
+
+## Next session checkpoint - 2026-09-04
+
+Work from the pushed head of `feature/podman-kube`. The working tree must be
+clean before packages are built. No version of `lab_dr_acceptance.py` has yet
+changed a VM; only its local configuration, CLI, state and command construction
+have been tested.
+
+Tomorrow's first boundary is the new `reset-check` profile:
+
+1. Copy `lab-dr.example.toml` to the ignored `lab-dr.local.toml`.
+2. Set the exact Proxmox SSH target, SSH identities and clean snapshot names.
+3. Run `validate --local-only`, `plan` and the read-only remote `validate`.
+4. Review VM IDs 107/108 and then explicitly authorize `run --confirm-reset
+   107:108`.
+5. Require a PASS report for both snapshot reset and clean-host preflight.
+
+Snapshot rollback deliberately destroys the currently promoted lab databases,
+backup archive and runner state. Once reset is authorized, the older paused
+checkpoint below is historical evidence only and must not be resumed.
+
+Continue from the clean pair in this order, following
+`docs/LAB-ACCEPTANCE.md` wherever the controller does not yet implement a
+stage:
+
+1. Build both packages from the same clean revision and verify their metadata.
+2. Install the accepted primary, run trusted HTTPS/browser checks and create a
+   run-specific pre-failover marker.
+3. Bootstrap the standby, require healthy streaming/zero lag and verify the
+   marker on the read-only standby.
+4. Fence the initial primary at Proxmox, independently prove power-off and
+   network unreachability, then promote with the existing guarded DR runner.
+5. Restore the application, verify the pre-failover marker and create a
+   post-promotion marker.
+6. Configure backup/WAL archiving and pass base-backup plus isolated named-point
+   PITR without modifying the live database.
+7. Reintroduce the old primary only through hypervisor quarantine. Use QGA to
+   stop its Todo services before opening management traffic, then run guarded
+   standby rebuild and verify both markers on the read-only rebuilt standby.
+8. Migrate PostgreSQL and the grouped application to the three-workload Kube
+   candidate. Require `todo-app`, `todo-keycloak` and `todo-postgres`.
+9. Reboot standby and primary sequentially; repeat application, TLS, Keycloak,
+   persistence, replication, archive and marker assertions.
+10. Exercise application and PostgreSQL rollback, verify the accepted runtime,
+    then repeat the Kube migration for the intended final state.
+
+Only after every gate passes may the grouped model be marked accepted and the
+legacy Quadlet retirement plan in `quadlet/QUADLET-REFERENCE.md` begin. Any
+failure must be recorded before repair; destructive stages with unknown
+outcomes are never blindly retried.
+
+## Previous paused DR runner validation - 2026-09-03
+
+Before a clean reset, this was the resumable checkpoint. Do not use it after
+the snapshot pair has been restored:
 
 - Source artifact revision is `def82c88febe35b65406cb9899de38832e63cdff`; both
   offline and operations packages reported `source_state=clean`.

@@ -92,19 +92,18 @@ previously unseen key once and rejects a changed known key. The clean snapshots
 must contain the configured operator public key, or it must be injected through
 an independently controlled mechanism before running the profile.
 
-## Planned profiles
+## Planned full profile
 
 The next stages will reuse the existing offline bundle, Ansible roles and
-`todo_dr_run.py`:
+`todo_dr_run.py`. The full profile must exercise the final Kube runtime
+directly; it must not install the legacy runtime or invoke transition
+migration/rollback playbooks:
 
 ```text
 full-clean:
-  reset/check -> install -> replication -> marker -> fence -> promote
-  -> application -> quarantine/rebuild -> sequential reboot -> verify
-
-full-resilience:
-  full-clean -> backup/PITR -> PostgreSQL Kube migration
-  -> grouped application migration -> rollback/verify
+  reset/check -> clean Kube install -> idempotent redeploy -> cold reboot
+  -> replication -> marker -> fence -> promote -> grouped application
+  -> backup/PITR -> quarantine/rebuild -> sequential reboot -> verify
 ```
 
 Before rebuild is automated, reintroduction of the old primary must use a

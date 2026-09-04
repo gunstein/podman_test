@@ -26,6 +26,13 @@ that model directly. Static tests, Ansible syntax/lint and bounded
 migration-connection retry pass; the new end-to-end path still requires the
 clean Oracle Linux VM, reboot, replication and full DR acceptance gates.
 
+The final pre-VM review corrected the explicit Podman container-name contract,
+the installed DR runner project-root discovery, Python 3.9 CI compatibility,
+Kube service names in the acceptance runbook and the fixed `todo.test:8443`
+promotion identity. The local CI-equivalent gate passes 132 tests, Ruff,
+ShellCheck, Ansible lint/syntax, Helm render drift and operations-package
+verification; the hosted workflow must still confirm the pushed checkpoint.
+
 ## Operator-side DR automation - local implementation
 
 `scripts/lab_dr_acceptance.py` now implements the first `reset-check` profile:

@@ -30,6 +30,14 @@ class TodoDrRunTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
+        (self.root / "ansible").mkdir()
+        for playbook in (
+            "deploy-promoted-application.yml",
+            "preflight-standby-rebuild.yml",
+            "rebuild-standby.yml",
+            "cluster-status.yml",
+        ):
+            (self.root / "ansible" / playbook).touch()
         self.inventory = self.root / "inventory.ini"
         self.inventory.write_text("[todo_current_primary]\nnode\n", encoding="utf-8")
         self.state = todo_dr_run.StateStore(self.root / "state.json")
@@ -51,6 +59,19 @@ class TodoDrRunTests(unittest.TestCase):
         for stage in stages:
             state["stages"][stage] = {"status": "completed"}
         self.state.save(state)
+
+    def test_installed_runner_defaults_to_extracted_operations_package(self):
+        installed = Path("/opt/todo/bin/todo_dr_run.py")
+        self.assertEqual(
+            todo_dr_run.default_project_root(installed),
+            Path.home() / "todo-operations",
+        )
+
+    def test_missing_playbook_fails_with_project_root_guidance(self):
+        self.complete("promotion", "application", "rebuild")
+        (self.root / "ansible" / "cluster-status.yml").unlink()
+        with self.assertRaisesRegex(todo_dr_run.RunError, "--project-root"):
+            self.run.verify()
 
     def test_state_file_is_private(self):
         self.complete("promotion")

@@ -12,6 +12,12 @@ both DR tools under `/opt/todo/bin` and maintains exact-file `fapolicyd`
 trust through the central `todo_fapolicyd` role. Run it with Ansible become
 credentials; no manual source or target trust commands are required.
 
+When run from the installed path, the runner defaults to
+`$HOME/todo-operations`. A source checkout is detected automatically. Every
+Ansible stage validates its playbook before recording stage execution; use
+`--project-root` only when the verified operations package was extracted
+elsewhere.
+
 ## 1. Fence and promote
 
 Power off and independently verify the old primary as described in

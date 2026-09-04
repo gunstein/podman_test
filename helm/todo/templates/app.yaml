@@ -14,13 +14,13 @@ metadata:
     app.kubernetes.io/name: todo
     app.kubernetes.io/component: application
   annotations:
-    io.podman.annotations.pids-limit/migrate: "128"
-    io.podman.annotations.pids-limit/backend: "128"
-    io.podman.annotations.pids-limit/frontend: "128"
+    io.podman.annotations.pids-limit/todo-migrate: "128"
+    io.podman.annotations.pids-limit/todo-backend: "128"
+    io.podman.annotations.pids-limit/todo-frontend: "128"
 spec:
   restartPolicy: Never
   initContainers:
-    - name: migrate
+    - name: todo-migrate
       image: {{ .Values.backend.image | quote }}
       imagePullPolicy: Never
       args: [python, -m, backend.migrate, --connect-timeout, "120", up]
@@ -47,7 +47,7 @@ spec:
         capabilities:
           drop: [ALL]
   containers:
-    - name: backend
+    - name: todo-backend
       image: {{ .Values.backend.image | quote }}
       imagePullPolicy: Never
       ports:
@@ -85,7 +85,7 @@ spec:
         allowPrivilegeEscalation: false
         capabilities:
           drop: [ALL]
-    - name: frontend
+    - name: todo-frontend
       image: {{ .Values.frontend.image | quote }}
       imagePullPolicy: Never
       args: [nginx, -c, /etc/todo-nginx/nginx.conf, -g, "daemon off;"]

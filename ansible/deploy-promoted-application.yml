@@ -10,8 +10,9 @@
     m14_config_directory: "{{ m14_user_home }}/.config/todo"
     m14_quadlet_directory: "{{ m14_user_home }}/.config/containers/systemd"
     m14_bundle_directory: '{{ todo_bundle_directory | default(m14_user_home ~ "/todo-offline-m12") }}'
-    m14_service_hostname: '{{ todo_service_hostname | default("todo.test") }}'
-    m14_service_port: "{{ todo_service_port | default(8443) }}"
+    # Fixed by the Helm-rendered production ConfigMap and TLS/OIDC contract.
+    m14_service_hostname: todo.test
+    m14_service_port: 8443
     m14_service_origin: "https://{{ m14_service_hostname }}:{{ m14_service_port }}"
     m14_node_address: "{{ todo_node_address }}"
 

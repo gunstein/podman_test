@@ -6,11 +6,11 @@ metadata:
     app.kubernetes.io/name: todo
     app.kubernetes.io/component: identity
   annotations:
-    io.podman.annotations.pids-limit/keycloak: "512"
+    io.podman.annotations.pids-limit/todo-keycloak: "512"
 spec:
   restartPolicy: Never
   containers:
-    - name: keycloak
+    - name: todo-keycloak
       image: {{ .Values.keycloak.image | quote }}
       imagePullPolicy: Never
       args: [start, --import-realm]

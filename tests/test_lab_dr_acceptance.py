@@ -7,7 +7,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-
 SCRIPT = Path(__file__).parents[1] / "scripts" / "lab_dr_acceptance.py"
 SPEC = importlib.util.spec_from_file_location("lab_dr_acceptance", SCRIPT)
 assert SPEC and SPEC.loader

@@ -1,7 +1,7 @@
 # Full lab acceptance
 
-This is the canonical destructive acceptance test for the completed two-node
-Quadlet implementation. Individual runbooks explain each operation; this
+This is the canonical destructive acceptance test for the three-workload
+Podman Kube implementation. Individual runbooks explain each operation; this
 document defines order, evidence and pass criteria.
 
 The procedure permanently destroys the old primary database during the final
@@ -29,9 +29,9 @@ an 18 GiB home filesystem per VM.
 | Runtime | Podman requirement |
 |---|---|
 | Accepted per-container Quadlet baseline | Rootless Podman 4.9.3 validated |
-| Grouped Podman Kube candidate | Rootless Podman 5.8.2 required; platform features tested |
+| Current grouped Podman Kube runtime | Rootless Podman 5.8.2 required; platform features tested |
 
-The candidate requires Podman 5.8.2 because its PostgreSQL `.kube` unit uses
+The current runtime requires Podman 5.8.2 because its PostgreSQL `.kube` unit uses
 `--no-pod-prefix` to preserve the operational container name.
 
 ## Acceptance rules
@@ -120,8 +120,9 @@ valid nginx configuration, health, readiness and Keycloak discovery:
 
 ```bash
 systemctl --user is-active \
-  todo-postgres.service todo-backend.service \
-  todo-keycloak.service todo-frontend.service
+  todo-postgres.service \
+  todo-keycloak.service \
+  todo-app.service
 systemctl --user --failed --no-pager
 podman image inspect localhost/todo-frontend:m12 \
   --format '{{index .Labels "io.todo.proxy"}}'
@@ -296,8 +297,8 @@ Boot old primary with workload traffic blocked. Stop all Todo services before
 permitting management SSH:
 
 ```bash
-systemctl --user stop todo-{frontend,backend,keycloak,postgres}.service
-systemctl --user is-active todo-{frontend,backend,keycloak,postgres}.service || true
+systemctl --user stop todo-app.service todo-keycloak.service todo-postgres.service
+systemctl --user is-active todo-app.service todo-keycloak.service todo-postgres.service || true
 podman ps
 ```
 

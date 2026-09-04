@@ -11,12 +11,15 @@ import shlex
 import subprocess
 import sys
 import time
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.9 and 3.10
+    import tomli as tomllib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional, Sequence
-
 
 DEFAULT_STATE = (
     Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))

@@ -3,7 +3,6 @@ import unittest
 
 import yaml
 
-
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "kube" / "runtime"
 MIGRATION = ROOT / "ansible" / "roles" / "kube_postgres_primary_migration"

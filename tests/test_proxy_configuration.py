@@ -55,6 +55,13 @@ class ProxyConfigurationTests(unittest.TestCase):
         self.assertIn("server_name todo.test;", config)
         self.assertIn('KC_HOSTNAME: "https://todo.test:8443/auth"', config)
 
+        playbook = read("ansible/deploy-promoted-application.yml")
+        inventory = read("ansible/inventory-recovery.example.ini")
+        self.assertIn("m14_service_hostname: todo.test", playbook)
+        self.assertIn("m14_service_port: 8443", playbook)
+        self.assertNotIn("todo_service_hostname=", inventory)
+        self.assertNotIn("todo_service_port=", inventory)
+
 
 if __name__ == "__main__":
     unittest.main()

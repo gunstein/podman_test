@@ -3,7 +3,6 @@ import unittest
 
 import yaml
 
-
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "kube" / "runtime"
 MIGRATION = ROOT / "ansible" / "roles" / "kube_application_migration"
@@ -29,17 +28,40 @@ class KubeRuntimeTests(unittest.TestCase):
             self.assertEqual(pods[0]["metadata"]["name"], pod_name)
             self.assertEqual(pods[0]["spec"]["restartPolicy"], "Never")
 
+        app = next(
+            doc
+            for doc in yaml.safe_load_all(read(RUNTIME / "app.yaml"))
+            if doc and doc.get("kind") == "Pod"
+        )
+        keycloak = next(
+            doc
+            for doc in yaml.safe_load_all(read(RUNTIME / "keycloak.yaml"))
+            if doc and doc.get("kind") == "Pod"
+        )
+        self.assertEqual(
+            [item["name"] for item in app["spec"]["initContainers"]],
+            ["todo-migrate"],
+        )
+        self.assertEqual(
+            [item["name"] for item in app["spec"]["containers"]],
+            ["todo-backend", "todo-frontend"],
+        )
+        self.assertEqual(
+            [item["name"] for item in keycloak["spec"]["containers"]],
+            ["todo-keycloak"],
+        )
+
     def test_app_pod_groups_migration_backend_and_frontend(self):
         documents = list(yaml.safe_load_all(read(RUNTIME / "app.yaml")))
         pod = next(doc for doc in documents if doc["kind"] == "Pod")
 
         self.assertEqual(
             [container["name"] for container in pod["spec"]["initContainers"]],
-            ["migrate"],
+            ["todo-migrate"],
         )
         self.assertEqual(
             [container["name"] for container in pod["spec"]["containers"]],
-            ["backend", "frontend"],
+            ["todo-backend", "todo-frontend"],
         )
         migrate = pod["spec"]["initContainers"][0]
         self.assertEqual(

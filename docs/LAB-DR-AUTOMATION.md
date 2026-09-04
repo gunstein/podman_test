@@ -74,8 +74,12 @@ python3 scripts/lab_dr_acceptance.py \
 
 ## Proxmox access
 
-The controller requires Python 3.11 or newer and has no third-party Python
-dependencies.
+The controller has no third-party dependency on Python 3.11 or newer. Python
+3.9 and 3.10 require the pinned `tomli==2.2.1` compatibility package used by CI.
+
+```bash
+python3 -m pip install "tomli==2.2.1"
+```
 
 The controller currently uses `qm` over BatchMode SSH because it is available
 on the installed Proxmox node and keeps the command surface visible. Do not

@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, Optional, Sequence
 
-
 DEFAULT_STATE = Path.home() / ".config" / "todo" / "todo-dr-run.json"
 DEFAULT_DR_TOOL = Path("/opt/todo/bin/todo_dr.py")
 STAGES = (
@@ -33,6 +32,13 @@ def run_command(arguments: Sequence[str]) -> subprocess.CompletedProcess:
 
 def timestamp() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def default_project_root(script_path: Path = Path(__file__)) -> Path:
+    source_root = script_path.resolve().parents[1]
+    if (source_root / "ansible").is_dir():
+        return source_root
+    return Path.home() / "todo-operations"
 
 
 class StateStore:
@@ -93,6 +99,12 @@ class DrRun:
             raise RunError(f"{description} failed with exit code {result.returncode}")
 
     def _playbook(self, name: str, extra_vars: Optional[dict] = None) -> None:
+        playbook = self.project_root / "ansible" / name
+        if not playbook.is_file():
+            raise RunError(
+                f"Required playbook does not exist: {playbook}. "
+                "Set --project-root to the extracted todo-operations directory."
+            )
         arguments = [
             "ansible-playbook",
             "--inventory",
@@ -100,7 +112,7 @@ class DrRun:
         ]
         if self.ask_become_pass:
             arguments.append("--ask-become-pass")
-        arguments.append(str(self.project_root / "ansible" / name))
+        arguments.append(str(playbook))
         if extra_vars:
             arguments.extend(["--extra-vars", json.dumps(extra_vars, sort_keys=True)])
         self._run(arguments, name)
@@ -239,13 +251,14 @@ class DrRun:
 
 
 def parser() -> argparse.ArgumentParser:
-    project_root = Path(__file__).resolve().parents[1]
     result = argparse.ArgumentParser(
         description="Run the controlled Todo DR drill as resumable stages."
     )
     result.add_argument("--inventory", required=True, type=Path)
     result.add_argument("--state", type=Path, default=DEFAULT_STATE)
-    result.add_argument("--project-root", type=Path, default=project_root)
+    result.add_argument(
+        "--project-root", type=Path, default=default_project_root()
+    )
     result.add_argument("--dr-tool", type=Path, default=DEFAULT_DR_TOOL)
     result.add_argument(
         "--ask-become-pass",

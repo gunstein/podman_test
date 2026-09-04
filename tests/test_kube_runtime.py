@@ -91,12 +91,12 @@ class KubeRuntimeTests(unittest.TestCase):
         for unit in (app, keycloak, postgres):
             self.assertIn("ExitCodePropagation=any", unit)
             self.assertIn("Restart=on-failure", unit)
-            self.assertIn("ConfigMap=config-runtime.yaml", unit)
+            self.assertIn("ConfigMap=config.yaml", unit)
 
-        self.assertNotIn("ConfigMap=config-dev.yaml", postgres)
+        self.assertNotIn("ConfigMap=config-runtime.yaml", postgres)
 
     def test_app_proxy_uses_loopback_and_shared_services_use_network_dns(self):
-        development = read(RUNTIME / "config-dev.yaml")
+        development = read(RUNTIME / "config.yaml")
         template = read(MIGRATION / "templates" / "config-runtime.yaml.j2")
 
         for config in (development, template):
@@ -124,7 +124,7 @@ class KubeRuntimeTests(unittest.TestCase):
 
     def test_development_and_runtime_config_have_the_same_objects(self):
         development = list(
-            yaml.safe_load_all(read(RUNTIME / "config-dev.yaml"))
+            yaml.safe_load_all(read(RUNTIME / "config.yaml"))
         )
         template = read(MIGRATION / "templates" / "config-runtime.yaml.j2")
         names = {doc["metadata"]["name"] for doc in development}
@@ -203,7 +203,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("todo-app-backend", guide)
         self.assertIn("todo-app-frontend", guide)
         self.assertIn("todo-app.service", guide)
-        self.assertIn("same workload YAML", guide)
+        self.assertIn("same chart", guide)
 
     def test_runtime_guide_separates_core_from_resilience(self):
         guide = read(RUNTIME / "README.md")
@@ -214,7 +214,7 @@ class KubeRuntimeTests(unittest.TestCase):
             "app.yaml",
             "keycloak.yaml",
             "postgres.yaml",
-            "config-dev.yaml",
+            "config.yaml",
             "todo-app.kube",
             "todo-keycloak.kube",
             "todo-postgres.kube",
@@ -226,7 +226,7 @@ class KubeRuntimeTests(unittest.TestCase):
         index = read(ROOT / "kube" / "README.md")
 
         self.assertIn("Start with the [canonical runtime]", index)
-        self.assertIn("three-workload candidate", index)
+        self.assertIn("three-workload architecture", index)
         self.assertIn("RESULTS-FOUR-POD-HISTORICAL.md", index)
         self.assertNotIn("Start with [poc/README.md]", index)
 
@@ -264,6 +264,51 @@ class KubeRuntimeTests(unittest.TestCase):
             'cp -r "$project_root/kube/runtime" "$bundle_directory/kube/"',
             offline,
         )
+
+    def test_helm_is_the_single_workload_template_source(self):
+        chart = ROOT / "helm" / "todo"
+        values = read(chart / "values.yaml")
+        rendered = "\n".join(
+            read(RUNTIME / filename)
+            for filename in ("app.yaml", "keycloak.yaml", "postgres.yaml")
+        )
+
+        for filename in (
+            "app.yaml",
+            "keycloak.yaml",
+            "postgres.yaml",
+            "config.yaml",
+        ):
+            self.assertTrue((chart / "templates" / filename).is_file())
+        app_template = read(chart / "templates" / "app.yaml")
+        self.assertIn("{{ .Values.backend.image | quote }}", app_template)
+        self.assertIn("{{ .Values.frontend.memory | quote }}", app_template)
+        self.assertNotIn("password", values.lower())
+        self.assertIn("# Source: todo/templates/app.yaml", rendered)
+
+    def test_clean_deploy_targets_kube_without_legacy_chain(self):
+        deploy = read(ROOT / "ansible" / "deploy.yml")
+        runtime = read(
+            ROOT / "ansible" / "roles" / "todo_kube_runtime"
+            / "tasks" / "main.yml"
+        )
+
+        self.assertIn("name: todo_kube_runtime", deploy)
+        for legacy in (
+            "todo-backend.container",
+            "todo-frontend.container",
+            "todo-migrate.container",
+        ):
+            self.assertNotIn(legacy, deploy)
+        self.assertIn("Start PostgreSQL through its Kube unit", runtime)
+        self.assertIn("Provision database roles", runtime)
+        self.assertIn("Start the grouped application", runtime)
+
+    def test_offline_bundle_packages_rendered_kube_runtime(self):
+        offline = read(ROOT / "offline" / "build-bundle.sh")
+        self.assertIn('scripts/render-kube-runtime.sh"', offline)
+        self.assertIn("ansible/roles/todo_kube_runtime", offline)
+        self.assertIn("helm/todo", offline)
 
 
 if __name__ == "__main__":

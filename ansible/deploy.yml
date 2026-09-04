@@ -8,26 +8,16 @@
     deployment_mode: build
     bundle_directory: ""
     refresh_images: false
-    quadlet_directory: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/containers/systemd"
-    quadlet_files:
-      - todo.network
-      - todo-postgres-data.volume
-      - todo-nginx-data.volume
-      - todo-postgres.container
-      - todo-db-setup.container
-      - todo-migrate.container
-      - todo-db-grants.container
-      - todo-backend.container
-      - todo-keycloak.container
-      - todo-frontend.container
-    application_services:
-      - todo-frontend.service
-      - todo-backend.service
-      - todo-keycloak.service
-      - todo-db-grants.service
-      - todo-migrate.service
-      - todo-db-setup.service
-      - todo-postgres.service
+    todo_quadlet_directory: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/containers/systemd"
+    todo_kube_runtime_directory: "{{ todo_quadlet_directory }}/todo-kube-runtime"
+    todo_rendered_manifest_directory: >-
+      {{
+        (bundle_directory ~ '/kube/runtime')
+        if deployment_mode == 'offline'
+        else (project_root ~ '/kube/runtime')
+      }}
+    todo_publish_address: 127.0.0.1
+    todo_service_port: 8443
 
   pre_tasks:
     - name: Validate the deployment mode
@@ -301,86 +291,12 @@
         - postgres_image.rc == 1
         - deployment_mode == "offline"
 
-    - name: Create the Quadlet directory
+    - name: Create the rootless Quadlet directory
       ansible.builtin.file:
-        path: "{{ quadlet_directory }}"
+        path: "{{ todo_quadlet_directory }}"
         state: directory
         mode: "0700"
 
-    - name: Remove the obsolete Caddy volume Quadlet
-      ansible.builtin.file:
-        path: "{{ quadlet_directory }}/todo-caddy-data.volume"
-        state: absent
-      register: obsolete_proxy_quadlet_removed
-
-    - name: Install the Quadlet files
-      ansible.builtin.copy:
-        src: "{{ project_root }}/quadlet/{{ item }}"
-        dest: "{{ quadlet_directory }}/{{ item }}"
-        mode: "0644"
-      loop: "{{ quadlet_files }}"
-      register: quadlet_installed
-
-    - name: Stop the old application chain before applying changes
-      ansible.builtin.command:
-        argv:
-          - systemctl
-          - --user
-          - stop
-          - "{{ item }}"
-      loop: "{{ application_services }}"
-      register: services_stopped
-      changed_when: false
-      failed_when: services_stopped.rc not in [0, 5]
-      when: >-
-        secret_created.changed | default(false) or
-        runtime_database_secrets_created.changed | default(false) or
-        keycloak_admin_secret_created.changed | default(false) or
-        backend_built.changed | default(false) or
-        backend_loaded.changed | default(false) or
-        frontend_built.changed | default(false) or
-        frontend_loaded.changed | default(false) or
-        keycloak_built.changed | default(false) or
-        keycloak_loaded.changed | default(false) or
-        postgres_pulled.changed | default(false) or
-        postgres_loaded.changed | default(false) or
-        obsolete_proxy_quadlet_removed.changed or
-        quadlet_installed.changed
-
-    - name: Reload generated user systemd units
-      ansible.builtin.systemd_service:
-        scope: user
-        daemon_reload: true
-
-    - name: Start the Todo application
-      ansible.builtin.systemd_service:
-        name: todo-frontend.service
-        scope: user
-        state: started
-
-    - name: Wait for backend health through nginx
-      ansible.builtin.uri:
-        url: http://127.0.0.1:8080/health
-        return_content: true
-      register: health
-      until: health.status == 200 and health.json.status == "ok"
-      retries: 15
-      delay: 1
-
-    - name: Verify database readiness through nginx
-      ansible.builtin.uri:
-        url: http://127.0.0.1:8080/ready
-        return_content: true
-      register: readiness
-      until: readiness.status == 200 and readiness.json.status == "ready"
-      retries: 15
-      delay: 1
-
-    - name: Verify Keycloak discovery through nginx
-      ansible.builtin.uri:
-        url: http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
-        return_content: true
-      register: keycloak_discovery
-      until: keycloak_discovery.status == 200
-      retries: 60
-      delay: 2
+    - name: Install the final Podman Kube runtime
+      ansible.builtin.include_role:
+        name: todo_kube_runtime

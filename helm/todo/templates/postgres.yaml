@@ -1,5 +1,3 @@
----
-# Source: todo/templates/postgres.yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -7,10 +5,7 @@ metadata:
   annotations:
     volume.podman.io/uid: "999"
     volume.podman.io/gid: "999"
-
-
 ---
-# Source: todo/templates/postgres.yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -18,10 +13,7 @@ metadata:
   annotations:
     volume.podman.io/uid: "999"
     volume.podman.io/gid: "999"
-
-
 ---
-# Source: todo/templates/postgres.yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -36,14 +28,14 @@ spec:
   terminationGracePeriodSeconds: 60
   containers:
     - name: todo-postgres
-      image: "docker.io/library/postgres:17.11"
+      image: {{ .Values.postgres.image | quote }}
       imagePullPolicy: Never
       args:
         - postgres
         - -D
         - /var/lib/postgresql/data
         - -c
-        - "max_slot_wal_keep_size=1GB"
+        - {{ printf "max_slot_wal_keep_size=%s" .Values.postgres.maxSlotWalKeepSize | quote }}
       ports:
         - name: postgres
           containerPort: 5432
@@ -71,7 +63,7 @@ spec:
         failureThreshold: 5
       resources:
         limits:
-          memory: "512Mi"
+          memory: {{ .Values.postgres.memory | quote }}
       securityContext:
         runAsUser: 999
         runAsGroup: 999

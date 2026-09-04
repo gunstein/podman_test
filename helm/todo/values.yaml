@@ -1,0 +1,17 @@
+backend:
+  image: localhost/todo-backend:m12
+  memory: 256Mi
+frontend:
+  image: localhost/todo-frontend:m12
+  memory: 128Mi
+keycloak:
+  image: localhost/todo-keycloak:m12
+  memory: 1Gi
+postgres:
+  image: docker.io/library/postgres:17.11
+  memory: 512Mi
+  maxSlotWalKeepSize: 1GB
+runtime:
+  publicHostname: todo.test
+  publicPort: 8443
+  logLevel: info

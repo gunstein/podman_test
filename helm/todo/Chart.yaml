@@ -1,0 +1,6 @@
+apiVersion: v2
+name: todo
+description: Podman-compatible Todo workload manifests
+type: application
+version: 0.1.0
+appVersion: "m12"

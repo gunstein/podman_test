@@ -9,6 +9,9 @@ ConfigMap=config.yaml
 Network=todo.network
 PublishPort=127.0.0.1:8080:8080
 PublishPort=127.0.0.1:8443:8443
+{% if todo_publish_address != '127.0.0.1' %}
+PublishPort={{ todo_publish_address }}:{{ todo_service_port }}:8443
+{% endif %}
 ExitCodePropagation=any
 LogDriver=journald
 SetWorkingDirectory=yaml
@@ -17,6 +20,7 @@ SetWorkingDirectory=yaml
 Restart=on-failure
 RestartSec=5s
 TimeoutStartSec=180
+TimeoutStopSec=60
 
 [Install]
 WantedBy=default.target

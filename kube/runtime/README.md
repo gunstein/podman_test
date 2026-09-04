@@ -1,11 +1,10 @@
-# Canonical Podman Kube application tier
+# Canonical Podman Kube runtime
 
-These manifests are the production-shaped replacement candidates for the
-accepted per-container Quadlets. They make the lifecycle boundaries explicit:
+This is the final application runtime and the normal clean-install target.
+The manifests make the lifecycle boundaries explicit:
 frontend and backend share one application pod, while PostgreSQL and Keycloak
 remain independent shared services on the user-defined network. PostgreSQL
-migration remains a separate safety gate
-from the application tier and from the disaster-recovery workflows.
+replication, backup and disaster recovery remain separate operational layers.
 
 ## Core architecture
 
@@ -26,19 +25,23 @@ from the application tier and from the disaster-recovery workflows.
 The files that define this architecture are:
 
 ```text
-app.yaml                 -> migration init, backend and frontend
-keycloak.yaml            -> independent identity service
-postgres.yaml            -> independent database and persistent volumes
-config-dev.yaml          -> shared development configuration
+../../helm/todo/templates -> source workload and ConfigMap templates
+../../helm/todo/values-*.yaml -> non-secret environment values
+app.yaml                 -> rendered migration init, backend and frontend
+keycloak.yaml            -> rendered independent identity service
+postgres.yaml            -> rendered database and persistent volumes
+config.yaml              -> rendered non-secret production configuration
 todo-app.kube            -> application pod systemd lifecycle
 todo-keycloak.kube       -> identity pod systemd lifecycle
 todo-postgres.kube       -> database pod systemd lifecycle
 ../../quadlet/todo.network -> shared rootless network
 ```
 
-Development supplies `config-dev.yaml` directly to `podman kube play`.
-Production installs the same workload YAML beside a generated
-`config-runtime.yaml` and wraps it with the matching `.kube` unit.
+Helm is a build-time renderer, not a runtime orchestrator. The checked-in YAML
+is rendered from `values-prod.yaml` and its drift is checked in CI. The
+offline bundle therefore needs no Helm binary on Oracle Linux. Development
+renders the same chart with `values-dev.yaml`; production installs the
+rendered YAML beside the matching `.kube` units.
 
 Podman names a regular container from its pod and container entries. The grouped
 containers therefore become `todo-app-backend` and `todo-app-frontend`, owned
@@ -66,8 +69,9 @@ secrets:
   `bootstrap-admin-password`;
 - `todo-kube-postgres-secret`, containing `database-password`.
 
-Secret values are never stored in these files. The controlled Ansible
-migrations construct the objects from the existing raw Podman secrets.
+Secret values are never stored in Helm values or rendered YAML. The clean
+Ansible deployment constructs these Kube-compatible objects in memory from
+the host-local raw Podman secrets.
 
 ## Operational resilience
 
@@ -92,9 +96,10 @@ Its `.kube` unit also applies `--health-on-failure=kill` after each creation.
 This preserves the accepted health failure contract: Podman terminates a
 persistently unhealthy database container and systemd recreates the workload.
 
-The application migration is intentionally separate from PostgreSQL. Run it
-only through `ansible/migrate-application-to-kube.yml`, with the exact
-confirmation documented by that playbook. It backs up the three installed
+The old application migration is temporary transition and rollback evidence
+for hosts running the tagged per-container reference. Clean install never uses
+it. Run it only through `ansible/migrate-application-to-kube.yml`, with the
+exact confirmation documented by that playbook. It backs up the three installed
 `.container` files before replacing their generated units. The rollback
 playbook restores those files without changing database or TLS data.
 
@@ -104,38 +109,18 @@ compares the database system identifier, verifies replication and forces an
 exact WAL archive check before the application is restarted. Follow
 `ansible/POSTGRES-KUBE-MIGRATION.md`; do not use it during failover.
 
-Direct development requires the three application Kube-compatible secrets, an
-already running `todo-postgres` database and the shared `todo-network`. Start
-Keycloak first, then start the grouped application workload with the same YAML
-used in production:
+Direct development requires the four Kube-compatible Podman secrets. Render
+and start the three workloads with:
 
 ```bash
-podman kube play \
-  --network todo-network \
-  --configmap kube/runtime/config-dev.yaml \
-  kube/runtime/keycloak.yaml
-
-podman kube play \
-  --network todo-network \
-  --configmap kube/runtime/config-dev.yaml \
-  kube/runtime/app.yaml
+scripts/dev-up.sh
 ```
 
-Remove it with:
+The wrapper contains only `helm template`, network/secret checks and ordered
+`podman kube play` calls. Stop the workloads in reverse order with:
 
 ```bash
-podman kube play --down kube/runtime/app.yaml
-podman kube play --down kube/runtime/keycloak.yaml
-```
-
-On a separate development host, PostgreSQL can use the same workload:
-
-```bash
-podman kube play \
-  --no-pod-prefix \
-  --network todo-network \
-  --configmap kube/runtime/config-dev.yaml \
-  kube/runtime/postgres.yaml
+scripts/dev-down.sh
 ```
 
 Never run that development command against a production user's container store:

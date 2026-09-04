@@ -1,0 +1,4 @@
+runtime:
+  publicHostname: localhost
+  publicPort: 8443
+  logLevel: debug

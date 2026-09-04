@@ -372,9 +372,9 @@ The list below preserves historical milestones, including the former Caddy imple
 - Keep Playwright and Chromium as separate test-only dependencies.
 - Mount the database password as a file from rootless Podman secret storage.
 - Keep `DATABASE_URL` for local development and tests; containers use separate non-secret settings plus `DATABASE_PASSWORD_FILE`.
-- Enable only the frontend unit; systemd starts the remaining application dependency chain.
-- Use the frontend Quadlet as the only `default.target` entrypoint; require an administrator to enable user lingering for boot-before-login operation.
-- Keep Keycloak's memory limit in `PodmanArgs` while supporting Podman 4.9; migrate to native `Memory=` when the tested baseline is raised.
+- Enable only grouped todo-app.kube; systemd starts the independent Keycloak and PostgreSQL Kube workloads.
+- Use Helm only to render Podman-compatible YAML; use direct podman kube play in development and .kube Quadlets in production.
+- Require the tested Podman 5.8.2 Kube feature set and keep resource limits in workload YAML.
 - Start Ansible with one localhost playbook and only `ansible-core`; add remote deployment structure only when it is needed.
 - Keep secret prompting conditional so repeat deployments remain non-interactive.
 - Treat Podman, RPM/deb-managed `ansible-core`, user systemd and basic archive/checksum tools as offline target prerequisites.
@@ -442,11 +442,17 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-The accepted per-container Quadlet implementation remains the stable rollback
-point. Complete the paused DR runner validation without changing its live state.
-Then build fresh packages from this branch and repeat the application Kube
-migration gate for the grouped `todo-app` model: init-migration failure, normal
-startup, HTTPS and E2E, reboot, database restart, rollback, replication and WAL
-archive health must all pass before the candidate can replace the reference.
+Clean deploy now targets the Helm-rendered three-workload Kube runtime directly.
+Before resetting the lab VMs, finish converting standby bootstrap, promoted
+application, backup/WAL configuration and standby rebuild so none reinstalls a
+legacy .container unit. Add centralized exact-file fapolicyd trust for the
+installed operator tools and update the full acceptance runbook.
+
+Then build fresh offline and operations packages and run, in order: clean
+install, idempotent rerun, cold reboot/persistence, standby bootstrap,
+replication marker, hypervisor fencing, promotion, promoted application,
+backup/PITR, quarantined old-primary rebuild, sequential reboot and final DR
+verification. The per-container implementation remains recoverable through
+quadlet-reference-v1; transition/rollback playbooks are not the normal path.
 
 Planned switchover/failback remains separate from restoring redundancy.

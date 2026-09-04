@@ -47,22 +47,23 @@ connects each concept to source files and safe commands using a consistent
 The shorter [concept coverage matrix](docs/WHAT-YOU-LEARN.md) states what the
 demo implements, what it simplifies and which production concerns remain.
 
-## Podman Kube candidate: start here
+## Podman Kube runtime: start here
 
-The accepted deployment remains the recoverable [per-container Quadlet reference](quadlet/QUADLET-REFERENCE.md).
-The current candidate shows its Podman-native workload boundaries in these files:
+Clean install now deploys the final Podman Kube runtime directly. The former
+per-container implementation remains recoverable from `quadlet-reference-v1`
+and is retained only as transition/rollback evidence.
 
 | Boundary | Files |
 |---|---|
 | Grouped application | [`app.yaml`](kube/runtime/app.yaml), [`todo-app.kube`](kube/runtime/todo-app.kube) |
 | Shared identity | [`keycloak.yaml`](kube/runtime/keycloak.yaml), [`todo-keycloak.kube`](kube/runtime/todo-keycloak.kube) |
 | Persistent database | [`postgres.yaml`](kube/runtime/postgres.yaml), [`todo-postgres.kube`](kube/runtime/todo-postgres.kube) |
-| Development inputs | [`config-dev.yaml`](kube/runtime/config-dev.yaml) |
+| Helm templates and values | [`helm/todo/`](helm/todo/) |
 | Shared network | [`todo.network`](quadlet/todo.network) |
 
 Start with the [Kube runtime guide](kube/runtime/README.md). PoCs, migrations,
 DR automation and historical results are evidence and operations around this
-core. The grouped candidate still requires the Oracle Linux acceptance gates.
+core. The final runtime still requires the Oracle Linux acceptance gates.
 
 ## Requirements
 
@@ -112,9 +113,8 @@ Inspect the running system:
 ```bash
 systemctl --user is-active \
   todo-postgres.service \
-  todo-backend.service \
   todo-keycloak.service \
-  todo-frontend.service
+  todo-app.service
 podman ps
 podman secret ls
 curl --fail http://127.0.0.1:8080/ready

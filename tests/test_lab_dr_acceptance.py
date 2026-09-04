@@ -188,7 +188,12 @@ class LabDrAcceptanceTests(unittest.TestCase):
         script = runner.commands[0][1]
         self.assertIn(" 192.168.0.102/", script)
         self.assertIn("getenforce", script)
-        self.assertIn("podman ps -aq", script)
+        self.assertIn("podman ps -a --format", script)
+        self.assertIn("podman volume ls --format", script)
+        self.assertIn("podman secret ls --format", script)
+        self.assertIn("podman network ls --format", script)
+        self.assertIn("todo*.kube", script)
+        self.assertNotIn('test -z "$(podman volume ls -q)"', script)
 
     def test_clean_preflight_rejects_duplicate_machine_ids(self):
         state = self.state.load()

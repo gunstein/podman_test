@@ -159,6 +159,26 @@ jobs:
       - name: Install pinned script tooling
         run: python -m pip install "ruff==0.16.5" "shellcheck-py==0.11.0.1"
 
+      - name: Install verified Helm renderer
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location \
+            --output /tmp/helm.tar.gz \
+            https://get.helm.sh/helm-v4.2.4-linux-amd64.tar.gz
+          echo "c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3  /tmp/helm.tar.gz" |
+            sha256sum --check
+          tar -xzf /tmp/helm.tar.gz -C /tmp
+
+      - name: Verify generated Kube runtime
+        shell: bash
+        run: |
+          HELM=/tmp/linux-amd64/helm scripts/render-kube-runtime.sh \
+            helm/todo/values-prod.yaml /tmp/rendered
+          diff -ru /tmp/rendered/app.yaml kube/runtime/app.yaml
+          diff -ru /tmp/rendered/keycloak.yaml kube/runtime/keycloak.yaml
+          diff -ru /tmp/rendered/postgres.yaml kube/runtime/postgres.yaml
+          diff -ru /tmp/rendered/config.yaml kube/runtime/config.yaml
+
       - name: Lint Python
         run: ruff check backend e2e scripts tests
 
@@ -171,6 +191,9 @@ jobs:
             offline/preflight.sh \
             frontend/todo-nginx-entrypoint.sh \
             scripts/build-operations-package.sh \
+            scripts/render-kube-runtime.sh \
+            scripts/dev-up.sh \
+            scripts/dev-down.sh \
             scripts/run-e2e.sh
 
       - name: Smoke-test nginx and TLS bootstrap

@@ -1,13 +1,10 @@
-# Podman Kube candidate
+# Podman Kube runtime
 
 This directory evaluates Podman Kube YAML as a shared workload definition for
-development and production. It is deliberately isolated from the accepted
-per-container Quadlet runtime.
-
-The accepted implementation remains available at the `quadlet-reference-v1`
-tag. Nothing under this directory is part of the supported deployment until it
-has passed the same Oracle Linux, SELinux, reboot, offline, backup and disaster
-recovery acceptance tests.
+development and production. Clean install now uses this runtime directly. The
+accepted historical per-container implementation remains available at the
+`quadlet-reference-v1` tag while the final Kube runtime completes the same
+Oracle Linux, SELinux, reboot, offline, backup and DR acceptance gates.
 
 Podman Kube YAML is used here as a Podman workload format. This project does not
 install a Kubernetes cluster and does not claim Kubernetes or OpenShift
@@ -16,7 +13,7 @@ portability.
 ## Current architecture
 
 Start with the [canonical runtime](runtime/README.md). It defines the current
-three-workload candidate:
+three-workload architecture:
 
 ```text
 todo-app pod       migration init + backend + frontend
@@ -31,10 +28,8 @@ network files that define this architecture. It also separates that core from
 the Todo-specific backup, replication and disaster-recovery contracts. Current
 status belongs in [runtime/RESULTS.md](runtime/RESULTS.md).
 
-The candidate is production-shaped but remains unaccepted until the grouped
-model passes the Oracle Linux migration, cold-reboot, rollback, replication and
-full DR gates. The accepted per-container reference remains recoverable from
-`quadlet-reference-v1`.
+The final runtime remains unaccepted until it passes clean install, cold reboot,
+replication, standby rebuild and full DR gates on Oracle Linux.
 
 ## Isolated evidence and history
 

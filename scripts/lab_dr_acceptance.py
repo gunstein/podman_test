@@ -405,16 +405,31 @@ class GuestAdapter:
     def clean_preflight(self, node: Node) -> str:
         expected = shlex.quote(node.hostname)
         address = shlex.quote(" " + node.address + "/")
-        script = f"""set -eu
+        script = rf"""set -eu
 test "$(hostname)" = {expected}
 ip -brief -4 address | grep -F -- {address}
 test "$(getenforce)" = Enforcing
 test "$(podman info --format '{{{{.Host.Security.Rootless}}}}')" = true
 systemctl is-active sshd firewalld fapolicyd qemu-guest-agent
 test "$(loginctl show-user "$USER" -p Linger --value)" = yes
-test -z "$(podman ps -aq)"
-test -z "$(podman volume ls -q)"
-test -z "$(podman secret ls -q)"
+if podman ps -a --format '{{{{.Names}}}}' | grep -Eq '^todo([_-]|$)'; then
+    echo "Todo container state exists" >&2
+    exit 1
+fi
+if podman volume ls --format '{{{{.Name}}}}' | grep -Eq '^todo([_-]|$)'; then
+    echo "Todo volume state exists" >&2
+    exit 1
+fi
+if podman secret ls --format '{{{{.Name}}}}' | grep -Eq '^todo([_-]|$)'; then
+    echo "Todo secret state exists" >&2
+    exit 1
+fi
+if podman network ls --format '{{{{.Name}}}}' | grep -Fxq todo-network; then
+    echo "Todo network exists" >&2
+    exit 1
+fi
+test -z "$(find "$HOME/.config/containers/systemd" -type f \( -name 'todo*.container' -o -name 'todo*.kube' -o -name 'todo*.network' -o -name 'todo*.volume' \) -print -quit 2>/dev/null)"
+test ! -e "$HOME/.config/todo"
 printf 'LAB_MACHINE_ID=%s\n' "$(cat /etc/machine-id)"
 """
         result = self.run_script(node, script)

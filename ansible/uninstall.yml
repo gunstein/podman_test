@@ -8,6 +8,7 @@
     quadlet_files:
       - todo.network
       - todo-postgres-data.volume
+      - todo-postgres-backup.volume
       - todo-nginx-data.volume
       - todo-caddy-data.volume
       - todo-postgres.container
@@ -18,6 +19,7 @@
       - todo-keycloak.container
       - todo-frontend.container
     application_services:
+      - todo-app.service
       - todo-frontend.service
       - todo-backend.service
       - todo-keycloak.service
@@ -27,6 +29,8 @@
       - todo-postgres.service
       - todo-network.service
       - todo-postgres-data-volume.service
+      - todo-postgres-backup-volume.service
+      - todo-nginx-data-volume.service
     application_containers:
       - todo-frontend
       - todo-backend
@@ -41,7 +45,6 @@
       - localhost/todo-keycloak:m12
     remove_data: false
     later_milestone_markers:
-      - "{{ quadlet_directory }}/todo-postgres-backup.volume"
       - "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/todo/todo-standby-entrypoint.sh"
       - "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/todo/todo_dr.py"
       - "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/todo/todo_backup.py"
@@ -84,6 +87,12 @@
         state: absent
       loop: "{{ quadlet_files }}"
       register: quadlet_removed
+
+    - name: Remove installed Kube runtime definitions
+      ansible.builtin.file:
+        path: "{{ quadlet_directory }}/todo-kube-runtime"
+        state: absent
+      register: kube_runtime_removed
 
     - name: Reload user systemd
       ansible.builtin.systemd_service:
@@ -178,6 +187,10 @@
         - todo-migrator-password
         - todo-app-password
         - todo-keycloak-db-password
+        - todo-kube-postgres-secret
+        - todo-kube-migrator-secret
+        - todo-kube-backend-secret
+        - todo-kube-keycloak-secret
       register: runtime_database_secrets
       changed_when: false
       failed_when: runtime_database_secrets.rc not in [0, 1]

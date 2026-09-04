@@ -1,0 +1,4 @@
+runtime:
+  publicHostname: todo.test
+  publicPort: 8443
+  logLevel: info

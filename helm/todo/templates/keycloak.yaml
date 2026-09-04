@@ -1,5 +1,3 @@
----
-# Source: todo/templates/keycloak.yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -13,7 +11,7 @@ spec:
   restartPolicy: Never
   containers:
     - name: keycloak
-      image: "localhost/todo-keycloak:m12"
+      image: {{ .Values.keycloak.image | quote }}
       imagePullPolicy: Never
       args: [start, --import-realm]
       ports:
@@ -55,7 +53,7 @@ spec:
         failureThreshold: 6
       resources:
         limits:
-          memory: "1Gi"
+          memory: {{ .Values.keycloak.memory | quote }}
       securityContext:
         runAsUser: 1000
         runAsGroup: 0

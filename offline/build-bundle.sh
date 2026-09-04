@@ -8,8 +8,9 @@ bundle_directory="$work_directory/todo-offline-m12"
 trap 'rm -rf "$work_directory"' EXIT
 
 mkdir -p "$bundle_directory/images" "$bundle_directory/docs" \
-  "$bundle_directory/kube"
+  "$bundle_directory/kube" "$bundle_directory/helm"
 mkdir -p "$(dirname "$output")"
+"$project_root/scripts/render-kube-runtime.sh"
 
 podman build --pull --file "$project_root/backend/Containerfile" --tag localhost/todo-backend:m12 "$project_root"
 podman build --pull --file "$project_root/frontend/Containerfile" --tag localhost/todo-frontend:m12 "$project_root"
@@ -30,14 +31,23 @@ cp "$project_root/docs/SECRETS.md" \
   "$project_root/docs/LAB-ACCEPTANCE.md" \
   "$bundle_directory/docs/"
 
-cp -r "$project_root/quadlet" "$bundle_directory/"
+mkdir -p "$bundle_directory/quadlet"
+cp "$project_root/quadlet/todo.network" \
+  "$project_root/quadlet/todo-postgres-data.volume" \
+  "$project_root/quadlet/todo-postgres-backup.volume" \
+  "$project_root/quadlet/todo-nginx-data.volume" \
+  "$bundle_directory/quadlet/"
+cp -r "$project_root/helm/todo" "$bundle_directory/helm/"
 cp -r "$project_root/kube/runtime" "$bundle_directory/kube/"
 mkdir -p "$bundle_directory/ansible"
+mkdir -p "$bundle_directory/ansible/roles"
 cp "$project_root/ansible/deploy.yml" \
   "$project_root/ansible/uninstall.yml" \
   "$project_root/ansible/inventory.ini" \
   "$project_root/ansible/requirements.txt" \
   "$bundle_directory/ansible/"
+cp -r "$project_root/ansible/roles/todo_kube_runtime" \
+  "$bundle_directory/ansible/roles/"
 cp "$project_root/offline/install.sh" "$project_root/offline/preflight.sh" \
   "$project_root/offline/README.md" "$project_root/offline/FAPOLICYD.md" \
   "$bundle_directory/"

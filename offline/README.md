@@ -17,7 +17,8 @@ The target machine must already provide:
 - `/bin/sh`, `tar` and `sha256sum`
 - Free localhost ports 5432, 8000, 8080 and 8443 on a clean target
 
-The tested baseline is Podman 4.9.3, systemd 255 and ansible-core 2.14.18. The
+The Kube runtime requires the tested Podman 5.8.2 platform, systemd 255 and
+ansible-core 2.14.18 or newer. Helm is not an offline target dependency. The
 bundle must be built on a machine compatible with the target's CPU architecture.
 
 For a comfortable demo VM, provide at least 4 GiB memory and 10 GiB free disk.
@@ -31,6 +32,9 @@ From the project root:
 ```bash
 offline/build-bundle.sh
 ```
+
+The connected build machine must provide Helm. It renders the production
+values before packaging; the isolated Oracle Linux target receives plain YAML.
 
 This builds the backend, frontend and Keycloak images, pulls PostgreSQL, and
 creates both the archive and its external checksum:

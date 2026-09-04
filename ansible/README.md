@@ -42,6 +42,10 @@ Keycloak database roles. It builds the backend, frontend and Keycloak images,
 installs the Quadlet files, starts the service chain and verifies health,
 database readiness and Keycloak discovery.
 
+The clean path installs three `.kube` units directly: `todo-postgres`,
+`todo-keycloak` and grouped `todo-app`. It never installs legacy
+per-container `.container` units or performs an in-place runtime migration.
+
 A normal repeat deploy is idempotent relative to the images already stored
 locally. It does not check registries for security updates. Explicitly rebuild
 the application images, refresh their base images and pull PostgreSQL with:
@@ -56,8 +60,9 @@ ansible/.venv/bin/ansible-playbook \
 Image refresh is intentionally unavailable in offline mode because the bundle is
 the complete, fixed source of images there.
 
-The frontend Quadlet is the single `default.target` entrypoint and pulls in the
-remaining services. It starts with the user's systemd manager after login. For
+The grouped `todo-app.kube` unit is the `default.target` entrypoint and pulls
+in the independent Keycloak and PostgreSQL Kube services. It starts with the
+user's systemd manager after login. For
 boot-before-login operation on an always-on host, an administrator must run
 `sudo loginctl enable-linger <service-user>`.
 

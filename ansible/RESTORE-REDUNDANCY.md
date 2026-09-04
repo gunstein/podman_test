@@ -42,20 +42,18 @@ Todo services before allowing management SSH:
 
 ```bash
 systemctl --user stop \
-  todo-frontend.service \
-  todo-backend.service \
+  todo-app.service \
   todo-keycloak.service \
   todo-postgres.service
 
 systemctl --user is-active \
-  todo-frontend.service \
-  todo-backend.service \
+  todo-app.service \
   todo-keycloak.service \
   todo-postgres.service || true
 podman ps
 ```
 
-All four services must be inactive and no `todo-postgres` container may run.
+All three workload services must be inactive and no `todo-postgres` container may run.
 Fencing is an infrastructure property; an unreachable TCP port alone is not
 proof that the VM cannot serve other clients.
 
@@ -141,7 +139,8 @@ connection with `IDENTIFY_SYSTEM`. Only then does it remove the old volume,
 create a physical slot, stream a new base backup and start PostgreSQL in
 recovery.
 
-It removes application-tier Quadlets from the rebuilt host. That host now runs
+It removes the application-tier `.kube` units from the rebuilt host and starts
+the same canonical PostgreSQL Kube workload in recovery mode. That host now runs
 only PostgreSQL standby; nginx, Keycloak and the backend stay on current primary.
 
 This is a one-shot workflow. If it fails after volume removal or slot creation,

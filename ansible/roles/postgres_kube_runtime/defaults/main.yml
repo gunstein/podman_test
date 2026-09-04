@@ -1,0 +1,6 @@
+---
+todo_kube_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
+todo_quadlet_directory: "{{ todo_kube_user_home }}/.config/containers/systemd"
+todo_kube_runtime_directory: "{{ todo_quadlet_directory }}/todo-kube-runtime"
+todo_rendered_manifest_directory: "{{ project_root }}/kube/runtime"
+todo_postgres_publish_address: ""

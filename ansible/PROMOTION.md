@@ -48,82 +48,32 @@ cd todo-operations
 A checksum file copied beside a modified archive does not establish
 authenticity; compare the checksum through a separately trusted channel.
 
-On an Oracle Linux controller with active `fapolicyd`, trust only the verified
-Python source that Ansible must read:
-
-```bash
-sudo fapolicyd-cli --file add \
-  "$HOME/todo-operations/scripts/todo_dr.py" \
-  --trust-file todo-dr-source
-sudo fapolicyd-cli --update
-```
-
-After a later source update, refresh its recorded hash and reload trust:
-
-```bash
-sudo fapolicyd-cli --file update \
-  "$HOME/todo-operations/scripts/todo_dr.py" \
-  --trust-file todo-dr-source
-sudo fapolicyd-cli --update
-```
-
-The role installs through pipelined standard input using RPM-managed shell and
-core utilities. It no longer embeds Python in task YAML, so do not trust the
-role or extraction directory. Exact-file trust keeps the exception reviewable
-and ensures a changed source hash must be accepted deliberately.
-
-See [../offline/FAPOLICYD.md](../offline/FAPOLICYD.md) for denial diagnostics,
-the exact `add` and `update` lifecycle, and cleanup.
+The installer uses the central `todo_fapolicyd` role. With normal Ansible
+become credentials it refreshes exact source-file trust on the controller,
+installs root-owned `/opt/todo/bin/todo_dr.py` and
+`/opt/todo/bin/todo_dr_run.py` on the standby, registers only those exact
+target files, and reloads the policy. It never trusts the operations directory
+or disables `fapolicyd`.
 
 Run this from primary while primary is still the Ansible controller:
 
 ```bash
-ansible-playbook \
+ansible-playbook --ask-become-pass \
   --inventory ansible/inventory-initial.ini \
   ansible/install-dr-tool.yml
 ```
 
-This installs two non-secret files on standby:
-
-```text
-~/.config/todo/todo_dr.py
-~/.config/todo/todo-dr.json
-```
-
-On a host where `fapolicyd` prevents Python from reading the installed files,
-an administrator must add these exact deployed files to the local trust database:
-
-```bash
-sudo fapolicyd-cli --file add \
-  "$HOME/.config/todo/todo_dr.py" \
-  --trust-file todo-dr
-sudo fapolicyd-cli --file add \
-  "$HOME/.config/todo/todo-dr.json" \
-  --trust-file todo-dr
-sudo fapolicyd-cli --update
-```
-
-After Ansible replaces a previously registered version, refresh its stored size
-and hash, then reload the trust database:
-
-```bash
-sudo fapolicyd-cli --file update \
-  "$HOME/.config/todo/todo_dr.py" \
-  --trust-file todo-dr
-sudo fapolicyd-cli --file update \
-  "$HOME/.config/todo/todo-dr.json" \
-  --trust-file todo-dr
-sudo fapolicyd-cli --update
-```
-
-Do not disable `fapolicyd` for this demo.
+The non-secret DR configuration remains
+`~/.config/todo/todo-dr.json`. See
+[../offline/FAPOLICYD.md](../offline/FAPOLICYD.md) for denial diagnosis and
+exact-file cleanup.
 
 ## Safe status test
 
 On standby, while primary is healthy:
 
 ```bash
-python3 "$HOME/.config/todo/todo_dr.py" status
+python3 /opt/todo/bin/todo_dr.py status
 ```
 
 Expected output includes `Database role: standby`, `Writable: no`, zero local
@@ -146,7 +96,7 @@ routine health test.
 3. Run the read-only local preflight on standby:
 
 ```bash
-python3 "$HOME/.config/todo/todo_dr.py" preflight \
+python3 /opt/todo/bin/todo_dr.py preflight \
   --confirm-primary-fenced 'todo-primary is fenced'
 ```
 
@@ -158,7 +108,7 @@ Network unreachability supports the fencing decision but cannot prove it.
 4. Promote only after the preflight succeeds:
 
 ```bash
-python3 "$HOME/.config/todo/todo_dr.py" promote \
+python3 /opt/todo/bin/todo_dr.py promote \
   --confirm-primary-fenced 'todo-primary is fenced' \
   --confirm-promotion todo-standby
 ```
@@ -169,7 +119,7 @@ verifies that PostgreSQL left recovery and is writable.
 5. Verify the result:
 
 ```bash
-python3 "$HOME/.config/todo/todo_dr.py" status
+python3 /opt/todo/bin/todo_dr.py status
 
 podman exec todo-postgres \
   psql --username todo --dbname postgres \

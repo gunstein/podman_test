@@ -22,11 +22,12 @@ The package-level `ansible.cfg` enables Ansible pipelining for every local and
 SSH connection. This avoids transferring and executing temporary Python
 modules under `~/.ansible/tmp`, so the M12 bundle needs no custom trust entries.
 
-M13.5 and M15 add project-owned Python tools. Their Ansible roles transfer the
-files through pipelined standard input rather than Ansible's normal temporary
-copy path. The extracted source must still be readable by the Ansible
-controller, and the installed source must be readable by Python on the target.
-The relevant runbooks therefore register only those exact files.
+The DR and backup workflows add project-owned Python tools. Their shared
+`todo_fapolicyd` role refreshes exact source-file trust on the Ansible
+controller, transfers files through pipelined standard input, installs
+root-owned copies under `/opt/todo/bin`, and registers only those exact target
+files. Supply normal Ansible become credentials; no manual trust preparation is
+part of the supported workflow.
 
 ## Diagnose a denial
 
@@ -105,9 +106,8 @@ or trusting an entire home, extraction or temporary directory.
   and uses the RPM-managed runtime.
 
 - **Ansible reports a checksum mismatch while copying a Python tool:** The
-  target policy denied Ansible's temporary source file. Use the current M13.5
-  or M15 role, which installs the tool through pipelined standard input, and
-  register the exact source and deployed paths documented by its runbook.
+  target policy denied Ansible's temporary source file. Use the central `todo_fapolicyd` role. It refreshes exact source trust,
+  installs through pipelined standard input and verifies exact target trust.
 
 - **Ansible cannot read a role YAML file:** Use the current package and its
   package-level pipelining configuration. The installer no longer embeds Python
@@ -129,45 +129,24 @@ sudo fapolicyd-cli --file delete \
 sudo fapolicyd-cli --update
 ```
 
-For this demo, the possible custom trust sources are:
-
-- `todo-dr-source` and `todo-dr` for M13.5
-- `todo-dr-run-source` for the resumable DR runner
-- `todo-backup-source` and `todo-backup` for M15
-
-Using the standard runbook paths, remove them only after the corresponding tool
-is retired. Run the source command on the host where that package was extracted
-and the deployed command on its target:
+The Ansible-managed tools use one dedicated `todo` trust source. Remove an
+exact source entry on its controller and an exact installed entry on its target
+only when that tool is retired:
 
 ```bash
-sudo fapolicyd-cli --file delete \
-  "$HOME/todo-operations/scripts/todo_dr.py" \
-  --trust-file todo-dr-source
-sudo fapolicyd-cli --file delete \
-  "$HOME/.config/todo/todo_dr.py" \
-  --trust-file todo-dr
-sudo fapolicyd-cli --file delete \
-  "$HOME/.config/todo/todo-dr.json" \
-  --trust-file todo-dr
+sudo fapolicyd-cli --file delete "$HOME/todo-operations/scripts/todo_dr.py" --trust-file todo
+sudo fapolicyd-cli --file delete "$HOME/todo-operations/scripts/todo_dr_run.py" --trust-file todo
+sudo fapolicyd-cli --file delete "$HOME/todo-operations/scripts/todo_backup.py" --trust-file todo
 
-sudo fapolicyd-cli --file delete \
-  "$HOME/todo-operations/scripts/todo_dr_run.py" \
-  --trust-file todo-dr-run-source
-
-sudo fapolicyd-cli --file delete \
-  "$HOME/todo-operations/scripts/todo_backup.py" \
-  --trust-file todo-backup-source
-sudo fapolicyd-cli --file delete \
-  "$HOME/.config/todo/todo_backup.py" \
-  --trust-file todo-backup
-
+sudo fapolicyd-cli --file delete /opt/todo/bin/todo_dr.py --trust-file todo
+sudo fapolicyd-cli --file delete /opt/todo/bin/todo_dr_run.py --trust-file todo
+sudo fapolicyd-cli --file delete /opt/todo/bin/todo_backup.py --trust-file todo
 sudo fapolicyd-cli --update
 ```
 
-Delete each exact source and deployed path that was registered. Removal from
-the trust database does not delete the file itself. Conversely, deleting the
-file does not intentionally clean up its trust entry, so perform both parts of
-an uninstall.
+Only run commands for paths present on that machine. Removing trust does not
+delete a file, and deleting a file does not clean up trust. The DR config under
+`~/.config/todo` is data and is not added to execution trust.
 
 ## Scaling host-side tools beyond the demo
 

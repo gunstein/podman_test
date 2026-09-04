@@ -93,7 +93,7 @@ Existing operational commands remain valid:
 ```bash
 podman inspect todo-postgres
 podman exec todo-postgres pg_isready --username todo --dbname todo
-python3 "$HOME/.config/todo/todo_backup.py" status
+python3 /opt/todo/bin/todo_backup.py status
 ```
 
 After a deliberate unclean PostgreSQL stop, `pg_stat_archiver` cumulative

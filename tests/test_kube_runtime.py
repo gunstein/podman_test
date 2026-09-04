@@ -89,6 +89,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertNotIn("[Install]", keycloak)
         self.assertIn("WantedBy=default.target", app)
         for unit in (app, keycloak, postgres):
+            self.assertIn("PodmanArgs=--no-pod-prefix", unit)
             self.assertIn("ExitCodePropagation=any", unit)
             self.assertIn("Restart=on-failure", unit)
             self.assertIn("ConfigMap=config.yaml", unit)
@@ -200,8 +201,9 @@ class KubeRuntimeTests(unittest.TestCase):
     def test_documentation_explains_podman_container_names(self):
         guide = read(RUNTIME / "README.md")
 
-        self.assertIn("todo-app-backend", guide)
-        self.assertIn("todo-app-frontend", guide)
+        self.assertIn("todo-backend", guide)
+        self.assertIn("todo-frontend", guide)
+        self.assertIn("--no-pod-prefix", guide)
         self.assertIn("todo-app.service", guide)
         self.assertIn("same chart", guide)
 
@@ -248,6 +250,9 @@ class KubeRuntimeTests(unittest.TestCase):
             'cp -r "$project_root/kube/runtime" "$package_directory/kube/"',
             operations,
         )
+        self.assertIn("application_kube_runtime", operations)
+        self.assertIn("postgres_kube_runtime", operations)
+        self.assertIn("todo_fapolicyd", operations)
         self.assertIn("kube_application_migration", operations)
         self.assertIn("kube_application_rollback", operations)
         self.assertIn("migrate-application-to-kube.yml", operations)
@@ -303,6 +308,18 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("Start PostgreSQL through its Kube unit", runtime)
         self.assertIn("Provision database roles", runtime)
         self.assertIn("Start the grouped application", runtime)
+
+    def test_clean_dev_start_bootstraps_roles_before_shared_services(self):
+        script = read(ROOT / "scripts" / "dev-up.sh")
+        postgres = script.index('"$generated/postgres.yaml"')
+        healthy = script.index("podman wait --condition healthy")
+        first_setup = script.index("setup_roles\npodman kube play", healthy)
+        keycloak = script.index('"$generated/keycloak.yaml"')
+
+        self.assertLess(postgres, healthy)
+        self.assertLess(healthy, first_setup)
+        self.assertLess(first_setup, keycloak)
+        self.assertEqual(script.splitlines().count("setup_roles"), 2)
 
     def test_offline_bundle_packages_rendered_kube_runtime(self):
         offline = read(ROOT / "offline" / "build-bundle.sh")

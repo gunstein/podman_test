@@ -116,8 +116,7 @@
     - name: Inspect Todo service states on the rebuild host
       ansible.builtin.command: {argv: [systemctl, --user, is-active, "{{ item }}"]}
       loop:
-        - todo-frontend.service
-        - todo-backend.service
+        - todo-app.service
         - todo-keycloak.service
         - todo-postgres.service
       register: m16_rebuild_services

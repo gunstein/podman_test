@@ -11,13 +11,11 @@ from typing import Callable, Dict, Optional, Sequence
 
 
 DEFAULT_STATE = Path.home() / ".config" / "todo" / "todo-dr-run.json"
-DEFAULT_DR_TOOL = Path.home() / ".config" / "todo" / "todo_dr.py"
+DEFAULT_DR_TOOL = Path("/opt/todo/bin/todo_dr.py")
 STAGES = (
     "promotion",
     "application",
     "rebuild",
-    "postgres_kube",
-    "application_kube",
     "verification",
 )
 
@@ -70,12 +68,14 @@ class DrRun:
         state_store: StateStore,
         dr_tool: Path = DEFAULT_DR_TOOL,
         runner: Runner = run_command,
+        ask_become_pass: bool = False,
     ) -> None:
         self.project_root = project_root.resolve()
         self.inventory = inventory.resolve()
         self.state_store = state_store
         self.dr_tool = dr_tool
         self.runner = runner
+        self.ask_become_pass = ask_become_pass
 
     def _state(self) -> Dict[str, object]:
         state = self.state_store.load()
@@ -97,8 +97,10 @@ class DrRun:
             "ansible-playbook",
             "--inventory",
             str(self.inventory),
-            str(self.project_root / "ansible" / name),
         ]
+        if self.ask_become_pass:
+            arguments.append("--ask-become-pass")
+        arguments.append(str(self.project_root / "ansible" / name))
         if extra_vars:
             arguments.extend(["--extra-vars", json.dumps(extra_vars, sort_keys=True)])
         self._run(arguments, name)
@@ -228,22 +230,9 @@ class DrRun:
             destructive=True,
         )
 
-    def migrate_kube(self) -> None:
-        state = self._state()
-        self._require_completed(state, "rebuild")
-        self._execute_stage(
-            "postgres_kube",
-            lambda: self._playbook("migrate-postgres-primary-to-kube.yml"),
-        )
-        self._execute_stage(
-            "application_kube",
-            lambda: self._playbook("migrate-application-to-kube.yml"),
-        )
-
     def verify(self) -> None:
         state = self._state()
-        self._require_completed(state, "postgres_kube")
-        self._require_completed(state, "application_kube")
+        self._require_completed(state, "rebuild")
         self._execute_stage(
             "verification", lambda: self._playbook("cluster-status.yml")
         )
@@ -258,6 +247,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--state", type=Path, default=DEFAULT_STATE)
     result.add_argument("--project-root", type=Path, default=project_root)
     result.add_argument("--dr-tool", type=Path, default=DEFAULT_DR_TOOL)
+    result.add_argument(
+        "--ask-become-pass",
+        action="store_true",
+        help="Allow Ansible to prompt for privilege escalation when a stage installs trusted tools.",
+    )
     commands = result.add_subparsers(dest="command", required=True)
     commands.add_parser("status")
     promote = commands.add_parser("promote")
@@ -268,7 +262,6 @@ def parser() -> argparse.ArgumentParser:
         command = commands.add_parser(name)
         command.add_argument("--confirm-old-primary-fenced", required=True)
         command.add_argument("--confirm-reseed", required=True)
-    commands.add_parser("migrate-kube")
     commands.add_parser("verify")
     return result
 
@@ -283,6 +276,7 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
             args.inventory,
             StateStore(args.state),
             args.dr_tool,
+            ask_become_pass=args.ask_become_pass,
         )
         if args.command == "status":
             run.show_status()
@@ -296,8 +290,6 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
             )
         elif args.command == "rebuild":
             run.rebuild(args.confirm_old_primary_fenced, args.confirm_reseed)
-        elif args.command == "migrate-kube":
-            run.migrate_kube()
         elif args.command == "verify":
             run.verify()
         return 0

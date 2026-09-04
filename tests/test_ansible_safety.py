@@ -42,14 +42,19 @@ class AnsibleSafetyTests(unittest.TestCase):
         ):
             self.assertNotIn("ansible_pipelining", read(inventory))
 
-    def test_tool_installers_do_not_embed_python_in_role_yaml(self):
+    def test_tool_installers_use_central_exact_file_trust(self):
+        trust = read("ansible/roles/todo_fapolicyd/tasks/main.yml")
+        self.assertIn("base64 --decode", trust)
+        self.assertIn("--trust-file", trust)
+        self.assertIn("item.dest", trust)
+        self.assertNotIn("import pathlib", trust)
         for tasks_file in (
             "ansible/roles/todo_dr/tasks/main.yml",
             "ansible/roles/postgres_backup/tasks/main.yml",
         ):
             tasks = read(tasks_file)
-            self.assertNotIn("import pathlib", tasks)
-            self.assertIn("base64 --decode", tasks)
+            self.assertIn("name: todo_fapolicyd", tasks)
+            self.assertIn("/opt/todo/bin/", tasks)
 
     def test_backup_uses_capacity_safe_archive_timeout(self):
         playbook = read("ansible/configure-backup.yml")
@@ -199,16 +204,32 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertIn("todo_dr_standby_group: todo_rebuild_standby", rebuild)
         self.assertIn("todo_dr_primary_group | default(", dr_role)
 
-    def test_postgres_operations_support_grouped_application_entrypoint(self):
+    def test_active_postgres_operations_are_kube_native(self):
         for tasks_file in (
             "ansible/roles/postgres_backup/tasks/main.yml",
+            "ansible/roles/postgres_primary/tasks/main.yml",
+            "ansible/roles/postgres_standby/tasks/main.yml",
             "ansible/roles/postgres_redundancy_primary/tasks/main.yml",
-            "ansible/roles/kube_postgres_primary_rollback/tasks/main.yml",
+            "ansible/roles/postgres_reseed_standby/tasks/main.yml",
         ):
             tasks = read(tasks_file)
-            self.assertIn("- todo-app.service", tasks)
-            self.assertIn("'todo-app.service'", tasks)
-            self.assertIn("else 'todo-frontend.service'", tasks)
+            self.assertNotIn("src: todo-postgres.container.j2", tasks)
+            self.assertNotIn("dest: todo-postgres.container", tasks)
+
+        backup = read("ansible/roles/postgres_backup/tasks/main.yml")
+        redundancy = read(
+            "ansible/roles/postgres_redundancy_primary/tasks/main.yml"
+        )
+        self.assertIn("todo-app.service", backup)
+        self.assertIn("todo-app.service", redundancy)
+        self.assertNotIn("else 'todo-frontend.service'", backup)
+        self.assertNotIn("else 'todo-frontend.service'", redundancy)
+
+    def test_transition_rollback_remains_separate_from_active_runtime(self):
+        rollback = read(
+            "ansible/roles/kube_postgres_primary_rollback/tasks/main.yml"
+        )
+        self.assertIn("todo-postgres.container", rollback)
 
 
 if __name__ == "__main__":

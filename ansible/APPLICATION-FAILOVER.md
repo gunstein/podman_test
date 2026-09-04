@@ -2,8 +2,9 @@
 
 
 M14 starts the application tier on an already promoted PostgreSQL standby. It
-does not initialize PostgreSQL, run migrations, change database roles or create
-secrets.
+does not initialize PostgreSQL, change database roles or generate credentials. It
+derives missing Kube-compatible secret objects only from the existing host-local
+Podman secrets. The grouped application runs its normal idempotent schema migration as an init container.
 
 The stable demo identity is:
 
@@ -91,11 +92,11 @@ The playbook fails before changing application state unless:
 - it runs on the declared host and address;
 - `todo-postgres.service` is active;
 - PostgreSQL reports `f|off`, meaning promoted and writable;
-- all three runtime secrets exist;
+- all four application runtime secrets exist;
 - every missing application image has its corresponding staged M12 archive.
 
-It loads only missing images, installs dedicated promoted-host Quadlets, starts
-Keycloak, backend and nginx, updates the existing Keycloak client to the stable
+It loads only missing images, installs the grouped `todo-app` and independent `todo-keycloak` Kube
+workloads, starts them through `.kube` Quadlets, updates the existing Keycloak client to the stable
 origin, and checks health, readiness, discovery and public Todo reads.
 
 ## Client name and certificate

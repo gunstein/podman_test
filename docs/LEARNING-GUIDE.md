@@ -292,7 +292,7 @@ ansible-playbook --inventory ansible/inventory-initial.ini \
 **Try**
 
 ```bash
-python3 "$HOME/.config/todo/todo_dr.py" status
+python3 /opt/todo/bin/todo_dr.py status
 ```
 
 Do not run `promote` outside the controlled runbook.
@@ -303,7 +303,8 @@ Do not run `promote` outside the controlled runbook.
 
 - Database promotion and application failover are deliberately separate.
 - Promoted deployment requires a writable database and existing runtime secrets;
-  it does not rerun bootstrap, migrations or grants.
+  it does not rerun role bootstrap or grants; schema migration remains the grouped
+  app init-container responsibility.
 - `todo.test` keeps issuer and redirect identity stable while its address moves.
 
 **Look at**
@@ -338,7 +339,7 @@ curl --fail https://todo.test:8443/auth/realms/todo/.well-known/openid-configura
 **Try**
 
 ```bash
-python3 "$HOME/.config/todo/todo_backup.py" status
+python3 /opt/todo/bin/todo_backup.py status
 ```
 
 ## 15. Restore redundancy

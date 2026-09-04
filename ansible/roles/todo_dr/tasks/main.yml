@@ -5,7 +5,19 @@
     state: directory
     mode: "0700"
 
-- name: Install the local Todo DR files through pipelined stdin
+- name: Install and trust the Todo DR tools
+  ansible.builtin.include_role:
+    name: todo_fapolicyd
+  vars:
+    todo_fapolicyd_files:
+      - source: "{{ project_root }}/scripts/todo_dr.py"
+        dest: /opt/todo/bin/todo_dr.py
+        mode: "0644"
+      - source: "{{ project_root }}/scripts/todo_dr_run.py"
+        dest: /opt/todo/bin/todo_dr_run.py
+        mode: "0644"
+
+- name: Install the local Todo DR configuration through pipelined stdin
   ansible.builtin.command:
     argv:
       - /bin/sh
@@ -13,15 +25,13 @@
       - |
         set -eu
         target=$1
-        mode=$2
-        expected_mode=${mode#0}
         temporary=$(mktemp "${target}.XXXXXX")
         trap "rm -f \"$temporary\"" EXIT HUP INT TERM
         base64 --decode > "$temporary"
-        chmod "$mode" "$temporary"
+        chmod 0600 "$temporary"
         if [ -f "$target" ] &&
            cmp --silent "$temporary" "$target" &&
-           [ "$(stat --format=%a "$target")" = "$expected_mode" ]; then
+           [ "$(stat --format=%a "$target")" = 600 ]; then
           printf "%s\n" unchanged
           exit 0
         fi
@@ -29,31 +39,23 @@
         trap - EXIT HUP INT TERM
         printf "%s\n" changed
       - todo-install
-      - "{{ item.path }}"
-      - "{{ item.mode }}"
-    stdin: "{{ item.content }}"
+      - "{{ m13_config_directory }}/todo-dr.json"
+    stdin: >-
+      {{
+        {
+          'primary_name':
+            groups[todo_dr_primary_group | default('todo_primary')][0],
+          'primary_address':
+            hostvars[
+              groups[todo_dr_primary_group | default('todo_primary')][0]
+            ].todo_node_address,
+          'standby_name':
+            groups[todo_dr_standby_group | default('todo_standby')][0],
+          'rpo_target_seconds': (
+            todo_rpo_target_seconds | default(todo_rpo_seconds | default(30))
+          )
+        } | to_json | b64encode
+      }}
     stdin_add_newline: false
-  loop:
-    - path: "{{ m13_config_directory }}/todo_dr.py"
-      mode: "0644"
-      content: "{{ lookup('ansible.builtin.file', project_root ~ '/scripts/todo_dr.py', rstrip=false) | b64encode }}"
-      label: todo_dr.py
-    - path: "{{ m13_config_directory }}/todo-dr.json"
-      mode: "0600"
-      content: >-
-        {{
-          {
-            'primary_name': groups[todo_dr_primary_group | default('todo_primary')][0],
-            'primary_address': hostvars[groups[todo_dr_primary_group | default('todo_primary')][0]].todo_node_address,
-            'standby_name': groups[todo_dr_standby_group | default('todo_standby')][0],
-            'rpo_target_seconds': (
-              todo_rpo_target_seconds
-              | default(todo_rpo_seconds | default(30))
-            )
-          } | to_json | b64encode
-        }}
-      label: todo-dr.json
-  loop_control:
-    label: "{{ item.label }}"
-  register: todo_dr_install
-  changed_when: todo_dr_install.stdout | trim == 'changed'
+  register: todo_dr_config_install
+  changed_when: todo_dr_config_install.stdout | trim == "changed"

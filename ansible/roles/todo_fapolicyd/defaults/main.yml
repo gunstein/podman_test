@@ -1,0 +1,4 @@
+---
+todo_fapolicyd_trust_file: todo
+todo_fapolicyd_install_directory: /opt/todo/bin
+todo_fapolicyd_files: []

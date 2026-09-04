@@ -31,7 +31,7 @@ PostgreSQL primary =====async WAL=====> PostgreSQL standby
 - PostgreSQL 17.11
 - nginx for static content, TLS and reverse proxy routes
 - Keycloak with Authorization Code and PKCE S256
-- Rootless Podman containers managed by Quadlet and user systemd
+- Rootless Podman Kube pods managed by `.kube` Quadlet and user systemd
 - Ansible for installation, configuration and verification
 - OCI archives and checksums for offline delivery
 
@@ -40,9 +40,9 @@ them. Per-user ownership is intentionally outside the demo.
 
 ## What you can learn
 
-The recommended route is [docs/LEARNING-GUIDE.md](docs/LEARNING-GUIDE.md). It
-connects each concept to source files and safe commands using a consistent
-`Understand`, `Look at` and `Try` structure.
+For the current architecture, start with the [Kube runtime guide](kube/runtime/README.md).
+The [legacy reference learning guide](docs/LEARNING-GUIDE.md) preserves the
+accepted per-container evidence and its safe inspection exercises.
 
 The shorter [concept coverage matrix](docs/WHAT-YOU-LEARN.md) states what the
 demo implements, what it simplifies and which production concerns remain.

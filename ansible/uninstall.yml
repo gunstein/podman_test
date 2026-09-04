@@ -46,8 +46,8 @@
     remove_data: false
     later_milestone_markers:
       - "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/todo/todo-standby-entrypoint.sh"
-      - "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/todo/todo_dr.py"
-      - "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/todo/todo_backup.py"
+      - "/opt/todo/bin/todo_dr.py"
+      - "/opt/todo/bin/todo_backup.py"
 
   pre_tasks:
     - name: Check for a replication secret

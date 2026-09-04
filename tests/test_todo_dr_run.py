@@ -88,17 +88,29 @@ class TodoDrRunTests(unittest.TestCase):
         with self.assertRaisesRegex(todo_dr_run.RunError, "will not retry"):
             self.run.rebuild("todo-primary is fenced", "todo-primary")
 
-    def test_kube_migration_orders_database_before_application(self):
+    def test_verify_runs_after_rebuild(self):
         self.complete("promotion", "application", "rebuild")
-        self.run.migrate_kube()
+        self.run.verify()
         names = [Path(command[3]).name for command in self.runner.commands]
-        self.assertEqual(
-            names,
-            [
-                "migrate-postgres-primary-to-kube.yml",
-                "migrate-application-to-kube.yml",
-            ],
+        self.assertEqual(names, ["cluster-status.yml"])
+
+    def test_verify_requires_rebuild(self):
+        self.complete("promotion", "application")
+        with self.assertRaisesRegex(todo_dr_run.RunError, "rebuild"):
+            self.run.verify()
+
+    def test_become_prompt_is_forwarded_only_when_requested(self):
+        privileged = todo_dr_run.DrRun(
+            self.root,
+            self.inventory,
+            self.state,
+            dr_tool=self.root / "todo_dr.py",
+            runner=self.runner,
+            ask_become_pass=True,
         )
+        self.complete("promotion")
+        privileged.deploy_application()
+        self.assertIn("--ask-become-pass", self.runner.commands[0])
 
     def test_inventory_change_is_rejected(self):
         state = self.state.load()

@@ -80,12 +80,25 @@
   register: m15_backup_directories
   changed_when: m15_backup_directories.stdout | trim == "changed"
 
-- name: Install the WAL-archive PostgreSQL Quadlet
-  ansible.builtin.template:
-    src: todo-postgres.container.j2
-    dest: "{{ m15_quadlet_directory }}/todo-postgres.container"
-    mode: "0644"
-  register: m15_postgres_quadlet
+- name: Read the active PostgreSQL service source
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - --user
+      - show
+      - todo-postgres.service
+      - --property=SourcePath
+      - --value
+  register: m15_postgres_source
+  changed_when: false
+
+- name: Require the Kube-native PostgreSQL service
+  ansible.builtin.assert:
+    that:
+      - >-
+        m15_postgres_source.stdout | trim is
+        match('^.*/todo-kube-runtime/todo-postgres\.kube$')
+    fail_msg: Backup configuration refuses to replace a non-Kube PostgreSQL runtime.
 
 - name: Read current archive settings
   ansible.builtin.command:
@@ -134,42 +147,16 @@
     m15_archive_settings.stdout | trim !=
     "on|" ~ m15_archive_command ~ "|" ~ m15_archive_timeout
 
-- name: Detect the grouped application service
-  ansible.builtin.command:
-    argv:
-      - systemctl
-      - --user
-      - show
-      - todo-app.service
-      - --property=LoadState
-      - --value
-  register: m15_grouped_application_service
-  changed_when: false
-  failed_when: false
-
-- name: Select the application entry service
-  ansible.builtin.set_fact:
-    m15_application_entry_service: >-
-      {{
-        'todo-app.service'
-        if m15_grouped_application_service.stdout | trim == 'loaded'
-        else 'todo-frontend.service'
-      }}
-
 - name: Stop the application tier before PostgreSQL restart
   ansible.builtin.command:
     argv: [systemctl, --user, stop, "{{ item }}"]
   loop:
     - todo-app.service
-    - todo-frontend.service
-    - todo-backend.service
     - todo-keycloak.service
   changed_when: false
   register: m15_service_stopped
   failed_when: m15_service_stopped.rc not in [0, 5]
-  when: >-
-    m15_postgres_quadlet.changed or
-    m15_archive_configured.changed | default(false)
+  when: m15_archive_configured.changed | default(false)
 
 - name: Reload user systemd after PostgreSQL changes
   ansible.builtin.systemd_service:
@@ -181,9 +168,7 @@
     name: todo-postgres.service
     scope: user
     state: restarted
-  when: >-
-    m15_postgres_quadlet.changed or
-    m15_archive_configured.changed | default(false)
+  when: m15_archive_configured.changed | default(false)
 
 - name: Wait for healthy PostgreSQL
   ansible.builtin.command:
@@ -219,7 +204,7 @@
 
 - name: Start the application tier after PostgreSQL restart
   ansible.builtin.systemd_service:
-    name: "{{ m15_application_entry_service }}"
+    name: todo-app.service
     scope: user
     state: started
 
@@ -241,43 +226,14 @@
   retries: 90
   delay: 2
 
-- name: Install the local backup and PITR tool through pipelined stdin
-  ansible.builtin.command:
-    argv:
-      - /bin/sh
-      - -c
-      - |
-        set -eu
-        target=$1
-        mode=$2
-        expected_mode=${mode#0}
-        temporary=$(mktemp "${target}.XXXXXX")
-        trap "rm -f \"$temporary\"" EXIT HUP INT TERM
-        base64 --decode > "$temporary"
-        chmod "$mode" "$temporary"
-        if [ -f "$target" ] &&
-           cmp --silent "$temporary" "$target" &&
-           [ "$(stat --format=%a "$target")" = "$expected_mode" ]; then
-          printf "%s\n" unchanged
-          exit 0
-        fi
-        mv --force "$temporary" "$target"
-        trap - EXIT HUP INT TERM
-        printf "%s\n" changed
-      - todo-install
-      - "{{ m15_config_directory }}/todo_backup.py"
-      - "0644"
-    stdin: >-
-      {{
-        lookup(
-          'ansible.builtin.file',
-          project_root ~ '/scripts/todo_backup.py',
-          rstrip=false
-        ) | b64encode
-      }}
-    stdin_add_newline: false
-  register: m15_backup_tool
-  changed_when: m15_backup_tool.stdout | trim == "changed"
+- name: Install and trust the backup and PITR tool
+  ansible.builtin.include_role:
+    name: todo_fapolicyd
+  vars:
+    todo_fapolicyd_files:
+      - source: "{{ project_root }}/scripts/todo_backup.py"
+        dest: /opt/todo/bin/todo_backup.py
+        mode: "0644"
 
 - name: Decide whether WAL archive verification is required
   ansible.builtin.set_fact:
@@ -285,7 +241,6 @@
       {{
         m15_backup_volume_quadlet.changed or
         m15_backup_directories.changed or
-        m15_postgres_quadlet.changed or
         m15_archive_configured.changed | default(false)
       }}
   changed_when: false

@@ -8,6 +8,7 @@
   any_errors_fatal: true
 
   vars:
+    project_root: "{{ playbook_dir }}/.."
     m16_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
     m16_config_directory: "{{ m16_user_home }}/.config/todo"
     m16_quadlet_directory: "{{ m16_user_home }}/.config/containers/systemd"

@@ -193,6 +193,8 @@ class LabDrAcceptanceTests(unittest.TestCase):
         self.assertIn("podman secret ls --format", script)
         self.assertIn("podman network ls --format", script)
         self.assertIn("todo*.kube", script)
+        self.assertIn("/opt/todo/bin/todo_dr.py", script)
+        self.assertIn("/opt/todo/bin/todo_backup.py", script)
         self.assertNotIn('test -z "$(podman volume ls -q)"', script)
 
     def test_clean_preflight_rejects_duplicate_machine_ids(self):

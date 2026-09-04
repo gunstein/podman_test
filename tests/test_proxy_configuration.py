@@ -32,30 +32,28 @@ class ProxyConfigurationTests(unittest.TestCase):
         ):
             self.assertIn(f"proxy_set_header {header} ", headers)
 
-    def test_tls_private_state_uses_dedicated_volume(self):
-        quadlet = read("quadlet/todo-frontend.container")
+    def test_tls_private_state_uses_dedicated_kube_volume(self):
+        app = read("kube/runtime/app.yaml")
+        config = read("kube/runtime/config.yaml")
 
-        self.assertIn(
-            "todo-nginx-data.volume:/var/lib/todo-tls:U",
-            quadlet,
-        )
-        self.assertIn("Environment=TODO_TLS_HOSTNAME=localhost", quadlet)
+        self.assertIn("claimName: todo-nginx-data", app)
+        self.assertIn("mountPath: /var/lib/todo-tls", app)
+        self.assertIn('TODO_TLS_HOSTNAME: "todo.test"', config)
 
-    def test_promoted_proxy_uses_stable_hostname(self):
+    def test_promoted_proxy_uses_stable_hostname_and_kube_publish(self):
         template = read(
-            "ansible/roles/promoted_application/templates/"
-            "todo-frontend.container.j2"
+            "ansible/roles/application_kube_runtime/templates/"
+            "todo-app.kube.j2"
         )
-        nginx = read(
-            "ansible/roles/promoted_application/templates/nginx.conf.j2"
-        )
+        config = read("kube/runtime/config.yaml")
 
         self.assertIn(
-            "Environment=TODO_TLS_HOSTNAME={{ m14_service_hostname }}",
+            "PublishPort={{ todo_publish_address }}:"
+            "{{ todo_service_port }}:8443",
             template,
         )
-        self.assertIn("server_name {{ m14_service_hostname }};", nginx)
-        self.assertIn("listen {{ m14_service_port }} ssl;", nginx)
+        self.assertIn("server_name todo.test;", config)
+        self.assertIn('KC_HOSTNAME: "https://todo.test:8443/auth"', config)
 
 
 if __name__ == "__main__":

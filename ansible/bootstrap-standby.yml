@@ -5,6 +5,9 @@
 - name: Prepare PostgreSQL primary for one standby
   hosts: todo_primary
   gather_facts: false
+
+  vars:
+    project_root: "{{ playbook_dir }}/.."
   any_errors_fatal: true
 
   roles:

@@ -20,9 +20,8 @@ roll back to the proven implementation.
 
 ## Retirement gate
 
-After the grouped model passes clean install, controlled Kube migration, cold
-reboot, persistence, replication, promotion, standby rebuild, application and
-database rollback, and full DR acceptance:
+After the grouped model passes clean install, idempotent redeploy, cold reboot,
+persistence, replication, promotion, standby rebuild and full DR acceptance:
 
 1. Make the three-workload Kube model the default deployment and offline path.
 2. Remove the seven legacy `.container` files from the main runtime path, or
@@ -33,7 +32,10 @@ database rollback, and full DR acceptance:
    provisioning boundary rather than the application runtime.
 5. Update Ansible, package builders, tests and documentation, then verify that
    no production path refers to the legacy files.
+6. Remove the now-unused per-container templates retained in the standby,
+   promotion, backup and rebuild roles once the full VM/DR gate proves those
+   paths use only the canonical Kube workloads.
 
 The immutable `quadlet-reference-v1` tag preserves the accepted implementation
 even after this cleanup. Do not remove the files from the current branch before
-the complete acceptance and rollback gates pass.
+the complete Kube VM/DR acceptance gates pass.

@@ -430,6 +430,9 @@ if podman network ls --format '{{{{.Name}}}}' | grep -Fxq todo-network; then
 fi
 test -z "$(find "$HOME/.config/containers/systemd" -type f \( -name 'todo*.container' -o -name 'todo*.kube' -o -name 'todo*.network' -o -name 'todo*.volume' \) -print -quit 2>/dev/null)"
 test ! -e "$HOME/.config/todo"
+test ! -e /opt/todo/bin/todo_dr.py
+test ! -e /opt/todo/bin/todo_dr_run.py
+test ! -e /opt/todo/bin/todo_backup.py
 printf 'LAB_MACHINE_ID=%s\n' "$(cat /etc/machine-id)"
 """
         result = self.run_script(node, script)

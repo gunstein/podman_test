@@ -61,14 +61,15 @@ After replication is healthy, install or update the DR tool on standby without
 touching the database:
 
 ```bash
-ansible-playbook --inventory ansible/inventory-initial.ini ansible/install-dr-tool.yml
+ansible-playbook --ask-become-pass --inventory ansible/inventory-initial.ini ansible/install-dr-tool.yml
 ```
 
 See [the controlled promotion runbook](PROMOTION.md) before using it.
 
-The Oracle Linux 9.8 verification also required `0700` on the basebackup
-directory, an explicit `:Z` SELinux label on its Quadlet volume mount and an
-explicit `/bin/sh` entrypoint for the readable standby startup script.
+The Kube-native standby stores a `0600` replication passfile and recovery
+settings inside the `0700` database volume. The canonical `postgres.yaml` and
+`todo-postgres.kube` are shared with primary; only data/recovery configuration
+and the primary LAN port exposure differ by role.
 
 A physical slot retains WAL while standby is disconnected, capped at
 1 GiB to protect primary disk space. Exceeding the cap may invalidate the slot
@@ -84,7 +85,7 @@ rebuilds but adds archive availability, retention, access-control and monitoring
 requirements. For clarity and primary-disk safety, this demo uses an explicit
 new `pg_basebackup` when the slot can no longer supply the missing WAL.
 
-The standby PostgreSQL Quadlet is attached to the user `default.target`; enable
+The standby PostgreSQL `.kube` Quadlet is attached to the user `default.target`; enable
 lingering for the service user when it must restart at VM boot without an
 interactive login.
 

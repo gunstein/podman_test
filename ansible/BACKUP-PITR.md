@@ -62,15 +62,10 @@ tar -xzf todo-operations.tar.gz \
 cd todo-operations
 ```
 
-On Oracle Linux with active `fapolicyd`, trust the verified extracted Python
-source:
-
-```bash
-sudo fapolicyd-cli --file add \
-  "$HOME/todo-operations/scripts/todo_backup.py" \
-  --trust-file todo-backup-source
-sudo fapolicyd-cli --update
-```
+The configure playbook uses the central `todo_fapolicyd` role to refresh
+exact source trust, install root-owned `/opt/todo/bin/todo_backup.py`, and
+maintain its exact target trust entry. Supply normal Ansible become credentials;
+do not disable `fapolicyd` or trust the extracted directory.
 
 Reuse the recovery inventory created for application failover, or copy the
 included example:
@@ -85,6 +80,7 @@ Then:
 
 ```bash
 ansible-playbook \
+  --ask-become-pass \
   --inventory ansible/inventory-recovery.ini \
   ansible/configure-backup.yml
 ```
@@ -108,38 +104,16 @@ verifying a replacement base backup, an operator must explicitly expire older
 base backups and WAL, or copy them to off-host storage. Monitoring free space is
 still required.
 
-Trust the exact installed tool before running it. On a hardened `fapolicyd`
-host, this trust step is also required before a repeat playbook run can read the
-destination and report `changed=0`:
-
-```bash
-sudo fapolicyd-cli --file add \
-  "$HOME/.config/todo/todo_backup.py" \
-  --trust-file todo-backup
-sudo fapolicyd-cli --update
-```
-
-After an update, refresh both registered copies and reload the trust database:
-
-```bash
-sudo fapolicyd-cli --file update \
-  "$HOME/todo-operations/scripts/todo_backup.py" \
-  --trust-file todo-backup-source
-sudo fapolicyd-cli --file update \
-  "$HOME/.config/todo/todo_backup.py" \
-  --trust-file todo-backup
-sudo fapolicyd-cli --update
-```
-
-See [../offline/FAPOLICYD.md](../offline/FAPOLICYD.md) for denial
-diagnostics, common Ansible symptoms and trust-entry cleanup. Do not disable `fapolicyd` for this demo.
+The playbook verifies the exact installed trust entry before it returns. See
+[../offline/FAPOLICYD.md](../offline/FAPOLICYD.md) for separate SELinux and
+fapolicyd diagnostics and trust-entry cleanup.
 
 ## Status and base backup
 
 ```bash
-python3 "$HOME/.config/todo/todo_backup.py" status
+python3 /opt/todo/bin/todo_backup.py status
 
-python3 "$HOME/.config/todo/todo_backup.py" create
+python3 /opt/todo/bin/todo_backup.py create
 ```
 
 The create command runs `pg_basebackup --wal-method=stream`, generates SHA-256
@@ -163,7 +137,7 @@ podman exec todo-postgres \
 Create and archive a named restore point:
 
 ```bash
-python3 "$HOME/.config/todo/todo_backup.py" mark \
+python3 /opt/todo/bin/todo_backup.py mark \
   --name m15_before_after
 ```
 
@@ -186,7 +160,7 @@ podman exec todo-postgres \
 Restore with the base-backup name returned earlier:
 
 ```bash
-python3 "$HOME/.config/todo/todo_backup.py" restore \
+python3 /opt/todo/bin/todo_backup.py restore \
   --backup base-YYYYMMDDTHHMMSSZ \
   --target m15_before_after
 ```
@@ -198,7 +172,7 @@ If recovery fails, disposable state may remain for inspection. After diagnosing
 it, rerun only with explicit replacement:
 
 ```bash
-python3 "$HOME/.config/todo/todo_backup.py" restore \
+python3 /opt/todo/bin/todo_backup.py restore \
   --backup base-YYYYMMDDTHHMMSSZ \
   --target m15_before_after \
   --replace
@@ -210,7 +184,7 @@ it never targets the live or backup volume.
 Verify the isolated database:
 
 ```bash
-python3 "$HOME/.config/todo/todo_backup.py" restore-status
+python3 /opt/todo/bin/todo_backup.py restore-status
 
 podman exec todo-postgres-restore \
   psql --username todo --dbname todo \
@@ -228,7 +202,7 @@ Expected restored result contains only `M15 before restore point`. The live
 ## Cleanup only the disposable restore
 
 ```bash
-python3 "$HOME/.config/todo/todo_backup.py" cleanup-restore \
+python3 /opt/todo/bin/todo_backup.py cleanup-restore \
   --confirm todo-postgres-restore
 ```
 

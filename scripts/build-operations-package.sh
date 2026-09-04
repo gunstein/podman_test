@@ -47,6 +47,9 @@ cp "$project_root/ansible/README.md" \
   "$package_directory/ansible/"
 for role in \
   standby_preflight \
+  application_kube_runtime \
+  postgres_kube_runtime \
+  todo_fapolicyd \
   postgres_primary \
   postgres_standby \
   todo_dr \

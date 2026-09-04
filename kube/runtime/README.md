@@ -43,11 +43,11 @@ offline bundle therefore needs no Helm binary on Oracle Linux. Development
 renders the same chart with `values-dev.yaml`; production installs the
 rendered YAML beside the matching `.kube` units.
 
-Podman names a regular container from its pod and container entries. The grouped
-containers therefore become `todo-app-backend` and `todo-app-frontend`, owned
-by one `todo-app.service`. Nginx reaches its colocated backend on
-`127.0.0.1:8000`; both containers reach the independent `todo-postgres` and
-`todo-keycloak` pods through `todo.network`.
+All three `.kube` units use `--no-pod-prefix`, so the grouped containers keep
+the stable names `todo-backend` and `todo-frontend` while one
+`todo-app.service` owns their shared lifecycle. Nginx reaches its colocated
+backend on `127.0.0.1:8000`; both containers reach the independent
+`todo-postgres` and `todo-keycloak` pods through `todo.network`.
 
 The `migrate` init container runs
 `python -m backend.migrate --connect-timeout 120 up` before either regular
@@ -87,9 +87,10 @@ physical replication slot. A minimal educational workload would keep only the
 data claim; this production-shaped candidate keeps both details so migration
 does not weaken the already validated backup and replication contracts.
 
-Its pod and container are both named `todo-postgres`, and its `.kube` unit
-passes `--no-pod-prefix` so the
-existing DR, backup and Ansible commands retain the exact container name. This
+All three `.kube` units pass `--no-pod-prefix`. PostgreSQL therefore retains
+the exact `todo-postgres` container name used by DR and backup commands, while
+the grouped app retains stable `todo-migrate`, `todo-backend` and
+`todo-frontend` names for verification and certificate export. This
 requires the tested Podman 5.8.2 platform.
 
 Its `.kube` unit also applies `--health-on-failure=kill` after each creation.

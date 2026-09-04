@@ -117,45 +117,51 @@
       - /var/lib/postgresql/data
   changed_when: true
 
-- name: Create the standby configuration directory
-  ansible.builtin.file:
-    path: "{{ m13_config_directory }}"
-    state: directory
-    mode: "0700"
+- name: Install standby replication settings in the database volume
+  ansible.builtin.command:
+    argv:
+      - podman
+      - run
+      - --rm
+      - --user
+      - postgres
+      - --security-opt
+      - no-new-privileges
+      - --cap-drop
+      - all
+      - --volume
+      - todo-postgres-data:/var/lib/postgresql/data:Z
+      - --secret
+      - todo-replicator-password
+      - --entrypoint
+      - /bin/sh
+      - docker.io/library/postgres:17.11
+      - -ec
+      - |
+        data=/var/lib/postgresql/data
+        passfile=$data/.todo-replication.pgpass
+        auto=$data/postgresql.auto.conf
+        umask 077
+        printf '%s:%s:replication:%s:' "$1" 5432 todo_replicator > "$passfile"
+        cat /run/secrets/todo-replicator-password >> "$passfile"
+        printf '\n' >> "$passfile"
+        sed -i '/^primary_conninfo =/d; /^primary_slot_name =/d' "$auto"
+        printf "primary_conninfo = 'host=%s port=5432 user=todo_replicator application_name=%s passfile=%s'\n" "$1" "$3" "$passfile" >> "$auto"
+        printf "primary_slot_name = '%s'\n" "$2" >> "$auto"
+      - todo-standby-config
+      - "{{ hostvars[groups['todo_primary'][0]].todo_node_address }}"
+      - todo_standby
+      - todo_standby
+  changed_when: true
+  no_log: true
 
-- name: Install the standby entrypoint
-  ansible.builtin.template:
-    src: todo-standby-entrypoint.sh.j2
-    dest: "{{ m13_config_directory }}/todo-standby-entrypoint.sh"
-    mode: "0644"
+- name: Install the shared PostgreSQL Kube runtime on standby
+  ansible.builtin.include_role:
+    name: postgres_kube_runtime
+  vars:
+    todo_postgres_publish_address: ""
 
-- name: Create the standby Quadlet directory
-  ansible.builtin.file:
-    path: "{{ m13_quadlet_directory }}"
-    state: directory
-    mode: "0700"
-
-- name: Install the shared network and volume Quadlets
-  ansible.builtin.copy:
-    src: "{{ project_root }}/quadlet/{{ item }}"
-    dest: "{{ m13_quadlet_directory }}/{{ item }}"
-    mode: "0644"
-  loop:
-    - todo.network
-    - todo-postgres-data.volume
-
-- name: Install the standby PostgreSQL Quadlet
-  ansible.builtin.template:
-    src: todo-postgres.container.j2
-    dest: "{{ m13_quadlet_directory }}/todo-postgres.container"
-    mode: "0644"
-
-- name: Reload standby user systemd
-  ansible.builtin.systemd_service:
-    scope: user
-    daemon_reload: true
-
-- name: Start standby PostgreSQL
+- name: Start standby PostgreSQL through its Kube unit
   ansible.builtin.systemd_service:
     name: todo-postgres.service
     scope: user

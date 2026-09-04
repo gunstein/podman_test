@@ -191,26 +191,24 @@ standby and require recovery plus streaming to resume.
 
 ## 5. Local DR tool
 
-Trust the verified source before Ansible reads it:
+Install both DR tools and exact-file trust through Ansible:
 
 ```bash
-sudo fapolicyd-cli --file add \
-  "$HOME/todo-operations/scripts/todo_dr.py" \
-  --trust-file todo-dr-source
-sudo fapolicyd-cli --update
-ansible-playbook --inventory ansible/inventory-initial.ini \
+ansible-playbook --ask-become-pass \
+  --inventory ansible/inventory-initial.ini \
   ansible/install-dr-tool.yml
 ```
 
-On standby, trust the exact installed tool and configuration as documented in
-[../ansible/PROMOTION.md](../ansible/PROMOTION.md). Require healthy standby,
-read-only database, reachable primary and zero local apply lag:
+The central role keeps `fapolicyd` active, trusts only the verified source and
+the two root-owned files under `/opt/todo/bin`, and keeps the non-secret
+configuration under `~/.config/todo`. Require healthy standby, read-only
+database, reachable primary and zero local apply lag:
 
 ```bash
-python3 "$HOME/.config/todo/todo_dr.py" status
+python3 /opt/todo/bin/todo_dr.py status
 ```
 
-Rerun the installer and require `changed=0`.
+Rerun the installer and require no file or trust changes.
 
 ## 6. Fence and promote
 
@@ -221,12 +219,12 @@ unreachable before continuing.
 On standby:
 
 ```bash
-python3 "$HOME/.config/todo/todo_dr.py" preflight \
+python3 /opt/todo/bin/todo_dr.py preflight \
   --confirm-primary-fenced 'todo-primary is fenced'
-python3 "$HOME/.config/todo/todo_dr.py" promote \
+python3 /opt/todo/bin/todo_dr.py promote \
   --confirm-primary-fenced 'todo-primary is fenced' \
   --confirm-promotion todo-standby
-python3 "$HOME/.config/todo/todo_dr.py" status
+python3 /opt/todo/bin/todo_dr.py status
 ```
 
 Pass when PostgreSQL reports `f|off`, accepts a rolled-back transaction and all
@@ -246,7 +244,7 @@ sed -i \
 sudo firewall-cmd --permanent --zone=public \
   --add-rich-rule='rule family="ipv4" source address="192.168.0.100/32" destination address="192.168.0.108" port port="8443" protocol="tcp" accept'
 sudo firewall-cmd --reload
-ansible-playbook --inventory ansible/inventory-recovery.ini \
+ansible-playbook --ask-become-pass --inventory ansible/inventory-recovery.ini \
   ansible/deploy-promoted-application.yml
 ```
 
@@ -260,20 +258,20 @@ services, writable PostgreSQL, nginx, marker data and unchanged CA hash.
 
 ## 8. Backup and isolated PITR
 
-Trust the verified `todo_backup.py` source and run:
+Install the tool and its exact-file trust through the playbook:
 
 ```bash
 cd "$HOME/todo-operations"
-ansible-playbook --inventory ansible/inventory-recovery.ini \
+ansible-playbook --ask-become-pass --inventory ansible/inventory-recovery.ini \
   ansible/configure-backup.yml
 ```
 
-Trust the exact installed tool. Require writable database, `archive_mode=on`,
+Require writable database, `archive_mode=on`,
 `archive_timeout=1h`, an exact archived segment and zero failures:
 
 ```bash
-python3 "$HOME/.config/todo/todo_backup.py" status
-python3 "$HOME/.config/todo/todo_backup.py" create
+python3 /opt/todo/bin/todo_backup.py status
+python3 /opt/todo/bin/todo_backup.py create
 ```
 
 Perform the full sequence in
@@ -311,7 +309,7 @@ Run read-only preflight:
 
 ```bash
 cd "$HOME/todo-operations"
-ansible-playbook --inventory ansible/inventory-recovery.ini \
+ansible-playbook --ask-become-pass --inventory ansible/inventory-recovery.ini \
   ansible/preflight-standby-rebuild.yml \
   --extra-vars \
   '{"todo_confirm_old_primary_fenced":"todo-primary is fenced","todo_confirm_reseed":"todo-primary"}'
@@ -320,7 +318,7 @@ ansible-playbook --inventory ansible/inventory-recovery.ini \
 Only after every assertion passes, run:
 
 ```bash
-ansible-playbook --inventory ansible/inventory-recovery.ini \
+ansible-playbook --ask-become-pass --inventory ansible/inventory-recovery.ini \
   ansible/rebuild-standby.yml \
   --extra-vars \
   '{"todo_confirm_old_primary_fenced":"todo-primary is fenced","todo_confirm_reseed":"todo-primary"}'
@@ -348,11 +346,11 @@ Pass only when final status reports writable primary, healthy archiving,
 `streaming|async`, active usable slot, zero measured lag, read-only recovery
 standby, and healthy application through trusted HTTPS.
 
-## 11. Grouped Podman Kube candidate
+## 11. Final Kube-runtime gate
 
-Only after redundancy and backup health are restored, run the DR runner
-`migrate-kube` and `verify` stages. Require exactly these workload services and
-pods on the current primary:
+There is no migration stage in the normal DR path. Clean deployment,
+standby bootstrap, promotion, backup and rebuild must already use these
+workload services and pods:
 
 ```text
 todo-app.service       todo-app pod
@@ -360,20 +358,17 @@ todo-keycloak.service  todo-keycloak pod
 todo-postgres.service  todo-postgres pod
 ```
 
-Require the schema migrations to be applied, both regular app containers to be
-healthy, nginx-to-backend traffic through loopback, and app access to Keycloak
-and PostgreSQL through `todo.network`. Confirm PostgreSQL identity, persistent
-Todo data, replication and WAL archive health are unchanged.
+Run `python3 /opt/todo/bin/todo_dr_run.py ... verify` after rebuild. Require
+schema migrations applied by the init container, healthy backend/frontend,
+nginx-to-backend loopback traffic, shared-service DNS through `todo.network`,
+unchanged PostgreSQL identity, persistent data, streaming replication and WAL
+archive health.
 
 Reboot only the current primary while the rebuilt standby remains available.
-After boot, require `NRestarts=0` for `todo-app.service`, no failed user units,
-application readiness, the stable issuer and trusted browser E2E. Inspect the
-app journal: a transient database-startup error may produce bounded retry logs,
-but backend and frontend must start only after the migration init succeeds.
-
-Exercise the dedicated application rollback and confirm the preserved
-per-container units, data, TLS identity, replication and archive health. Repeat
-the Kube migration before declaring the grouped candidate accepted.
+After boot, require `NRestarts=0` for `todo-app.service`, no failed user
+units, readiness, stable issuer and trusted browser E2E. The legacy migration
+and rollback playbooks remain transition evidence only until this complete
+acceptance gate permits their retirement.
 
 ## Verified clean nginx drill - 2026-09-01
 

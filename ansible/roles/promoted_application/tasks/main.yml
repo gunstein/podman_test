@@ -53,6 +53,7 @@
   ansible.builtin.command:
     argv: [podman, secret, exists, "{{ item }}"]
   loop:
+    - todo-migrator-password
     - todo-app-password
     - todo-keycloak-db-password
     - todo-keycloak-admin-password
@@ -125,67 +126,30 @@
       The staged localhost/todo-frontend:m12 image predates the nginx migration.
       Load the frontend archive from the current verified offline bundle before failover.
 
-- name: Create promoted-application configuration directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    mode: "0700"
-  loop:
-    - "{{ m14_config_directory }}"
-    - "{{ m14_quadlet_directory }}"
+- name: Install the grouped Kube application on the promoted host
+  ansible.builtin.include_role:
+    name: application_kube_runtime
+  vars:
+    todo_rendered_manifest_directory: "{{ m14_bundle_directory }}/kube/runtime"
+    todo_publish_address: "{{ m14_node_address }}"
+    todo_service_port: "{{ m14_service_port }}"
 
-- name: Remove obsolete Caddy runtime files
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - "{{ m14_config_directory }}/Caddyfile"
-    - "{{ m14_quadlet_directory }}/todo-caddy-data.volume"
-  register: m14_obsolete_proxy_files
-
-- name: Install the stable-name nginx configuration
-  ansible.builtin.template:
-    src: nginx.conf.j2
-    dest: "{{ m14_config_directory }}/nginx.conf"
-    mode: "0644"
-  register: m14_nginx_config
-
-- name: Install promoted application Quadlets
-  ansible.builtin.template:
-    src: "{{ item }}.j2"
-    dest: "{{ m14_quadlet_directory }}/{{ item }}"
-    mode: "0644"
-  loop:
-    - todo-nginx-data.volume
-    - todo-backend.container
-    - todo-keycloak.container
-    - todo-frontend.container
-  register: m14_quadlets
-
-- name: Stop the application tier before applying changed runtime files
+- name: Stop changed grouped application workloads
   ansible.builtin.command:
     argv: [systemctl, --user, stop, "{{ item }}"]
   loop:
-    - todo-frontend.service
-    - todo-backend.service
+    - todo-app.service
     - todo-keycloak.service
   changed_when: false
   register: m14_service_stopped
   failed_when: m14_service_stopped.rc not in [0, 5]
   when: >-
-    m14_nginx_config.changed or
-    m14_obsolete_proxy_files.changed or
-    m14_quadlets.changed or
+    todo_application_kube_changed or
     m14_images_loaded.changed | default(false)
 
-- name: Reload promoted host user systemd
+- name: Start the promoted grouped application
   ansible.builtin.systemd_service:
-    scope: user
-    daemon_reload: true
-
-- name: Start the promoted application tier
-  ansible.builtin.systemd_service:
-    name: todo-frontend.service
+    name: todo-app.service
     scope: user
     state: started
 
@@ -326,5 +290,6 @@
 - name: Report successful promoted application deployment
   ansible.builtin.debug:
     msg: >-
-      Application tier is healthy on {{ m14_service_origin }}. PostgreSQL was
-      already promoted; no database bootstrap, migration or grants ran.
+      Grouped Kube application is healthy on {{ m14_service_origin }}.
+      PostgreSQL was already promoted; schema migration ran only through the
+      todo-app init container and no database-role bootstrap ran.

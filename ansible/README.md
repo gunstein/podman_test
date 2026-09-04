@@ -142,7 +142,7 @@ DR tool
 on an existing standby with:
 
 ```bash
-ansible/.venv/bin/ansible-playbook \
+ansible/.venv/bin/ansible-playbook --ask-become-pass \
   --inventory ansible/inventory-initial.ini \
   ansible/install-dr-tool.yml
 ```
@@ -152,29 +152,17 @@ The promotion operation itself is intentionally local Python, not Ansible. Read
 
 ## Promoted application and backup
 
-The application failover uses the `promoted_application` role to deploy the existing application
-release only after PostgreSQL has been promoted and verified writable. Follow [APPLICATION-FAILOVER.md](APPLICATION-FAILOVER.md); it deliberately does
-not bootstrap roles or
-run migrations during an incident.
+The application failover uses the `promoted_application` role only after
+PostgreSQL has been promoted and verified writable. It installs the grouped
+`todo-app` and independent `todo-keycloak` Kube workloads directly.
+Database roles are not bootstrapped during the incident; the app's normal
+idempotent schema migration remains the init-container responsibility. Follow
+[APPLICATION-FAILOVER.md](APPLICATION-FAILOVER.md).
 
-## Controlled Podman Kube application migration
-
-The accepted per-container Quadlets remain the supported reference while the
-Kube implementation is validated. After all isolated gates have passed, the
-current writable primary can migrate only backend, Keycloak and nginx through
-`migrate-application-to-kube.yml`. The playbook preserves the exact installed
-application Quadlets before making changes and leaves PostgreSQL and all
-persistent database state untouched. A separate rollback playbook restores the
-previous units. Follow
-[APPLICATION-KUBE-MIGRATION.md](APPLICATION-KUBE-MIGRATION.md) and do not use
-the migration as part of an active failover incident.
-
-The current writable PostgreSQL primary has a separate controlled migration
-and rollback. It preserves the `todo-postgres.service` and `todo-postgres`
-container contracts, reuses both persistent volumes, and requires healthy
-archiving plus a caught-up standby before any service is stopped. Follow
-[POSTGRES-KUBE-MIGRATION.md](POSTGRES-KUBE-MIGRATION.md). This does not yet
-authorize standby or DR workflow migration.
+The old application and PostgreSQL migration/rollback playbooks are retained as
+isolated transition evidence until full Kube acceptance permits retirement.
+They are not part of clean install, promotion, backup, rebuild or the normal DR
+runner.
 
 The backup workflow uses the `postgres_backup` role to add a separate backup volume and
 continuous WAL archiving to that promoted host. The local `todo_backup.py`
@@ -196,6 +184,6 @@ keep a site-specific copy of
 inventory.
 
 For repeated drills, [DR-AUTOMATION.md](DR-AUTOMATION.md) wraps promotion,
-application recovery, destructive reseed, return to the Kube runtime and final
+Kube-native application recovery, destructive Kube standby reseed and final
 verification as resumable stages. External fencing, quarantine and firewall
 changes remain explicit operator boundaries.

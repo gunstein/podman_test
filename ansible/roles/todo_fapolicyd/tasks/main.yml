@@ -1,0 +1,157 @@
+---
+- name: Require active fapolicyd
+  ansible.builtin.command:
+    argv: [systemctl, is-active, fapolicyd]
+  register: todo_fapolicyd_service
+  changed_when: false
+  failed_when: todo_fapolicyd_service.stdout | trim != "active"
+
+- name: Refresh exact source-file trust on the Ansible controller
+  ansible.builtin.command:
+    argv:
+      - fapolicyd-cli
+      - --file
+      - update
+      - "{{ item.source }}"
+      - --trust-file
+      - "{{ todo_fapolicyd_trust_file }}"
+  loop: "{{ todo_fapolicyd_files }}"
+  loop_control:
+    label: "{{ item.source }}"
+  delegate_to: localhost
+  become: true
+  register: todo_fapolicyd_source_updates
+  changed_when: false
+  failed_when: false
+
+- name: Add previously untrusted exact source files
+  ansible.builtin.command:
+    argv:
+      - fapolicyd-cli
+      - --file
+      - add
+      - "{{ item.item.source }}"
+      - --trust-file
+      - "{{ todo_fapolicyd_trust_file }}"
+  loop: "{{ todo_fapolicyd_source_updates.results }}"
+  loop_control:
+    label: "{{ item.item.source }}"
+  when: item.rc != 0
+  delegate_to: localhost
+  become: true
+  changed_when: true
+
+- name: Reload controller fapolicyd trust before reading source files
+  ansible.builtin.command:
+    argv: [fapolicyd-cli, --update]
+  delegate_to: localhost
+  become: true
+  changed_when: false
+
+- name: Create the Todo operator binary directory
+  ansible.builtin.file:
+    path: "{{ todo_fapolicyd_install_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install exact Todo operator files through trusted stdin
+  ansible.builtin.command:
+    argv:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        target=$1
+        mode=$2
+        expected_mode=${mode#0}
+        temporary=$(mktemp "${target}.XXXXXX")
+        trap "rm -f \"$temporary\"" EXIT HUP INT TERM
+        base64 --decode > "$temporary"
+        chown root:root "$temporary"
+        chmod "$mode" "$temporary"
+        if [ -f "$target" ] &&
+           cmp --silent "$temporary" "$target" &&
+           [ "$(stat --format=%a "$target")" = "$expected_mode" ] &&
+           [ "$(stat --format=%U:%G "$target")" = root:root ]; then
+          printf "%s\n" unchanged
+          exit 0
+        fi
+        mv --force "$temporary" "$target"
+        trap - EXIT HUP INT TERM
+        printf "%s\n" changed
+      - todo-install
+      - "{{ item.dest }}"
+      - "{{ item.mode | default('0644') }}"
+    stdin: >-
+      {{
+        lookup(
+          'ansible.builtin.file',
+          item.source,
+          rstrip=false
+        ) | b64encode
+      }}
+    stdin_add_newline: false
+  loop: "{{ todo_fapolicyd_files }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  become: true
+  register: todo_fapolicyd_installed
+  changed_when: todo_fapolicyd_installed.stdout | trim == "changed"
+
+- name: Refresh exact installed Todo file trust
+  ansible.builtin.command:
+    argv:
+      - fapolicyd-cli
+      - --file
+      - update
+      - "{{ item.dest }}"
+      - --trust-file
+      - "{{ todo_fapolicyd_trust_file }}"
+  loop: "{{ todo_fapolicyd_files }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  become: true
+  register: todo_fapolicyd_target_updates
+  changed_when: false
+  failed_when: false
+
+- name: Add previously untrusted exact Todo target files
+  ansible.builtin.command:
+    argv:
+      - fapolicyd-cli
+      - --file
+      - add
+      - "{{ item.item.dest }}"
+      - --trust-file
+      - "{{ todo_fapolicyd_trust_file }}"
+  loop: "{{ todo_fapolicyd_target_updates.results }}"
+  loop_control:
+    label: "{{ item.item.dest }}"
+  when: item.rc != 0
+  become: true
+  changed_when: true
+
+- name: Reload target fapolicyd trust
+  ansible.builtin.command:
+    argv: [fapolicyd-cli, --update]
+  become: true
+  changed_when: false
+
+- name: Read the combined target trust database
+  ansible.builtin.command:
+    argv: [fapolicyd-cli, --dump-db]
+  become: true
+  register: todo_fapolicyd_database
+  changed_when: false
+
+- name: Verify exact Todo target paths are trusted
+  ansible.builtin.assert:
+    that:
+      - item.dest in todo_fapolicyd_database.stdout
+    fail_msg: "fapolicyd trust is missing exact Todo path {{ item.dest }}."
+  loop: "{{ todo_fapolicyd_files }}"
+  loop_control:
+    label: "{{ item.dest }}"

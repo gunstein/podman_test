@@ -18,12 +18,13 @@ The reusable procedure and pass criteria now live in
 development journal: it records why the current design exists and preserves
 historical experiments that a new operator does not need for normal use.
 
-The current candidate replaces the earlier four-independent-pod Kube model with
-three explicit workload boundaries: a grouped `todo-app` pod containing a
-migration init container, backend and frontend; an independent Keycloak pod;
-and an independent PostgreSQL pod. Static tests and bounded
-migration-connection retry pass, but this candidate has not yet repeated the
-Oracle Linux migration, reboot, rollback and DR gates.
+The final deployment model has three explicit Kube workload boundaries: a
+grouped `todo-app` pod containing a migration init container, backend and
+frontend; an independent Keycloak pod; and an independent PostgreSQL pod.
+Clean deploy and the complete standby/promotion/backup/rebuild code path now use
+that model directly. Static tests, Ansible syntax/lint and bounded
+migration-connection retry pass; the new end-to-end path still requires the
+clean Oracle Linux VM, reboot, replication and full DR acceptance gates.
 
 ## Operator-side DR automation - local implementation
 
@@ -60,7 +61,7 @@ Continue from the clean pair in this order, following
 stage:
 
 1. Build both packages from the same clean revision and verify their metadata.
-2. Install the accepted primary, run trusted HTTPS/browser checks and create a
+2. Install the final Kube primary, run trusted HTTPS/browser checks and create a
    run-specific pre-failover marker.
 3. Bootstrap the standby, require healthy streaming/zero lag and verify the
    marker on the read-only standby.
@@ -73,12 +74,12 @@ stage:
 7. Reintroduce the old primary only through hypervisor quarantine. Use QGA to
    stop its Todo services before opening management traffic, then run guarded
    standby rebuild and verify both markers on the read-only rebuilt standby.
-8. Migrate PostgreSQL and the grouped application to the three-workload Kube
-   candidate. Require `todo-app`, `todo-keycloak` and `todo-postgres`.
+8. Require the final Kube boundaries `todo-app`, `todo-keycloak` and
+   `todo-postgres` throughout the recovered topology.
 9. Reboot standby and primary sequentially; repeat application, TLS, Keycloak,
    persistence, replication, archive and marker assertions.
-10. Exercise application and PostgreSQL rollback, verify the accepted runtime,
-    then repeat the Kube migration for the intended final state.
+10. Record final evidence. Only then may legacy transition/rollback tooling be
+    retired; it is not exercised as part of the normal deployment path.
 
 Only after every gate passes may the grouped model be marked accepted and the
 legacy Quadlet retirement plan in `quadlet/QUADLET-REFERENCE.md` begin. Any
@@ -256,7 +257,7 @@ New issues found during this drill:
   `fapolicyd` to classify the task file as executable content. The installer now
   uses RPM-managed shell/core utilities through pipelined stdin, so only the
   exact Python source and deployed operational files need custom trust.
-- Standby's deployed `~/.config/todo/todo_dr.py` and `todo-dr.json` are recorded
+- Standby's deployed `/opt/todo/bin/todo_dr.py` and `todo-dr.json` are recorded
   in its exact `todo-dr` trust file, and the local status command succeeds.
 - The clean drill exposed that the M12 builder included top-level M13-M16
   playbooks without their roles. The builder is now restricted to M12's usable
@@ -442,17 +443,21 @@ Open <http://127.0.0.1:8000> in a browser.
 
 ## Next step
 
-Clean deploy now targets the Helm-rendered three-workload Kube runtime directly.
-Before resetting the lab VMs, finish converting standby bootstrap, promoted
-application, backup/WAL configuration and standby rebuild so none reinstalls a
-legacy .container unit. Add centralized exact-file fapolicyd trust for the
-installed operator tools and update the full acceptance runbook.
+Build fresh offline and operations packages from this revision, then run the
+full VM acceptance in order: clean Kube install, idempotent rerun, cold
+reboot/persistence, standby bootstrap, replication marker, hypervisor fencing,
+promotion, grouped promoted application, backup/PITR, quarantined old-primary
+Kube rebuild, sequential reboot and final DR verification.
 
-Then build fresh offline and operations packages and run, in order: clean
-install, idempotent rerun, cold reboot/persistence, standby bootstrap,
-replication marker, hypervisor fencing, promotion, promoted application,
-backup/PITR, quarantined old-primary rebuild, sequential reboot and final DR
-verification. The per-container implementation remains recoverable through
-quadlet-reference-v1; transition/rollback playbooks are not the normal path.
+The active code path no longer installs legacy `.container` units.
+`todo_dr_run.py` now has only promotion, application, rebuild and verification
+stages. Exact-file trust and installation for DR/backup tools are centralized
+under `/opt/todo/bin` by Ansible; acceptance must keep SELinux enforcing,
+`fapolicyd` active and firewalld active.
+
+The per-container implementation remains recoverable through
+`quadlet-reference-v1`. Transition/rollback roles and their templates remain
+temporarily as evidence because the retirement gate explicitly requires the
+pending full Kube VM acceptance.
 
 Planned switchover/failback remains separate from restoring redundancy.

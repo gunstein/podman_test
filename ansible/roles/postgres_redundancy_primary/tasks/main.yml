@@ -45,53 +45,21 @@
       - SELECT pg_reload_conf();
   changed_when: false
 
-- name: Install current primary entrypoint
-  ansible.builtin.template:
-    src: todo-current-primary-entrypoint.sh.j2
-    dest: "{{ m16_config_directory }}/todo-current-primary-entrypoint.sh"
-    mode: "0644"
-  register: m16_primary_entrypoint
-
-- name: Install replication-capable current primary Quadlet
-  ansible.builtin.template:
-    src: todo-postgres.container.j2
-    dest: "{{ m16_quadlet_directory }}/todo-postgres.container"
-    mode: "0644"
-  register: m16_primary_quadlet
-
-- name: Detect the grouped application service
-  ansible.builtin.command:
-    argv:
-      - systemctl
-      - --user
-      - show
-      - todo-app.service
-      - --property=LoadState
-      - --value
-  register: m16_grouped_application_service
-  changed_when: false
-  failed_when: false
-
-- name: Select the application entry service
-  ansible.builtin.set_fact:
-    m16_application_entry_service: >-
-      {{
-        'todo-app.service'
-        if m16_grouped_application_service.stdout | trim == 'loaded'
-        else 'todo-frontend.service'
-      }}
+- name: Install replication-capable PostgreSQL Kube runtime
+  ansible.builtin.include_role:
+    name: postgres_kube_runtime
+  vars:
+    todo_postgres_publish_address: "{{ todo_node_address }}"
 
 - name: Stop application tier before current primary restart
   ansible.builtin.command: {argv: [systemctl, --user, stop, "{{ item }}"]}
   loop:
     - todo-app.service
-    - todo-frontend.service
-    - todo-backend.service
     - todo-keycloak.service
   register: m16_primary_services_stopped
   changed_when: false
   failed_when: m16_primary_services_stopped.rc not in [0, 5]
-  when: m16_primary_entrypoint.changed or m16_primary_quadlet.changed
+  when: todo_postgres_kube_changed
 
 - name: Reload current primary user systemd
   ansible.builtin.systemd_service:
@@ -103,7 +71,7 @@
     name: todo-postgres.service
     scope: user
     state: restarted
-  when: m16_primary_entrypoint.changed or m16_primary_quadlet.changed
+  when: todo_postgres_kube_changed
 
 - name: Wait for healthy current primary
   ansible.builtin.command: {argv: [podman, wait, --condition=healthy, todo-postgres]}
@@ -111,7 +79,7 @@
 
 - name: Restore application tier after current primary restart
   ansible.builtin.systemd_service:
-    name: "{{ m16_application_entry_service }}"
+    name: todo-app.service
     scope: user
     state: started
 

@@ -2,6 +2,7 @@
 - name: Stop all Todo services before reseed
   ansible.builtin.command: {argv: [systemctl, --user, stop, "{{ item }}"]}
   loop:
+    - todo-app.service
     - todo-frontend.service
     - todo-backend.service
     - todo-keycloak.service
@@ -71,6 +72,16 @@
     - todo-db-grants.container
     - todo-nginx-data.volume
 
+- name: Remove application Kube units from rebuilt standby
+  ansible.builtin.file:
+    path: "{{ m16_quadlet_directory }}/todo-kube-runtime/{{ item }}"
+    state: absent
+  loop:
+    - todo-app.kube
+    - todo-keycloak.kube
+    - app.yaml
+    - keycloak.yaml
+
 - name: Remove the explicitly confirmed old database volume
   ansible.builtin.command: {argv: [podman, volume, rm, todo-postgres-data]}
   changed_when: true
@@ -134,49 +145,59 @@
       - /var/lib/postgresql/data
   changed_when: true
 
-- name: Create rebuilt standby configuration directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    mode: "0700"
-  loop:
-    - "{{ m16_config_directory }}"
-    - "{{ m16_quadlet_directory }}"
+- name: Install rebuilt standby replication settings in the data volume
+  ansible.builtin.command:
+    argv:
+      - podman
+      - run
+      - --rm
+      - --user
+      - postgres
+      - --security-opt
+      - no-new-privileges
+      - --cap-drop
+      - all
+      - --volume
+      - todo-postgres-data:/var/lib/postgresql/data:Z
+      - --secret
+      - todo-replicator-password
+      - --entrypoint
+      - /bin/sh
+      - docker.io/library/postgres:17.11
+      - -ec
+      - |
+        data=/var/lib/postgresql/data
+        passfile=$data/.todo-replication.pgpass
+        auto=$data/postgresql.auto.conf
+        umask 077
+        printf '%s:%s:replication:%s:' "$1" 5432 todo_replicator > "$passfile"
+        cat /run/secrets/todo-replicator-password >> "$passfile"
+        printf '\n' >> "$passfile"
+        sed -i '/^primary_conninfo =/d; /^primary_slot_name =/d' "$auto"
+        printf "primary_conninfo = 'host=%s port=5432 user=todo_replicator application_name=%s passfile=%s'\n" "$1" "$3" "$passfile" >> "$auto"
+        printf "primary_slot_name = '%s'\n" "$2" >> "$auto"
+      - todo-rebuilt-standby-config
+      - "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}"
+      - "{{ todo_rebuild_replication_slot }}"
+      - "{{ todo_rebuild_replication_slot }}"
+  changed_when: true
+  no_log: true
 
-- name: Install shared standby network and volume Quadlets
-  ansible.builtin.copy:
-    src: "{{ project_root }}/quadlet/{{ item }}"
-    dest: "{{ m16_quadlet_directory }}/{{ item }}"
-    mode: "0644"
-  loop:
-    - todo.network
-    - todo-postgres-data.volume
+- name: Install the shared PostgreSQL Kube runtime on rebuilt standby
+  ansible.builtin.include_role:
+    name: postgres_kube_runtime
+  vars:
+    todo_postgres_publish_address: ""
 
-- name: Install rebuilt standby entrypoint
-  ansible.builtin.template:
-    src: todo-standby-entrypoint.sh.j2
-    dest: "{{ m16_config_directory }}/todo-standby-entrypoint.sh"
-    mode: "0644"
-
-- name: Install rebuilt standby PostgreSQL Quadlet
-  ansible.builtin.template:
-    src: todo-postgres.container.j2
-    dest: "{{ m16_quadlet_directory }}/todo-postgres.container"
-    mode: "0644"
-
-- name: Reload rebuilt standby user systemd
-  ansible.builtin.systemd_service:
-    scope: user
-    daemon_reload: true
-
-- name: Start rebuilt PostgreSQL standby
+- name: Start rebuilt PostgreSQL standby through its Kube unit
   ansible.builtin.systemd_service:
     name: todo-postgres.service
     scope: user
     state: started
 
 - name: Wait for healthy rebuilt PostgreSQL standby
-  ansible.builtin.command: {argv: [podman, wait, --condition=healthy, todo-postgres]}
+  ansible.builtin.command:
+    argv: [podman, wait, --condition=healthy, todo-postgres]
   changed_when: false
 
 - name: Require rebuilt PostgreSQL recovery mode

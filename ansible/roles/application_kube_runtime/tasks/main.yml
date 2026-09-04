@@ -1,0 +1,161 @@
+---
+- name: Read Podman Kube options for the application
+  ansible.builtin.command:
+    argv: [podman, kube, play, --help]
+  register: todo_application_kube_help
+  changed_when: false
+
+- name: Require stable Podman Kube container-name support for the application
+  ansible.builtin.assert:
+    that:
+      - "'--no-pod-prefix' in todo_application_kube_help.stdout"
+    fail_msg: The application Kube runtime requires Podman --no-pod-prefix.
+
+- name: Refuse legacy application container Quadlets
+  ansible.builtin.stat:
+    path: "{{ todo_quadlet_directory }}/{{ item }}"
+  loop:
+    - todo-backend.container
+    - todo-keycloak.container
+    - todo-frontend.container
+  register: todo_application_legacy_quadlets
+
+- name: Require a Kube-native application host
+  ansible.builtin.assert:
+    that:
+      - not (todo_application_legacy_quadlets.results | map(attribute='stat.exists') | max)
+    fail_msg: >-
+      Legacy application Quadlets are transition state. Migrate or remove them
+      explicitly before installing the grouped Kube application.
+
+- name: Read source secrets for Kube application payloads
+  ansible.builtin.command:
+    argv:
+      - podman
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
+      - "{{ item }}"
+  loop:
+    - todo-migrator-password
+    - todo-app-password
+    - todo-keycloak-db-password
+    - todo-keycloak-admin-password
+  register: todo_application_source_secrets
+  changed_when: false
+  no_log: true
+
+- name: Construct Kube-compatible application secrets in memory
+  ansible.builtin.set_fact:
+    todo_application_kube_secrets:
+      todo-kube-migrator-secret: >-
+        {{
+          {
+            'apiVersion': 'v1',
+            'kind': 'Secret',
+            'metadata': {'name': 'todo-kube-migrator-secret'},
+            'data': {
+              'database-password':
+                todo_application_source_secrets.results[0].stdout | b64encode
+            }
+          } | to_json
+        }}
+      todo-kube-backend-secret: >-
+        {{
+          {
+            'apiVersion': 'v1',
+            'kind': 'Secret',
+            'metadata': {'name': 'todo-kube-backend-secret'},
+            'data': {
+              'database-password':
+                todo_application_source_secrets.results[1].stdout | b64encode
+            }
+          } | to_json
+        }}
+      todo-kube-keycloak-secret: >-
+        {{
+          {
+            'apiVersion': 'v1',
+            'kind': 'Secret',
+            'metadata': {'name': 'todo-kube-keycloak-secret'},
+            'data': {
+              'database-password':
+                todo_application_source_secrets.results[2].stdout | b64encode,
+              'bootstrap-admin-password':
+                todo_application_source_secrets.results[3].stdout | b64encode
+            }
+          } | to_json
+        }}
+  no_log: true
+
+- name: Check Kube-compatible application secrets
+  ansible.builtin.command:
+    argv: [podman, secret, exists, "{{ item.key }}"]
+  loop: "{{ todo_application_kube_secrets | dict2items }}"
+  register: todo_application_kube_secret_checks
+  changed_when: false
+  failed_when: todo_application_kube_secret_checks.rc not in [0, 1]
+  no_log: true
+
+- name: Create missing Kube-compatible application secrets
+  ansible.builtin.command:
+    argv: [podman, secret, create, "{{ item.item.key }}", "-"]
+    stdin: "{{ item.item.value }}"
+    stdin_add_newline: false
+  loop: "{{ todo_application_kube_secret_checks.results }}"
+  when: item.rc == 1
+  changed_when: true
+  no_log: true
+
+- name: Create the application Kube runtime directory
+  ansible.builtin.file:
+    path: "{{ todo_kube_runtime_directory }}"
+    state: directory
+    mode: "0700"
+
+- name: Install grouped application manifests and ConfigMap
+  ansible.builtin.copy:
+    src: "{{ todo_rendered_manifest_directory }}/{{ item }}"
+    dest: "{{ todo_kube_runtime_directory }}/{{ item }}"
+    mode: "0600"
+  loop:
+    - app.yaml
+    - keycloak.yaml
+    - config.yaml
+  register: todo_application_kube_manifests
+
+- name: Install application network and volume Quadlets
+  ansible.builtin.copy:
+    src: "{{ project_root }}/quadlet/{{ item }}"
+    dest: "{{ todo_quadlet_directory }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - todo.network
+    - todo-nginx-data.volume
+  register: todo_application_kube_resources
+
+- name: Install application Kube Quadlets
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ todo_kube_runtime_directory }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - todo-keycloak.kube
+    - todo-app.kube
+  register: todo_application_kube_units
+
+- name: Record whether the application Kube definition changed
+  ansible.builtin.set_fact:
+    todo_application_kube_changed: >-
+      {{
+        todo_application_kube_manifests.changed or
+        todo_application_kube_resources.changed or
+        todo_application_kube_units.changed
+      }}
+
+- name: Reload application user systemd units
+  ansible.builtin.systemd_service:
+    scope: user
+    daemon_reload: true

@@ -1,0 +1,119 @@
+---
+- name: Read Podman Kube options for PostgreSQL
+  ansible.builtin.command:
+    argv: [podman, kube, play, --help]
+  register: todo_postgres_kube_help
+  changed_when: false
+
+- name: Require stable Podman Kube container-name support for PostgreSQL
+  ansible.builtin.assert:
+    that:
+      - "'--no-pod-prefix' in todo_postgres_kube_help.stdout"
+    fail_msg: The PostgreSQL Kube runtime requires Podman --no-pod-prefix.
+
+- name: Refuse the legacy PostgreSQL container Quadlet
+  ansible.builtin.stat:
+    path: "{{ todo_quadlet_directory }}/todo-postgres.container"
+  register: todo_postgres_legacy_quadlet
+
+- name: Require a Kube-native PostgreSQL host
+  ansible.builtin.assert:
+    that:
+      - not todo_postgres_legacy_quadlet.stat.exists
+    fail_msg: >-
+      todo-postgres.container is legacy transition state. Remove or migrate it
+      explicitly before installing the Kube-native PostgreSQL unit.
+
+- name: Read the source PostgreSQL password
+  ansible.builtin.command:
+    argv:
+      - podman
+      - secret
+      - inspect
+      - --showsecret
+      - --format
+      - "{{ '{{.SecretData}}' }}"
+      - todo-db-password
+  register: todo_postgres_source_secret
+  changed_when: false
+  no_log: true
+
+- name: Construct the Kube-compatible PostgreSQL secret
+  ansible.builtin.set_fact:
+    todo_postgres_kube_secret: >-
+      {{
+        {
+          'apiVersion': 'v1',
+          'kind': 'Secret',
+          'metadata': {'name': 'todo-kube-postgres-secret'},
+          'data': {
+            'database-password':
+              todo_postgres_source_secret.stdout | b64encode
+          }
+        } | to_json
+      }}
+  no_log: true
+
+- name: Check the Kube-compatible PostgreSQL secret
+  ansible.builtin.command:
+    argv: [podman, secret, exists, todo-kube-postgres-secret]
+  register: todo_postgres_kube_secret_check
+  changed_when: false
+  failed_when: todo_postgres_kube_secret_check.rc not in [0, 1]
+
+- name: Create the Kube-compatible PostgreSQL secret
+  ansible.builtin.command:
+    argv: [podman, secret, create, todo-kube-postgres-secret, "-"]
+    stdin: "{{ todo_postgres_kube_secret }}"
+    stdin_add_newline: false
+  when: todo_postgres_kube_secret_check.rc == 1
+  changed_when: true
+  no_log: true
+
+- name: Create the PostgreSQL Kube runtime directory
+  ansible.builtin.file:
+    path: "{{ todo_kube_runtime_directory }}"
+    state: directory
+    mode: "0700"
+
+- name: Install the canonical PostgreSQL workload and ConfigMap
+  ansible.builtin.copy:
+    src: "{{ todo_rendered_manifest_directory }}/{{ item }}"
+    dest: "{{ todo_kube_runtime_directory }}/{{ item }}"
+    mode: "0600"
+  loop:
+    - postgres.yaml
+    - config.yaml
+  register: todo_postgres_kube_manifests
+
+- name: Install PostgreSQL network and volume Quadlets
+  ansible.builtin.copy:
+    src: "{{ project_root }}/quadlet/{{ item }}"
+    dest: "{{ todo_quadlet_directory }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - todo.network
+    - todo-postgres-data.volume
+    - todo-postgres-backup.volume
+  register: todo_postgres_kube_resources
+
+- name: Install the PostgreSQL Kube Quadlet
+  ansible.builtin.template:
+    src: todo-postgres.kube.j2
+    dest: "{{ todo_kube_runtime_directory }}/todo-postgres.kube"
+    mode: "0644"
+  register: todo_postgres_kube_unit
+
+- name: Record whether the PostgreSQL Kube definition changed
+  ansible.builtin.set_fact:
+    todo_postgres_kube_changed: >-
+      {{
+        todo_postgres_kube_manifests.changed or
+        todo_postgres_kube_resources.changed or
+        todo_postgres_kube_unit.changed
+      }}
+
+- name: Reload PostgreSQL user systemd units
+  ansible.builtin.systemd_service:
+    scope: user
+    daemon_reload: true

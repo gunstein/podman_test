@@ -117,27 +117,27 @@
       - SELECT pg_reload_conf();
   changed_when: false
 
-- name: Install the primary PostgreSQL Quadlet
-  ansible.builtin.template:
-    src: todo-postgres.container.j2
-    dest: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/containers/systemd/todo-postgres.container"
-    mode: "0644"
-  register: primary_postgres_quadlet
-
-- name: Reload user systemd after primary Quadlet changes
-  ansible.builtin.systemd_service:
-    scope: user
-    daemon_reload: true
-  when: primary_postgres_quadlet.changed
+- name: Install the shared PostgreSQL Kube runtime with LAN replication
+  ansible.builtin.include_role:
+    name: postgres_kube_runtime
+  vars:
+    todo_postgres_publish_address: "{{ todo_node_address }}"
 
 - name: Restart PostgreSQL with the LAN replication port
   ansible.builtin.systemd_service:
     name: todo-postgres.service
     scope: user
     state: restarted
-  when: primary_postgres_quadlet.changed
+  when: todo_postgres_kube_changed
 
 - name: Wait for healthy primary PostgreSQL
   ansible.builtin.command:
     argv: [podman, wait, --condition=healthy, todo-postgres]
   changed_when: false
+
+- name: Restore the grouped application after a PostgreSQL restart
+  ansible.builtin.systemd_service:
+    name: todo-app.service
+    scope: user
+    state: started
+  when: todo_postgres_kube_changed

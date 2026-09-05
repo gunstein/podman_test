@@ -12,7 +12,8 @@ Current architecture and workflow:
 - todo-app groups migration init, FastAPI and nginx. Keycloak and PostgreSQL
   are separate workloads connected through the rootless todo-network.
 - Unchanged-revision OL9 acceptance passed on 688a0f6; see
-  docs/ACCEPTANCE-688a0f6.md. Legacy retirement remains a separate reviewed change.
+  docs/ACCEPTANCE-688a0f6.md. Legacy runtime/transition files are retired from
+  the active tree; Git history and quadlet-reference-v1 preserve them.
 
 Constraints:
 - Frontend: plain HTML, CSS and JavaScript. No Node.js framework.

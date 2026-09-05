@@ -129,7 +129,7 @@ The package provides two inventory templates:
 
 Copy the relevant template to its ignored `.ini` name and edit the addresses.
 Hostnames identify machines; inventory groups identify their current database
-roles. Historical milestone labels remain in PROJECT.md; operational filenames describe actions and roles.
+roles. Historical milestone labels remain in docs/history/DEVELOPMENT-JOURNAL.md; operational filenames describe actions and roles.
 
 ## Initial standby and DR tool
 
@@ -159,11 +159,8 @@ Database roles are not bootstrapped during the incident; the app's normal
 idempotent schema migration remains the init-container responsibility. Follow
 [APPLICATION-FAILOVER.md](APPLICATION-FAILOVER.md).
 
-The old application and PostgreSQL migration/rollback playbooks are retained as
-isolated transition evidence in the source repository until full Kube acceptance
-permits retirement. They are intentionally excluded from the operations package.
-They are not part of clean install, promotion, backup, rebuild or the normal DR
-runner.
+Historical migration/rollback playbooks were retired after full acceptance of
+688a0f6. They remain in Git history, not in the active operations package.
 
 The backup workflow uses the `postgres_backup` role to add a separate backup volume and
 continuous WAL archiving to that promoted host. The local `todo_backup.py`

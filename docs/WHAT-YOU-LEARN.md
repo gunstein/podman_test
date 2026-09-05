@@ -15,7 +15,7 @@ its lifecycle. See [`kube/runtime/README.md`](../kube/runtime/README.md).
 |---|---|---|
 | Helm / Kube YAML | Build-time rendering, checked-in runtime drift checks and three lifecycle-grouped pods | Podman workload format, not Kubernetes orchestration; Helm is absent on targets |
 | Identity adapter | Todo UI uses auth.js; Keycloak SDK is isolated in keycloak-adapter.js; backend validates issuer/JWKS/audience | Only Keycloak is implemented; changing IdP still requires configuration and integration tests |
-| Acceptance | Explicit operator gates, checksums, idempotence, browser and repaired DR evidence | Unchanged-revision Oracle Linux acceptance is still pending; no automatic full DR controller |
+| Acceptance | Explicit operator gates, checksums, idempotence, trusted browser and full DR evidence on 688a0f6 | Revision-specific acceptance; no automatic full DR controller |
 | Rootless Podman | User namespaces, images, networks, volumes, ports and secrets | One service user and one application stack |
 | Quadlet/systemd | Generated user services, dependencies, health, restart and lingering | No cluster-level scheduler |
 | SELinux | Enforcing mode, `:Z`, `:z`, `:U`, labels and AVC troubleshooting | No custom SELinux policy module |

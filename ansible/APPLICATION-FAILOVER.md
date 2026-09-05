@@ -179,4 +179,4 @@ operation that starts by rebuilding it as a replica of the promoted database.
 
 ## Acceptance evidence
 
-The canonical clean nginx failover test, including trusted HTTPS, stable Keycloak issuer, authenticated write, idempotence and reboot, is recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). Earlier Caddy and migration experiments remain in [../PROJECT.md](../PROJECT.md).
+The canonical clean nginx failover test, including trusted HTTPS, stable Keycloak issuer, authenticated write, idempotence and reboot, is recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). Earlier Caddy and migration experiments remain in [Development journal](../docs/history/DEVELOPMENT-JOURNAL.md).

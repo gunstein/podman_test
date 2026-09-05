@@ -1,4 +1,5 @@
 """Check the actual operations archive, not only its builder's source."""
+
 import subprocess
 import tarfile
 import tempfile
@@ -14,17 +15,25 @@ class OperationsDistributionTests(unittest.TestCase):
             archive = Path(directory) / "operations.tar.gz"
             subprocess.run(
                 ["bash", str(ROOT / "scripts/build-operations-package.sh"), str(archive)],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
             )
             with tarfile.open(archive) as package:
                 names = {name.removeprefix("todo-operations/") for name in package.getnames()}
             for path in (
-                "ansible/bootstrap-standby.yml", "ansible/rebuild-standby.yml",
-                "ansible/install-quarantine-tool.yml", "ansible/cluster-status.yml",
-                "scripts/todo_dr.py", "scripts/todo_dr_run.py",
-                "scripts/todo_backup.py", "scripts/todo-quarantine.sh",
-                "kube/runtime/app.yaml", "kube/runtime/postgres.yaml",
-                "docs/MANUAL-DR-QUICKSTART.md", "docs/ARCHITECTURE.md",
+                "ansible/bootstrap-standby.yml",
+                "ansible/rebuild-standby.yml",
+                "ansible/install-quarantine-tool.yml",
+                "ansible/cluster-status.yml",
+                "scripts/todo_dr.py",
+                "scripts/todo_dr_run.py",
+                "scripts/todo_backup.py",
+                "scripts/todo-quarantine.sh",
+                "kube/runtime/app.yaml",
+                "kube/runtime/postgres.yaml",
+                "docs/MANUAL-DR-QUICKSTART.md",
+                "docs/ARCHITECTURE.md",
                 "ansible/roles/postgres_reseed_standby/tasks/main.yml",
                 "ansible/roles/todo_fapolicyd/tasks/main.yml",
             ):
@@ -34,6 +43,9 @@ class OperationsDistributionTests(unittest.TestCase):
                 self.assertNotIn("KUBE-MIGRATION.md", name)
                 self.assertFalse(name.startswith("ansible/migrate-"))
                 self.assertFalse(name.startswith("ansible/rollback-"))
+                self.assertNotIn("docs/history", name)
+                self.assertFalse(name.endswith(".container"))
+                self.assertFalse(name.endswith(".container.j2"))
                 self.assertFalse(name.startswith("ansible/roles/kube_application_"))
                 self.assertFalse(name.startswith("ansible/roles/kube_postgres_primary_"))
             self.assertTrue(Path(str(archive) + ".sha256").is_file())

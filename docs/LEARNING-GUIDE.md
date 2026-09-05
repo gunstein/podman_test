@@ -77,7 +77,7 @@ loginctl show-user "$USER" -p Linger
 
 Ordering is not readiness. Init migration, container health checks, systemd
 restart and Ansible readiness checks have different responsibilities.
-See `kube/runtime/RESULTS.md` for demonstrated behavior and pending gates.
+See `kube/runtime/RESULTS.md` for demonstrated behavior and revision-specific acceptance.
 
 ## 4. Images, rootless storage and external secrets
 

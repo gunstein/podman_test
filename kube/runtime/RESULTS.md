@@ -16,7 +16,7 @@ reboot, persistence and replication, have passed in repaired lab runs.
 Functional DR has also been demonstrated through promotion, application
 recovery, isolated PITR, standby rebuild and sequential reboots, including
 trusted Chromium tests and persistent markers. See the source repository's
-PROJECT.md development journal for evidence and repairs.
+docs/history/DEVELOPMENT-JOURNAL.md development journal for evidence and repairs.
 
 The complete unchanged-revision acceptance passed on 2026-09-05 at
 `688a0f67d190cd48dc6a8e4cfbedba66a89a5e24`, including real Keycloak Chromium
@@ -26,5 +26,5 @@ Legacy retirement is separate; no legacy files were removed during the test.
 
 Historical results
 for the superseded four-pod application shape are retained in
-[`RESULTS-FOUR-POD-HISTORICAL.md`](RESULTS-FOUR-POD-HISTORICAL.md);
+[`RESULTS-FOUR-POD-HISTORICAL.md`](../../docs/history/RESULTS-FOUR-POD-HISTORICAL.md);
 they do not approve the grouped model.

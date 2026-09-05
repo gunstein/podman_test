@@ -211,7 +211,7 @@ The exact confirmation is required. Cleanup never addresses
 
 ## Acceptance evidence
 
-The canonical base-backup, named-point restore, isolated comparison, cleanup, idempotence, capacity and reboot results are recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). The 60-second WAL growth incident and design history remain in [../PROJECT.md](../PROJECT.md).
+The canonical base-backup, named-point restore, isolated comparison, cleanup, idempotence, capacity and reboot results are recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). The 60-second WAL growth incident and design history remain in [Development journal](../docs/history/DEVELOPMENT-JOURNAL.md).
 
 ## Operational follow-up
 

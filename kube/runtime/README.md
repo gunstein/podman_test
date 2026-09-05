@@ -88,8 +88,8 @@ details which are not required for a basic PostgreSQL Kube workload: the
 `todo-postgres-backup` claim/mount preserves the existing physical backup and
 WAL archive, and `max_slot_wal_keep_size=1GB` bounds WAL retained for the
 physical replication slot. A minimal educational workload would keep only the
-data claim; this production-shaped candidate keeps both details so migration
-does not weaken the already validated backup and replication contracts.
+data claim; this runtime keeps both details to preserve the validated backup and
+replication contracts.
 
 All three `.kube` units pass `--no-pod-prefix`. PostgreSQL therefore retains
 the exact `todo-postgres` container name used by DR and backup commands, while
@@ -101,18 +101,9 @@ Its `.kube` unit also applies `--health-on-failure=kill` after each creation.
 This preserves the accepted health failure contract: Podman terminates a
 persistently unhealthy database container and systemd recreates the workload.
 
-The old application migration is temporary transition and rollback evidence
-for hosts running the tagged per-container reference. Clean install never uses
-it. Run it only through `ansible/migrate-application-to-kube.yml`, with the
-exact confirmation documented by that playbook. It backs up the three installed
-`.container` files before replacing their generated units. The rollback
-playbook restores those files without changing database or TLS data.
-
-The current-primary database migration has its own confirmation, rollback and
-acceptance gate. It reuses `todo-postgres-data` and `todo-postgres-backup`,
-compares the database system identifier, verifies replication and forces an
-exact WAL archive check before the application is restarted. Follow
-`ansible/POSTGRES-KUBE-MIGRATION.md`; do not use it during failover.
+The historical per-container migration and rollback tools were retired after
+acceptance of 688a0f6. They remain recoverable from Git history; normal recovery
+uses the active DR runbooks, not runtime-format migration.
 
 Direct development requires the four Kube-compatible Podman secrets. Render
 and start the three workloads with:

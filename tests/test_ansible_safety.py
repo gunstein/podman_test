@@ -15,9 +15,12 @@ class AnsibleSafetyTests(unittest.TestCase):
         for role in ("postgres_standby", "postgres_reseed_standby"):
             with self.subTest(role=role):
                 tasks = yaml.safe_load(read(f"ansible/roles/{role}/tasks/main.yml"))
-                kube = next(i for i, task in enumerate(tasks)
-                            if task.get("ansible.builtin.include_role", {}).get("name")
-                            == "postgres_kube_runtime")
+                kube = next(
+                    i
+                    for i, task in enumerate(tasks)
+                    if task.get("ansible.builtin.include_role", {}).get("name")
+                    == "postgres_kube_runtime"
+                )
                 helpers = []
                 for task in tasks[:kube]:
                     argv = task.get("ansible.builtin.command", {}).get("argv", [])
@@ -31,12 +34,8 @@ class AnsibleSafetyTests(unittest.TestCase):
     def test_replication_authentication_precedes_volume_removal(self):
         tasks = read("ansible/roles/postgres_reseed_standby/tasks/main.yml")
 
-        authentication = tasks.index(
-            "- name: Authenticate replication before destructive reseed"
-        )
-        removal = tasks.index(
-            "- name: Remove the explicitly confirmed old database volume"
-        )
+        authentication = tasks.index("- name: Authenticate replication before destructive reseed")
+        removal = tasks.index("- name: Remove the explicitly confirmed old database volume")
 
         self.assertLess(authentication, removal)
         self.assertIn("--command=IDENTIFY_SYSTEM;", tasks)
@@ -91,14 +90,10 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertIn("last_archived_time >= last_failed_time", status)
 
     def test_secret_reads_are_direct_and_suppressed(self):
-        promoted_tasks = read(
-            "ansible/roles/promoted_application/tasks/main.yml"
-        )
+        promoted_tasks = read("ansible/roles/promoted_application/tasks/main.yml")
         secret_block = promoted_tasks.split(
             "- name: Read the existing Keycloak administrator secret", 1
-        )[1].split(
-            "- name: Obtain a short-lived Keycloak administrator token", 1
-        )[0]
+        )[1].split("- name: Obtain a short-lived Keycloak administrator token", 1)[0]
         self.assertIn("- secret\n      - inspect", secret_block)
         self.assertIn("--showsecret", secret_block)
         self.assertNotIn("- run", secret_block)
@@ -139,26 +134,6 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertIn("docs/LEARNING-GUIDE.md", readme)
         self.assertIn("docs/LAB-ACCEPTANCE.md", readme)
         self.assertIn("Development journal", readme)
-
-    def test_legacy_quadlet_retirement_is_explicitly_gated(self):
-        guide = read("quadlet/QUADLET-REFERENCE.md")
-
-        self.assertIn("source for the accepted deployment", guide)
-        self.assertIn("rollback\nboundary", guide)
-        self.assertIn("not the target architecture", guide)
-        self.assertIn("quadlet-reference-v1", guide)
-        self.assertIn("## Retirement gate", guide)
-        for gate in (
-            "clean install",
-            "cold",
-            "reboot",
-            "replication",
-            "standby rebuild",
-            "full DR acceptance",
-        ):
-            self.assertIn(gate, guide)
-        self.assertIn("Remove the seven legacy `.container` files", guide)
-        self.assertIn("no production path refers to the legacy files", guide)
 
     def test_documentation_keeps_operational_safety_boundaries(self):
         operational_docs = "\n".join(
@@ -236,19 +211,11 @@ class AnsibleSafetyTests(unittest.TestCase):
             self.assertNotIn("dest: todo-postgres.container", tasks)
 
         backup = read("ansible/roles/postgres_backup/tasks/main.yml")
-        redundancy = read(
-            "ansible/roles/postgres_redundancy_primary/tasks/main.yml"
-        )
+        redundancy = read("ansible/roles/postgres_redundancy_primary/tasks/main.yml")
         self.assertIn("todo-app.service", backup)
         self.assertIn("todo-app.service", redundancy)
         self.assertNotIn("else 'todo-frontend.service'", backup)
         self.assertNotIn("else 'todo-frontend.service'", redundancy)
-
-    def test_transition_rollback_remains_separate_from_active_runtime(self):
-        rollback = read(
-            "ansible/roles/kube_postgres_primary_rollback/tasks/main.yml"
-        )
-        self.assertIn("todo-postgres.container", rollback)
 
 
 if __name__ == "__main__":

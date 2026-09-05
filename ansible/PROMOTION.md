@@ -131,6 +131,6 @@ Expected SQL output is `f|off`.
 
 ## Acceptance evidence
 
-The complete clean nginx lifecycle, including controlled promotion with zero local apply lag and a verified writable transaction, is recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). Development history remains in [../PROJECT.md](../PROJECT.md).
+The complete clean nginx lifecycle, including controlled promotion with zero local apply lag and a verified writable transaction, is recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). Development history remains in [Development journal](../docs/history/DEVELOPMENT-JOURNAL.md).
 
 Never start the old primary against this topology after promotion. It must be rebuilt as a replica before it can rejoin. Promotion changes only PostgreSQL; application failover is a separate operation.

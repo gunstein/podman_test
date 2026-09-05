@@ -4,52 +4,39 @@ import unittest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-CONTRACT = ROOT / "kube" / "name-contract"
+RUNTIME = ROOT / "kube" / "runtime"
 
 
 class KubeNameContractTests(unittest.TestCase):
-    def test_pod_and_container_share_the_stable_name(self):
-        manifest = yaml.safe_load(
-            (CONTRACT / "contract.yaml").read_text(encoding="utf-8")
-        )
+    def test_current_workloads_preserve_operator_container_names(self):
+        expected = {
+            "app": ("todo-app", {"todo-backend", "todo-frontend"}),
+            "keycloak": ("todo-keycloak", {"todo-keycloak"}),
+            "postgres": ("todo-postgres", {"todo-postgres"}),
+        }
+        for filename, (pod, containers) in expected.items():
+            with self.subTest(pod=pod):
+                docs = list(yaml.safe_load_all((RUNTIME / f"{filename}.yaml").read_text()))
+                manifest = next(doc for doc in docs if doc["kind"] == "Pod")
+                self.assertEqual(manifest["metadata"]["name"], pod)
+                self.assertEqual(
+                    {item["name"] for item in manifest["spec"]["containers"]}, containers
+                )
+                unit = (RUNTIME / f"{pod}.kube").read_text()
+                self.assertIn("PodmanArgs=--no-pod-prefix", unit)
+                self.assertIn("ExitCodePropagation=any", unit)
+                self.assertIn("Restart=on-failure", unit)
 
-        self.assertEqual(manifest["metadata"]["name"], "todo-kube-name-contract")
-        self.assertEqual(
-            manifest["spec"]["containers"][0]["name"],
-            "todo-kube-name-contract",
-        )
-        self.assertEqual(manifest["spec"]["restartPolicy"], "Never")
-        self.assertEqual(
-            manifest["spec"]["containers"][0]["command"], ["sleep"]
-        )
-        self.assertEqual(
-            manifest["spec"]["containers"][0]["args"], ["infinity"]
-        )
-
-    def test_quadlet_disables_the_pod_name_prefix(self):
-        unit = (CONTRACT / "todo-kube-name-contract.kube").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn("PodmanArgs=--no-pod-prefix", unit)
-        self.assertIn("ExitCodePropagation=any", unit)
-        self.assertIn(
-            "ExecStartPost=/usr/bin/podman update "
-            "--health-on-failure=kill todo-kube-name-contract",
-            unit,
-        )
-        self.assertIn("Restart=on-failure", unit)
-
-    def test_contract_has_no_persistent_or_network_side_effects(self):
-        manifest = (CONTRACT / "contract.yaml").read_text(encoding="utf-8")
-        unit = (CONTRACT / "todo-kube-name-contract.kube").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertNotIn("PersistentVolumeClaim", manifest)
-        self.assertNotIn("kind: Secret", manifest)
-        self.assertIn("Network=none", unit)
-        self.assertIn("/tmp/todo-kube-force-unhealthy", manifest)
+    def test_legacy_runtime_and_transition_roles_stay_retired(self):
+        self.assertFalse(list((ROOT / "quadlet").glob("*.container")))
+        for name in (
+            "kube_application_migration",
+            "kube_application_rollback",
+            "kube_postgres_primary_migration",
+            "kube_postgres_primary_rollback",
+        ):
+            self.assertFalse((ROOT / "ansible" / "roles" / name).exists())
+        self.assertEqual({p.name for p in (ROOT / "kube").iterdir() if p.is_dir()}, {"runtime"})
 
 
 if __name__ == "__main__":

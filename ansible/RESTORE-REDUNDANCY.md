@@ -178,7 +178,7 @@ current primary and verify app readiness, archiving and replication again.
 
 ## Acceptance evidence
 
-The canonical destructive re-seed, replicated application write and two-node reboot results are recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). Development history remains in [../PROJECT.md](../PROJECT.md).
+The canonical destructive re-seed, replicated application write and two-node reboot results are recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). Development history remains in [Development journal](../docs/history/DEVELOPMENT-JOURNAL.md).
 
 ## Failback is separate
 

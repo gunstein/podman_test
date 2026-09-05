@@ -5,8 +5,6 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "kube" / "runtime"
-MIGRATION = ROOT / "ansible" / "roles" / "kube_application_migration"
-ROLLBACK = ROOT / "ansible" / "roles" / "kube_application_rollback"
 
 
 def read(path: pathlib.Path) -> str:
@@ -80,9 +78,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertNotIn("migrator-secret", str(pod["spec"]["containers"]))
 
     def test_runtime_keeps_secrets_external(self):
-        manifests = "\n".join(
-            read(path) for path in RUNTIME.glob("*.yaml")
-        )
+        manifests = "\n".join(read(path) for path in RUNTIME.glob("*.yaml"))
 
         self.assertNotIn("kind: Secret", manifests)
         self.assertNotIn("stringData:", manifests)
@@ -104,9 +100,7 @@ class KubeRuntimeTests(unittest.TestCase):
         keycloak = read(RUNTIME / "todo-keycloak.kube")
         postgres = read(RUNTIME / "todo-postgres.kube")
 
-        self.assertIn(
-            "Requires=todo-postgres.service todo-keycloak.service", app
-        )
+        self.assertIn("Requires=todo-postgres.service todo-keycloak.service", app)
         self.assertIn("Requires=todo-postgres.service", keycloak)
         self.assertNotIn("[Install]", keycloak)
         self.assertIn("WantedBy=default.target", app)
@@ -118,23 +112,25 @@ class KubeRuntimeTests(unittest.TestCase):
 
         self.assertNotIn("ConfigMap=config-runtime.yaml", postgres)
 
-    def test_app_proxy_uses_loopback_and_shared_services_use_network_dns(self):
-        development = read(RUNTIME / "config.yaml")
-        template = read(MIGRATION / "templates" / "config-runtime.yaml.j2")
+    def test_active_runtime_keeps_loopback_and_shared_dns(self):
+        config = read(RUNTIME / "config.yaml")
+        self.assertIn("server 127.0.0.1:8000;", config)
+        self.assertIn("server todo-keycloak:8080;", config)
+        self.assertIn("DATABASE_HOST: todo-postgres", config)
 
-        for config in (development, template):
-            self.assertIn("server 127.0.0.1:8000;", config)
-            self.assertIn("server todo-keycloak:8080;", config)
-            self.assertIn("DATABASE_HOST: todo-postgres", config)
-
-    def test_migration_delivers_separate_least_privilege_secrets(self):
-        tasks = read(MIGRATION / "tasks" / "main.yml")
-        rollback = read(ROLLBACK / "tasks" / "main.yml")
-
-        self.assertIn("todo-migrator-password", tasks)
-        self.assertIn("todo-kube-migrator-secret", tasks)
-        self.assertIn("todo_kube_migrator_secret_payload", tasks)
-        self.assertIn("todo-kube-migrator-secret", rollback)
+    def test_active_application_constructs_separate_secrets_in_memory(self):
+        tasks = read(ROOT / "ansible" / "roles" / "application_kube_runtime" / "tasks" / "main.yml")
+        for name in (
+            "todo-migrator-password",
+            "todo-app-password",
+            "todo-kube-migrator-secret",
+            "todo-kube-backend-secret",
+            "todo-kube-keycloak-secret",
+        ):
+            self.assertIn(name, tasks)
+        self.assertIn("no_log: true", tasks)
+        self.assertIn("stdin:", tasks)
+        self.assertIn("b64encode", tasks)
 
     def test_superseded_separate_app_workloads_are_removed(self):
         for filename in (
@@ -145,80 +141,18 @@ class KubeRuntimeTests(unittest.TestCase):
         ):
             self.assertFalse((RUNTIME / filename).exists())
 
-    def test_development_and_runtime_config_have_the_same_objects(self):
-        development = list(
-            yaml.safe_load_all(read(RUNTIME / "config.yaml"))
-        )
-        template = read(MIGRATION / "templates" / "config-runtime.yaml.j2")
-        names = {doc["metadata"]["name"] for doc in development}
-
-        self.assertEqual(
-            names,
-            {
-                "todo-postgres-config",
-                "todo-backend-config",
-                "todo-keycloak-config",
-                "todo-nginx-env",
-                "todo-nginx-config",
-            },
-        )
-        application_names = names - {"todo-postgres-config"}
-        for name in application_names:
-            self.assertIn(f"name: {name}", template)
-        self.assertIn("{{ todo_kube_service_origin }}", template)
-        self.assertIn("{{ todo_kube_service_hostname }}", template)
-
-        rendered = template.replace(
-            "{{ todo_kube_service_origin }}", "https://todo.test:8443"
-        ).replace("{{ todo_kube_service_hostname }}", "todo.test")
-        rendered_documents = list(yaml.safe_load_all(rendered))
-        self.assertEqual(
-            {doc["metadata"]["name"] for doc in rendered_documents},
-            application_names,
-        )
-
     def test_frontend_runtime_unit_maps_external_port_to_container_tls(self):
         template = read(
-            MIGRATION / "templates" / "todo-app.kube.j2"
+            ROOT
+            / "ansible"
+            / "roles"
+            / "application_kube_runtime"
+            / "templates"
+            / "todo-app.kube.j2"
         )
 
         self.assertIn("127.0.0.1:8080:8080", template)
-        self.assertIn("todo_kube_service_port }}:8443", template)
-
-    def test_migration_preserves_rollback_before_stopping_services(self):
-        tasks = read(MIGRATION / "tasks" / "main.yml")
-
-        preserve = tasks.index(
-            "- name: Preserve the installed application Quadlets for rollback"
-        )
-        stop = tasks.index("- name: Stop the per-container application tier")
-        remove = tasks.index("- name: Remove the replaced per-container Quadlets")
-
-        self.assertLess(preserve, stop)
-        self.assertLess(stop, remove)
-        self.assertIn("force: true", tasks[preserve:stop])
-        self.assertIn("todo_confirm_application_kube_migration", tasks)
-        self.assertIn('failed_when: todo_kube_database_role.stdout | trim != "f|off"', tasks)
-
-    def test_migration_does_not_replace_postgres_or_persistent_data(self):
-        tasks = read(MIGRATION / "tasks" / "main.yml")
-
-        self.assertNotIn("systemctl, --user, stop, todo-postgres.service", tasks)
-        self.assertNotIn("todo-postgres.container\n    state: absent", tasks)
-        self.assertNotIn("podman, volume, rm", tasks)
-        self.assertNotIn("todo-postgres-data", tasks)
-
-    def test_rollback_requires_complete_backup_before_runtime_changes(self):
-        tasks = read(ROLLBACK / "tasks" / "main.yml")
-
-        require = tasks.index("- name: Require the complete rollback set")
-        stop = tasks.index("- name: Stop the Kube application tier")
-        restore = tasks.index("- name: Restore the preserved per-container Quadlets")
-
-        self.assertLess(require, stop)
-        self.assertLess(stop, restore)
-        self.assertIn("todo_confirm_application_quadlet_rollback", tasks)
-        self.assertNotIn("todo-postgres-data", tasks)
+        self.assertIn("todo_service_port }}:8443", template)
 
     def test_documentation_explains_podman_container_names(self):
         guide = read(RUNTIME / "README.md")
@@ -256,9 +190,7 @@ class KubeRuntimeTests(unittest.TestCase):
 
     def test_current_results_do_not_embed_four_pod_history(self):
         current = read(RUNTIME / "RESULTS.md")
-        historical = read(
-            RUNTIME / "RESULTS-FOUR-POD-HISTORICAL.md"
-        )
+        historical = read(ROOT / "docs" / "history" / "RESULTS-FOUR-POD-HISTORICAL.md")
 
         self.assertIn("Grouped Podman Kube runtime results", current)
         self.assertNotIn("four-pod static integration gate", current)
@@ -278,15 +210,11 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertNotIn("kube_application_migration", operations)
         self.assertNotIn("kube_application_rollback", operations)
         self.assertNotIn("migrate-application-to-kube.yml", operations)
-        self.assertNotIn(
-            "rollback-application-to-container-quadlets.yml", operations
-        )
+        self.assertNotIn("rollback-application-to-container-quadlets.yml", operations)
         self.assertNotIn("kube_postgres_primary_migration", operations)
         self.assertNotIn("kube_postgres_primary_rollback", operations)
         self.assertNotIn("migrate-postgres-primary-to-kube.yml", operations)
-        self.assertNotIn(
-            "rollback-postgres-primary-to-container-quadlet.yml", operations
-        )
+        self.assertNotIn("rollback-postgres-primary-to-container-quadlet.yml", operations)
         self.assertIn(
             'cp -r "$project_root/kube/runtime" "$bundle_directory/kube/"',
             offline,
@@ -296,8 +224,7 @@ class KubeRuntimeTests(unittest.TestCase):
         chart = ROOT / "helm" / "todo"
         values = read(chart / "values.yaml")
         rendered = "\n".join(
-            read(RUNTIME / filename)
-            for filename in ("app.yaml", "keycloak.yaml", "postgres.yaml")
+            read(RUNTIME / filename) for filename in ("app.yaml", "keycloak.yaml", "postgres.yaml")
         )
 
         for filename in (
@@ -315,10 +242,7 @@ class KubeRuntimeTests(unittest.TestCase):
 
     def test_clean_deploy_targets_kube_without_legacy_chain(self):
         deploy = read(ROOT / "ansible" / "deploy.yml")
-        runtime = read(
-            ROOT / "ansible" / "roles" / "todo_kube_runtime"
-            / "tasks" / "main.yml"
-        )
+        runtime = read(ROOT / "ansible" / "roles" / "todo_kube_runtime" / "tasks" / "main.yml")
 
         self.assertIn("name: todo_kube_runtime", deploy)
         for legacy in (

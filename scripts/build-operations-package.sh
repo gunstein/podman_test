@@ -23,8 +23,6 @@ cp "$project_root/ansible/README.md" \
   "$project_root/ansible/STANDBY-BOOTSTRAP.md" \
   "$project_root/ansible/PROMOTION.md" \
   "$project_root/ansible/APPLICATION-FAILOVER.md" \
-  "$project_root/ansible/APPLICATION-KUBE-MIGRATION.md" \
-  "$project_root/ansible/POSTGRES-KUBE-MIGRATION.md" \
   "$project_root/ansible/BACKUP-PITR.md" \
   "$project_root/ansible/RESTORE-REDUNDANCY.md" \
   "$project_root/ansible/DR-AUTOMATION.md" \
@@ -38,10 +36,6 @@ cp "$project_root/ansible/README.md" \
   "$project_root/ansible/preflight-standby-rebuild.yml" \
   "$project_root/ansible/rebuild-standby.yml" \
   "$project_root/ansible/cluster-status.yml" \
-  "$project_root/ansible/migrate-application-to-kube.yml" \
-  "$project_root/ansible/rollback-application-to-container-quadlets.yml" \
-  "$project_root/ansible/migrate-postgres-primary-to-kube.yml" \
-  "$project_root/ansible/rollback-postgres-primary-to-container-quadlet.yml" \
   "$project_root/ansible/inventory-initial.example.ini" \
   "$project_root/ansible/inventory-recovery.example.ini" \
   "$project_root/ansible/requirements.txt" \
@@ -58,11 +52,7 @@ for role in \
   promoted_application \
   postgres_backup \
   postgres_redundancy_primary \
-  postgres_reseed_standby \
-  kube_application_migration \
-  kube_application_rollback \
-  kube_postgres_primary_migration \
-  kube_postgres_primary_rollback
+  postgres_reseed_standby
 do
   cp -r "$project_root/ansible/roles/$role" \
     "$package_directory/ansible/roles/"
@@ -81,7 +71,8 @@ cp "$project_root/scripts/todo_dr.py" \
   "$project_root/scripts/todo_dr_run.py" \
   "$project_root/scripts/todo_backup.py" "$package_directory/scripts/"
 cp "$project_root/offline/FAPOLICYD.md" "$package_directory/offline/"
-cp "$project_root/docs/SECRETS.md" \
+cp "$project_root/docs/ARCHITECTURE.md" \
+  "$project_root/docs/SECRETS.md" \
   "$project_root/docs/TLS.md" \
   "$project_root/docs/SELINUX.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
@@ -90,7 +81,6 @@ cp "$project_root/docs/SECRETS.md" \
   "$project_root/docs/MANUAL-DR-QUICKSTART.md" \
   "$project_root/docs/PROXMOX-QUARANTINE.md" \
   "$package_directory/docs/"
-cp -r "$project_root/docs/legacy" "$package_directory/docs/"
 
 source_revision=unknown
 source_state=unknown

@@ -23,7 +23,8 @@ podman save --format oci-archive --output "$bundle_directory/images/todo-keycloa
 podman save --format oci-archive --output "$bundle_directory/images/postgres-17.11.tar" docker.io/library/postgres:17.11
 
 cp "$project_root/ansible.cfg" "$bundle_directory/"
-cp "$project_root/docs/SECRETS.md" \
+cp "$project_root/docs/ARCHITECTURE.md" \
+  "$project_root/docs/SECRETS.md" \
   "$project_root/docs/TLS.md" \
   "$project_root/docs/SELINUX.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
@@ -32,7 +33,6 @@ cp "$project_root/docs/SECRETS.md" \
   "$project_root/docs/MANUAL-DR-QUICKSTART.md" \
   "$project_root/docs/PROXMOX-QUARANTINE.md" \
   "$bundle_directory/docs/"
-cp -r "$project_root/docs/legacy" "$bundle_directory/docs/"
 
 mkdir -p "$bundle_directory/quadlet"
 cp "$project_root/quadlet/todo.network" \

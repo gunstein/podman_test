@@ -233,7 +233,7 @@ manual lab acceptance test.
 
 | Need | Document |
 |---|---|
-| Understand the current Podman Kube architecture | [Kube runtime](kube/runtime/README.md) |
+| Understand the system architecture | [Architecture](docs/ARCHITECTURE.md) |
 | Recover old primary without VM console | [Proxmox quarantine preparation](docs/PROXMOX-QUARANTINE.md) |
 | Learn the system in dependency order | [Learning guide](docs/LEARNING-GUIDE.md) |
 | Run or hand off acceptance; change VM IPs (humans and agents: start here) | [Acceptance checklist, commands and failure recovery](docs/MANUAL-DR-QUICKSTART.md) |

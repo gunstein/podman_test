@@ -8,6 +8,11 @@ This is the operator index for the next clean-state drill, not permission to
 reset the currently working pair. The September 5 repaired run passed the DR
 chain; a fresh run from one clean revision remains required.
 
+Deployment bundles intentionally exclude legacy learning guides and runtime
+transition playbooks/roles; those remain in the source repository until the
+retirement gate passes. The optional reset controller is documented in the
+source-only docs/LAB-RESET-CONTROLLER.md, separate from this manual workflow.
+
 ## Before touching the VMs
 
 1. Read the latest private run record and the source repository's `PROJECT.md`

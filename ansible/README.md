@@ -160,7 +160,8 @@ idempotent schema migration remains the init-container responsibility. Follow
 [APPLICATION-FAILOVER.md](APPLICATION-FAILOVER.md).
 
 The old application and PostgreSQL migration/rollback playbooks are retained as
-isolated transition evidence until full Kube acceptance permits retirement.
+isolated transition evidence in the source repository until full Kube acceptance
+permits retirement. They are intentionally excluded from the operations package.
 They are not part of clean install, promotion, backup, rebuild or the normal DR
 runner.
 

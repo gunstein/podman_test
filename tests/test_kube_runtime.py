@@ -275,16 +275,16 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("application_kube_runtime", operations)
         self.assertIn("postgres_kube_runtime", operations)
         self.assertIn("todo_fapolicyd", operations)
-        self.assertIn("kube_application_migration", operations)
-        self.assertIn("kube_application_rollback", operations)
-        self.assertIn("migrate-application-to-kube.yml", operations)
-        self.assertIn(
+        self.assertNotIn("kube_application_migration", operations)
+        self.assertNotIn("kube_application_rollback", operations)
+        self.assertNotIn("migrate-application-to-kube.yml", operations)
+        self.assertNotIn(
             "rollback-application-to-container-quadlets.yml", operations
         )
-        self.assertIn("kube_postgres_primary_migration", operations)
-        self.assertIn("kube_postgres_primary_rollback", operations)
-        self.assertIn("migrate-postgres-primary-to-kube.yml", operations)
-        self.assertIn(
+        self.assertNotIn("kube_postgres_primary_migration", operations)
+        self.assertNotIn("kube_postgres_primary_rollback", operations)
+        self.assertNotIn("migrate-postgres-primary-to-kube.yml", operations)
+        self.assertNotIn(
             "rollback-postgres-primary-to-container-quadlet.yml", operations
         )
         self.assertIn(

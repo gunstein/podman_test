@@ -6,6 +6,10 @@ frontend and backend share one application pod, while PostgreSQL and Keycloak
 remain independent shared services on the user-defined network. PostgreSQL
 replication, backup and disaster recovery remain separate operational layers.
 
+For the whole-system design and responsibilities, see
+[System architecture](../../docs/ARCHITECTURE.md). This guide focuses on the
+canonical runtime files and their lifecycle contracts.
+
 ## Core architecture
 
 ```text

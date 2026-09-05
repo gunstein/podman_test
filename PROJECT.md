@@ -8,6 +8,19 @@ The project demonstrates Podman, Quadlet, Ansible and offline installation in sm
 
 ## Current status
 
+The consolidated docs/ARCHITECTURE.md now describes current system context,
+three-workload topology, build/deployment, identity, security and recovery
+boundaries. README and runtime/learning guides link to it; both deployment
+bundles include it. It does not change the pending acceptance verdict.
+
+Distribution cleanup before the next acceptance: operations excludes the four
+legacy transition roles, their four migration/rollback playbooks and two
+migration runbooks. Both bundle builders exclude docs/legacy. Historical
+runtime, transition files and PoC tests remain in Git pending retirement;
+no operational Ansible role was refactored. The optional reset-check controller
+is documented in docs/LAB-RESET-CONTROLLER.md with name-scoped baseline checks,
+not a promised full DR controller. Actual operations archive contents are tested.
+
 Learning-path follow-up: current LEARNING-GUIDE is Kube-native; the previous
 per-container guide is preserved in docs/legacy and included in both bundles.
 README lifecycle/API wording is corrected. Frontend now depends on auth.js,

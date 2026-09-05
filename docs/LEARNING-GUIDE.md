@@ -1,10 +1,14 @@
 # Learning guide
 
 This guide teaches the current rootless Podman Kube implementation, not the
-historical per-container model. The [legacy guide](legacy/LEARNING-GUIDE.md)
-is retained for comparison with `quadlet-reference-v1`.
+historical per-container model. The source repository retains
+`docs/legacy/LEARNING-GUIDE.md` for comparison with `quadlet-reference-v1`;
+historical guides are intentionally not distributed in deployment bundles.
 Functional DR has been demonstrated with repairs; unchanged-revision Oracle
 Linux acceptance remains pending. See [acceptance](MANUAL-DR-QUICKSTART.md).
+
+For the authoritative system overview and design boundaries, read
+[System architecture](ARCHITECTURE.md). This guide focuses on learning exercises.
 
 ## 1. Follow the definition to the running service
 

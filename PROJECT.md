@@ -8,6 +8,20 @@ The project demonstrates Podman, Quadlet, Ansible and offline installation in sm
 
 ## Current status
 
+Acceptance findings (2026-09-05): the manually reset VM pair passed clean-state
+checks and received clean artifacts from `b3b479efa6a7c065da2a6efdbe8ca68c6aea5927`.
+Initial installation passed (`ok=46 changed=15 failed=0`), as did the three
+Kube services, local health/readiness, nginx and the stable issuer. Client DNS
+and CA trust passed, but external HTTPS failed because 8443 was published only
+on localhost. Firewall state remains unverified (interactive sudo required).
+The installer now accepts an explicit host IPv4 publish address; the runbook
+includes a client-scoped firewall rule and repeats the address on redeploy.
+Separately, missing Helm emptied `app.yaml` during the first build attempt;
+the file was restored before packaging. Rendering now completes all manifests
+in temporary storage before replacing output files. Fresh clean-artifact VM
+acceptance remains required. Browser, reboot, replication and DR gates have not
+passed in this round. Reset and hypervisor fencing remain manual operations.
+
 The rootless Podman, Quadlet, nginx, Ansible and offline-installation reference
 is complete. A full clean Oracle Linux 9.8 acceptance drill passed from initial
 deployment through standby bootstrap, fencing, promotion, application failover,

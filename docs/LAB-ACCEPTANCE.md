@@ -112,8 +112,23 @@ On `todo-primary`:
 ```bash
 cd "$HOME/todo-offline-m12"
 sh ./preflight.sh
-sh ./install.sh
+sh ./install.sh --publish-address 192.168.0.102
 ```
+
+On `todo-primary`, inspect `sudo firewall-cmd --get-active-zones` and use the
+zone containing its LAN interface (the lab uses `public`). Allow HTTPS only
+from the client. Confirm its actual source IPv4 address before entering it:
+
+```bash
+read -rp "Client IPv4 address: " TODO_CLIENT_IP
+sudo firewall-cmd --permanent --zone=public \
+  --add-rich-rule="rule family=\"ipv4\" source address=\"${TODO_CLIENT_IP}/32\" destination address=\"192.168.0.102\" port port=\"8443\" protocol=\"tcp\" accept"
+sudo firewall-cmd --reload
+```
+
+On the client laptop, map `todo.test` to `192.168.0.102` and install the new
+public demo CA as described in `docs/TLS.md`. A prior drill may have left
+`todo.test` pointing to `.108` and an obsolete CA in the trust store.
 
 Require all long-running services, no failed user units, nginx image identity,
 valid nginx configuration, health, readiness and Keycloak discovery:
@@ -139,7 +154,8 @@ Playwright Chromium build may not consume the Ubuntu system CA store; that
 browser setting is not a substitute for the separate trusted `curl` check.
 
 Reboot the VM. Verify services, marker data and TLS CA persistence, then rerun
-`sh ./install.sh`. Pass when the second deployment reports `changed=0`.
+`sh ./install.sh --publish-address 192.168.0.102`. Pass when the second
+deployment reports `changed=0`.
 
 ## 4. Initial standby bootstrap
 

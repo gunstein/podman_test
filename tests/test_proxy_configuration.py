@@ -1,6 +1,9 @@
 import pathlib
 import unittest
 
+import jinja2
+import yaml
+
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
@@ -9,6 +12,43 @@ def read(relative_path: str) -> str:
 
 
 class ProxyConfigurationTests(unittest.TestCase):
+    def test_clean_deploy_redirect_update_preserves_client_security_and_is_idempotent(self):
+        tasks = yaml.safe_load(read("ansible/roles/todo_kube_runtime/tasks/main.yml"))
+        update = next(t for t in tasks if t["name"] ==
+                      "Update the Todo frontend stable redirect and origin")
+        environment = jinja2.Environment()
+        environment.filters["combine"] = lambda value, changes: {**value, **changes}
+        original = {
+            "redirectUris": ["https://localhost:8443/"],
+            "webOrigins": ["https://localhost:8443"],
+            "attributes": {"pkce.code.challenge.method": "S256"},
+            "protocolMappers": [{"name": "todo audience"}],
+            "publicClient": True,
+            "directAccessGrantsEnabled": False,
+        }
+        context = {"todo_kube_client": {"json": original},
+                   "todo_kube_public_origin": "https://todo.test:8443"}
+        condition = environment.compile_expression(update["when"])
+        self.assertTrue(condition(**context))
+        expression = update["ansible.builtin.uri"]["body"].strip()[2:-2].strip()
+        updated = environment.compile_expression(expression)(**context)
+        self.assertEqual(updated["redirectUris"], ["https://todo.test:8443/"])
+        self.assertEqual(updated["webOrigins"], ["https://todo.test:8443"])
+        for key in ("attributes", "protocolMappers", "publicClient", "directAccessGrantsEnabled"):
+            self.assertEqual(updated[key], original[key])
+        self.assertFalse(condition(**{**context, "todo_kube_client": {"json": updated}}))
+        self.assertTrue(update["changed_when"])
+
+    def test_clean_deploy_suppresses_credentials_and_token_bearing_requests(self):
+        tasks = yaml.safe_load(read("ansible/roles/todo_kube_runtime/tasks/main.yml"))
+        protected = []
+        for task in tasks:
+            uri = task.get("ansible.builtin.uri", {})
+            if "Authorization" in uri.get("headers", {}) or "password" in uri.get("body", {}):
+                protected.append(task)
+                self.assertTrue(task.get("no_log"), task["name"])
+        self.assertEqual(len(protected), 4)
+
     def test_frontend_uses_pinned_nginx_image_as_non_root(self):
         containerfile = read("frontend/Containerfile")
 

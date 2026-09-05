@@ -8,6 +8,17 @@ The project demonstrates Podman, Quadlet, Ansible and offline installation in sm
 
 ## Current status
 
+Second-round finding (2026-09-05): `4476071` passed clean-host checks,
+installation, external 8443 binding, system-trusted HTTPS, readiness and issuer
+checks after a client-scoped firewall rule and new CA trust were installed.
+The public Playwright flow failed with `Invalid parameter: redirect_uri`:
+the imported realm allowed only localhost. Clean deploy now reconciles the
+frontend redirect/origin with the configured HTTPS issuer using the existing
+Podman administrator secret and suppressed token-bearing tasks. It preserves
+PKCE and audience settings and only reports a change when reconciliation is
+needed. VM IP configuration is mapped in LAB-ACCEPTANCE.md. Testing an upgrade
+on the current primary does not replace the final clean-install gate.
+
 Acceptance findings (2026-09-05): the manually reset VM pair passed clean-state
 checks and received clean artifacts from `b3b479efa6a7c065da2a6efdbe8ca68c6aea5927`.
 Initial installation passed (`ok=46 changed=15 failed=0`), as did the three

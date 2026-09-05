@@ -236,7 +236,7 @@ manual lab acceptance test.
 | Understand the current Podman Kube architecture | [Kube runtime](kube/runtime/README.md) |
 | Automate disposable Proxmox lab reset | [Lab DR automation](docs/LAB-DR-AUTOMATION.md) |
 | Learn the system in dependency order | [Learning guide](docs/LEARNING-GUIDE.md) |
-| Build and accept the complete lab | [Lab acceptance](docs/LAB-ACCEPTANCE.md) |
+| Build/accept the lab; change VM IPs | [Lab acceptance and address settings](docs/LAB-ACCEPTANCE.md#where-to-change-vm-addresses) |
 | Check demonstrated versus simplified concepts | [What you learn](docs/WHAT-YOU-LEARN.md) |
 | Operate deployment and recovery | [Ansible operations](ansible/README.md) |
 | Understand SELinux and rootless ownership | [SELinux](docs/SELINUX.md) |

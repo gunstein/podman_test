@@ -291,6 +291,85 @@
   retries: 90
   delay: 2
 
+- name: Require an HTTPS Todo issuer before configuring browser redirects
+  ansible.builtin.assert:
+    that:
+      - todo_kube_discovery.json.issuer is match('^https://[^/]+/auth/realms/todo$')
+    fail_msg: Expected an HTTPS issuer with the Todo realm path.
+
+- name: Derive the browser origin from the configured Keycloak issuer
+  ansible.builtin.set_fact:
+    todo_kube_public_origin: >-
+      {{ todo_kube_discovery.json.issuer | regex_replace('/auth/realms/todo$', '') }}
+
+- name: Obtain a short-lived Keycloak administrator token
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/auth/realms/master/protocol/openid-connect/token
+    method: POST
+    body_format: form-urlencoded
+    body:
+      grant_type: password
+      client_id: admin-cli
+      username: admin
+      password: "{{ todo_source_secrets.results[4].stdout }}"
+    return_content: true
+    status_code: 200
+  register: todo_kube_admin_token
+  no_log: true
+
+- name: Find the Todo frontend client
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/auth/admin/realms/todo/clients?clientId=todo-frontend
+    headers:
+      Authorization: "Bearer {{ todo_kube_admin_token.json.access_token }}"
+    return_content: true
+    status_code: 200
+  register: todo_kube_client_query
+  no_log: true
+
+- name: Require exactly one Todo frontend client
+  ansible.builtin.assert:
+    that:
+      - todo_kube_client_query.json | length == 1
+    fail_msg: Expected exactly one Keycloak client named todo-frontend.
+  no_log: true
+
+- name: Read the complete Todo frontend client representation
+  ansible.builtin.uri:
+    url: >-
+      http://127.0.0.1:8080/auth/admin/realms/todo/clients/{{
+      todo_kube_client_query.json[0].id }}
+    headers:
+      Authorization: "Bearer {{ todo_kube_admin_token.json.access_token }}"
+    return_content: true
+    status_code: 200
+  register: todo_kube_client
+  no_log: true
+
+- name: Update the Todo frontend stable redirect and origin
+  ansible.builtin.uri:
+    url: >-
+      http://127.0.0.1:8080/auth/admin/realms/todo/clients/{{
+      todo_kube_client_query.json[0].id }}
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ todo_kube_admin_token.json.access_token }}"
+    body_format: json
+    body: >-
+      {{
+        todo_kube_client.json
+        | combine({
+            'redirectUris': [todo_kube_public_origin ~ '/'],
+            'webOrigins': [todo_kube_public_origin]
+          })
+      }}
+    status_code: 204
+  when: >-
+    todo_kube_client.json.redirectUris != [todo_kube_public_origin ~ '/'] or
+    todo_kube_client.json.webOrigins != [todo_kube_public_origin]
+  changed_when: true
+  no_log: true
+
 - name: Read production service source paths
   ansible.builtin.command:
     argv:

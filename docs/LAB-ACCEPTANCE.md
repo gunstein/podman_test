@@ -46,6 +46,32 @@ The current runtime requires Podman 5.8.2 because its PostgreSQL `.kube` unit us
 - Never rerun a one-shot destructive workflow blindly after partial failure.
 - Never reboot both final database nodes at the same time.
 
+## Where to change VM addresses
+
+Choose addresses before starting a clean drill. IPs printed here are lab
+examples. Keep the service name `todo.test`: moving it to another IP does not
+require changing the realm, frontend, certificate hostname or Helm manifests.
+
+| Setting | Where to change it | What to enter |
+|---|---|---|
+| VM network | Guest OS or DHCP reservation | Fixed address per VM; verify with `ip -brief -4 address` |
+| Initial HTTPS binding | Primary: `sh ./install.sh --publish-address PRIMARY_IP` | Primary's own IPv4, on every install/rerun |
+| Replication and SSH | Primary's `todo-operations/ansible/inventory-initial.ini` | Replace example IPs `192.0.2.10` and `192.0.2.11`; standby needs both `ansible_host` and `todo_node_address` |
+| Recovery/rebuild | Promoted host's `todo-operations/ansible/inventory-recovery.ini` | Same machine IPs, new role groups; rebuild target needs both address fields |
+| Browser destination | Client DNS or `/etc/hosts` | `PRIMARY_IP todo.test`; change to promoted host after failover |
+| Firewall | VM firewalld and manual hypervisor fencing/quarantine | Replace source/destination IPs in the rules; HTTPS from client, replication from peer |
+| Optional lab controller | Ignored `lab-dr.local.toml`: `nodes.primary.address`, `nodes.standby.address` | Same VM IPs; this file does not configure Ansible or guest networking |
+
+With NAT, check the source address seen by the destination. Our primary saw
+`192.168.0.100` in `SSH_CLIENT`, different from the ThinkPad's own LAN address.
+The lab-controller CLI still assumes automated Proxmox reset; manual-reset
+acceptance follows this runbook and requires no hypervisor SSH.
+
+Container DNS names (`todo-postgres`, `todo-keycloak`) stay unchanged. Editing
+inventory does not readdress running databases or update persisted DR config.
+These instructions prepare a clean topology; changing the IPs of an existing
+replicated pair requires a separate maintenance plan.
+
 ## 1. Clean-host evidence
 
 On each VM, record:

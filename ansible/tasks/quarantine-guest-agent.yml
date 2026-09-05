@@ -1,0 +1,46 @@
+---
+- name: Read the existing Guest Agent policy
+  ansible.builtin.slurp:
+    src: /etc/sysconfig/qemu-ga
+  become: true
+  register: todo_quarantine_ga_file
+
+- name: Extract the explicit Guest Agent allow list
+  ansible.builtin.set_fact:
+    todo_quarantine_ga_lists: >-
+      {{ (todo_quarantine_ga_file.content | b64decode)
+         | regex_findall('(?m)^FILTER_RPC_ARGS="--allow-rpcs=([a-z0-9,-]+)"$') }}
+    todo_quarantine_ga_assignments: >-
+      {{ (todo_quarantine_ga_file.content | b64decode)
+         | regex_findall('(?m)^\s*FILTER_RPC_ARGS=') }}
+
+- name: Refuse unfamiliar or ambiguous Guest Agent policy
+  ansible.builtin.assert:
+    that:
+      - todo_quarantine_ga_lists | length == 1
+      - todo_quarantine_ga_assignments | length == 1
+    fail_msg: Expected one explicit allow-rpcs assignment; review configuration manually.
+
+- name: Preserve existing RPC permissions and add execution and status
+  ansible.builtin.lineinfile:
+    path: /etc/sysconfig/qemu-ga
+    regexp: '^FILTER_RPC_ARGS='
+    line: >-
+      FILTER_RPC_ARGS="--allow-rpcs={{
+        (todo_quarantine_ga_lists[0].split(',') + ['guest-exec', 'guest-exec-status'])
+        | unique | join(',') }}"
+    backup: true
+  become: true
+  register: todo_quarantine_ga_policy
+
+- name: Restart only Guest Agent after a policy change
+  ansible.builtin.systemd_service:
+    name: qemu-guest-agent
+    state: restarted
+  become: true
+  when: todo_quarantine_ga_policy.changed
+
+- name: Require Guest Agent to be active
+  ansible.builtin.command:
+    argv: [systemctl, is-active, qemu-guest-agent]
+  changed_when: false

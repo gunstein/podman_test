@@ -22,8 +22,26 @@ The assistant uses SSH after the isolated guest's Todo services are stopped.
    ansible-playbook --ask-become-pass --inventory ansible/inventory-initial.ini ansible/install-quarantine-tool.yml
    ```
 
-   This installs one root-owned file with exact fapolicyd trust. It does not
-   stop services. From the Proxmox **node Shell**, test only its read-only mode:
+   This installs one root-owned file with exact fapolicyd trust.
+   It does not stop services.
+
+   If Guest Agent answers ping but rejects `guest-exec`, the operator may
+   explicitly authorize execution support on the initial primary:
+
+   ```bash
+   ansible-playbook --ask-become-pass --inventory ansible/inventory-initial.ini ansible/install-quarantine-tool.yml -e todo_quarantine_enable_guest_exec=true
+   ```
+
+   This grants Proxmox administrators arbitrary root command execution in
+   this VM, not just permission to run the helper. The opt-in preserves the
+   existing explicit `/etc/sysconfig/qemu-ga` allow list, adds only
+   `guest-exec` and `guest-exec-status`, backs up the configuration and
+   restarts only Guest Agent if changed. Unknown policy formats fail closed.
+   Todo services and firewall settings are not changed. The lab's Proxmox
+   8.4.16 installation has datacenter Firewall disabled; do not enable it
+   without the separate isolation and management-access review below.
+
+   From the Proxmox **node Shell**, test only its read-only mode:
 
    ```bash
    qm guest exec 107 -- /usr/bin/bash /opt/todo/bin/todo-quarantine.sh check todo-primary gunstein

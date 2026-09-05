@@ -6,6 +6,10 @@
   vars:
     project_root: "{{ playbook_dir }}/.."
   tasks:
+    - name: Enable Guest Agent execution only with explicit operator consent
+      ansible.builtin.include_tasks: tasks/quarantine-guest-agent.yml
+      when: todo_quarantine_enable_guest_exec | default(false) | bool
+
     - name: Install and trust the exact quarantine helper without stopping services
       ansible.builtin.include_role:
         name: todo_fapolicyd

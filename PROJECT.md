@@ -8,6 +8,20 @@ The project demonstrates Podman, Quadlet, Ansible and offline installation in sm
 
 ## Current status
 
+DR preparation checkpoint (2026-09-05): standby reboot passed with boot ID
+`c11dd2ee-309a-468c-b8fa-3f8a8e9902c0`, read-only recovery, marker ID 2,
+matching receive/replay LSNs and zero measured streaming lag. Both hosts then
+received verified clean packages from `494666ad7db7eda60d6816fbf1dbf1a1c35a648b`.
+DR tool installation stopped when its immediate active-trust check did not
+find the newly added paths. A subsequent operator dump showed both exact
+filedb entries with matching sizes and hashes; the files were installed and
+the tool help ran, but `todo-dr.json` was not yet written. The trust role now
+waits with bounded retries after both controller and target reload requests,
+requiring exact canonical paths, sizes and hashes before proceeding. Simulated
+delayed reload and stale-hash failures are exercised with real Ansible.
+Next: rerun the corrected installer with interactive sudo, verify status and
+installer idempotence. Both hosts must remain running until fencing is agreed.
+
 Active acceptance checkpoint (2026-09-05): both VMs hold verified clean
 artifacts from `093557dda4c880e18c5cdb91a048d6abbe4d7878`. Primary `.102`
 was upgraded through the packaged installer: redirect reconciliation reported

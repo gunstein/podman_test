@@ -48,6 +48,15 @@
   become: true
   changed_when: false
 
+- name: Wait for exact controller source trust before reading files
+  ansible.builtin.include_tasks:
+    file: wait-trust.yml
+    apply:
+      delegate_to: localhost
+      become: true
+  vars:
+    todo_fapolicyd_wait_paths: "{{ todo_fapolicyd_files | map(attribute='source') | list }}"
+
 - name: Create the Todo operator binary directory
   ansible.builtin.file:
     path: "{{ todo_fapolicyd_install_directory }}"
@@ -140,18 +149,10 @@
   become: true
   changed_when: false
 
-- name: Read the combined target trust database
-  ansible.builtin.command:
-    argv: [fapolicyd-cli, --dump-db]
-  become: true
-  register: todo_fapolicyd_database
-  changed_when: false
-
-- name: Verify exact Todo target paths are trusted
-  ansible.builtin.assert:
-    that:
-      - item.dest in todo_fapolicyd_database.stdout
-    fail_msg: "fapolicyd trust is missing exact Todo path {{ item.dest }}."
-  loop: "{{ todo_fapolicyd_files }}"
-  loop_control:
-    label: "{{ item.dest }}"
+- name: Wait for exact installed Todo file trust
+  ansible.builtin.include_tasks:
+    file: wait-trust.yml
+    apply:
+      become: true
+  vars:
+    todo_fapolicyd_wait_paths: "{{ todo_fapolicyd_files | map(attribute='dest') | list }}"

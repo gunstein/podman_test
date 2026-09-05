@@ -1,0 +1,33 @@
+---
+# --update notifies the daemon; it does not wait for the database reload.
+# Use trusted system tools before Python/Ansible reads the new source files.
+- name: Calculate exact expected file trust entries
+  ansible.builtin.command:
+    argv:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        path=$(readlink -e -- "$1")
+        test -f "$path"
+        size=$(stat --format=%s -- "$path")
+        digest=$(sha256sum -- "$path")
+        printf 'filedb %s %s %s\n' "$path" "$size" "${digest%% *}"
+      - todo-trust-entry
+      - "{{ item }}"
+  loop: "{{ todo_fapolicyd_wait_paths }}"
+  register: todo_fapolicyd_expected_entries
+  changed_when: false
+
+- name: Wait for the active trust database to contain current exact entries
+  ansible.builtin.command:
+    argv: [fapolicyd-cli, --dump-db]
+  register: todo_fapolicyd_database
+  changed_when: false
+  until:
+    - todo_fapolicyd_database.rc == 0
+    - >-
+      (todo_fapolicyd_expected_entries.results | map(attribute='stdout') | list)
+      | difference(todo_fapolicyd_database.stdout_lines) | length == 0
+  retries: 30
+  delay: 1

@@ -8,6 +8,20 @@ The project demonstrates Podman, Quadlet, Ansible and offline installation in sm
 
 ## Current status
 
+Active acceptance checkpoint (2026-09-05): both VMs hold verified clean
+artifacts from `093557dda4c880e18c5cdb91a048d6abbe4d7878`. Primary `.102`
+was upgraded through the packaged installer: redirect reconciliation reported
+`changed=1`; the repeat deploy reported `ok=40 changed=0 failed=0`. Both
+Playwright flows and system-trusted HTTPS readiness passed. Authenticated
+marker `Kube 093557d 2026-09-05 before reboot` (Todo ID 2) remains present
+after browser reload and through the public HTTPS API.
+Pre-reboot boot ID is `fef053d0-b1d2-4842-8a18-de594ecccedf`; public CA file
+SHA-256 is `2f7473b69d78424fe2a0dea9083cee7ad04a36f5aab0161f0c48ea67abe5ab2f`.
+Next: operator reboots only primary (interactive sudo required), then verify
+new boot ID, services, unchanged CA, HTTPS, marker and idempotent reinstall.
+Standby is not bootstrapped. Final clean acceptance remains pending; this
+checkpoint is upgrade and regression evidence, not a clean-install PASS.
+
 Second-round finding (2026-09-05): `4476071` passed clean-host checks,
 installation, external 8443 binding, system-trusted HTTPS, readiness and issuer
 checks after a client-scoped firewall rule and new CA trust were installed.

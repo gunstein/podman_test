@@ -8,6 +8,18 @@ The project demonstrates Podman, Quadlet, Ansible and offline installation in sm
 
 ## Current status
 
+Quarantine preparation (2026-09-05): DR tool installation and its repeat run
+passed (`ok=15 changed=0 failed=0` on the repeat), and installed tool status
+confirmed healthy read-only standby, reachable primary and zero apply lag.
+Fencing is paused at the operator's request until old-primary reintroduction
+can be done without guest-console typing. A root-owned Guest Agent stop helper,
+its pre-install playbook and PROXMOX-QUARANTINE.md are prepared and locally
+tested (145 tests plus shell lint and Ansible syntax). Nothing has been
+installed or stopped by this helper yet. Proxmox version, firewall enable
+state/backend and actual isolation remain unverified. The intended route is
+disconnected guest links, Guest Agent stop, then restricted SSH after STOPPED.
+Do not fence primary until the host-specific quarantine rehearsal passes.
+
 DR preparation checkpoint (2026-09-05): standby reboot passed with boot ID
 `c11dd2ee-309a-468c-b8fa-3f8a8e9902c0`, read-only recovery, marker ID 2,
 matching receive/replay LSNs and zero measured streaming lag. Both hosts then

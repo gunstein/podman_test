@@ -55,6 +55,7 @@ jobs:
             ansible/sync-standby-secrets.yml \
             ansible/bootstrap-standby.yml \
             ansible/install-dr-tool.yml \
+            ansible/install-quarantine-tool.yml \
             ansible/replication-status.yml
           do
             ansible-playbook \

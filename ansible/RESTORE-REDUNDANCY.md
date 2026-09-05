@@ -36,6 +36,12 @@ booted onto the production network as a writable database.
 
 ## Quarantine the old primary
 
+For the prepared Guest Agent procedure without VM-console typing, see
+[PROXMOX-QUARANTINE.md](../docs/PROXMOX-QUARANTINE.md). It must first pass
+the documented host-specific isolation test. Until then, the existing console
+procedure below remains the fallback; do not improvise an SSH exception before
+the workload services are stopped.
+
 Keep the VM fenced. Boot it from the Proxmox console with normal client and
 database traffic blocked. Log in as the rootless Todo service user and stop all
 Todo services before allowing management SSH:

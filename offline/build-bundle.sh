@@ -29,6 +29,7 @@ cp "$project_root/docs/SECRETS.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
   "$project_root/docs/LEARNING-GUIDE.md" \
   "$project_root/docs/LAB-ACCEPTANCE.md" \
+  "$project_root/docs/PROXMOX-QUARANTINE.md" \
   "$bundle_directory/docs/"
 
 mkdir -p "$bundle_directory/quadlet"

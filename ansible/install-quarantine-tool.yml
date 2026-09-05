@@ -1,0 +1,16 @@
+---
+- name: Pre-stage a Guest Agent stop helper on the initial primary
+  hosts: todo_primary
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    project_root: "{{ playbook_dir }}/.."
+  tasks:
+    - name: Install and trust the exact quarantine helper without stopping services
+      ansible.builtin.include_role:
+        name: todo_fapolicyd
+      vars:
+        todo_fapolicyd_files:
+          - source: "{{ project_root }}/scripts/todo-quarantine.sh"
+            dest: /opt/todo/bin/todo-quarantine.sh
+            mode: "0644"

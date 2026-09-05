@@ -335,6 +335,11 @@ failures and bounded WAL use.
 
 ## 9. Rebuild old primary as standby
 
+Before fencing primary, prepare and rehearse the optional console-free route in
+[PROXMOX-QUARANTINE.md](PROXMOX-QUARANTINE.md). It uses Guest Agent to stop the
+isolated guest before permitting SSH. A prepared helper is not evidence that
+the hypervisor quarantine has been tested.
+
 Boot old primary with workload traffic blocked. Stop all Todo services before
 permitting management SSH:
 

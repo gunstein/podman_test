@@ -12,7 +12,9 @@ class LearningPathTests(unittest.TestCase):
         for phrase in ("todo-frontend.container", "todo-migrate.container",
                        "todo-frontend.service"):
             self.assertNotIn(phrase, guide)
-        self.assertTrue((ROOT / "docs/legacy/LEARNING-GUIDE.md").is_file())
+        self.assertFalse((ROOT / "docs/legacy/LEARNING-GUIDE.md").exists())
+        self.assertIn("c377161:docs/legacy/LEARNING-GUIDE.md", guide)
+        self.assertTrue((ROOT / "quadlet/README.md").is_file())
 
     def test_ui_does_not_depend_on_keycloak_sdk(self):
         app = (ROOT / "frontend/app.js").read_text()

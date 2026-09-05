@@ -1,7 +1,7 @@
 # Application failover
 
 
-M14 starts the application tier on an already promoted PostgreSQL standby. It
+Application recovery starts the application tier on an already promoted PostgreSQL standby. It
 does not initialize PostgreSQL, change database roles or generate credentials. It
 derives missing Kube-compatible secret objects only from the existing host-local
 Podman secrets. The grouped application runs its normal idempotent schema migration as an init container.
@@ -19,7 +19,7 @@ at `todo.test:8443`; promotion changes only which host address serves it.
 
 ## Stage before an incident
 
-Keep the operations package and the M12 offline image bundle on standby before
+Keep the operations package and the offline image bundle on standby before
 an incident. The package contains no secrets, images, site-specific inventory or
 database data.
 
@@ -65,7 +65,7 @@ sudo firewall-cmd --permanent --zone=public \
 sudo firewall-cmd --reload
 ```
 
-Do not expose PostgreSQL or the internal backend and Keycloak ports. M14
+Do not expose PostgreSQL or the internal backend and Keycloak ports. Application recovery
 publishes only HTTPS on the standby LAN address; its HTTP port remains bound to
 localhost for local smoke tests.
 
@@ -94,7 +94,7 @@ The playbook fails before changing application state unless:
 - `todo-postgres.service` is active;
 - PostgreSQL reports `f|off`, meaning promoted and writable;
 - all four application runtime secrets exist;
-- every missing application image has its corresponding staged M12 archive.
+- every missing application image has its corresponding staged offline archive.
 
 It loads only missing images, installs the grouped `todo-app` and independent `todo-keycloak` Kube
 workloads, starts them through `.kube` Quadlets, updates the existing Keycloak client to the stable
@@ -138,7 +138,7 @@ client:          public CA root used to verify that leaf certificate
 ```
 
 When the promoted nginx container first starts, its entrypoint uses the image-packaged OpenSSL to create a local demo CA and a `todo.test` server certificate. The client can therefore receive the exact public root only
-after M14 deployment. This is simple, works offline and never copies the
+after application recovery. This is simple, works offline and never copies the
 private demo CA key out of the TLS data volume. Its disadvantage is operational: manual
 certificate distribution consumes failover time, requires a browser restart
 on some clients and does not scale beyond a small lab.

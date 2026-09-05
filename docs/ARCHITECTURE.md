@@ -23,8 +23,8 @@ The system does not implement automatic HA, seamless failover, multi-tenant
 authorization, managed PKI or an off-host backup service.
 
 The accepted historical implementation remains recoverable through
-`quadlet-reference-v1`. Its transition tools are source-only evidence,
-not part of normal deployment or the operations package.
+`quadlet-reference-v1`. Retired transition tools remain in pre-retirement
+Git history (`c377161`), not in the active tree or operations package.
 
 ## 2. System context and requests
 

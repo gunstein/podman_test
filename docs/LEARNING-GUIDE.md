@@ -1,9 +1,9 @@
 # Learning guide
 
 This guide teaches the current rootless Podman Kube implementation, not the
-historical per-container model. The source repository retains
-`docs/legacy/LEARNING-GUIDE.md` for comparison with `quadlet-reference-v1`;
-historical guides are intentionally not distributed in deployment bundles.
+historical per-container model. The implementation is preserved by
+`quadlet-reference-v1`; the former learning guide is available at
+`c377161:docs/legacy/LEARNING-GUIDE.md`, not in the active tree or bundles.
 Unchanged-revision Oracle Linux acceptance passed on 688a0f6.
 See the [run record](ACCEPTANCE-688a0f6.md) and [procedure](MANUAL-DR-QUICKSTART.md).
 

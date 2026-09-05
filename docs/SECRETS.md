@@ -66,14 +66,14 @@ not a rotation strategy.
 
 ## Recovery boundary
 
-The demonstrated M16 procedure re-seeds the recoverable, fenced old primary;
+The demonstrated standby-rebuild procedure re-seeds the recoverable, fenced old primary;
 that host already retains its Podman secrets. If a failed host is physically
 lost, the equivalent procedure is to provision a fresh rootless Podman host,
 transfer the required Podman secrets from the surviving primary and bootstrap a
 new physical standby. That fresh-host replacement path is not automated here.
 Simultaneous loss of both database nodes is explicitly outside this demo scope.
 
-The M15 PostgreSQL base backup and WAL archive do not contain Podman secrets or
+The PostgreSQL base backup and WAL archive do not contain Podman secrets or
 TLS private keys. An organization that wants recovery after loss of every node
 must design separate protected secret and key recovery; that mechanism is not
 implemented here.

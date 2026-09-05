@@ -1,7 +1,7 @@
 # Restore database redundancy after failover
 
 
-M16 restores a second database copy after M13.5 promotion and M14 application
+Standby rebuild restores a second database copy after database promotion and application
 failover. It does not move service back to the machine that was originally
 primary. The promoted host remains primary; the old primary is destroyed and
 re-seeded as a new read-only standby.
@@ -138,7 +138,7 @@ ansible-playbook \
   --extra-vars '{"todo_confirm_old_primary_fenced":"todo-primary is fenced","todo_confirm_reseed":"todo-primary"}'
 ```
 
-The playbook first preserves M15 archiving while adding a restricted LAN
+The playbook first preserves WAL archiving while adding a restricted LAN
 replication endpoint to the current primary. Before deleting anything, the
 rebuild host both reaches TCP 5432 and authenticates a physical replication
 connection with `IDENTIFY_SYSTEM`. Only then does it remove the old volume,

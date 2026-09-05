@@ -76,10 +76,10 @@ administration and E2E setup; a real deployment should replace and remove it.
 
 ## Single-host uninstall
 
-`uninstall.yml` is intentionally limited to the single-host M12 deployment. It
-refuses to run when it detects M13-M16 replication, promotion, backup or
+`uninstall.yml` is intentionally limited to the single-host deployment. It
+refuses to run when it detects replication, promotion, backup or
 rebuilt-standby state.
-Do not treat a promoted database or its backup archive as ordinary M12 data.
+Do not treat a promoted database or its backup archive as ordinary single-host data.
 
 Remove the deployed services, Quadlet files, containers, network and application
 images:
@@ -171,7 +171,7 @@ demonstration, not protection against loss of the host.
 
 ## Restore redundancy after failover
 
-The redundancy workflow uses `postgres_redundancy_primary` to preserve M15 archiving while exposing
+The redundancy workflow uses `postgres_redundancy_primary` to preserve WAL archiving while exposing
 a firewalled replication endpoint on the promoted host. The destructive
 `postgres_reseed_standby` role then replaces only the explicitly confirmed old
 primary volume with a fresh base backup. Follow

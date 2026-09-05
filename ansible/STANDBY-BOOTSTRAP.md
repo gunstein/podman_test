@@ -6,7 +6,7 @@ Run the read-only preflight before changing either database host:
 ansible-playbook --inventory ansible/inventory-initial.ini ansible/preflight-standby.yml
 ```
 
-By default, the M12 offline bundle must still exist on standby under
+By default, the offline bundle must still exist on standby under
 `/home/<ansible_user>/todo-offline-m12`. Set `todo_user_home` in the inventory
 when the remote account uses another home directory.
 
@@ -55,7 +55,7 @@ The expected primary state is `streaming|async`; standby must report recovery
 as `t`. Status also requires an active, usable `todo_standby` slot and reports
 its WAL status, remaining safe WAL bytes and any invalidation reason.
 
-A database bootstrap deliberately does not install the M13.5 DR tool. This keeps
+A database bootstrap deliberately does not install the local DR tool. This keeps
 controller-side `fapolicyd` source checks ahead of the one-shot database work.
 After replication is healthy, install or update the DR tool on standby without
 touching the database:
@@ -78,7 +78,7 @@ therefore determined by WAL volume, not elapsed days: a quiet database may stay
 recoverable for days, while a busy database may consume the allowance quickly.
 
 This demo standby receives WAL only through streaming replication and does not
-use the M15 archive as a fallback source. A more resilient design can retain WAL
+use the backup WAL archive as a fallback source. A more resilient design can retain WAL
 off-host and configure standby `restore_command` to retrieve an older segment
 that primary no longer retains before streaming resumes. That reduces avoidable
 rebuilds but adds archive availability, retention, access-control and monitoring

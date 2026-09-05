@@ -15,7 +15,7 @@ The target machine must already provide:
 - A working `systemctl --user` session
 - RPM/deb-managed `ansible-core` 2.14 or newer and its system Python
 - `/bin/sh`, `tar` and `sha256sum`
-- Free localhost ports 5432, 8000, 8080 and 8443 on a clean target
+- Free host ports 5432, 8080 and 8443 on a clean target (8000 is internal to the app pod)
 
 The Kube runtime requires the tested Podman 5.8.2 platform, systemd 255 and
 ansible-core 2.14.18 or newer. Helm is not an offline target dependency. The
@@ -110,7 +110,7 @@ checksums. For real distribution, sign the archive or manifest separately with
 an organizational GPG or Sigstore/cosign identity and verify that signature on
 the target before running `install.sh`.
 
-Uninstall this M12 bundle while preserving database data. The playbook refuses
+Uninstall this offline bundle while preserving database data. The playbook refuses
 to run if it detects later replication, promotion or backup state:
 
 ```bash

@@ -41,8 +41,8 @@ them. Per-user ownership is intentionally outside the demo.
 ## What you can learn
 
 Start with the current [Learning Guide](docs/LEARNING-GUIDE.md) and [Kube runtime guide](kube/runtime/README.md).
-The [legacy reference learning guide](docs/legacy/LEARNING-GUIDE.md) preserves
-the accepted per-container model for historical comparison.
+Historical learning material is available in Git; see the
+[history index](docs/history/README.md), not an alternate active runtime.
 
 The shorter [concept coverage matrix](docs/WHAT-YOU-LEARN.md) states what the
 demo implements, what it simplifies and which production concerns remain.
@@ -51,7 +51,7 @@ demo implements, what it simplifies and which production concerns remain.
 
 Clean install now deploys the final Podman Kube runtime directly. The former
 per-container implementation remains recoverable from `quadlet-reference-v1`
-and is retained only as transition/rollback evidence.
+and is no longer part of the active tree.
 
 | Boundary | Files |
 |---|---|
@@ -61,9 +61,9 @@ and is retained only as transition/rollback evidence.
 | Helm templates and values | [`helm/todo/`](helm/todo/) |
 | Shared network | [`todo.network`](quadlet/todo.network) |
 
-Start with the [Kube runtime guide](kube/runtime/README.md). PoCs, migrations,
-DR automation and historical results are evidence and operations around this
-core. Revision 688a0f6 passed full Oracle Linux acceptance; see the [run record](docs/ACCEPTANCE-688a0f6.md).
+Start with the [Kube runtime guide](kube/runtime/README.md). DR tools support this
+core; retired PoCs and migration tooling remain in pre-retirement Git history.
+ Revision 688a0f6 passed full Oracle Linux acceptance; see the [run record](docs/ACCEPTANCE-688a0f6.md).
 
 ## Requirements
 

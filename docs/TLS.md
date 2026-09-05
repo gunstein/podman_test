@@ -23,7 +23,7 @@ change causes a new leaf certificate from the same local CA. A container restart
 renews an expiring leaf certificate. Missing CA state causes a completely new
 trust root.
 
-Existing Caddy-tagged frontend images are rejected by M12 and M14. Rebuild with `refresh_images=true` on a connected controller, or explicitly load the frontend archive from a newly verified offline bundle before deployment.
+Existing Caddy-tagged frontend images are rejected by clean deployment and application recovery. Rebuild with `refresh_images=true` on a connected controller, or explicitly load the frontend archive from a newly verified offline bundle before deployment.
 
 This mode is deliberately self-contained and works offline, but it is not the
 recommended certificate lifecycle for multiple services or normal operations.
@@ -99,7 +99,7 @@ metadata to FastAPI and Keycloak:
 - `X-Forwarded-For`
 - `X-Real-IP`
 
-M14 must verify that Keycloak discovery still reports the stable external issuer
+Application recovery must verify that Keycloak discovery still reports the stable external issuer
 `https://todo.test:8443/auth/realms/todo`. Health, readiness, public API,
 login redirect, token validation and logout/redirect behavior belong in proxy
 acceptance testing.

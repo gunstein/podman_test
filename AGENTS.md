@@ -1,7 +1,7 @@
 Project goal:
-Build a small Todo demo to evaluate Podman Kube YAML as a shared development
-and production workload format against the accepted per-container Quadlet
-reference implementation.
+Maintain and demonstrate the accepted rootless Podman Kube Todo architecture
+as a shared development and production workload format. Preserve the historical
+per-container reference in Git for comparison.
 
 Current architecture and workflow:
 - docs/ARCHITECTURE.md describes the current design; docs/LEARNING-GUIDE.md
@@ -38,9 +38,9 @@ Constraints:
   podman-compose or unnecessary dependencies.
 - Keep the accepted per-container Quadlet implementation recoverable through
   the quadlet-reference-v1 tag; do not rewrite that history.
-- Prove external secrets without plaintext YAML, network DNS, rootless
+- Preserve and verify external secrets without plaintext YAML, network DNS, rootless
   SELinux storage, direct-development cleanup, .kube/systemd failure
-  semantics and database persistence before completing the migration.
+  semantics and database persistence when changing the accepted architecture.
 - Preserve the complete fencing, promotion, backup, PITR and standby-rebuild
   safety boundaries.
 - Never commit secrets.

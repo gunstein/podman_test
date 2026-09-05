@@ -40,9 +40,9 @@ them. Per-user ownership is intentionally outside the demo.
 
 ## What you can learn
 
-For the current architecture, start with the [Kube runtime guide](kube/runtime/README.md).
-The [legacy reference learning guide](docs/LEARNING-GUIDE.md) preserves the
-accepted per-container evidence and its safe inspection exercises.
+Start with the current [Learning Guide](docs/LEARNING-GUIDE.md) and [Kube runtime guide](kube/runtime/README.md).
+The [legacy reference learning guide](docs/legacy/LEARNING-GUIDE.md) preserves
+the accepted per-container model for historical comparison.
 
 The shorter [concept coverage matrix](docs/WHAT-YOU-LEARN.md) states what the
 demo implements, what it simplifies and which production concerns remain.

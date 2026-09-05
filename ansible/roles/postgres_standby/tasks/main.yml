@@ -130,7 +130,9 @@
       - --cap-drop
       - all
       - --volume
-      - todo-postgres-data:/var/lib/postgresql/data:Z
+      # Final helper hands the stopped volume to Kube, which does not replace
+      # an existing private MCS label. Match the shared Kube volume label.
+      - todo-postgres-data:/var/lib/postgresql/data:z
       - --secret
       - todo-replicator-password
       - --entrypoint

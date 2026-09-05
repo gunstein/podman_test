@@ -1,6 +1,8 @@
 import pathlib
 import unittest
 
+import yaml
+
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
@@ -9,6 +11,23 @@ def read(relative_path: str) -> str:
 
 
 class AnsibleSafetyTests(unittest.TestCase):
+    def test_final_standby_helper_hands_shared_selinux_label_to_kube(self):
+        for role in ("postgres_standby", "postgres_reseed_standby"):
+            with self.subTest(role=role):
+                tasks = yaml.safe_load(read(f"ansible/roles/{role}/tasks/main.yml"))
+                kube = next(i for i, task in enumerate(tasks)
+                            if task.get("ansible.builtin.include_role", {}).get("name")
+                            == "postgres_kube_runtime")
+                helpers = []
+                for task in tasks[:kube]:
+                    argv = task.get("ansible.builtin.command", {}).get("argv", [])
+                    if "--volume" in argv:
+                        helpers.append((task, argv[argv.index("--volume") + 1]))
+                task, mount = helpers[-1]
+                self.assertEqual(mount, "todo-postgres-data:/var/lib/postgresql/data:z")
+                self.assertTrue(task["no_log"])
+                self.assertIn("todo-replicator-password", task["ansible.builtin.command"]["argv"])
+
     def test_replication_authentication_precedes_volume_removal(self):
         tasks = read("ansible/roles/postgres_reseed_standby/tasks/main.yml")
 

@@ -158,7 +158,9 @@
       - --cap-drop
       - all
       - --volume
-      - todo-postgres-data:/var/lib/postgresql/data:Z
+      # The old database is already fenced, stopped and re-seeded here.
+      # Hand the replacement volume to Kube without a helper-private MCS label.
+      - todo-postgres-data:/var/lib/postgresql/data:z
       - --secret
       - todo-replicator-password
       - --entrypoint

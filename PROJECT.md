@@ -17,10 +17,24 @@ marker `Kube 093557d 2026-09-05 before reboot` (Todo ID 2) remains present
 after browser reload and through the public HTTPS API.
 Pre-reboot boot ID is `fef053d0-b1d2-4842-8a18-de594ecccedf`; public CA file
 SHA-256 is `2f7473b69d78424fe2a0dea9083cee7ad04a36f5aab0161f0c48ea67abe5ab2f`.
-Next: operator reboots only primary (interactive sudo required), then verify
-new boot ID, services, unchanged CA, HTTPS, marker and idempotent reinstall.
-Standby is not bootstrapped. Final clean acceptance remains pending; this
-checkpoint is upgrade and regression evidence, not a clean-install PASS.
+Primary reboot passed with new boot ID `4f6d5e3c-e1d7-41f0-8b89-2a5341877a65`,
+unchanged CA, services, HTTPS and marker. Reinstall passed `changed=0 failed=0`.
+Primary-to-standby SSH now passes with strict host-key checking. The operator
+opened primary TCP 5432 only from `.108`; initial standby preflight passed.
+
+Bootstrap then failed at standby health after completing base backup and
+secret synchronization: the last helper's private SELinux MCS label prevented
+the Kube container from reading PGDATA. Primary stayed healthy. Standby was
+stopped, its exact Podman volume path and lack of running consumers checked,
+and only its data volume relabeled to `container_file_t:s0`. No volume was
+deleted and no base backup was repeated. Standby then reported `t|on`, matching
+receive/replay LSNs, and marker ID 2; primary reported `streaming|async|0` and
+an active reserved slot. Source bootstrap/rebuild now use `:z` on their final
+configuration helper, preserving all fencing and data-removal checks.
+Next: reboot only standby and repeat replication/marker assertions. Its
+pre-reboot boot ID is `a7874d35-f01b-4200-898b-ed74c2acf788`.
+Final clean acceptance remains pending. This is manually repaired bootstrap
+and upgrade evidence, not an uninterrupted clean-install PASS.
 
 Second-round finding (2026-09-05): `4476071` passed clean-host checks,
 installation, external 8443 binding, system-trusted HTTPS, readiness and issuer

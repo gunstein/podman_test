@@ -29,7 +29,7 @@ its lifecycle. See [`kube/runtime/README.md`](../kube/runtime/README.md).
 | Fencing | Mandatory operator confirmation before promotion | VM fencing is performed in Proxmox, not automated by the app |
 | Promotion | Local preflight, explicit confirmations and writable verification | No automatic failover |
 | Application failover | Stable hostname, issuer, nginx and promoted app tier | Client name/IP mapping is manual |
-| TLS identity during DR | Server/private-key versus client/root trust, hostname validation and explicit nginx root export | M14 creates a new local OpenSSL demo CA after promotion; production should pre-stage trust, use managed PKI/public ACME or terminate TLS at a redundant stable endpoint |
+| TLS identity during DR | Server/private-key versus client/root trust, hostname validation and explicit nginx root export | Promoted application recovery creates a new local OpenSSL demo CA; production should pre-stage trust, use managed PKI/public ACME or terminate TLS at a redundant stable endpoint |
 | Restore redundancy | Re-seed the old primary as the new standby | Full re-seed is preferred over `pg_rewind` for clarity |
 | Backup/PITR | Base backup, continuous WAL, named restore point and isolated restore test | Backup volume is on the same VM |
 | Backup operations | Archive status, safe disposable cleanup and documented growth | Off-host copy, retention, encryption and alerts are documented, not implemented |

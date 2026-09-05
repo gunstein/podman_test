@@ -15,10 +15,12 @@ source-only docs/LAB-RESET-CONTROLLER.md, separate from this manual workflow.
 
 ## Before touching the VMs
 
-1. Read the latest private run record and the source repository's `PROJECT.md`
-   (the development journal is not included in offline bundles). Distinguish
-   observed current state from historical examples. If continuing a run, obtain
-   fresh status; never reset or repeat promotion/rebuild just to resume a chat.
+1. Choose the entry path. **NEW:** use the current architecture, this checklist,
+   LAB-ACCEPTANCE.md and the selected revision; start from the documented clean
+   baseline after reset approval. Never infer current state from an earlier run.
+   **CONTINUATION:** read the private run record and obtain fresh role, fencing
+   and runner status before acting. Never reset or repeat promotion/rebuild just
+   to resume a chat. PROJECT.md is optional history, not an input requirement.
 2. Agree whether this is a NEW destructive clean run or continuation. Reset,
    promotion and replacement of old database data need explicit operator
    agreement. A general request to continue is not permission to erase a
@@ -67,7 +69,7 @@ Verdict: IN PROGRESS | BLOCKED | REPAIRED FUNCTIONAL PASS | CLEAN PASS
 
 ## One topology file, printed commands
 
-On the ThinkPad, use the existing ignored `lab-dr.local.toml`, or copy
+On the client/build host, use the existing ignored `lab-dr.local.toml`, or copy
 `lab-dr.example.toml` to that name if no local file exists. Edit
 `nodes.primary` and `nodes.standby` (VM ID, hostname, address and Proxmox name),
 and `guest_ssh.user`. Names describe the INITIAL roles and never swap in this
@@ -80,7 +82,7 @@ python3 scripts/manual_dr_commands.py --config lab-dr.local.toml status
 ```
 
 Replace `status` with a phase in the table below. The generator prints a
-quoted command to review and paste into the ThinkPad terminal. It never runs
+quoted command to review and paste into the client/build terminal. It never runs
 it. Never pipe its output to a shell. It requires Python 3.11+ or the existing
 `tomli` fallback on older Python. SSH host checking remains enabled.
 
@@ -90,6 +92,10 @@ rules or `/etc/hosts`. Keep those aligned using the
 TOML alone does not reconfigure an existing replicated pair.
 
 ## Phase checklist
+
+This table is an index. The numbered phase cards in [LAB-ACCEPTANCE.md](LAB-ACCEPTANCE.md)
+own prerequisites, PASS/STOP criteria and evidence. Do not execute the index as
+a second sequence. At handoff record the numbered phase and next unexecuted action.
 
 | Phase | Operator boundary / evidence |
 |---|---|
@@ -159,7 +165,7 @@ without new approval. The on-VM backup is not protection against VM/host loss.
 System trust and Chromium trust are separate on this Linux test client.
 Retrieve only the public CA via verified SSH from the promoted host and compare
 its hash before import. Never import private keys. Install `libnss3-tools` on
-the ThinkPad if needed. Chromium uses the existing `~/.pki/nssdb`, or for newer
+the client/build host if needed. Chromium uses the existing `~/.pki/nssdb`, or for newer
 versions the default `~/.local/share/pki/nssdb` when the old database is absent.
 Inspect the actual database first; do not overwrite another certificate.
 

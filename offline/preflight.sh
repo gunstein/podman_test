@@ -73,7 +73,6 @@ fi
 allowed_ports=""
 for container_ports in \
     "todo-postgres:5432" \
-    "todo-backend:8000" \
     "todo-frontend:8080,8443"
 do
     container=${container_ports%%:*}
@@ -94,7 +93,8 @@ allowed = {
     if port
 }
 failed = []
-for port in (5432, 8000, 8080, 8443):
+# Backend port 8000 is pod-local, not a published host port.
+for port in (5432, 8080, 8443):
     sock = socket.socket()
     try:
         sock.bind(("127.0.0.1", port))

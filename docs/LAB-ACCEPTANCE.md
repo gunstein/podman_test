@@ -10,6 +10,25 @@ For the phase checklist and topology-based command generator, start with
 The procedure permanently destroys the old primary database during the final
 rebuild. Run it only on disposable lab hosts with infrastructure fencing.
 
+## Entry and command convention
+
+For NEW, obtain reset approval and use this revision's clean baseline; historical
+results below are not live state. For CONTINUATION, read the private phase record
+and obtain fresh roles, fencing and runner status before the next action.
+Neither path requires reading PROJECT.md or a previous chat.
+
+The phase cards own the gates; commands immediately below each card implement
+them. All guest commands run as the service user through SSH. Use the
+client/build host (a ThinkPad in the documented lab) for transfers and browser
+tests. Proxmox commands are operator actions in the node Shell, not guest console.
+
+The commands below form a direct playbook/tool route. The quickstart's print-only
+generator offers the guarded runner route for promotion/application/rebuild.
+Choose and record one route before promotion; do not run both versions of a
+destructive phase. When using the runner, create and verify the recovery inventory
+before its first use, using the inventory preparation in phase 7. The runner state
+is not a replacement for phase evidence. Direct execution does not update it.
+
 ## Tested topology
 
 | Role at start | Hostname | Address |
@@ -77,6 +96,14 @@ replicated pair requires a separate maintenance plan.
 
 ## 1. Clean-host evidence
 
+- **Where:** Client/build host for approval and topology; Proxmox node Shell for manual reset; both guests for checks.
+- **Preconditions:** Explicit NEW/reset approval, identified disposable VMs and exact clean snapshots. CONTINUATION starts at its verified pending phase, not here.
+- **Command:** Perform the approved manual reset; run the guest observations below and inspect external VM firewall/link state separately.
+- **PASS:** Distinct expected identities, enforcing security, rootless runtime and clean Todo baseline.
+- **Evidence:** Reset approval, VM/snapshot IDs, addresses, security and empty-state output.
+- **STOP if:** Wrong identity, leftover Todo state, uncertain reset scope or unexpected external firewall state.
+- **Next:** Phase 2.
+
 On each VM, record:
 
 ```bash
@@ -103,6 +130,14 @@ deleting visible resources, because systemd, firewall and policy state must be
 reset as well.
 
 ## 2. Build and stage artifacts
+
+- **Where:** Client/build host; then both guests over verified SSH.
+- **Preconditions:** Phase 1 passed; selected clean Git revision; build prerequisites available.
+- **Command:** Build, checksum, transfer and inspect VERSION using the commands below.
+- **PASS:** Both archives and both extracted packages identify the same clean revision; checksums pass.
+- **Evidence:** Full revision, source_state, archive checksums and guest VERSION output.
+- **STOP if:** Dirty source, mismatched versions, checksum failure or unverified SSH identity.
+- **Next:** Phase 3.
 
 On the connected build host:
 
@@ -135,6 +170,14 @@ cat todo-operations/VERSION
 Stop if an extracted package and its archive identify different revisions.
 
 ## 3. Initial single-host deployment
+
+- **Where:** Initial primary via SSH; client/build host for trust and browser tests; Proxmox node Shell for reboot.
+- **Preconditions:** Phase 2 passed; initial primary identity confirmed; client source IP known.
+- **Command:** Install and verify below, configure client trust, test real login, reboot and repeat install.
+- **PASS:** Healthy app/identity/database, trusted HTTPS and real authenticated browser flow; marker/CA survive reboot; repeat changed=0.
+- **Evidence:** Recaps, browser results with no skips or TLS bypass, Todo ID/title, CA fingerprint and boot IDs.
+- **STOP if:** Skipped login test, TLS error, missing marker, failed services or non-idempotent repeat.
+- **Next:** Phase 4. Do not rerun the initial installer after replication configuration.
 
 On `todo-primary`:
 
@@ -177,16 +220,25 @@ curl --fail http://127.0.0.1:8080/ready
 
 Export only the public demo root, trust it on the client, verify HTTPS, run both
 Playwright flows and leave one persistent authenticated Todo marker.
-Use `curl` without `-k` for the system-trust assertion. The project's
-`run-e2e.sh` deliberately sets `E2E_IGNORE_HTTPS_ERRORS=true` because the
-Playwright Chromium build may not consume the Ubuntu system CA store; that
-browser setting is not a substitute for the separate trusted `curl` check.
+Use `curl` without `-k` and browser tests with
+`E2E_IGNORE_HTTPS_ERRORS=false`. Configure the actual Chromium trust database
+as described in the quickstart. The development `run-e2e.sh` enables TLS
+exceptions and is not the acceptance command. Both real Keycloak browser flows
+must run; adapter tests with a test double do not replace them.
 
 Reboot the VM. Verify services, marker data and TLS CA persistence, then rerun
 `sh ./install.sh --publish-address 192.168.0.102`. Pass when the second
 deployment reports `changed=0`.
 
 ## 4. Initial standby bootstrap
+
+- **Where:** Initial primary is Ansible controller; standby is remote target; Proxmox node Shell reboots standby.
+- **Preconditions:** Phase 3 passed; verified controller-to-standby SSH; dedicated guest replication firewall rule.
+- **Command:** Run standby preflight, bootstrap and replication-status below; verify marker, reboot standby and recheck.
+- **PASS:** Streaming async, zero lag, active usable slot, read-only standby and marker persistence.
+- **Evidence:** Both role/LSN outputs, slot state, marker query, bootstrap recap and standby boot IDs.
+- **STOP if:** Failed preflight, role mismatch, unusable slot, lag or absent marker.
+- **Next:** Phase 5.
 
 On `todo-primary`:
 
@@ -208,7 +260,9 @@ ssh -o BatchMode=yes gunstein@192.168.0.108 hostname
 ```
 
 If a snapshot restore changed or removed SSH state, verify the standby host-key
-fingerprint from its console, then follow `ansible/STANDBY-ARCHITECTURE.md` to
+fingerprint through an independently verified connection (for example the
+client/build host's already trusted SSH connection), then follow
+`ansible/STANDBY-ARCHITECTURE.md` to
 install primary's public automation key. Do not weaken host-key checking.
 
 Allow only standby to reach the initial replication endpoint:
@@ -237,6 +291,14 @@ standby and require recovery plus streaming to resume.
 
 ## 5. Local DR tool
 
+- **Where:** Initial primary for Ansible; standby for local DR status; Proxmox node Shell for quarantine rehearsal.
+- **Preconditions:** Phase 4 passed; explicit approval before Guest Agent/security opt-ins.
+- **Command:** Install/repeat DR tools below; prepare and rehearse the linked quarantine procedure before phase 6.
+- **PASS:** Correct DR config, read-only healthy standby, zero apply lag; installer repeat changed=0; quarantine tested and normal operation restored.
+- **Evidence:** Install/status output and quarantine stop, IPv4/IPv6, restricted SSH and restoration evidence.
+- **STOP if:** Trust/policy error, untested quarantine, failed stop or inability to restore initial healthy replication.
+- **Next:** Phase 6 only after rehearsal and restored replication.
+
 Install both DR tools and exact-file trust through Ansible:
 
 ```bash
@@ -255,8 +317,19 @@ python3 /opt/todo/bin/todo_dr.py status
 ```
 
 Rerun the installer and require no file or trust changes.
+Prepare and rehearse [Proxmox quarantine](PROXMOX-QUARANTINE.md) now, while
+initial primary is still the authorized writable node. Verify restored normal
+operation and streaming before proceeding to fencing.
 
 ## 6. Fence and promote
+
+- **Where:** Proxmox node Shell for fencing; initial standby for promotion.
+- **Preconditions:** Replicated persistent marker; tested quarantine; independent fencing evidence and explicit promotion approval.
+- **Command:** Verify old VM stopped, no HA restart, onboot=0 and all links disconnected; then run promotion checks below.
+- **PASS:** New primary reports f|off, write validation passes and all markers remain.
+- **Evidence:** Hypervisor fencing output, approval, preflight/status and marker IDs.
+- **STOP if:** Any fencing uncertainty, reachable old DB, nonzero local apply lag or failed promotion. Never blindly retry.
+- **Next:** Phase 7; old primary must remain fenced.
 
 Create a persistent pre-failover marker and verify it on standby. Fence
 `todo-primary` at the virtualization layer. Its database endpoint must be
@@ -277,6 +350,14 @@ Pass when PostgreSQL reports `f|off`, accepts a rolled-back transaction and all
 markers remain. Keep old primary fenced.
 
 ## 7. Application failover
+
+- **Where:** Promoted host for deployment; client/build host for routing/trust/browser; Proxmox node Shell for reboot.
+- **Preconditions:** Phase 6 passed; old primary fenced; existing secrets and matching image archives available.
+- **Command:** Configure recovery inventory and deploy below; switch client mapping/CA; test, repeat and reboot.
+- **PASS:** Healthy application, stable production issuer, real login and persistent marker; changed=0 repeat; reboot preserves CA/data.
+- **Evidence:** Recaps, trusted browser results, marker/CA and boot IDs.
+- **STOP if:** Missing secrets/images, TLS or login failure, unexpected role/bootstrap activity or marker loss.
+- **Next:** Phase 8.
 
 On the promoted host:
 
@@ -303,6 +384,14 @@ Rerun the playbook and require `changed=0`. Reboot promoted host and verify all
 services, writable PostgreSQL, nginx, marker data and unchanged CA hash.
 
 ## 8. Backup and isolated PITR
+
+- **Where:** Current primary via SSH; Proxmox node Shell for reboot.
+- **Preconditions:** Phase 7 passed; old primary fenced; sufficient disk; record any existing restore state.
+- **Command:** Configure archive, create verified backup and execute the isolated comparison below; cleanup only disposable state; repeat/reboot.
+- **PASS:** Before-row only in restored view; both live rows retained; restore is network-disabled/read-only; archive works after reboot.
+- **Evidence:** Backup and restore-point names, comparison, cleanup output, archive counters, capacity and boot IDs.
+- **STOP if:** Unverified backup, missing WAL, wrong restore target, archive failure or low space.
+- **Next:** Phase 9.
 
 Install the tool and its exact-file trust through the playbook:
 
@@ -338,23 +427,26 @@ failures and bounded WAL use.
 
 ## 9. Rebuild old primary as standby
 
-Before fencing primary, prepare and rehearse the optional console-free route in
-[PROXMOX-QUARANTINE.md](PROXMOX-QUARANTINE.md). It uses Guest Agent to stop the
-isolated guest before permitting SSH. A prepared helper is not evidence that
-the hypervisor quarantine has been tested.
+- **Where:** Proxmox node Shell for isolated boot/quarantine; current primary controls guest Ansible tasks.
+- **Preconditions:** Phase 8 passed; reviewed backup/PITR evidence; old primary remains fenced; explicit reseed approval.
+- **Command:** Use tested quarantine procedure, configure only required replication access, run preflight and then rebuild below with sudo prompting.
+- **PASS:** Authenticated replication check precedes deletion; rebuilt host is read-only and streaming with zero lag; new authenticated marker replicates.
+- **Evidence:** Approvals, STOPPED and active firewall rules, full recap, slot/role checks and marker ID.
+- **STOP if:** Any failed gate or partial rebuild: preserve state, diagnose, never repeat destructive reseed blindly.
+- **Next:** Phase 10; keep quarantine and its replication exception.
 
-Boot old primary with workload traffic blocked. Stop all Todo services before
-permitting management SSH:
+Use the quarantine route already prepared and rehearsed in phase 5:
+[PROXMOX-QUARANTINE.md](PROXMOX-QUARANTINE.md). Start the old VM with every
+network link disconnected. Execute the labelled stop helper directly through
+Guest Agent, require exited=1, exitcode=0 and STOPPED, then inspect applied
+IPv4/IPv6 quarantine rules before reconnecting restricted SSH.
+A helper installation alone is not proof that quarantine works.
 
-```bash
-systemctl --user stop todo-app.service todo-keycloak.service todo-postgres.service
-systemctl --user is-active todo-app.service todo-keycloak.service todo-postgres.service || true
-podman ps
-```
-
-All services must be inactive and no container may run. Remove the old inbound
-replication rule on `.102`. On current primary, allow only `.102` to reach
-`.108:5432`. Establish key-based SSH from current primary to rebuild host.
+Stopped services may be inactive or failed only with zero MainPID/ControlPID
+and no running user containers; preserve failure evidence. Remove the old
+inbound replication rule on .102. On current primary allow only .102 to reach
+.108:5432. Establish verified key-based SSH from current primary to rebuild
+host. Enable only the inspected Proxmox outbound replication exception.
 
 Run read-only preflight:
 
@@ -383,6 +475,14 @@ Run `ansible/cluster-status.yml`, create an authenticated Todo through
 
 ## 10. Final reboot sequence
 
+- **Where:** Proxmox node Shell for one reboot at a time; current primary for cluster checks; client/build host for HTTPS.
+- **Preconditions:** Phase 9 passed, both roles independently verified and streaming healthy.
+- **Command:** Follow the numbered sequence below; verify standby fully before rebooting primary.
+- **PASS:** Roles/data/CA/backup survive, application healthy, streaming zero lag and no failed units.
+- **Evidence:** Each before/after boot ID, fresh cluster status, health, TLS/issuer and markers.
+- **STOP if:** Standby not recovered, replication unhealthy or any data/TLS failure. Do not reboot the other host.
+- **Next:** Phase 11.
+
 1. Reboot only rebuilt standby.
 2. Require `t|on`, database-only services and resumed streaming.
 3. Run `cluster-status.yml`.
@@ -398,6 +498,14 @@ Pass only when final status reports writable primary, healthy archiving,
 standby, and healthy application through trusted HTTPS.
 
 ## 11. Final Kube-runtime gate
+
+- **Where:** Client/build host collects evidence; both guests supply fresh checks.
+- **Preconditions:** All previous phases passed on the recorded revision; any repair recorded.
+- **Command:** Review the checks below and the private phase record; do not repeat an already verified reboot just because a new agent resumed.
+- **PASS:** CLEAN PASS only for complete unchanged-revision evidence; otherwise record repaired functional pass or incomplete status.
+- **Evidence:** Final role/topology record, phase outputs, real browser results and exact verdict with deviations.
+- **STOP if:** Missing evidence, skipped authenticated tests, unresolved failure or revision drift; do not mark accepted.
+- **Next:** Hand off the working topology. No automatic reset, retirement or state-file editing.
 
 There is no migration stage in the normal DR path. Clean deployment,
 standby bootstrap, promotion, backup and rebuild must already use these
@@ -420,13 +528,18 @@ nginx-to-backend loopback traffic, shared-service DNS through `todo.network`,
 unchanged PostgreSQL identity, persistent data, streaming replication and WAL
 archive health.
 
-Reboot only the current primary while the rebuilt standby remains available.
-After boot, require `NRestarts=0` for `todo-app.service`, no failed user
+Use the sequential reboot evidence from phase 10; do not add another reboot.
+After those boots, require `NRestarts=0` for `todo-app.service`, no failed user
 units, readiness, stable issuer and trusted browser E2E. The legacy migration
 and rollback playbooks remain transition evidence only until this complete
 acceptance gate permits their retirement.
 
-## Verified clean nginx drill - 2026-09-01
+## Historical evidence — not instructions or current acceptance
+
+The following result belongs to its recorded historical revision and does not
+approve the current grouped runtime or replace any phase card.
+
+### Verified clean nginx drill - 2026-09-01
 
 The full procedure passed from clean Oracle Linux 9.8 snapshots using source
 revision `d8506f75721f92b704eec0669bf2dda36ff18bdb`.

@@ -22,7 +22,7 @@ is documented in docs/LAB-RESET-CONTROLLER.md with name-scoped baseline checks,
 not a promised full DR controller. Actual operations archive contents are tested.
 
 Learning-path follow-up: current LEARNING-GUIDE is Kube-native; the previous
-per-container guide is preserved in docs/legacy and included in both bundles.
+per-container guide is preserved in docs/legacy in Git, not in deployment bundles.
 README lifecycle/API wording is corrected. Frontend now depends on auth.js,
 with SDK configuration, PKCE, redirects and refresh in keycloak-adapter.js.
 Isolated Chromium adapter tests use a controlled SDK double; they do not prove

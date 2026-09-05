@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   ansible-syntax:
-    name: M12-M16 syntax (ansible-core ${{ matrix.ansible }})
+    name: Ansible syntax matrix (ansible-core ${{ matrix.ansible }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:

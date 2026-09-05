@@ -56,7 +56,7 @@ def main():
         "rebuild": "DATA DELETION: old primary database is replaced. Require backup/PITR, tested quarantine and preflight. Never retry blindly.",
         "rebuild-preflight": "READ-ONLY: first stop old services inside tested hypervisor quarantine; no reseeding occurs.",
     }
-    print("# PRINT ONLY. Review and paste in the ThinkPad terminal; never pipe this output to a shell.")
+    print("# PRINT ONLY. Review and paste in the client/build terminal; never pipe this output to a shell.")
     print("# Initial role mapping is fixed: primary=old host, standby=promoted host.")
     if phase in warnings:
         print("# " + warnings[phase])

@@ -10,6 +10,7 @@ COPY frontend/todo-proxy-headers.conf /etc/nginx/todo-proxy-headers.conf
 COPY --chmod=0755 frontend/todo-nginx-entrypoint.sh /usr/local/bin/todo-nginx-entrypoint
 COPY frontend/index.html /usr/share/nginx/html/index.html
 COPY frontend/app.js /usr/share/nginx/html/app.js
+COPY frontend/auth.js frontend/keycloak-adapter.js /usr/share/nginx/html/
 COPY frontend/style.css /usr/share/nginx/html/style.css
 COPY frontend/vendor /usr/share/nginx/html/vendor
 

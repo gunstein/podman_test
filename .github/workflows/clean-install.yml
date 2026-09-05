@@ -186,6 +186,12 @@ jobs:
       - name: Lint Python
         run: ruff check backend e2e scripts tests
 
+      - name: Test frontend authentication adapter in Chromium
+        run: |
+          python -m pip install -r backend/requirements-e2e.txt
+          python -m playwright install --with-deps chromium
+          python -m pytest e2e/test_auth_adapter.py --browser chromium -q
+
       - name: Lint shell scripts
         shell: bash
         run: |
@@ -198,7 +204,8 @@ jobs:
             scripts/render-kube-runtime.sh \
             scripts/dev-up.sh \
             scripts/dev-down.sh \
-            scripts/run-e2e.sh
+            scripts/run-e2e.sh \
+            scripts/todo-quarantine.sh
 
       - name: Smoke-test nginx and TLS bootstrap
         shell: bash

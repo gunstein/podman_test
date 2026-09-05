@@ -8,6 +8,15 @@ The project demonstrates Podman, Quadlet, Ansible and offline installation in sm
 
 ## Current status
 
+Learning-path follow-up: current LEARNING-GUIDE is Kube-native; the previous
+per-container guide is preserved in docs/legacy and included in both bundles.
+README lifecycle/API wording is corrected. Frontend now depends on auth.js,
+with SDK configuration, PKCE, redirects and refresh in keycloak-adapter.js.
+Isolated Chromium adapter tests use a controlled SDK double; they do not prove
+integration with a second provider or replace real Keycloak acceptance.
+CI runs these browser tests and ShellCheck now includes todo-quarantine.sh.
+No VM deployment or acceptance-status change is part of this follow-up.
+
 2026-09-05 final repaired clean-rerun evidence: VM108 (.108, guest
 todo-standby) is the writable promoted primary; VM107 (.102, guest
 todo-primary) is the read-only rebuilt standby. VM107 retains Proxmox

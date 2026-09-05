@@ -7,17 +7,19 @@ simplification and the normal production concern.
 
 For a dependency-ordered walkthrough, use [LEARNING-GUIDE.md](LEARNING-GUIDE.md). For the destructive build-from-zero verification, use [LAB-ACCEPTANCE.md](LAB-ACCEPTANCE.md).
 
-The table and tool responsibilities below describe the accepted per-container
-Quadlet reference. In the grouped candidate, Kube YAML defines pod contents,
+The current implementation uses grouped Podman Kube workloads. Kube YAML defines pod contents,
 `.kube` Quadlet connects each workload to Podman and systemd, and systemd owns
 its lifecycle. See [`kube/runtime/README.md`](../kube/runtime/README.md).
 
 | Topic | Demonstrated here | Deliberate simplification / production concern |
 |---|---|---|
+| Helm / Kube YAML | Build-time rendering, checked-in runtime drift checks and three lifecycle-grouped pods | Podman workload format, not Kubernetes orchestration; Helm is absent on targets |
+| Identity adapter | Todo UI uses auth.js; Keycloak SDK is isolated in keycloak-adapter.js; backend validates issuer/JWKS/audience | Only Keycloak is implemented; changing IdP still requires configuration and integration tests |
+| Acceptance | Explicit operator gates, checksums, idempotence, browser and repaired DR evidence | Unchanged-revision Oracle Linux acceptance is still pending; no automatic full DR controller |
 | Rootless Podman | User namespaces, images, networks, volumes, ports and secrets | One service user and one application stack |
 | Quadlet/systemd | Generated user services, dependencies, health, restart and lingering | No cluster-level scheduler |
 | SELinux | Enforcing mode, `:Z`, `:z`, `:U`, labels and AVC troubleshooting | No custom SELinux policy module |
-| fapolicyd | RPM trust, exact project-file trust and update/delete lifecycle | Manual trust administration for demo tools |
+| fapolicyd | RPM trust, exact project-file trust and update/delete lifecycle | Ansible refreshes exact path, size and SHA-256 trust with bounded polling; no blanket directory trust |
 | Offline delivery | OCI archives, internal manifest and pre-extraction archive checksum | Real releases should sign artifacts with an organizational identity |
 | Secrets | Local Podman secrets, direct Podman inspection, protected Ansible transfer and mismatch checks | Recovery assumes one database node survives; simultaneous loss of both nodes is outside scope |
 | PostgreSQL privilege | Separate bootstrap, migrator, application, Keycloak and replication roles | One PostgreSQL cluster |
@@ -50,7 +52,9 @@ optional later switchover, not an automatic part of disaster recovery.
 ## Tool responsibilities
 
 ```text
-Quadlet       describes how each container runs
+Helm          renders workload YAML at build time; absent from target hosts
+Kube YAML     defines three workloads, init containers and runtime settings
+.kube Quadlet connects each workload to user systemd
 systemd       owns service lifecycle and boot behavior
 Ansible       provisions and verifies desired state
 Python tools  perform guarded operational DR and backup workflows

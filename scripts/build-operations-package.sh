@@ -90,6 +90,7 @@ cp "$project_root/docs/SECRETS.md" \
   "$project_root/docs/MANUAL-DR-QUICKSTART.md" \
   "$project_root/docs/PROXMOX-QUARANTINE.md" \
   "$package_directory/docs/"
+cp -r "$project_root/docs/legacy" "$package_directory/docs/"
 
 source_revision=unknown
 source_state=unknown

@@ -1,4 +1,4 @@
-import Keycloak from "/vendor/keycloak.js";
+import auth from "./auth.js";
 
 const form = document.querySelector("#todo-form");
 const input = document.querySelector("#todo-title");
@@ -7,32 +7,23 @@ const message = document.querySelector("#message");
 const login = document.querySelector("#login");
 const logout = document.querySelector("#logout");
 const userStatus = document.querySelector("#user-status");
-const applicationUrl = new URL("/", window.location.origin).href;
-
-const keycloak = new Keycloak({
-  url: window.location.origin + "/auth",
-  realm: "todo",
-  clientId: "todo-frontend",
-});
 
 async function api(url, options = {}) {
   const headers = {};
   if (options.body) headers["Content-Type"] = "application/json";
-  if (keycloak.authenticated) {
-    await keycloak.updateToken(30);
-    headers.Authorization = "Bearer " + keycloak.token;
-  }
+  const token = await auth.getAccessToken();
+  if (token) headers.Authorization = "Bearer " + token;
   const response = await fetch(url, {...options, headers});
   if (!response.ok) throw new Error("HTTP " + response.status);
   return response.status === 204 ? null : response.json();
 }
 
 function updateAuthentication() {
-  login.hidden = keycloak.authenticated;
-  logout.hidden = !keycloak.authenticated;
-  form.hidden = !keycloak.authenticated;
-  userStatus.textContent = keycloak.authenticated
-    ? "Logged in as " + keycloak.tokenParsed.preferred_username
+  login.hidden = auth.isAuthenticated();
+  logout.hidden = !auth.isAuthenticated();
+  form.hidden = !auth.isAuthenticated();
+  userStatus.textContent = auth.isAuthenticated()
+    ? "Logged in as " + auth.getUsername()
     : "Reading publicly";
 }
 
@@ -49,7 +40,7 @@ async function load() {
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.checked = todo.completed;
-      checkbox.disabled = !keycloak.authenticated;
+      checkbox.disabled = !auth.isAuthenticated();
       checkbox.onchange = async () => {
         try {
           await api("/api/todos/" + todo.id, {
@@ -64,7 +55,7 @@ async function load() {
       if (todo.completed) title.className = "completed";
       label.append(checkbox, title);
       item.append(label);
-      if (keycloak.authenticated) {
+      if (auth.isAuthenticated()) {
         const remove = document.createElement("button");
         remove.textContent = "Delete";
         remove.onclick = async () => {
@@ -85,8 +76,8 @@ function showError(error) {
   message.textContent = "Something went wrong.";
 }
 
-login.onclick = () => keycloak.login({redirectUri: applicationUrl});
-logout.onclick = () => keycloak.logout({redirectUri: applicationUrl});
+login.onclick = () => auth.login().catch(showError);
+logout.onclick = () => auth.logout().catch(showError);
 
 form.onsubmit = async (event) => {
   event.preventDefault();
@@ -101,11 +92,7 @@ form.onsubmit = async (event) => {
 };
 
 try {
-  await keycloak.init({
-    onLoad: "check-sso",
-    pkceMethod: "S256",
-    checkLoginIframe: false,
-  });
+  await auth.init();
   updateAuthentication();
   await load();
 } catch (error) {

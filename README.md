@@ -120,9 +120,9 @@ podman secret ls
 curl --fail http://127.0.0.1:8080/ready
 ```
 
-Quadlet files are installed below `~/.config/containers/systemd/`. The frontend
-unit is the single `default.target` entrypoint; systemd dependencies start the
-database setup, migrations, grants, backend, Keycloak and nginx in order.
+Quadlets live below `~/.config/containers/systemd/`. `todo-app.service` pulls in
+`todo-postgres.service` and `todo-keycloak.service`; the app pod runs a migration
+init container before backend and nginx. Database-role provisioning is separate.
 Generated units must not be enabled manually.
 
 ## Offline installation
@@ -252,7 +252,7 @@ manual lab acceptance test.
 - `GET /ready`
 - `GET /api/todos`
 - `POST /api/todos` - authenticated
-- `PATCH /api/todos/{id}` - authenticated
+- `PUT /api/todos/{id}` - authenticated
 - `DELETE /api/todos/{id}` - authenticated
 
 ## License

@@ -32,6 +32,7 @@ cp "$project_root/docs/SECRETS.md" \
   "$project_root/docs/MANUAL-DR-QUICKSTART.md" \
   "$project_root/docs/PROXMOX-QUARANTINE.md" \
   "$bundle_directory/docs/"
+cp -r "$project_root/docs/legacy" "$bundle_directory/docs/"
 
 mkdir -p "$bundle_directory/quadlet"
 cp "$project_root/quadlet/todo.network" \

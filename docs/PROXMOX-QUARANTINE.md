@@ -1,8 +1,13 @@
 # Recover the old primary without its VM console
 
-Status: prepared procedure, not yet accepted on this Proxmox installation.
-The helper has local tests. Proxmox version, firewall backend, effective
-rules and Guest Agent execution must be checked before fencing primary.
+Status (2026-09-05): lab quarantine rehearsal passed on Proxmox 8.4.16.
+Disconnected shutdown/start, Guest Agent STOPPED, restricted IPv4 SSH and
+new-connection blocking were tested. IPv6 link-local SSH timed out both ways
+under quarantine and connected both ways with quarantine disabled. Installed
+IPv4/IPv6 iptables chains were inspected. Promotion, backup/PITR, old-primary
+rebuild and sequential final reboots subsequently passed. The repaired drill
+does not replace a new clean-revision acceptance run. See the project journal
+and [MANUAL-DR-QUICKSTART.md](MANUAL-DR-QUICKSTART.md) for the phase checklist.
 Do not enable a datacenter/node firewall based only on this document: that
 can affect management access and unrelated VMs.
 
@@ -38,8 +43,11 @@ The assistant uses SSH after the isolated guest's Todo services are stopped.
    `guest-exec` and `guest-exec-status`, backs up the configuration and
    restarts only Guest Agent if changed. Unknown policy formats fail closed.
    Todo services and firewall settings are not changed. The lab's Proxmox
-   8.4.16 installation has datacenter Firewall disabled; do not enable it
-   without the separate isolation and management-access review below.
+   8.4.16 installation initially had datacenter Firewall disabled. Following
+   review it is enabled, with node filtering explicitly disabled. VM 107
+   filtering remained enabled after the final rebuild, including the restricted
+   outbound replication exception. Do not assume clean snapshots reset these
+   hypervisor firewall settings; review them before the next clean drill.
 
    On the enforcing lab guest, direct bash execution was denied by
    `virt_qemu_ga_t` when accessing `hostname_exec_t`. With separate operator

@@ -4,6 +4,9 @@ This is the canonical destructive acceptance test for the three-workload
 Podman Kube implementation. Individual runbooks explain each operation; this
 document defines order, evidence and pass criteria.
 
+For the phase checklist and topology-based command generator, start with
+[MANUAL-DR-QUICKSTART.md](MANUAL-DR-QUICKSTART.md). It never connects to Proxmox.
+
 The procedure permanently destroys the old primary database during the final
 rebuild. Run it only on disposable lab hosts with infrastructure fencing.
 

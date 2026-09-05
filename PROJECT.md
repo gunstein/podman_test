@@ -8,12 +8,57 @@ The project demonstrates Podman, Quadlet, Ansible and offline installation in sm
 
 ## Current status
 
+Final DR checkpoint (2026-09-05): rebuild passed (old primary ok=53 changed=14,
+current primary ok=34 changed=3, no failures). Authenticated marker ID 7
+replicated to rebuilt standby. Final sequential reboots passed: standby boot
+9038a38b-f947-4795-99d8-c402469e93c6; current primary boot
+7857db69-e863-443c-ac00-129cd41f4da9. Streaming async, active reserved slot,
+zero measured lag, read-only database-only standby, healthy writable primary
+and archiving. Application NRestarts=0; transient startup healthcheck failure
+cleared without manual reset; no failed user units remained. nginx -t passed.
+Backup 52M, WAL 161M, 16G free; verified basebackup and all markers survived.
+Both browser tests passed with E2E_IGNORE_HTTPS_ERRORS=false after importing
+the verified promoted Todo CA into the existing NSS database (TLS CA only,
+nickname todo-lab-ca-21166b09). System-trusted HTTPS also passed.
+This completes the exercised DR/reboot chain, not a fresh clean-install pass:
+the initial standby bootstrap was repaired and artifacts were updated during
+the drill. A consolidated clean-revision rerun and short operator automation
+remain follow-up work. Older pending-phase notes below are historical.
+
+PITR checkpoint (2026-09-05): backup configuration passed ok=41 changed=7
+failed=0. Verified base backup base-20260905T104256Z; restore point
+pitr_20260905T104256Z archived at 0/6001F70. Isolated restore reported
+Network=none and recovery|paused|read_only=t|t|on. Restore contained only
+the before marker; live retained both before/after markers and HTTPS ready.
+Archive mode on, timeout 1h, six archived segments, zero archive failures.
+The disposable restore container and volume were removed with exact tool
+confirmation; base backup and WAL remain. This is not off-host protection.
+Backup installer repeat and guarded old-primary rebuild remain pending.
+Earlier pending-phase notes below are historical checkpoints.
+
+Promoted-host checkpoint (2026-09-05): hypervisor fencing confirmed stopped
+VM 107, onboot=0, disconnected net0 and no matching HA resource. DR preflight
+and promotion passed; runner promotion/application stages are completed.
+Database is writable, original marker ID 2 survived, and authenticated browser
+write created persistent failover marker ID 4. Both Playwright tests passed
+(browser certificate exception; system-trusted HTTPS checked separately).
+Application repeat: ok=35 changed=0 failed=0. Promoted VM 108 reboot passed:
+boot ID 9b35b154-dc84-4825-ae76-29bd94b72b60, all containers healthy,
+HTTPS ready, both markers preserved and public CA hash unchanged:
+473c9fac865ac9a70806bb6eae1d32900295e0e0fe0e00bdf9d46879718a4c30.
+Backup/PITR, old-primary rebuild and final verification remain pending.
+VM 107 must remain fenced; never restart it unrestricted after promotion.
+
 Quarantine rehearsal (2026-09-05): Guest Agent READY and STOPPED passed.
 With the primary link disconnected, all Todo services and containers stopped.
 Installed IPv4/IPv6 quarantine rules were inspected before reconnecting.
 Fresh management SSH passed; fresh outbound SSH and inbound TCP 8443 to a
 confirmed temporary listener timed out. The listener exited automatically.
-IPv6 traffic and disconnected reboot remain untested: not full DR acceptance.
+Follow-up: disconnected shutdown/start and Guest Agent STOPPED passed with
+new boot ID 835b0d1d-0d9e-4ae4-a993-64c21738a26b. Fresh IPv6 link-local SSH
+connections timed out in both directions with quarantine enabled and connected
+in both directions after disabling it. These rehearsal checks now pass;
+fencing, promotion, application failover, backup/PITR and rebuild still remain.
 No promotion or reseeding occurred. VM filtering was disabled, services
 restarted, all containers became healthy, and read-only standby streaming
 resumed with zero measured lag. Trusted HTTPS readiness and marker ID 2 passed.

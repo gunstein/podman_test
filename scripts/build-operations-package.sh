@@ -16,6 +16,7 @@ mkdir -p "$package_directory/ansible/roles" \
 mkdir -p "$(dirname "$output")"
 
 cp "$project_root/ansible.cfg" "$package_directory/"
+cp "$project_root/lab-dr.example.toml" "$package_directory/"
 
 cp "$project_root/ansible/README.md" \
   "$project_root/ansible/STANDBY-ARCHITECTURE.md" \
@@ -74,6 +75,8 @@ cp "$project_root/quadlet/todo.network" \
   "$package_directory/quadlet/"
 cp -r "$project_root/kube/runtime" "$package_directory/kube/"
 cp "$project_root/scripts/todo_dr.py" \
+  "$project_root/scripts/manual_dr_commands.py" \
+  "$project_root/scripts/lab_dr_acceptance.py" \
   "$project_root/scripts/todo-quarantine.sh" \
   "$project_root/scripts/todo_dr_run.py" \
   "$project_root/scripts/todo_backup.py" "$package_directory/scripts/"
@@ -84,6 +87,7 @@ cp "$project_root/docs/SECRETS.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
   "$project_root/docs/LEARNING-GUIDE.md" \
   "$project_root/docs/LAB-ACCEPTANCE.md" \
+  "$project_root/docs/MANUAL-DR-QUICKSTART.md" \
   "$project_root/docs/PROXMOX-QUARANTINE.md" \
   "$package_directory/docs/"
 

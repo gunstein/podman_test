@@ -23,3 +23,12 @@
     - name: Configure the explicitly authorized SELinux entrypoint
       ansible.builtin.include_tasks: tasks/quarantine-selinux.yml
       when: todo_quarantine_enable_selinux_entrypoint | default(false) | bool
+
+    # Atomic file replacement can lose the existing persistent entrypoint label.
+    # Apply only the policy already configured; do not grant a new transition.
+    - name: Restore the helper label from existing persistent SELinux policy
+      ansible.builtin.command:
+        argv: [restorecon, -v, /opt/todo/bin/todo-quarantine.sh]
+      become: true
+      register: todo_quarantine_restorecon
+      changed_when: todo_quarantine_restorecon.stdout | trim != ''

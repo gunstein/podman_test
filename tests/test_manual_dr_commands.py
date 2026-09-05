@@ -50,6 +50,15 @@ class ManualCommandsTests(unittest.TestCase):
         self.assertIn("--confirm-old-primary-fenced", result.stdout)
         self.assertIn("todo-primary is fenced", result.stdout)
 
+    def test_privileged_phases_always_prompt_for_become_password(self):
+        for phase in ("prepare-quarantine", "application", "application-repeat",
+                      "backup", "rebuild-preflight", "rebuild"):
+            with self.subTest(phase=phase):
+                result = self.run_phase(phase)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("ssh -t", result.stdout)
+                self.assertIn("--ask-become-pass", result.stdout)
+
     def test_invalid_topology_rejected(self):
         config = (ROOT / "lab-dr.example.toml").read_text().replace("vmid = 108", "vmid = 107")
         result = self.run_phase("status", config)

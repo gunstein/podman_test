@@ -11,6 +11,23 @@ ROOT = Path(__file__).resolve().parents[1]
 ANSIBLE = ROOT / 'ansible/.venv/bin/ansible-playbook'
 
 
+class QuarantineLabelTests(unittest.TestCase):
+    def test_updates_restore_existing_policy_without_new_consent(self):
+        tasks = yaml.safe_load(
+            (ROOT / 'ansible/install-quarantine-tool.yml').read_text()
+        )[0]['tasks']
+        restore = tasks[-1]
+        self.assertEqual(restore['ansible.builtin.command']['argv'],
+                         ['restorecon', '-v', '/opt/todo/bin/todo-quarantine.sh'])
+        self.assertTrue(restore['become'])
+        self.assertNotIn('when', restore)
+        self.assertIn('stdout', restore['changed_when'])
+        policy = next(task for task in tasks if task.get('ansible.builtin.include_tasks')
+                      == 'tasks/quarantine-selinux.yml')
+        self.assertIn('todo_quarantine_enable_selinux_entrypoint', policy['when'])
+        self.assertIn('default(false)', policy['when'])
+
+
 @unittest.skipUnless(ANSIBLE.exists(), 'Ansible test environment required')
 class GuestAgentPolicyTests(unittest.TestCase):
     def evaluate(self, policy, expected=None):

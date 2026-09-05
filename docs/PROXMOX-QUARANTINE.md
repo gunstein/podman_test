@@ -103,7 +103,7 @@ The assistant uses SSH after the isolated guest's Todo services are stopped.
 | Activate the previously tested VM quarantine profile | No client/database access to the old primary; replication exception still disabled |
 | Start VM 107 with links disconnected | Guest Agent answers; guest network remains isolated |
 | Run the single stop command below in the node Shell | Completed response: `exitcode: 0` and `STOPPED` |
-| Reconnect the links with quarantine still enforced | Assistant verifies restricted SSH, inactive Todo services and no containers |
+| Reconnect the links with quarantine still enforced | Assistant verifies restricted SSH, stopped Todo services and no containers |
 
 ```bash
 qm guest exec 107 -- /opt/todo/bin/todo-quarantine.sh stop todo-primary gunstein
@@ -113,6 +113,15 @@ If the command fails, times out, or returns only a PID, leave links disconnected
 and inspect its execution status. Do not reconnect based on a `qm` exit status
 alone. The helper validates hostname, user and service states. It cannot prove
 hypervisor isolation and is not a substitute for fencing.
+
+An isolated DHCP boot can leave the configured publish address unavailable:
+`rootlessport ... bind: cannot assign requested address`. The PostgreSQL unit
+may then remain `failed` even after a successful stop. The helper accepts
+`inactive` or `failed` only after stopping all three units, requiring zero
+MainPID and ControlPID for each and no running user containers. It warns about
+failed units without clearing their failure state. Read the journal over
+quarantined SSH using `journalctl -b _SYSTEMD_USER_UNIT=todo-postgres.service`;
+do not assume `journalctl --user` can see the same journal on this host.
 
 The assistant then performs the existing rebuild preflight. Enable only the
 documented outbound replication exception, retain the promoted-host firewall

@@ -1,8 +1,64 @@
 # Short manual-reset DR routine
 
+**Start here — for both humans and agents.** Use this checklist as the single
+entry point. Follow linked detailed commands only for the current phase;
+do not reconstruct the procedure from a chat transcript.
+
 This is the operator index for the next clean-state drill, not permission to
 reset the currently working pair. The September 5 repaired run passed the DR
 chain; a fresh run from one clean revision remains required.
+
+## Before touching the VMs
+
+1. Read the latest private run record and the source repository's `PROJECT.md`
+   (the development journal is not included in offline bundles). Distinguish
+   observed current state from historical examples. If continuing a run, obtain
+   fresh status; never reset or repeat promotion/rebuild just to resume a chat.
+2. Agree whether this is a NEW destructive clean run or continuation. Reset,
+   promotion and replacement of old database data need explicit operator
+   agreement. A general request to continue is not permission to erase a
+   working pair. Keep a verified backup before rebuild.
+3. Fill in the topology/address map below and verify real VM IDs, NIC settings,
+   snapshot names and client source address. Snapshot rollback does NOT prove
+   Proxmox firewall rules were reset; inspect them separately. Never guess a
+   firewall rule by its position without reading its full contents first.
+4. Use one clean revision for both bundles. Store run evidence outside the
+   source checkout during a clean run. Changes during the run make it REPAIRED,
+   even when all final functional checks pass.
+
+### Who runs what, and where
+
+| Location | Responsibility |
+|---|---|
+| Client/build terminal (ThinkPad in this lab) | Build, transfer, run printed guest SSH commands, configure client DNS/CA and execute browser tests. An agent with access can do scoped checks here. |
+| Proxmox **node Shell** | Operator pastes reviewed `qm`/`pvesh` commands. No SSH to the hypervisor and no typing in the guest console are required by this procedure. |
+| Guest, reached through SSH | Ansible and rootless Podman run as the service user. Use `ssh -t` and `--ask-become-pass` for privileged installation, including rebuild. Never send sudo passwords to an agent. |
+
+Paste only the command block, not prompts such as `root@proxmox:~#`.
+After each operator action, inspect its result before giving the next mutation.
+Batch independent read-only checks; do not batch across a fencing or deletion
+gate. Agents should run available checks themselves instead of asking the
+operator to copy logs repeatedly. Report the next location explicitly.
+
+### Run record / handoff template
+
+Copy this into a private run log (no passwords, tokens or secret payloads):
+
+```text
+Run ID / operator / date:
+Mode: NEW clean run | CONTINUATION
+Git revision / both VERSION values / archive checksums:
+Topology: initial primary hostname/IP/VMID/NIC; initial standby equivalents;
+          client source IP; Proxmox node; actual clean snapshot names:
+Current roles and fencing: which DB is writable, VM power/link/firewall state:
+Last completed phase / exact command / recap and evidence:
+Next phase / where to run it / approval still required:
+Markers: original Todo ID/title; final authenticated Todo ID/title:
+Backup name / restore-point name / isolated comparison / cleanup:
+Boot IDs before/after / TLS CA fingerprint / browser tests (no skips):
+Deviations, repairs and runner state (keep original failure evidence):
+Verdict: IN PROGRESS | BLOCKED | REPAIRED FUNCTIONAL PASS | CLEAN PASS
+```
 
 ## One topology file, printed commands
 
@@ -48,6 +104,50 @@ TOML alone does not reconfigure an existing replicated pair.
 Keep Proxmox quarantine on through rebuild and verification. After rebuild,
 the old stop helper is not a normal standby-management command: it expects all
 three original Todo units, while rebuilt standby only has PostgreSQL.
+
+## Stop conditions and recovery from known failures
+
+| Observation | Safe next action |
+|---|---|
+| `qm guest exec` returns only a PID | Keep links disconnected; poll `qm guest exec-status VMID PID`. Require `exited=1`, `exitcode=0` and `STOPPED`; the outer `qm` exit code is insufficient. |
+| `pve-firewall status` says pending changes | Wait and inspect again. Verify actual IPv4 AND IPv6 rules before reconnecting under quarantine. |
+| PostgreSQL failed on disconnected DHCP boot | Inspect the journal for `bind: cannot assign requested address`. The updated helper accepts inactive/failed only after stop, zero service PIDs and no running containers; it preserves the failure warning. Do not start the old database after promotion. |
+| Helper reports hostname missing after an update | Inspect `ls -lZ` through Guest Agent. Required label: `virt_qemu_ga_unconfined_exec_t`. The updated installer restores existing persistent policy after replacement. Do not disable SELinux or broadly enable Guest Agent commands. |
+| Direct Guest Agent diagnostic is denied | Do not keep guessing privileged commands. Use reviewed restricted SSH only after stop/process/container and active firewall evidence is available. Read `journalctl -b _SYSTEMD_USER_UNIT=todo-postgres.service`; `--user` may see no journal here. |
+| fapolicyd trust task retries then succeeds | Normal asynchronous refresh; judge final recap. If exhausted, inspect exact path/size/hash trust, never trust whole directories or disable fapolicyd. |
+| `/ready` works but login is still 503 after boot | Wait for Keycloak/discovery and browser tests too. `/ready` alone is not whole-application acceptance. |
+| Replication is absent immediately after reconnect | Check receiver logs and bounded reconnect progress. A prior TCP attempt can still be timing out. Require streaming and zero lag before the next gate; do not restart or reseed blindly. |
+| Rebuild fails at any point | STOP. Record the failed task and runner state. Inspect both roles, slot, volumes and streaming before deciding what remains. Never repeat the destructive command. |
+
+### Specific recovery: rebuild succeeded, only DR-tool installation failed
+
+This applies ONLY to the observed missing-become-password failure after base
+backup and recovery startup. First independently verify `.108` writable,
+`.102` read-only, `todo_rebuilt_standby` streaming, and quarantine intact.
+Then the operator may finish the non-destructive tail on the promoted host:
+
+```bash
+cd "$HOME/todo-operations"
+ansible-playbook --ask-become-pass \
+  --inventory ansible/inventory-recovery.ini ansible/rebuild-standby.yml \
+  --start-at-task "Create the Todo DR configuration directory"
+ansible-playbook --inventory ansible/inventory-recovery.ini ansible/cluster-status.yml
+```
+
+This is an exceptional repair, NOT the normal rebuild command. If the task name
+or failure boundary differs, stop and inspect the current playbook. The runner
+still records the original rebuild failure; there is currently no supported
+reconciliation command. Do not edit it to completed or rerun rebuild to turn it
+green. Record manual completion and direct verification in the run log.
+
+## What counts as complete
+
+A CLEAN PASS needs every phase above from the same clean revision, no skipped
+authenticated tests, isolated PITR comparison, both sequential final reboots,
+fresh cluster status, and a new authenticated marker read on rebuilt standby.
+Preserve evidence of repairs: a REPAIRED FUNCTIONAL PASS is useful, but does not
+satisfy the unchanged-revision gate. Do not reset the pair for a new clean run
+without new approval. The on-VM backup is not protection against VM/host loss.
 
 ## Chromium trust, once per new lab CA
 

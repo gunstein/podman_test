@@ -409,7 +409,12 @@ todo-keycloak.service  todo-keycloak pod
 todo-postgres.service  todo-postgres pod
 ```
 
-Run `python3 /opt/todo/bin/todo_dr_run.py ... verify` after rebuild. Require
+Run `python3 /opt/todo/bin/todo_dr_run.py ... verify` after a runner-completed
+rebuild. Always run `ansible/cluster-status.yml` directly for fresh evidence:
+the runner skips verification already marked completed. If rebuild needed a
+manual tail repair, preserve its failed runner state and use direct cluster
+verification; follow the [repair and handoff rules](MANUAL-DR-QUICKSTART.md).
+That run is a repaired functional pass, not a clean pass. Require
 schema migrations applied by the init container, healthy backend/frontend,
 nginx-to-backend loopback traffic, shared-service DNS through `todo.network`,
 unchanged PostgreSQL identity, persistent data, streaming replication and WAL

@@ -28,12 +28,24 @@ if [ "$action" = check ]; then
 fi
 as_user systemctl --user stop todo-app.service todo-keycloak.service todo-postgres.service
 for unit in todo-app.service todo-keycloak.service todo-postgres.service; do
-  test "$(as_user systemctl --user show "$unit" --property=ActiveState --value)" = inactive
+  state=$(as_user systemctl --user show "$unit" --property=ActiveState --value)
+  case "$state" in
+    inactive) ;;
+    failed) echo "WARNING: $unit remains failed; inspect its journal. Failure state preserved." >&2 ;;
+    *) echo "Not stopped: $unit ActiveState=$state; keep quarantine in place" >&2; exit 1 ;;
+  esac
+  for property in MainPID ControlPID; do
+    pid=$(as_user systemctl --user show "$unit" --property="$property" --value)
+    test "$pid" = 0 || {
+      echo "Not stopped: $unit $property=$pid; keep quarantine in place" >&2
+      exit 1
+    }
+  done
 done
 remaining_containers=$(as_user podman ps --format '{{.Names}}')
 test -z "$remaining_containers" || {
   echo "Containers still running; keep every VM network link disconnected" >&2
   exit 1
 }
-printf 'STOPPED: host=%s; Todo services inactive; no running user containers\n' "$expected_host"
+printf 'STOPPED: host=%s; Todo services stopped (inactive or failed), no service processes; no running user containers\n' "$expected_host"
 echo 'Keep hypervisor quarantine in place. This does not authorize rebuild or promotion.'

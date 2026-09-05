@@ -35,6 +35,11 @@ elif name == 'runuser':
         print(os.environ.get('LOAD_STATE', 'loaded'))
     elif '--property=ActiveState' in command:
         print(os.environ.get('ACTIVE_STATE', 'inactive'))
+        sys.exit(int(os.environ.get('SHOW_RC', '0')))
+    elif '--property=MainPID' in command:
+        print(os.environ.get('MAIN_PID', '0'))
+    elif '--property=ControlPID' in command:
+        print(os.environ.get('CONTROL_PID', '0'))
     elif command[:3] == ['systemctl', '--user', 'stop']:
         sys.exit(int(os.environ.get('STOP_RC', '0')))
     else:
@@ -76,3 +81,25 @@ else:
             result, _ = self.run_helper("stop", **settings)
             self.assertNotEqual(result.returncode, 0)
             self.assertNotIn("STOPPED:", result.stdout)
+
+    def test_failed_stopped_services_preserve_failure_evidence(self):
+        result, calls = self.run_helper("stop", ACTIVE_STATE="failed")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("STOPPED:", result.stdout)
+        self.assertIn("remains failed", result.stderr)
+        self.assertNotIn("reset-failed", calls)
+        self.assertNotIn("--user start", calls)
+
+    def test_rejects_processes_unknown_states_and_query_errors(self):
+        for state in ("inactive", "failed"):
+            for settings in ({"MAIN_PID": "123"}, {"CONTROL_PID": "456"},
+                             {"MAIN_PID": ""}, {"SHOW_RC": "1"},
+                             {"CONTAINERS": "todo-postgres\n"}, {"PODMAN_RC": "125"}):
+                with self.subTest(state=state, settings=settings):
+                    result, _ = self.run_helper("stop", ACTIVE_STATE=state, **settings)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn("STOPPED:", result.stdout)
+        for state in ("active", "activating", "deactivating", "reloading", "", "unknown"):
+            result, _ = self.run_helper("stop", ACTIVE_STATE=state)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Not stopped:", result.stderr)

@@ -8,6 +8,49 @@ The project demonstrates Podman, Quadlet, Ansible and offline installation in sm
 
 ## Current status
 
+2026-09-05 final repaired clean-rerun evidence: VM108 (.108, guest
+todo-standby) is the writable promoted primary; VM107 (.102, guest
+todo-primary) is the read-only rebuilt standby. VM107 retains Proxmox
+quarantine with inbound SSH exceptions and outbound TCP5432 only to .108
+(plus the documented DHCP/NDP allowances); its onboot remains 0.
+Final sequential reboots passed: VM107 boot 5dda5783-842e-4d95-907c-25b74dc2e8fd,
+VM108 boot 54d79510-0ea0-437f-8ba2-f31d14b580ad. Fresh cluster-status passed
+with active reserved todo_rebuilt_standby slot, streaming and zero lag.
+No failed user units; current-primary workload NRestarts=0; containers healthy.
+Two Chromium tests passed after the final reboot with TLS verification enabled.
+Authenticated marker ID7, `Final DR marker 54d79510`, appeared on rebuilt
+standby together with original marker ID2 and both live PITR markers.
+Verified base backup: base-20260905T123104Z. Isolated network=none PITR
+paused read-only at pitr_20260905T123104Z, contained only the before marker;
+live contained before and after. Only disposable restore container/volume were
+cleaned up. Post-reboot restore point final_54d79510 archived successfully;
+archive failures=0. Backup remains on-VM, not off-host protection.
+
+This is NOT an unchanged-revision acceptance pass. Two quarantine fixes were
+installed during the run: accept stopped failed units only with zero MainPID,
+zero ControlPID and no running containers, preserving warning/failure evidence;
+restore the existing persistent SELinux label after atomic helper replacement.
+Rebuild copied and started the standby successfully but then failed because
+the assistant omitted become-password prompting for DR tool installation.
+The operator completed only the tail with --ask-become-pass and
+--start-at-task "Create the Todo DR configuration directory": ok17/2, failed0.
+The runner still records rebuild failed; direct cluster-status passed afterward.
+Do not rerun destructive rebuild or silently overwrite this failure history.
+Runner-state reconciliation and a fresh unchanged-revision acceptance remain open.
+
+Clean rerun d45b257 (2026-09-05): both snapshots restored, SSH keys re-added;
+both hosts had no Podman containers, volumes or secrets, enforcing SELinux and
+active security services. Both verified packages report the identical clean
+revision d45b257f514b25db53a050ca8bb1662997269906. Both preflights passed.
+Initial primary install: ok=53 changed=16 failed=0. System-trusted HTTPS and
+both Chromium tests passed with TLS exceptions disabled. Authenticated marker
+ID 2, Clean d45b257 2026-09-05 before reboot, survived browser reload.
+Pre-reboot primary boot ID: 63470ae7-8e65-431c-b273-340afd167f93.
+Public CA SHA256: 4a9cb0abf872ddac1898086436fee9c8804e6b57770a58aa00720616a3f8aefb.
+Issuer remains https://todo.test:8443/auth/realms/todo. Initial primary reboot
+and install repeat are next; standby remains unconfigured. Earlier entries
+describe the previous repaired drill, not completed phases of this clean run.
+
 Final DR checkpoint (2026-09-05): rebuild passed (old primary ok=53 changed=14,
 current primary ok=34 changed=3, no failures). Authenticated marker ID 7
 replicated to rebuilt standby. Final sequential reboots passed: standby boot

@@ -63,7 +63,7 @@ and is retained only as transition/rollback evidence.
 
 Start with the [Kube runtime guide](kube/runtime/README.md). PoCs, migrations,
 DR automation and historical results are evidence and operations around this
-core. The final runtime still requires the Oracle Linux acceptance gates.
+core. Revision 688a0f6 passed full Oracle Linux acceptance; see the [run record](docs/ACCEPTANCE-688a0f6.md).
 
 ## Requirements
 

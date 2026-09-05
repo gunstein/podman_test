@@ -263,10 +263,10 @@ retention, off-host copying, encryption and alerts remain production work.
 
 ## 11. Verification status and production limits
 
-Repaired lab runs have demonstrated promotion, application recovery,
-backup/PITR, rebuild, persistent markers and sequential reboots.
-The complete unchanged-revision Oracle Linux acceptance is still pending;
-the new adapter needs real Keycloak verification in that run.
+Complete unchanged-revision Oracle Linux acceptance passed on 688a0f6,
+including promotion, application recovery, backup/PITR, rebuild, persistent
+markers, sequential reboots and real Keycloak browser verification.
+See the [run record](ACCEPTANCE-688a0f6.md) for observations and exact scope.
 See [runtime results](../kube/runtime/RESULTS.md). Static tests or a green CI
 run do not replace the full two-VM test.
 

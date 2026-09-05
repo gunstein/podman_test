@@ -11,8 +11,8 @@ Current architecture and workflow:
   rendered YAML and .kube units; targets do not need Helm.
 - todo-app groups migration init, FastAPI and nginx. Keycloak and PostgreSQL
   are separate workloads connected through the rootless todo-network.
-- Functional DR has been demonstrated with repairs; unchanged-revision OL9
-  acceptance remains pending. Preserve legacy transition evidence until it passes.
+- Unchanged-revision OL9 acceptance passed on 688a0f6; see
+  docs/ACCEPTANCE-688a0f6.md. Legacy retirement remains a separate reviewed change.
 
 Constraints:
 - Frontend: plain HTML, CSS and JavaScript. No Node.js framework.

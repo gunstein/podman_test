@@ -8,6 +8,14 @@ The project demonstrates Podman, Quadlet, Ansible and offline installation in sm
 
 ## Current status
 
+Unchanged-revision Oracle Linux acceptance passed on 2026-09-05 at
+`688a0f67d190cd48dc6a8e4cfbedba66a89a5e24`.
+See [the authoritative run record](docs/ACCEPTANCE-688a0f6.md).
+VM108 is primary; VM107 is rebuilt standby under quarantine. No runtime
+changes or legacy retirement accompany this documentation update.
+
+## Historical checkpoints (superseded status)
+
 The consolidated docs/ARCHITECTURE.md now describes current system context,
 three-workload topology, build/deployment, identity, security and recovery
 boundaries. README and runtime/learning guides link to it; both deployment

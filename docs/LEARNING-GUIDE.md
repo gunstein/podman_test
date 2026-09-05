@@ -4,8 +4,8 @@ This guide teaches the current rootless Podman Kube implementation, not the
 historical per-container model. The source repository retains
 `docs/legacy/LEARNING-GUIDE.md` for comparison with `quadlet-reference-v1`;
 historical guides are intentionally not distributed in deployment bundles.
-Functional DR has been demonstrated with repairs; unchanged-revision Oracle
-Linux acceptance remains pending. See [acceptance](MANUAL-DR-QUICKSTART.md).
+Unchanged-revision Oracle Linux acceptance passed on 688a0f6.
+See the [run record](ACCEPTANCE-688a0f6.md) and [procedure](MANUAL-DR-QUICKSTART.md).
 
 For the authoritative system overview and design boundaries, read
 [System architecture](ARCHITECTURE.md). This guide focuses on learning exercises.

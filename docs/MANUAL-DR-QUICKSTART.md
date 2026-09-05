@@ -5,13 +5,17 @@ entry point. Follow linked detailed commands only for the current phase;
 do not reconstruct the procedure from a chat transcript.
 
 This is the operator index for the next clean-state drill, not permission to
-reset the currently working pair. The September 5 repaired run passed the DR
-chain; a fresh run from one clean revision remains required.
+reset the currently working pair. Full unchanged-revision acceptance passed on
+688a0f6; see [the run record](ACCEPTANCE-688a0f6.md). A NEW run evaluates its
+own selected clean revision, not the historical verdict.
 
 Deployment bundles intentionally exclude legacy learning guides and runtime
-transition playbooks/roles; those remain in the source repository until the
-retirement gate passes. The optional reset controller is documented in the
+transition playbooks/roles; retired sources remain in Git history, not the active
+tree. The optional reset controller is documented in the
 source-only docs/LAB-RESET-CONTROLLER.md, separate from this manual workflow.
+
+For a new agent, use the [handoff prompt](AGENT-ACCEPTANCE-HANDOFF.md).
+It requests a read-only plan first and grants no destructive permissions.
 
 ## Before touching the VMs
 

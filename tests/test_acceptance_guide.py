@@ -25,3 +25,19 @@ class AcceptanceGuideTests(unittest.TestCase):
         self.assertIn("E2E_IGNORE_HTTPS_ERRORS=false", guide)
         self.assertNotIn("fingerprint from its console", guide)
         self.assertNotIn("All services must be inactive", guide)
+
+    def test_agent_handoff_requires_read_only_start_and_explicit_gates(self):
+        handoff = (ROOT / "docs/AGENT-ACCEPTANCE-HANDOFF.md").read_text()
+        quickstart = (ROOT / "docs/MANUAL-DR-QUICKSTART.md").read_text()
+        self.assertIn("AGENT-ACCEPTANCE-HANDOFF.md", quickstart)
+        self.assertIn("Full unchanged-revision acceptance passed", quickstart)
+        self.assertNotIn("a fresh run from one clean revision remains required", quickstart)
+        self.assertNotIn("those remain in the source repository until", quickstart)
+        for requirement in (
+            "read-only", "AGENTS.md", "direct playbook/tool route",
+            "outside the checkout", "--ask-become-pass", "separate explicit approvals",
+            "TLS verification", "clean-ol9-primary", "clean-ol9-standby",
+            "NOT current machine state", "Do not change the VMs yet",
+        ):
+            with self.subTest(requirement=requirement):
+                self.assertIn(requirement, handoff)

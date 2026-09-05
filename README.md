@@ -1,7 +1,7 @@
 # Todo demo
 
-A small reference application for learning how a stateful service can be built,
-delivered and recovered with rootless Podman on Oracle Linux.
+A small reference application for learning rootless Podman on Oracle Linux.
+See [System architecture](docs/ARCHITECTURE.md) for the complete model and responsibility boundaries.
 
 The repository demonstrates a complete lifecycle rather than only starting a
 few containers: offline installation, least-privilege database access, HTTPS,

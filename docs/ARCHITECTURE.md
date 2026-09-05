@@ -30,7 +30,7 @@ not part of normal deployment or the operations package.
 
 ```text
 Browser (plain HTML/CSS/JS)
-    │ HTTPS: stable service name todo.test
+    │ HTTPS: profile-specific service identity
     ▼
 nginx ── /api/, /health, /ready ──► FastAPI ──► PostgreSQL
     │                                            ▲
@@ -43,8 +43,11 @@ Todos are shared: authentication does not imply per-user row ownership.
 Both FastAPI and Keycloak persist data in PostgreSQL, using different
 identities and privilege boundaries. Keycloak uses its own schema.
 
-Clients reach the stable HTTPS hostname rather than a pod address.
-In the lab the external port is 8443. Port 8080 is published on loopback for
+Clients reach the profile's HTTPS hostname rather than a pod address.
+Production/acceptance uses `https://todo.test:8443`; development uses
+`https://localhost:8443`. Both derive from Helm's `runtime.publicHostname`
+and `runtime.publicPort` in the corresponding values file.
+Port 8080 is published on loopback for
 local checks; remote HTTPS and replication publication are explicit
 deployment choices constrained by host firewalls.
 
@@ -71,7 +74,9 @@ The canonical definitions are under `kube/runtime/`, rendered from
 `helm/todo/`. Each pod has one `.kube` unit and generated user service:
 `todo-app.service`, `todo-keycloak.service`, `todo-postgres.service`.
 The units use `--no-pod-prefix` to preserve operational container names;
-the tested target platform requires Podman 5.8.2.
+the pinned OL9 lab baseline is Podman 5.8.2. Ansible additionally verifies
+that `podman kube play` exposes the required `--no-pod-prefix` capability.
+This is a tested baseline, not a claim about the capability's minimum version.
 
 ## 4. Responsibility boundaries
 
@@ -98,17 +103,24 @@ containers are replaced through the systemd lifecycle.
 ## 5. Build and deployment pipeline
 
 ```text
-Helm chart + values ──► rendered YAML (checked-in; drift checked in CI)
-                                  │
-Containerfiles ──► OCI images ─────┤
-                                  ▼
-                 offline and operations artifacts
-                 VERSION + archive checksums
-                                  │
-                                  ▼
-                 Ansible on target ──► .kube ──► systemd ──► Podman
+Helm chart + values ──► rendered YAML ──┬──► offline bundle
+                                      └──► operations package
+Containerfiles ──► OCI image archives ────► offline bundle only
+Deployment / recovery code and docs ──────► respective bundles
+
+Both bundles: VERSION + archive checksums
+    │
+    ▼
+Ansible controller
+  local target for clean offline install; operational host for DR
+    │
+    ▼
+Target host(s) ──► .kube ──► systemd ──► Podman
 ```
 
+The operations package contains playbooks, roles, runtime definitions, Python
+and quarantine tools, and runbooks; it contains no OCI image archives.
+Rendered YAML is checked in and its drift is checked in CI.
 Helm runs on the build host, not the Oracle Linux target. Images and rendered
 definitions are delivered offline; target execution does not fetch from a
 registry. Both acceptance artifacts must identify the same clean revision.
@@ -119,8 +131,10 @@ Development uses the same chart with development values and direct
 `podman kube play/down`. Production uses user systemd. These are different
 lifecycle owners; development cleanup must not target a production user store.
 
-Clean deployment performs privileged database-role provisioning separately
-from ordinary schema migration. The app init container runs the idempotent
+Clean deployment performs database-administrative role provisioning using
+the bootstrap database identity, separately from ordinary schema migration.
+These are PostgreSQL privileges, not a privileged/rootful container mode.
+The app init container runs the idempotent
 migrator using its dedicated credential. Promoted application recovery does
 not rerun administrative role bootstrap.
 
@@ -158,9 +172,11 @@ redirects and token refresh. Token-refresh errors propagate rather than
 returning a stale token. Tokens are not deliberately persisted by Todo code.
 
 Backend validation is independent of the frontend adapter: it validates JWT
-signature, issuer and audience using configured JWKS. The public issuer remains
-`https://todo.test:8443/auth/realms/todo`; JWKS can be fetched through the
-internal Keycloak address without changing that issuer.
+signature, issuer and audience using configured JWKS. In production/acceptance,
+the public issuer is `https://todo.test:8443/auth/realms/todo`; development
+renders the equivalent issuer for `localhost` from its Helm values.
+JWKS can be fetched through the internal Keycloak address without changing
+the profile's public issuer.
 
 Only Keycloak is implemented. Another provider requires a new adapter, provider
 configuration, compatible token claims and real browser/integration testing.

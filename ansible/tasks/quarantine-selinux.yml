@@ -1,0 +1,67 @@
+---
+- name: Require SELinux enforcing
+  ansible.builtin.command:
+    argv: [getenforce]
+  register: todo_quarantine_selinux
+  changed_when: false
+  failed_when: todo_quarantine_selinux.stdout | trim != 'Enforcing'
+
+- name: Read local persistent file context overrides
+  ansible.builtin.command:
+    argv: [semanage, fcontext, -l, -C]
+  become: true
+  changed_when: false
+  register: todo_quarantine_contexts
+
+- name: Extract the exact helper override
+  ansible.builtin.set_fact:
+    todo_quarantine_context_lines: >-
+      {{ todo_quarantine_contexts.stdout_lines
+         | select('match', '^' ~ (todo_quarantine_entrypoint_regex | regex_escape)
+                          ~ '\s+') | list }}
+
+- name: Refuse a conflicting exact helper override
+  ansible.builtin.assert:
+    that:
+      - todo_quarantine_context_lines | length <= 1
+      - >-
+        todo_quarantine_context_lines | length == 0 or
+        'object_r:virt_qemu_ga_unconfined_exec_t:' in todo_quarantine_context_lines[0]
+
+- name: Persist the exact helper entrypoint label outside automatic hook directories
+  ansible.builtin.command:
+    argv:
+      - semanage
+      - fcontext
+      - -a
+      - -t
+      - virt_qemu_ga_unconfined_exec_t
+      - "{{ todo_quarantine_entrypoint_regex }}"
+  become: true
+  changed_when: true
+  when: todo_quarantine_context_lines | length == 0
+
+- name: Apply and verify the helper SELinux label
+  ansible.builtin.file:
+    path: /opt/todo/bin/todo-quarantine.sh
+    owner: root
+    group: root
+    mode: '0755'
+    setype: virt_qemu_ga_unconfined_exec_t
+  become: true
+
+- name: Read persistent Guest Agent boolean overrides
+  ansible.builtin.command:
+    argv: [semanage, boolean, -l, -C]
+  become: true
+  changed_when: false
+  register: todo_quarantine_booleans
+
+- name: Enable the authorized Guest Agent transition persistently
+  ansible.builtin.command:
+    argv: [setsebool, -P, virt_qemu_ga_run_unconfined, 'on']
+  become: true
+  changed_when: true
+  when: >-
+    not (todo_quarantine_booleans.stdout is
+    search('(?m)^virt_qemu_ga_run_unconfined\s+\(on\s*,\s*on\)'))

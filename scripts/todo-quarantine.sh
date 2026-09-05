@@ -3,7 +3,7 @@
 # This stops workloads; it does not fence the VM or delete database data.
 set -eu
 if [ "$#" -ne 3 ]; then
-  echo "Usage: bash todo-quarantine.sh check|stop EXPECTED_HOST SERVICE_USER" >&2
+  echo "Usage: todo-quarantine.sh check|stop EXPECTED_HOST SERVICE_USER" >&2
   exit 2
 fi
 action=$1
@@ -30,7 +30,8 @@ as_user systemctl --user stop todo-app.service todo-keycloak.service todo-postgr
 for unit in todo-app.service todo-keycloak.service todo-postgres.service; do
   test "$(as_user systemctl --user show "$unit" --property=ActiveState --value)" = inactive
 done
-test -z "$(as_user podman ps --format '{{.Names}}')" || {
+remaining_containers=$(as_user podman ps --format '{{.Names}}')
+test -z "$remaining_containers" || {
   echo "Containers still running; keep every VM network link disconnected" >&2
   exit 1
 }

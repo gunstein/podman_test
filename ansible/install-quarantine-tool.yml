@@ -5,6 +5,7 @@
   any_errors_fatal: true
   vars:
     project_root: "{{ playbook_dir }}/.."
+    todo_quarantine_entrypoint_regex: /opt/todo/bin/todo-quarantine\.sh
   tasks:
     - name: Enable Guest Agent execution only with explicit operator consent
       ansible.builtin.include_tasks: tasks/quarantine-guest-agent.yml
@@ -17,4 +18,8 @@
         todo_fapolicyd_files:
           - source: "{{ project_root }}/scripts/todo-quarantine.sh"
             dest: /opt/todo/bin/todo-quarantine.sh
-            mode: "0644"
+            mode: "0755"
+
+    - name: Configure the explicitly authorized SELinux entrypoint
+      ansible.builtin.include_tasks: tasks/quarantine-selinux.yml
+      when: todo_quarantine_enable_selinux_entrypoint | default(false) | bool

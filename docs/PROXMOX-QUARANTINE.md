@@ -41,10 +41,28 @@ The assistant uses SSH after the isolated guest's Todo services are stopped.
    8.4.16 installation has datacenter Firewall disabled; do not enable it
    without the separate isolation and management-access review below.
 
+   On the enforcing lab guest, direct bash execution was denied by
+   `virt_qemu_ga_t` when accessing `hostname_exec_t`. With separate operator
+   approval, add `-e todo_quarantine_enable_selinux_entrypoint=true` to the
+   installer above. This persistently enables `virt_qemu_ga_run_unconfined`
+   and labels only `/opt/todo/bin/todo-quarantine.sh` as
+   `virt_qemu_ga_unconfined_exec_t`, root-owned mode 0755. The boolean also
+   permits transitions for other appropriately labelled Guest Agent hooks;
+   it is not a helper-only SELinux permission. SELinux stays Enforcing and
+   fapolicyd exact-file trust remains required. No automatic fsfreeze hook
+   is installed. No service stop is performed by installation.
+
+   Execute this labelled file directly: passing it to `/usr/bin/bash`
+   does not trigger the required entrypoint transition. Verify the check
+   through the real Guest Agent before relying on this procedure.
+   To revoke the newly granted transition later, use
+   `sudo setsebool -P virt_qemu_ga_run_unconfined off` inside the VM;
+   this also affects other hooks using that boolean.
+
    From the Proxmox **node Shell**, test only its read-only mode:
 
    ```bash
-   qm guest exec 107 -- /usr/bin/bash /opt/todo/bin/todo-quarantine.sh check todo-primary gunstein
+   qm guest exec 107 -- /opt/todo/bin/todo-quarantine.sh check todo-primary gunstein
    ```
 
    Require a completed Guest Agent response with `exitcode: 0` and `READY`.
@@ -80,7 +98,7 @@ The assistant uses SSH after the isolated guest's Todo services are stopped.
 | Reconnect the links with quarantine still enforced | Assistant verifies restricted SSH, inactive Todo services and no containers |
 
 ```bash
-qm guest exec 107 -- /usr/bin/bash /opt/todo/bin/todo-quarantine.sh stop todo-primary gunstein
+qm guest exec 107 -- /opt/todo/bin/todo-quarantine.sh stop todo-primary gunstein
 ```
 
 If the command fails, times out, or returns only a PID, leave links disconnected

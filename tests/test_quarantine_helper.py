@@ -30,6 +30,7 @@ elif name == 'runuser':
     command = args[5:]
     if command[0] == 'podman':
         print(os.environ.get('CONTAINERS', ''), end='')
+        sys.exit(int(os.environ.get('PODMAN_RC', '0')))
     elif '--property=LoadState' in command:
         print(os.environ.get('LOAD_STATE', 'loaded'))
     elif '--property=ActiveState' in command:
@@ -70,6 +71,7 @@ else:
         self.assertIn("STOPPED:", result.stdout)
         self.assertIn("--user stop todo-app.service todo-keycloak.service todo-postgres.service", calls)
         for settings in ({"CONTAINERS": "todo-postgres\n"}, {"STOP_RC": "1"},
+                         {"PODMAN_RC": "125"},
                          {"ACTIVE_STATE": "activating"}, {"LOAD_STATE": "not-found"}):
             result, _ = self.run_helper("stop", **settings)
             self.assertNotEqual(result.returncode, 0)

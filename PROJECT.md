@@ -8,6 +8,17 @@ The project demonstrates Podman, Quadlet, Ansible and offline installation in sm
 
 ## Current status
 
+Quarantine rehearsal (2026-09-05): Guest Agent READY and STOPPED passed.
+With the primary link disconnected, all Todo services and containers stopped.
+Installed IPv4/IPv6 quarantine rules were inspected before reconnecting.
+Fresh management SSH passed; fresh outbound SSH and inbound TCP 8443 to a
+confirmed temporary listener timed out. The listener exited automatically.
+IPv6 traffic and disconnected reboot remain untested: not full DR acceptance.
+No promotion or reseeding occurred. VM filtering was disabled, services
+restarted, all containers became healthy, and read-only standby streaming
+resumed with zero measured lag. Trusted HTTPS readiness and marker ID 2 passed.
+Earlier preparation notes below are historical.
+
 Quarantine preparation (2026-09-05): DR tool installation and its repeat run
 passed (`ok=15 changed=0 failed=0` on the repeat), and installed tool status
 confirmed healthy read-only standby, reachable primary and zero apply lag.

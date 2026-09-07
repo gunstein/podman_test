@@ -27,17 +27,32 @@ class OperationsDistributionTests(unittest.TestCase):
                 "ansible/install-quarantine-tool.yml",
                 "ansible/cluster-status.yml",
                 "scripts/todo_dr.py",
-                "scripts/todo_dr_run.py",
                 "scripts/todo_backup.py",
                 "scripts/todo-quarantine.sh",
                 "kube/runtime/app.yaml",
                 "kube/runtime/postgres.yaml",
-                "docs/MANUAL-DR-QUICKSTART.md",
+                "docs/ACCEPTANCE.md",
+                "docs/ACCEPTANCE-TROUBLESHOOTING.md",
                 "docs/ARCHITECTURE.md",
                 "ansible/roles/postgres_reseed_standby/tasks/main.yml",
                 "ansible/roles/todo_fapolicyd/tasks/main.yml",
             ):
                 self.assertIn(path, names)
+            for retired in (
+                "scripts/manual_dr_commands.py",
+                "scripts/lab_dr_acceptance.py",
+                "scripts/todo_dr_run.py",
+                "ansible/DR-AUTOMATION.md",
+                "lab-dr.example.toml",
+                "docs/MANUAL-DR-QUICKSTART.md",
+                "docs/LAB-ACCEPTANCE.md",
+                "ansible/roles/postgres_redundancy_primary/templates/todo-current-primary-entrypoint.sh.j2",
+                "ansible/roles/postgres_reseed_standby/templates/todo-standby-entrypoint.sh.j2",
+                "ansible/roles/postgres_standby/templates/todo-standby-entrypoint.sh.j2",
+                "ansible/roles/promoted_application/templates/nginx.conf.j2",
+                "ansible/roles/promoted_application/templates/todo-nginx-data.volume.j2",
+            ):
+                self.assertNotIn(retired, names)
             for name in names:
                 self.assertNotIn("docs/legacy", name)
                 self.assertNotIn("KUBE-MIGRATION.md", name)
@@ -53,4 +68,5 @@ class OperationsDistributionTests(unittest.TestCase):
     def test_offline_builder_does_not_ship_legacy_guides(self):
         builder = (ROOT / "offline/build-bundle.sh").read_text()
         self.assertNotIn("docs/legacy", builder)
-        self.assertIn("docs/MANUAL-DR-QUICKSTART.md", builder)
+        self.assertIn("docs/ACCEPTANCE.md", builder)
+        self.assertIn("docs/ACCEPTANCE-TROUBLESHOOTING.md", builder)

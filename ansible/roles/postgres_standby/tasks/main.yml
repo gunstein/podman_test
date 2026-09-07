@@ -19,7 +19,7 @@
       - standby_postgres_archive.stat.isreg
     fail_msg: >-
       PostgreSQL 17.11 is missing on standby. Set m13_postgres_image_archive to
-      the postgres-17.11.tar file from the M12 offline bundle.
+      the postgres-17.11.tar file from the verified offline bundle.
   when: standby_postgres_image.rc == 1
 
 - name: Load PostgreSQL from the offline archive

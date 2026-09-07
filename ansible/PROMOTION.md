@@ -19,41 +19,16 @@ it does not claim to enforce or prove that bound after primary loss.
 
 ## Install before an incident
 
-Build and verify the shared source-only operations package on the trusted source host:
-
-```bash
-scripts/build-operations-package.sh
-(
-  cd dist
-  sha256sum -c todo-operations.tar.gz.sha256
-)
-
-read -rp "Primary IPv4 address: " TODO_PRIMARY_IP
-scp \
-  dist/todo-operations.tar.gz \
-  dist/todo-operations.tar.gz.sha256 \
-  "gunstein@${TODO_PRIMARY_IP}:"
-```
-
-Transfer both files to primary while it is still healthy and acting as the
-Ansible controller. On primary, verify and extract the package:
-
-```bash
-cd "$HOME"
-sha256sum -c todo-operations.tar.gz.sha256
-tar -xzf todo-operations.tar.gz
-cd todo-operations
-```
-
-A checksum file copied beside a modified archive does not establish
-authenticity; compare the checksum through a separately trusted channel.
+Use the verified artifacts and inventory prepared in
+[Acceptance](../docs/ACCEPTANCE.md#2-build-and-stage-artifacts). Stage both
+packages on both hosts before an incident; verify checksums and matching clean
+VERSION values before running extracted code.
 
 The installer uses the central `todo_fapolicyd` role. With normal Ansible
 become credentials it refreshes exact source-file trust on the controller,
-installs root-owned `/opt/todo/bin/todo_dr.py` and
-`/opt/todo/bin/todo_dr_run.py` on the standby, registers only those exact
-target files, and reloads the policy. It never trusts the operations directory
-or disables `fapolicyd`.
+installs root-owned `/opt/todo/bin/todo_dr.py` on the standby, registers only
+that exact target file, and reloads the policy. It never trusts the operations
+directory or disables `fapolicyd`.
 
 Run this from primary while primary is still the Ansible controller:
 
@@ -83,54 +58,25 @@ WAL already received by standby; it is not the possible data loss on primary.
 Do not expect `preflight` to pass during normal operation. It deliberately
 rejects a reachable primary.
 
-## Disaster procedure
+## Promotion contract
 
-Promotion changes the replication topology. Do not use this procedure as a
-routine health test.
+Follow [the fencing and promotion phase](../docs/ACCEPTANCE.md#6-fence-and-promote)
+for normal execution. Promotion changes topology and is not a routine health test.
 
-1. Fence the old primary outside this application. For the two-VM demo, power
-   off the primary VM and prevent it from booting. Stopping only the application
-   or closing its firewall is not sufficient fencing.
-2. Verify independently that the fenced VM is off and that its service IP is
-   not assigned elsewhere.
-3. Run the read-only local preflight on standby:
+`preflight` requires an exact fencing assertion, the configured local hostname,
+active service, healthy container, read-only recovery state, available receive
+and replay LSNs, zero local apply lag and an unreachable old-primary TCP5432.
+An unreachable endpoint supports the operator's decision; it cannot prove
+infrastructure fencing. Power off the old primary, prevent automatic restart
+and verify that its service IP is not assigned elsewhere.
 
-```bash
-python3 /opt/todo/bin/todo_dr.py preflight \
-  --confirm-primary-fenced 'todo-primary is fenced'
-```
-
-The exact phrase records an explicit operator assertion. The tool additionally
-requires the local container to be healthy, PostgreSQL to be a read-only
-standby, local apply lag to be zero, and primary TCP 5432 to be unreachable.
-Network unreachability supports the fencing decision but cannot prove it.
-
-4. Promote only after the preflight succeeds:
-
-```bash
-python3 /opt/todo/bin/todo_dr.py promote \
-  --confirm-primary-fenced 'todo-primary is fenced' \
-  --confirm-promotion todo-standby
-```
-
-The tool reruns every preflight check immediately before `pg_ctl promote`, then
-verifies that PostgreSQL left recovery and is writable.
-
-5. Verify the result:
-
-```bash
-python3 /opt/todo/bin/todo_dr.py status
-
-podman exec todo-postgres \
-  psql --username todo --dbname postgres \
-  --tuples-only --no-align \
-  --command "SELECT pg_is_in_recovery(), current_setting('transaction_read_only');"
-```
-
-Expected SQL output is `f|off`.
+`promote` repeats all preflight checks, requires the exact standby hostname as
+confirmation, runs `pg_ctl promote` and verifies `f|off`. Keep old primary fenced;
+it can only rejoin after explicitly approved standby rebuild. Application
+recovery is a separate operation. If promotion is interrupted, obtain fresh
+local role and fencing evidence before any further action; never retry blindly.
 
 ## Acceptance evidence
 
-The complete clean nginx lifecycle, including controlled promotion with zero local apply lag and a verified writable transaction, is recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). Development history remains in [Development journal](../docs/history/DEVELOPMENT-JOURNAL.md).
-
-Never start the old primary against this topology after promotion. It must be rebuilt as a replica before it can rejoin. Promotion changes only PostgreSQL; application failover is a separate operation.
+Use [Acceptance](../docs/ACCEPTANCE.md) for the full sequence and verdict.
+[688a0f6](../docs/ACCEPTANCE-688a0f6.md) records historical evidence only.

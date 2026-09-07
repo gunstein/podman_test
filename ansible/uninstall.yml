@@ -1,5 +1,5 @@
 ---
-- name: Uninstall the M12 Todo deployment
+- name: Uninstall the single-host Todo deployment
   hosts: todo_hosts
   gather_facts: false
 
@@ -63,15 +63,15 @@
       loop: "{{ later_milestone_markers }}"
       register: later_milestone_state
 
-    - name: Refuse to apply the M12 uninstaller to a DR host
+    - name: Refuse to apply the single-host uninstaller to a DR host
       ansible.builtin.assert:
         that:
           - replication_secret_state.rc == 1
           - not (later_milestone_state.results | selectattr('stat.exists') | list)
         fail_msg: >-
-          uninstall.yml only supports the M12 deployment. This host contains
-          clustered replication, promotion or backup state. Preserve it and use
-          the milestone runbook instead of treating it as an M12 host.
+          uninstall.yml only supports a single-host deployment. This host contains
+          clustered replication, promotion or backup state. Preserve it and
+          review the recovery inventory and operational runbooks separately.
 
   tasks:
     - name: Stop the user-systemd services

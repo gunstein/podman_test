@@ -3,7 +3,7 @@
 This playbook deploys the complete application to the current user on localhost.
 It uses only modules included with `ansible-core`. The project-level
 `ansible.cfg` pins `/usr/bin/python3` and enables pipelining for local and SSH
-connections. This keeps transport behavior consistent across milestones and
+connections. This keeps transport behavior consistent across operations and
 avoids transient Ansible Python files on hosts protected by `fapolicyd`.
 
 ## Install Ansible
@@ -129,7 +129,7 @@ The package provides two inventory templates:
 
 Copy the relevant template to its ignored `.ini` name and edit the addresses.
 Hostnames identify machines; inventory groups identify their current database
-roles. Historical milestone labels remain in docs/history/DEVELOPMENT-JOURNAL.md; operational filenames describe actions and roles.
+roles. Operational filenames describe actions and roles.
 
 ## Initial standby and DR tool
 
@@ -181,7 +181,5 @@ keep a site-specific copy of
 `inventory-recovery.example.ini` as the single role-based steady-state
 inventory.
 
-For repeated drills, [DR-AUTOMATION.md](DR-AUTOMATION.md) wraps promotion,
-Kube-native application recovery, destructive Kube standby reseed and final
-verification as resumable stages. External fencing, quarantine and firewall
-changes remain explicit operator boundaries.
+For full validation, follow [ACCEPTANCE.md](../docs/ACCEPTANCE.md), which uses
+direct DR tools and playbooks as the single normal execution path.

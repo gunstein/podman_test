@@ -23,70 +23,17 @@ Keep the operations package and the offline image bundle on standby before
 an incident. The package contains no secrets, images, site-specific inventory or
 database data.
 
-Build, verify and transfer the package from the trusted source host while
-primary is healthy:
+Use the verified artifacts and inventory prepared in
+[Acceptance](../docs/ACCEPTANCE.md#2-build-and-stage-artifacts). Stage both
+packages on both hosts before an incident; verify checksums and matching clean
+VERSION values before running extracted code.
 
-```bash
-scripts/build-operations-package.sh
-(
-  cd dist
-  sha256sum -c todo-operations.tar.gz.sha256
-)
-read -rp "Standby IPv4 address: " TODO_STANDBY_IP
-scp \
-  dist/todo-operations.tar.gz \
-  dist/todo-operations.tar.gz.sha256 \
-  "gunstein@${TODO_STANDBY_IP}:"
-```
+## Application recovery contract
 
-On standby, verify and stage it before an incident:
-
-```bash
-cd "$HOME"
-sha256sum -c todo-operations.tar.gz.sha256
-mkdir -p todo-operations
-tar -xzf todo-operations.tar.gz \
-  --strip-components=1 \
-  --directory todo-operations
-```
-
-## Host firewall
-
-Before publishing HTTPS, allow only the intended client or management network.
-On standby, enter the client IPv4 address that should be allowed:
-
-```bash
-read -rp "Allowed client IPv4 address: " TODO_CLIENT_IP
-todo_firewall_rule="rule family=ipv4 \
-source address=${TODO_CLIENT_IP}/32 \
-port port=8443 protocol=tcp accept"
-sudo firewall-cmd --permanent --zone=public \
-  --add-rich-rule="$todo_firewall_rule"
-sudo firewall-cmd --reload
-```
-
-Do not expose PostgreSQL or the internal backend and Keycloak ports. Application recovery
-publishes only HTTPS on the standby LAN address; its HTTP port remains bound to
-localhost for local smoke tests.
-
-## Deploy on the promoted standby
-
-Verify that primary remains powered off. On the promoted standby:
-
-```bash
-cd "$HOME/todo-operations"
-read -rp "Promoted host IPv4 address: " TODO_STANDBY_IP
-cp ansible/inventory-recovery.example.ini ansible/inventory-recovery.ini
-sed -i "s/192.0.2.11/${TODO_STANDBY_IP}/" ansible/inventory-recovery.ini
-```
-
-Then run:
-
-```bash
-ansible-playbook \
-  --inventory ansible/inventory-recovery.ini \
-  ansible/deploy-promoted-application.yml
-```
+Follow [application failover](../docs/ACCEPTANCE.md#7-application-failover)
+for recovery inventory, client-scoped HTTPS firewall, deployment, DNS and trust.
+The playbook publishes HTTPS on the promoted host, with HTTP health access on
+loopback. PostgreSQL and internal backend/Keycloak ports are not opened to clients.
 
 The playbook fails before changing application state unless:
 
@@ -102,31 +49,9 @@ origin, and checks health, readiness, discovery and public Todo reads.
 
 ## Client name and certificate
 
-On the laptop, add the temporary LAN mapping:
-
-```bash
-read -rp "Promoted host IPv4 address: " TODO_STANDBY_IP
-sudo sed -i '/[[:space:]]todo\.test\([[:space:]]\|$\)/d' /etc/hosts
-printf '%s %s\n' "$TODO_STANDBY_IP" todo.test | sudo tee -a /etc/hosts
-```
-
-Removing an old mapping first matters during repeated drills: multiple
-`todo.test` entries can make the client select the fenced address.
-
-Copy the local OpenSSL demo CA public root certificate from standby:
-
-```bash
-read -rp "Promoted host IPv4 address: " TODO_STANDBY_IP
-scp \
-  "gunstein@${TODO_STANDBY_IP}:.config/todo/todo-nginx-root.crt" \
-  /tmp/
-sudo rm -f /usr/local/share/ca-certificates/todo-m14.crt
-sudo cp /tmp/todo-nginx-root.crt /usr/local/share/ca-certificates/todo-nginx-root.crt
-sudo update-ca-certificates --fresh
-openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt /tmp/todo-nginx-root.crt
-```
-
-Then open <https://todo.test:8443/>. The private demo CA key remains in the `todo-nginx-data` Podman volume; only the public root certificate is copied.
+Use the [client trust and browser checks](../docs/ACCEPTANCE.md#client-trust-and-real-browser-verification)
+after failover. Replace the prior `todo.test` mapping and trust only the verified
+public CA of the serving host; the private CA key stays inside `todo-nginx-data`.
 
 ### Certificate lifecycle and DR alternatives
 
@@ -179,4 +104,5 @@ operation that starts by rebuilding it as a replica of the promoted database.
 
 ## Acceptance evidence
 
-The canonical clean nginx failover test, including trusted HTTPS, stable Keycloak issuer, authenticated write, idempotence and reboot, is recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). Earlier Caddy and migration experiments remain in [Development journal](../docs/history/DEVELOPMENT-JOURNAL.md).
+Use [Acceptance](../docs/ACCEPTANCE.md) for the full sequence and verdict.
+[688a0f6](../docs/ACCEPTANCE-688a0f6.md) records historical evidence only.

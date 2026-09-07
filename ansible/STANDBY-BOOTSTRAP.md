@@ -89,8 +89,5 @@ The standby PostgreSQL `.kube` Quadlet is attached to the user `default.target`;
 lingering for the service user when it must restart at VM boot without an
 interactive login.
 
-A VM cloned from a host with existing rootless Podman storage can inherit stale
-lock allocation metadata. If Podman reports `Refreshing volume .* acquiring lock
-.* file exists`, stop all user Podman services and processes and run
-`podman system renumber` once. This does not delete the database volume; do not
-use volume deletion as a lock repair.
+For inherited Podman lock state after cloning, use the
+[troubleshooting reference](../docs/ACCEPTANCE-TROUBLESHOOTING.md#rootless-podman-lock-state-after-cloning).

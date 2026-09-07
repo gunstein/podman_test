@@ -68,7 +68,7 @@ localhost only. Use the same argument on every repeat installation; omitting
 it restores localhost-only publication. Only HTTPS is exposed externally;
 health HTTP and the database remain on localhost. The installer does not change
 firewalld. Allow TCP 8443 only from the intended client, following
-`docs/LAB-ACCEPTANCE.md`.
+`docs/ACCEPTANCE.md`.
 
 Running the scripts through the trusted system shell is intentional. On a
 machine with active `fapolicyd`, newly extracted scripts cannot yet be executed

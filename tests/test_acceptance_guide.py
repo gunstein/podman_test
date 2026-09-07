@@ -1,43 +1,67 @@
+"""Check runnable acceptance examples, without fixing prose or phase layout."""
+
+import json
 import re
+import shlex
+import subprocess
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def shell_blocks():
+    guide = (ROOT / 'docs/ACCEPTANCE.md').read_text()
+    return re.findall(r'```bash\n(.*?)```', guide, re.S)
+
+
 class AcceptanceGuideTests(unittest.TestCase):
-    def test_all_numbered_phases_have_complete_cards(self):
-        guide = (ROOT / "docs/LAB-ACCEPTANCE.md").read_text()
-        parts = re.split(r"^## (\d+)\. [^\n]+\n", guide, flags=re.M)
-        self.assertEqual([int(n) for n in parts[1::2]], list(range(1, 12)))
-        for number, body in zip(parts[1::2], parts[2::2]):
-            with self.subTest(phase=number):
-                for field in ("Where", "Preconditions", "Command", "PASS",
-                              "Evidence", "STOP if", "Next"):
-                    self.assertEqual(body.count(f"- **{field}:**"), 1)
+    def test_shell_examples_parse_without_executing_them(self):
+        for block in shell_blocks():
+            result = subprocess.run(
+                ['bash', '-n'], input=block, text=True, capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_new_run_is_not_dependent_on_development_history(self):
-        quickstart = (ROOT / "docs/MANUAL-DR-QUICKSTART.md").read_text()
-        self.assertIn("**NEW:**", quickstart)
-        self.assertIn("**CONTINUATION:**", quickstart)
-        self.assertIn("PROJECT.md is optional history", quickstart)
-        guide = (ROOT / "docs/LAB-ACCEPTANCE.md").read_text()
-        self.assertIn("E2E_IGNORE_HTTPS_ERRORS=false", guide)
-        self.assertNotIn("fingerprint from its console", guide)
-        self.assertNotIn("All services must be inactive", guide)
+    def test_direct_mutation_examples_keep_exact_confirmation_arguments(self):
+        commands = '\n'.join(shell_blocks()).replace('\\\n', '')
+        promotion = [shlex.split(line) for line in commands.splitlines()
+                     if 'todo_dr.py promote' in line]
+        self.assertTrue(promotion)
+        for command in promotion:
+            self.assertEqual(command[command.index('--confirm-primary-fenced') + 1],
+                             'todo-primary is fenced')
+            self.assertEqual(command[command.index('--confirm-promotion') + 1],
+                             'todo-standby')
+        self.assertNotRegex(commands, r'python\S* .*todo_dr_run\.py')
+        rebuild = [shlex.split(line) for line in commands.splitlines()
+                   if 'ansible/rebuild-standby.yml' in line]
+        self.assertTrue(rebuild)
+        for command in rebuild:
+            self.assertIn('--ask-become-pass', command)
+            values = json.loads(command[command.index('--extra-vars') + 1])
+            self.assertEqual(values['todo_confirm_old_primary_fenced'],
+                             'todo-primary is fenced')
+            self.assertEqual(values['todo_confirm_reseed'], 'todo-primary')
+        self.assertNotIn('--start-at-task', commands)
+        self.assertNotIn('--replace', commands)
 
-    def test_agent_handoff_requires_read_only_start_and_explicit_gates(self):
-        handoff = (ROOT / "docs/AGENT-ACCEPTANCE-HANDOFF.md").read_text()
-        quickstart = (ROOT / "docs/MANUAL-DR-QUICKSTART.md").read_text()
-        self.assertIn("AGENT-ACCEPTANCE-HANDOFF.md", quickstart)
-        self.assertIn("Full unchanged-revision acceptance passed", quickstart)
-        self.assertNotIn("a fresh run from one clean revision remains required", quickstart)
-        self.assertNotIn("those remain in the source repository until", quickstart)
-        for requirement in (
-            "read-only", "AGENTS.md", "direct playbook/tool route",
-            "outside the checkout", "--ask-become-pass", "separate explicit approvals",
-            "TLS verification", "clean-ol9-primary", "clean-ol9-standby",
-            "NOT current machine state", "Do not change the VMs yet",
-        ):
-            with self.subTest(requirement=requirement):
-                self.assertIn(requirement, handoff)
+    def test_browser_command_uses_real_flow_with_tls_verification(self):
+        commands = '\n'.join(shell_blocks()).replace('\\\n', '')
+        browser = [line for line in commands.splitlines()
+                   if '-m pytest' in line]
+        self.assertTrue(browser)
+        for command in browser:
+            self.assertIn('E2E_IGNORE_HTTPS_ERRORS=false', command)
+            self.assertIn('e2e/test_todo_flow.py', command)
+            self.assertIn('--browser chromium', command)
+            self.assertNotIn('test_auth_adapter.py', command)
+
+    def test_acceptance_reference_links_resolve_in_source(self):
+        for name in ('ACCEPTANCE.md', 'ACCEPTANCE-TROUBLESHOOTING.md'):
+            path = ROOT / 'docs' / name
+            for target in re.findall(r'\]\(([^)]+)\)', path.read_text()):
+                if '://' in target or target.startswith('#'):
+                    continue
+                self.assertTrue((path.parent / target.split('#')[0]).is_file(), target)

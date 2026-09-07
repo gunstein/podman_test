@@ -13,9 +13,6 @@
       - source: "{{ project_root }}/scripts/todo_dr.py"
         dest: /opt/todo/bin/todo_dr.py
         mode: "0644"
-      - source: "{{ project_root }}/scripts/todo_dr_run.py"
-        dest: /opt/todo/bin/todo_dr_run.py
-        mode: "0644"
 
 - name: Install the local Todo DR configuration through pipelined stdin
   ansible.builtin.command:

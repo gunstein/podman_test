@@ -5,7 +5,7 @@ per-container reference in Git for comparison.
 
 Current architecture and workflow:
 - docs/ARCHITECTURE.md describes the current design; docs/LEARNING-GUIDE.md
-  teaches it. Use docs/MANUAL-DR-QUICKSTART.md and docs/LAB-ACCEPTANCE.md for
+  teaches it. Use docs/ACCEPTANCE.md for
   acceptance; a NEW run must not depend on old chat or development history.
 - Helm renders workloads at build time. kube/runtime contains the canonical
   rendered YAML and .kube units; targets do not need Helm.

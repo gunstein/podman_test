@@ -1,13 +1,9 @@
 # Recover the old primary without its VM console
 
-Status (2026-09-05): lab quarantine rehearsal passed on Proxmox 8.4.16.
-Disconnected shutdown/start, Guest Agent STOPPED, restricted IPv4 SSH and
-new-connection blocking were tested. IPv6 link-local SSH timed out both ways
-under quarantine and connected both ways with quarantine disabled. Installed
-IPv4/IPv6 iptables chains were inspected. Promotion, backup/PITR, old-primary
-rebuild and sequential final reboots subsequently passed. The repaired drill
-does not replace a new clean-revision acceptance run. See the project journal
-and [MANUAL-DR-QUICKSTART.md](MANUAL-DR-QUICKSTART.md) for the phase checklist.
+Use [Acceptance](ACCEPTANCE.md) for phase order. This reference specifies the
+host-specific quarantine boundary. Verify the actual Proxmox version, firewall
+backend and effective rules for each new drill; previous evidence is not current
+state. Historical acceptance is recorded in [688a0f6](ACCEPTANCE-688a0f6.md).
 Do not enable a datacenter/node firewall based only on this document: that
 can affect management access and unrelated VMs.
 
@@ -42,12 +38,8 @@ The assistant uses SSH after the isolated guest's Todo services are stopped.
    existing explicit `/etc/sysconfig/qemu-ga` allow list, adds only
    `guest-exec` and `guest-exec-status`, backs up the configuration and
    restarts only Guest Agent if changed. Unknown policy formats fail closed.
-   Todo services and firewall settings are not changed. The lab's Proxmox
-   8.4.16 installation initially had datacenter Firewall disabled. Following
-   review it is enabled, with node filtering explicitly disabled. VM 107
-   filtering remained enabled after the final rebuild, including the restricted
-   outbound replication exception. Do not assume clean snapshots reset these
-   hypervisor firewall settings; review them before the next clean drill.
+   Todo services and firewall settings are not changed. Do not assume clean snapshots reset hypervisor firewall settings; review
+   them before each drill.
 
    On the enforcing lab guest, direct bash execution was denied by
    `virt_qemu_ga_t` when accessing `hostname_exec_t`. With separate operator
@@ -135,7 +127,7 @@ streaming have been verified. The original machine returns as database standby.
 
 VM 107, `todo-primary`, `gunstein` and both allowed source addresses are lab
 values; record replacements before use. See the address table in
-[LAB-ACCEPTANCE.md](LAB-ACCEPTANCE.md#where-to-change-vm-addresses).
+[ACCEPTANCE.md](ACCEPTANCE.md#where-to-change-vm-addresses).
 Proxmox firewall enable flags and rule semantics are described in the
 [official firewall documentation](https://pve.proxmox.com/pve-docs/chapter-pve-firewall.html).
 See [qm](https://pve.proxmox.com/pve-docs/qm.1.html) for Guest Agent execution.

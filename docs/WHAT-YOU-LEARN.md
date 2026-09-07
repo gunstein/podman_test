@@ -5,7 +5,7 @@ pretending that a two-VM lab is a complete production platform. A topic is
 covered when the repository either demonstrates it or states the deliberate
 simplification and the normal production concern.
 
-For a dependency-ordered walkthrough, use [LEARNING-GUIDE.md](LEARNING-GUIDE.md). For the destructive build-from-zero verification, use [LAB-ACCEPTANCE.md](LAB-ACCEPTANCE.md).
+For a dependency-ordered walkthrough, use [LEARNING-GUIDE.md](LEARNING-GUIDE.md). For the destructive build-from-zero verification, use [ACCEPTANCE.md](ACCEPTANCE.md).
 
 The current implementation uses grouped Podman Kube workloads. Kube YAML defines pod contents,
 `.kube` Quadlet connects each workload to Podman and systemd, and systemd owns

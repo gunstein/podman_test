@@ -21,8 +21,8 @@
     that:
       - not todo_postgres_legacy_quadlet.stat.exists
     fail_msg: >-
-      todo-postgres.container is legacy transition state. Remove or migrate it
-      explicitly before installing the Kube-native PostgreSQL unit.
+      Unsupported todo-postgres.container is installed. Stop and review the host
+      separately; this operation does not migrate an existing PostgreSQL runtime.
 
 - name: Read the source PostgreSQL password
   ansible.builtin.command:

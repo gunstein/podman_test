@@ -122,44 +122,6 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertNotIn("ansible-vault", surfaces)
         self.assertNotIn("provision-secrets", surfaces)
 
-    def test_documentation_separates_learning_acceptance_and_history(self):
-        for path in (
-            "docs/LEARNING-GUIDE.md",
-            "docs/LAB-ACCEPTANCE.md",
-        ):
-            self.assertTrue((PROJECT_ROOT / path).is_file())
-
-        readme = read("README.md")
-        self.assertLessEqual(len(readme.splitlines()), 260)
-        self.assertIn("docs/LEARNING-GUIDE.md", readme)
-        self.assertIn("docs/LAB-ACCEPTANCE.md", readme)
-        self.assertIn("Development journal", readme)
-
-    def test_documentation_keeps_operational_safety_boundaries(self):
-        operational_docs = "\n".join(
-            read(path)
-            for path in (
-                "README.md",
-                "ansible/STANDBY-ARCHITECTURE.md",
-                "ansible/STANDBY-BOOTSTRAP.md",
-                "ansible/PROMOTION.md",
-                "ansible/APPLICATION-FAILOVER.md",
-                "ansible/BACKUP-PITR.md",
-                "ansible/RESTORE-REDUNDANCY.md",
-            )
-        )
-        self.assertNotIn("future from-zero", operational_docs.lower())
-        self.assertNotIn("planned for M15", operational_docs)
-        self.assertNotIn("This is learning stage", operational_docs)
-
-        for builder in (
-            "offline/build-bundle.sh",
-            "scripts/build-operations-package.sh",
-        ):
-            content = read(builder)
-            self.assertIn("LEARNING-GUIDE.md", content)
-            self.assertIn("LAB-ACCEPTANCE.md", content)
-
     def test_offline_packages_record_source_revision(self):
         for builder_path, package_name in (
             ("offline/build-bundle.sh", "todo-offline-m12"),
@@ -184,11 +146,6 @@ class AnsibleSafetyTests(unittest.TestCase):
             ["inventory-initial.example.ini", "inventory-recovery.example.ini"],
         )
         self.assertEqual(builders, ["build-operations-package.sh"])
-
-    def test_operations_package_contains_resumable_dr_runner(self):
-        builder = read("scripts/build-operations-package.sh")
-        self.assertIn("ansible/DR-AUTOMATION.md", builder)
-        self.assertIn("scripts/todo_dr_run.py", builder)
 
     def test_rebuild_installs_role_reversed_dr_configuration(self):
         rebuild = read("ansible/rebuild-standby.yml")

@@ -29,8 +29,9 @@
     that:
       - not (todo_legacy_quadlets.results | map(attribute='stat.exists') | max)
     fail_msg: >-
-      Legacy per-container Quadlets are installed. Use the explicitly
-      confirmed transition tooling; clean deploy never performs a migration.
+      Unsupported per-container Quadlets are installed. Stop and review the host
+      separately; clean deploy requires a Kube-compatible baseline and does not
+      migrate or remove existing runtime state.
 
 - name: Read source secrets for Kube payloads
   ansible.builtin.command:

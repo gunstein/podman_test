@@ -34,33 +34,10 @@ database contents and must be protected like the database itself.
 
 ## Install and configure
 
-Keep the old primary fenced. On the trusted source host, build, verify and
-transfer the package:
-
-```bash
-scripts/build-operations-package.sh
-(
-  cd dist
-  sha256sum -c todo-operations.tar.gz.sha256
-)
-read -rp "Promoted host IPv4 address: " TODO_PROMOTED_IP
-scp \
-  dist/todo-operations.tar.gz \
-  dist/todo-operations.tar.gz.sha256 \
-  "gunstein@${TODO_PROMOTED_IP}:"
-```
-
-On the promoted host, verify and extract both files:
-
-```bash
-cd "$HOME"
-sha256sum -c todo-operations.tar.gz.sha256
-mkdir -p todo-operations
-tar -xzf todo-operations.tar.gz \
-  --strip-components=1 \
-  --directory todo-operations
-cd todo-operations
-```
+Use the verified artifacts and inventory prepared in
+[Acceptance](../docs/ACCEPTANCE.md#2-build-and-stage-artifacts). Stage both
+packages on both hosts before an incident; verify checksums and matching clean
+VERSION values before running extracted code.
 
 The configure playbook uses the central `todo_fapolicyd` role to refresh
 exact source trust, install root-owned `/opt/todo/bin/todo_backup.py`, and
@@ -93,8 +70,7 @@ forced WAL segment reaches the archive.
 
 The demo defaults to `archive_timeout=1h`. PostgreSQL archives complete 16 MiB
 segments even when a forced early segment switch contains little useful WAL, so
-the previous 60-second setting could consume about 23 GiB per day under even
-small recurring writes. One hour limits that worst-case time-driven growth to
+one hour limits worst-case time-driven growth from recurring writes to
 about 384 MiB per day. The `mark` command and the Ansible verification still
 force an explicit WAL switch, so drills do not need an aggressive timeout.
 
@@ -108,110 +84,28 @@ The playbook verifies the exact installed trust entry before it returns. See
 [../offline/FAPOLICYD.md](../offline/FAPOLICYD.md) for separate SELinux and
 fapolicyd diagnostics and trust-entry cleanup.
 
-## Status and base backup
+## Tool contract
 
-```bash
-python3 /opt/todo/bin/todo_backup.py status
+| Command | Contract |
+|---|---|
+| `status` | Reports live role and archive diagnostics |
+| `create` | Requires writable database and archive mode; streams a base backup and verifies its SHA-256 manifest with `pg_verifybackup` |
+| `mark --name NAME` | Creates a named restore point, switches WAL and waits for the exact segment in the archive |
+| `restore --backup NAME --target POINT` | Copies into fixed disposable resources and pauses recovery at the target; database networking is disabled and backup is mounted read-only |
+| `restore-status` | Reports recovery, pause and read-only state |
+| `cleanup-restore --confirm todo-postgres-restore` | Deletes only the fixed disposable restore container and volume |
 
-python3 /opt/todo/bin/todo_backup.py create
-```
-
-The create command runs `pg_basebackup --wal-method=stream`, generates SHA-256
-manifest checksums and requires `pg_verifybackup` to succeed. Record the
-reported name, for example `base-20260829T123456Z`.
-
-## Disposable PITR drill
-
-Create data after the base backup but before the recovery target:
-
-```bash
-podman exec todo-postgres \
-  psql --username todo --dbname todo \
-  --set ON_ERROR_STOP=1 \
-  --command "
-    INSERT INTO todos (title, completed)
-    VALUES ('M15 before restore point', false);
-  "
-```
-
-Create and archive a named restore point:
-
-```bash
-python3 /opt/todo/bin/todo_backup.py mark \
-  --name m15_before_after
-```
-
-The command returns only after the exact WAL segment containing the restore
-point is present in the archive. It does not rely on that segment still being
-reported as the most recently archived one.
-
-Then create data that must not exist in the restored view:
-
-```bash
-podman exec todo-postgres \
-  psql --username todo --dbname todo \
-  --set ON_ERROR_STOP=1 \
-  --command "
-    INSERT INTO todos (title, completed)
-    VALUES ('M15 after restore point', false);
-  "
-```
-
-Restore with the base-backup name returned earlier:
-
-```bash
-python3 /opt/todo/bin/todo_backup.py restore \
-  --backup base-YYYYMMDDTHHMMSSZ \
-  --target m15_before_after
-```
-
-The tool copies into the fixed `todo-postgres-restore-data` volume and starts
-the fixed `todo-postgres-restore` container with networking disabled. Recovery
-pauses at the named point.
-If recovery fails, disposable state may remain for inspection. After diagnosing
-it, rerun only with explicit replacement:
-
-```bash
-python3 /opt/todo/bin/todo_backup.py restore \
-  --backup base-YYYYMMDDTHHMMSSZ \
-  --target m15_before_after \
-  --replace
-```
-
-`--replace` can delete only the fixed disposable restore container and volume;
-it never targets the live or backup volume.
-
-Verify the isolated database:
-
-```bash
-python3 /opt/todo/bin/todo_backup.py restore-status
-
-podman exec todo-postgres-restore \
-  psql --username todo --dbname todo \
-  --command "
-    SELECT title
-    FROM todos
-    WHERE title LIKE 'M15 % restore point'
-    ORDER BY id;
-  "
-```
-
-Expected restored result contains only `M15 before restore point`. The live
-`todo-postgres` database still contains both rows.
-
-## Cleanup only the disposable restore
-
-```bash
-python3 /opt/todo/bin/todo_backup.py cleanup-restore \
-  --confirm todo-postgres-restore
-```
-
-The exact confirmation is required. Cleanup never addresses
-`todo-postgres-data` or `todo-postgres-backup`.
+The live data volume is never a restore target. Existing disposable state causes
+restore to stop; inspect it before explicitly authorizing `--replace`, which can
+remove only the disposable resources. A failed restore may leave a volume for
+inspection. Follow [troubleshooting](../docs/ACCEPTANCE-TROUBLESHOOTING.md) for
+failures and [the PITR phase](../docs/ACCEPTANCE.md#8-backup-and-isolated-pitr)
+for the normal before/after comparison and approved cleanup sequence.
 
 ## Acceptance evidence
 
-The canonical base-backup, named-point restore, isolated comparison, cleanup, idempotence, capacity and reboot results are recorded in [../docs/LAB-ACCEPTANCE.md](../docs/LAB-ACCEPTANCE.md). The 60-second WAL growth incident and design history remain in [Development journal](../docs/history/DEVELOPMENT-JOURNAL.md).
+Use [Acceptance](../docs/ACCEPTANCE.md) for the full sequence and verdict.
+[688a0f6](../docs/ACCEPTANCE-688a0f6.md) records historical evidence only.
 
 ## Operational follow-up
 

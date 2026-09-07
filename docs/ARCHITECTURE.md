@@ -5,7 +5,7 @@ which boundary owns each responsibility, and why. It describes the
 implementation, not an aspirational production platform.
 
 Use the [Learning Guide](LEARNING-GUIDE.md) to explore it, the
-[acceptance checklist](MANUAL-DR-QUICKSTART.md) to prove it, and operational
+[acceptance checklist](ACCEPTANCE.md) to prove it, and operational
 runbooks to change it. This document intentionally contains no destructive
 command recipes or chronological test logs.
 
@@ -284,7 +284,7 @@ outside the demonstrated recovery scope.
 | What is demonstrated versus simplified? | [Concept coverage](WHAT-YOU-LEARN.md) |
 | Which definitions implement the pods? | [Kube runtime](../kube/runtime/README.md) |
 | How is replication arranged? | [Standby architecture](../ansible/STANDBY-ARCHITECTURE.md) |
-| How do I run acceptance safely? | [Operator checklist](MANUAL-DR-QUICKSTART.md), [acceptance criteria](LAB-ACCEPTANCE.md) |
+| How do I run acceptance safely? | [Acceptance sequence and criteria](ACCEPTANCE.md) |
 | How does old-primary isolation work? | [Quarantine](PROXMOX-QUARANTINE.md) |
 | How do backup and reseeding work? | [Backup/PITR](../ansible/BACKUP-PITR.md), [restore redundancy](../ansible/RESTORE-REDUNDANCY.md) |
 | How are security details handled? | [SELinux](SELINUX.md), [secrets](SECRETS.md), [TLS](TLS.md) |

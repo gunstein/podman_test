@@ -123,7 +123,7 @@
           'io.todo.proxy', ''
         ) == 'nginx'
     fail_msg: >-
-      The staged localhost/todo-frontend:m12 image predates the nginx migration.
+      The staged localhost/todo-frontend:m12 image does not identify nginx.
       Load the frontend archive from the current verified offline bundle before failover.
 
 - name: Install the grouped Kube application on the promoted host

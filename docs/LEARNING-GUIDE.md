@@ -5,7 +5,7 @@ historical per-container model. The implementation is preserved by
 `quadlet-reference-v1`; the former learning guide is available at
 `c377161:docs/legacy/LEARNING-GUIDE.md`, not in the active tree or bundles.
 Unchanged-revision Oracle Linux acceptance passed on 688a0f6.
-See the [run record](ACCEPTANCE-688a0f6.md) and [procedure](MANUAL-DR-QUICKSTART.md).
+See the [run record](ACCEPTANCE-688a0f6.md) and [procedure](ACCEPTANCE.md).
 
 For the authoritative system overview and design boundaries, read
 [System architecture](ARCHITECTURE.md). This guide focuses on learning exercises.
@@ -172,7 +172,7 @@ python3 /opt/todo/bin/todo_dr.py status
 python3 /opt/todo/bin/todo_backup.py status
 ```
 
-Follow [the operator checklist](MANUAL-DR-QUICKSTART.md) for the correct machine
+Follow [the operator checklist](ACCEPTANCE.md) for the correct machine
 and phase; not every command applies to every role. It links the detailed
 promotion, backup and rebuild runbooks and defines explicit destructive gates.
 Never run a reset, promotion or rebuild merely as an exploratory learning step.

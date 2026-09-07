@@ -135,11 +135,9 @@ only when that tool is retired:
 
 ```bash
 sudo fapolicyd-cli --file delete "$HOME/todo-operations/scripts/todo_dr.py" --trust-file todo
-sudo fapolicyd-cli --file delete "$HOME/todo-operations/scripts/todo_dr_run.py" --trust-file todo
 sudo fapolicyd-cli --file delete "$HOME/todo-operations/scripts/todo_backup.py" --trust-file todo
 
 sudo fapolicyd-cli --file delete /opt/todo/bin/todo_dr.py --trust-file todo
-sudo fapolicyd-cli --file delete /opt/todo/bin/todo_dr_run.py --trust-file todo
 sudo fapolicyd-cli --file delete /opt/todo/bin/todo_backup.py --trust-file todo
 sudo fapolicyd-cli --update
 ```

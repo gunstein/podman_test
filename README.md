@@ -78,7 +78,7 @@ The deployed baseline requires:
 
 The full Oracle Linux acceptance drill uses two 4 GiB VMs, SELinux enforcing,
 active `fapolicyd`, firewalld and a separate client machine. Tested versions and
-site assumptions are recorded in [docs/LAB-ACCEPTANCE.md](docs/LAB-ACCEPTANCE.md).
+site assumptions are recorded in [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md).
 
 ## Quick start
 
@@ -161,14 +161,10 @@ It contains the two inventory templates, Ansible workflows, guarded DR/backup
 tools and operational documentation. It contains no images, credentials,
 site-specific inventory, SSH keys or database data.
 
-Use the runbooks in this order for a complete exercise:
-
-1. [Initial topology](ansible/STANDBY-ARCHITECTURE.md)
-2. [Standby bootstrap](ansible/STANDBY-BOOTSTRAP.md)
-3. [Controlled promotion](ansible/PROMOTION.md)
-4. [Application failover](ansible/APPLICATION-FAILOVER.md)
-5. [Backup and PITR](ansible/BACKUP-PITR.md)
-6. [Restore redundancy](ansible/RESTORE-REDUNDANCY.md)
+For a complete exercise, follow the single sequence in
+[Acceptance](docs/ACCEPTANCE.md). The [Ansible operation references](ansible/README.md)
+explain each tool's scope and safety contracts. Use
+[Acceptance troubleshooting](docs/ACCEPTANCE-TROUBLESHOOTING.md) for failed gates.
 
 The original machine names remain stable after promotion; inventory groups
 describe current roles. Promotion restores availability. Destructive re-seeding
@@ -176,7 +172,7 @@ of the old primary restores redundancy. Failback is a separate planned
 operation.
 
 For the exact build-from-zero acceptance procedure and pass criteria, use
-[docs/LAB-ACCEPTANCE.md](docs/LAB-ACCEPTANCE.md).
+[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md).
 
 ## Security scope
 
@@ -236,7 +232,7 @@ manual lab acceptance test.
 | Understand the system architecture | [Architecture](docs/ARCHITECTURE.md) |
 | Recover old primary without VM console | [Proxmox quarantine preparation](docs/PROXMOX-QUARANTINE.md) |
 | Learn the system in dependency order | [Learning guide](docs/LEARNING-GUIDE.md) |
-| Run or hand off acceptance; change VM IPs (humans and agents: start here) | [Acceptance checklist, commands and failure recovery](docs/MANUAL-DR-QUICKSTART.md) |
+| Run or hand off acceptance; change VM IPs (humans and agents: start here) | [Acceptance sequence](docs/ACCEPTANCE.md) |
 | Check demonstrated versus simplified concepts | [What you learn](docs/WHAT-YOU-LEARN.md) |
 | Operate deployment and recovery | [Ansible operations](ansible/README.md) |
 | Understand SELinux and rootless ownership | [SELinux](docs/SELINUX.md) |

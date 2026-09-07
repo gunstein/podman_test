@@ -1,33 +1,79 @@
-# Full lab acceptance
+# Acceptance
 
-This is the canonical destructive acceptance test for the three-workload
-Podman Kube implementation. Individual runbooks explain each operation; this
-document defines order, evidence and pass criteria.
+This is the canonical normal execution sequence for full two-VM acceptance of
+the three-workload Podman Kube architecture. Use direct DR tools and Ansible
+playbooks below. The final rebuild permanently replaces old-primary database
+data; use disposable lab hosts and explicit infrastructure fencing.
 
-For the phase checklist and topology-based command generator, start with
-[MANUAL-DR-QUICKSTART.md](MANUAL-DR-QUICKSTART.md). It never connects to Proxmox.
+[688a0f6](ACCEPTANCE-688a0f6.md) is historical unchanged-revision evidence, not
+current machine state or authorization. A NEW run evaluates its own clean
+revision. Use [troubleshooting](ACCEPTANCE-TROUBLESHOOTING.md) only when a gate
+fails; [Proxmox quarantine](PROXMOX-QUARANTINE.md) supplies the specialized
+infrastructure procedure. Operation references describe contracts, not another
+acceptance sequence.
 
-The procedure permanently destroys the old primary database during the final
-rebuild. Run it only on disposable lab hosts with infrastructure fencing.
+## Entry, approvals and evidence
 
-## Entry and command convention
+1. Choose the entry path. **NEW:** use the current architecture, this runbook
+   and the selected revision; start from the documented clean
+   baseline after reset approval. Never infer current state from an earlier run.
+   **CONTINUATION:** read the private run record and obtain fresh role, fencing
+   and database status before acting. Never reset or repeat promotion/rebuild just
+   to resume a chat. PROJECT.md is optional history, not an input requirement.
+2. Agree whether this is a NEW destructive clean run or continuation. Reset,
+   promotion and replacement of old database data need explicit operator
+   agreement. A general request to continue is not permission to erase a
+   working pair. Keep a verified backup before rebuild.
+3. Fill in the topology/address map below and verify real VM IDs, NIC settings,
+   snapshot names and client source address. Snapshot rollback does NOT prove
+   Proxmox firewall rules were reset; inspect them separately. Never guess a
+   firewall rule by its position without reading its full contents first.
+4. Use one clean revision for both bundles. Store run evidence outside the
+   source checkout during a clean run. Changes during the run make it REPAIRED,
+   even when all final functional checks pass.
 
-For NEW, obtain reset approval and use this revision's clean baseline; historical
-results below are not live state. For CONTINUATION, read the private phase record
-and obtain fresh roles, fencing and runner status before the next action.
-Neither path requires reading PROJECT.md or a previous chat.
+### Who runs what, and where
 
-The phase cards own the gates; commands immediately below each card implement
-them. All guest commands run as the service user through SSH. Use the
-client/build host (a ThinkPad in the documented lab) for transfers and browser
-tests. Proxmox commands are operator actions in the node Shell, not guest console.
+| Location | Responsibility |
+|---|---|
+| Client/build terminal (ThinkPad in this lab) | Build, transfer, run guest commands through SSH, configure client DNS/CA and execute browser tests. An agent with access can do scoped checks here. |
+| Proxmox **node Shell** | Operator pastes reviewed `qm`/`pvesh` commands. No SSH to the hypervisor and no typing in the guest console are required by this procedure. |
+| Guest, reached through SSH | Ansible and rootless Podman run as the service user. Use `ssh -t` and `--ask-become-pass` for privileged installation, including rebuild. Never send sudo passwords to an agent. |
 
-The commands below form a direct playbook/tool route. The quickstart's print-only
-generator offers the guarded runner route for promotion/application/rebuild.
-Choose and record one route before promotion; do not run both versions of a
-destructive phase. When using the runner, create and verify the recovery inventory
-before its first use, using the inventory preparation in phase 7. The runner state
-is not a replacement for phase evidence. Direct execution does not update it.
+Paste only the command block, not prompts such as `root@proxmox:~#`.
+After each operator action, inspect its result before giving the next mutation.
+Batch independent read-only checks; do not batch across a fencing or deletion
+gate. Agents should run available checks themselves instead of asking the
+operator to copy logs repeatedly. Report the next location explicitly.
+
+### Run record / handoff template
+
+Copy this into a private run log (no passwords, tokens or secret payloads):
+
+```text
+Run ID / operator / date:
+Mode: NEW clean run | CONTINUATION
+Git revision / both VERSION values / archive checksums:
+Topology: initial primary hostname/IP/VMID/NIC; initial standby equivalents;
+          client source IP; Proxmox node; actual clean snapshot names:
+Current roles and fencing: which DB is writable, VM power/link/firewall state:
+Last completed phase / exact command / recap and evidence:
+Next phase / where to run it / approval still required:
+Markers: original Todo ID/title; final authenticated Todo ID/title:
+Backup name / restore-point name / isolated comparison / cleanup:
+Boot IDs before/after / TLS CA fingerprint / browser tests (no skips):
+Deviations and repairs (keep original failure evidence):
+Verdict: IN PROGRESS | BLOCKED | REPAIRED FUNCTIONAL PASS | CLEAN PASS
+```
+
+Before a NEW run, verify the selected clean commit and CI result, and check
+client/build, SSH, Ansible and Chromium tools. Read AGENTS.md and ARCHITECTURE.md.
+Start with observations and a plan; obtain separate explicit approvals for reset,
+Guest Agent security opt-ins, fencing/promotion, destructive reseed and disposable
+restore cleanup. No source edits, commits, pushes or automatic reset follow a
+verdict. CONTINUATION uses the existing run record plus fresh observations.
+For a previously failed operation, obtain fresh database role and Ansible task
+evidence before acting; never blindly retry a refused destructive stage.
 
 ## Tested topology
 
@@ -48,13 +94,9 @@ Both runtimes use Oracle Linux 9.8, SELinux enforcing, active `fapolicyd` and
 firewalld, RPM-managed Ansible Core 2.14.18, user lingering, 4 GiB memory and
 an 18 GiB home filesystem per VM.
 
-| Runtime | Podman requirement |
-|---|---|
-| Accepted per-container Quadlet baseline | Rootless Podman 4.9.3 validated |
-| Current grouped Podman Kube runtime | Rootless Podman 5.8.2 required; platform features tested |
-
-The current runtime requires Podman 5.8.2 because its PostgreSQL `.kube` unit uses
-`--no-pod-prefix` to preserve the operational container name.
+The tested Kube baseline is rootless Podman 5.8.2. Ansible verifies the required
+`podman kube play --no-pod-prefix` capability to preserve operational container
+names; this does not claim a minimum supported Podman version.
 
 ## Acceptance rules
 
@@ -65,6 +107,7 @@ The current runtime requires Podman 5.8.2 because its PostgreSQL `.kube` unit us
 - Keep old primary fenced from promotion until its old services are stopped and
   its data is deliberately re-seeded.
 - Never skip a read-only preflight.
+- Do not rerun the initial installer after replication has been configured.
 - Never rerun a one-shot destructive workflow blindly after partial failure.
 - Never reboot both final database nodes at the same time.
 
@@ -82,12 +125,10 @@ require changing the realm, frontend, certificate hostname or Helm manifests.
 | Recovery/rebuild | Promoted host's `todo-operations/ansible/inventory-recovery.ini` | Same machine IPs, new role groups; rebuild target needs both address fields |
 | Browser destination | Client DNS or `/etc/hosts` | `PRIMARY_IP todo.test`; change to promoted host after failover |
 | Firewall | VM firewalld and manual hypervisor fencing/quarantine | Replace source/destination IPs in the rules; HTTPS from client, replication from peer |
-| Optional lab controller | Ignored `lab-dr.local.toml`: `nodes.primary.address`, `nodes.standby.address` | Same VM IPs; this file does not configure Ansible or guest networking |
 
 With NAT, check the source address seen by the destination. Our primary saw
 `192.168.0.100` in `SSH_CLIENT`, different from the ThinkPad's own LAN address.
-The lab-controller CLI still assumes automated Proxmox reset; manual-reset
-acceptance follows this runbook and requires no hypervisor SSH.
+Manual reset uses the Proxmox node Shell and requires no hypervisor SSH.
 
 Container DNS names (`todo-postgres`, `todo-keycloak`) stay unchanged. Editing
 inventory does not readdress running databases or update persisted DR config.
@@ -98,16 +139,15 @@ replicated pair requires a separate maintenance plan.
 
 - **Where:** Client/build host for approval and topology; Proxmox node Shell for manual reset; both guests for checks.
 - **Preconditions:** Explicit NEW/reset approval, identified disposable VMs and exact clean snapshots. CONTINUATION starts at its verified pending phase, not here.
-- **Command:** Perform the approved manual reset; run the guest observations below and inspect external VM firewall/link state separately.
 - **PASS:** Distinct expected identities, enforcing security, rootless runtime and clean Todo baseline.
 - **Evidence:** Reset approval, VM/snapshot IDs, addresses, security and empty-state output.
 - **STOP if:** Wrong identity, leftover Todo state, uncertain reset scope or unexpected external firewall state.
-- **Next:** Phase 2.
 
 On each VM, record:
 
 ```bash
 hostname
+cat /etc/machine-id
 ip -brief -4 address
 getenforce
 systemctl is-active sshd firewalld fapolicyd qemu-guest-agent
@@ -118,7 +158,17 @@ df -h "$HOME"
 podman ps -a
 podman volume ls
 podman secret ls
+podman network ls
+find "$HOME/.config/containers/systemd" -type f \( -name 'todo*.container' -o -name 'todo*.kube' -o -name 'todo*.network' -o -name 'todo*.volume' \) -print
+ls -ld "$HOME/.config/todo" /opt/todo/bin/todo_dr.py /opt/todo/bin/todo_backup.py
 ```
+
+For a clean baseline, require distinct machine IDs and expected hostnames/IPs,
+no Todo containers, volumes, secrets, network or Quadlet files, no Todo config
+directory and no installed DR/backup tools. Missing paths in the last two
+commands are expected; distinguish absence from access errors. Unrelated Podman
+resources are outside these name-scoped checks. Inspect external firewall state
+separately; snapshot rollback does not reset it.
 
 Pass when identities differ, security services are active, SELinux is enforcing,
 Podman is rootless, user systemd is available and no Todo state exists. A VM
@@ -133,11 +183,9 @@ reset as well.
 
 - **Where:** Client/build host; then both guests over verified SSH.
 - **Preconditions:** Phase 1 passed; selected clean Git revision; build prerequisites available.
-- **Command:** Build, checksum, transfer and inspect VERSION using the commands below.
 - **PASS:** Both archives and both extracted packages identify the same clean revision; checksums pass.
 - **Evidence:** Full revision, source_state, archive checksums and guest VERSION output.
 - **STOP if:** Dirty source, mismatched versions, checksum failure or unverified SSH identity.
-- **Next:** Phase 3.
 
 On the connected build host:
 
@@ -173,11 +221,9 @@ Stop if an extracted package and its archive identify different revisions.
 
 - **Where:** Initial primary via SSH; client/build host for trust and browser tests; Proxmox node Shell for reboot.
 - **Preconditions:** Phase 2 passed; initial primary identity confirmed; client source IP known.
-- **Command:** Install and verify below, configure client trust, test real login, reboot and repeat install.
 - **PASS:** Healthy app/identity/database, trusted HTTPS and real authenticated browser flow; marker/CA survive reboot; repeat changed=0.
 - **Evidence:** Recaps, browser results with no skips or TLS bypass, Todo ID/title, CA fingerprint and boot IDs.
 - **STOP if:** Skipped login test, TLS error, missing marker, failed services or non-idempotent repeat.
-- **Next:** Phase 4. Do not rerun the initial installer after replication configuration.
 
 On `todo-primary`:
 
@@ -222,9 +268,88 @@ Export only the public demo root, trust it on the client, verify HTTPS, run both
 Playwright flows and leave one persistent authenticated Todo marker.
 Use `curl` without `-k` and browser tests with
 `E2E_IGNORE_HTTPS_ERRORS=false`. Configure the actual Chromium trust database
-as described in the quickstart. The development `run-e2e.sh` enables TLS
+as described below. The development `run-e2e.sh` enables TLS
 exceptions and is not the acceptance command. Both real Keycloak browser flows
 must run; adapter tests with a test double do not replace them.
+
+### Client trust and real browser verification
+
+
+On the client, inspect the existing `todo.test` mapping and replace only that
+entry with the current serving host's IP. Initially this is `.102`; after
+promotion it is `.108`. Do not leave two competing mappings. Retrieve only the
+public CA over verified SSH and compare its SHA-256 with the serving host's copy.
+On the initial host the public CA is in `todo-frontend:/var/lib/todo-tls/ca.crt`;
+the promoted application role also exports it to `~/.config/todo/todo-nginx-root.crt`.
+Never export the private key. See [TLS](TLS.md) for the trust model.
+
+Example from the client, using the verified current serving address:
+
+```bash
+read -rp "Current serving host IPv4: " TODO_SERVING_IP
+ssh -o StrictHostKeyChecking=yes "gunstein@${TODO_SERVING_IP}" \
+  'podman exec todo-frontend cat /var/lib/todo-tls/ca.crt' > /tmp/todo-public-root.crt
+openssl x509 -in /tmp/todo-public-root.crt -noout -fingerprint -sha256
+```
+
+Compare that fingerprint with `podman exec todo-frontend openssl x509 -in
+/var/lib/todo-tls/ca.crt -noout -fingerprint -sha256` on the serving host before
+import. On the Debian-family test client, after reviewing the existing target:
+
+```bash
+sudo cp /tmp/todo-public-root.crt /usr/local/share/ca-certificates/todo-nginx-root.crt
+sudo update-ca-certificates
+curl --fail https://todo.test:8443/ready
+curl --fail https://todo.test:8443/auth/realms/todo/.well-known/openid-configuration
+```
+
+Require the stable issuer `https://todo.test:8443/auth/realms/todo`.
+Use the client's native trust mechanism on other platforms.
+
+System trust and Chromium trust are separate on this Linux test client.
+Retrieve only the public CA via verified SSH from the current serving host and compare
+its hash before import. Never import private keys. Install `libnss3-tools` on
+the client/build host if needed. Chromium uses the existing `~/.pki/nssdb`, or for newer
+versions the default `~/.local/share/pki/nssdb` when the old database is absent.
+Inspect the actual database first; do not overwrite another certificate.
+
+The tested import used a unique fingerprint-derived nickname and TLS-CA trust
+only (`C,,`). Substitute the reviewed database, nickname and public CA path:
+
+```bash
+certutil -L -d sql:/path/to/nssdb
+certutil -A -d sql:/path/to/nssdb -n todo-lab-ca-FINGERPRINT -t 'C,,' -i /path/to/public-root.crt
+```
+
+The authenticated test requires the existing secure test-user provisioning
+and E2E credentials in memory; a skipped test is not PASS. Do not record those
+credentials in this guide or shell history. Remove only the exact lab nickname
+when trust is retired using `certutil -D -d sql:/path/to/nssdb -n NAME`.
+See [Chromium's certificate documentation](https://chromium.googlesource.com/chromium/src/+/master/docs/linux/cert_management.md).
+
+On the client, use the selected source revision and an environment with
+`backend/requirements-e2e.txt` and Chromium installed. Provision `testuser` with
+its complete profile through the trusted Keycloak admin UI (email, first and last
+name, no required actions, non-temporary password), or use the existing
+`e2e/provision_user.py` on the serving host with credentials supplied only in
+memory. Never enable direct password grants for the frontend client.
+
+Run both browser flows from the client, entering the test password locally:
+
+```bash
+(
+  read -rsp "E2E password for testuser: " E2E_PASSWORD
+  echo
+  export E2E_PASSWORD E2E_USERNAME=testuser
+  E2E_BASE_URL=https://todo.test:8443 E2E_IGNORE_HTTPS_ERRORS=false \
+    backend/.venv/bin/python -m pytest e2e/test_todo_flow.py --browser chromium -q
+)
+```
+
+Require both tests passed and zero skipped tests. Repeat this browser check after
+application failover and final reboots, updating trust for a newly created CA.
+The test deletes its own Todo; create a separate authenticated persistent marker
+through the UI and record its ID/title for replication and reboot checks.
 
 Reboot the VM. Verify services, marker data and TLS CA persistence, then rerun
 `sh ./install.sh --publish-address 192.168.0.102`. Pass when the second
@@ -234,11 +359,9 @@ deployment reports `changed=0`.
 
 - **Where:** Initial primary is Ansible controller; standby is remote target; Proxmox node Shell reboots standby.
 - **Preconditions:** Phase 3 passed; verified controller-to-standby SSH; dedicated guest replication firewall rule.
-- **Command:** Run standby preflight, bootstrap and replication-status below; verify marker, reboot standby and recheck.
 - **PASS:** Streaming async, zero lag, active usable slot, read-only standby and marker persistence.
 - **Evidence:** Both role/LSN outputs, slot state, marker query, bootstrap recap and standby boot IDs.
 - **STOP if:** Failed preflight, role mismatch, unusable slot, lag or absent marker.
-- **Next:** Phase 5.
 
 On `todo-primary`:
 
@@ -293,11 +416,9 @@ standby and require recovery plus streaming to resume.
 
 - **Where:** Initial primary for Ansible; standby for local DR status; Proxmox node Shell for quarantine rehearsal.
 - **Preconditions:** Phase 4 passed; explicit approval before Guest Agent/security opt-ins.
-- **Command:** Install/repeat DR tools below; prepare and rehearse the linked quarantine procedure before phase 6.
 - **PASS:** Correct DR config, read-only healthy standby, zero apply lag; installer repeat changed=0; quarantine tested and normal operation restored.
 - **Evidence:** Install/status output and quarantine stop, IPv4/IPv6, restricted SSH and restoration evidence.
 - **STOP if:** Trust/policy error, untested quarantine, failed stop or inability to restore initial healthy replication.
-- **Next:** Phase 6 only after rehearsal and restored replication.
 
 Install both DR tools and exact-file trust through Ansible:
 
@@ -325,11 +446,9 @@ operation and streaming before proceeding to fencing.
 
 - **Where:** Proxmox node Shell for fencing; initial standby for promotion.
 - **Preconditions:** Replicated persistent marker; tested quarantine; independent fencing evidence and explicit promotion approval.
-- **Command:** Verify old VM stopped, no HA restart, onboot=0 and all links disconnected; then run promotion checks below.
 - **PASS:** New primary reports f|off, write validation passes and all markers remain.
 - **Evidence:** Hypervisor fencing output, approval, preflight/status and marker IDs.
 - **STOP if:** Any fencing uncertainty, reachable old DB, nonzero local apply lag or failed promotion. Never blindly retry.
-- **Next:** Phase 7; old primary must remain fenced.
 
 Create a persistent pre-failover marker and verify it on standby. Fence
 `todo-primary` at the virtualization layer. Its database endpoint must be
@@ -346,18 +465,23 @@ python3 /opt/todo/bin/todo_dr.py promote \
 python3 /opt/todo/bin/todo_dr.py status
 ```
 
-Pass when PostgreSQL reports `f|off`, accepts a rolled-back transaction and all
+Verify local writable state and a rolled-back write on the promoted host:
+
+```bash
+podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 \
+  --command "BEGIN; INSERT INTO todos (title, completed) VALUES ('promotion write probe', false); ROLLBACK;"
+```
+
+Pass when PostgreSQL reports `f|off`, accepts the rolled-back write and all
 markers remain. Keep old primary fenced.
 
 ## 7. Application failover
 
 - **Where:** Promoted host for deployment; client/build host for routing/trust/browser; Proxmox node Shell for reboot.
 - **Preconditions:** Phase 6 passed; old primary fenced; existing secrets and matching image archives available.
-- **Command:** Configure recovery inventory and deploy below; switch client mapping/CA; test, repeat and reboot.
 - **PASS:** Healthy application, stable production issuer, real login and persistent marker; changed=0 repeat; reboot preserves CA/data.
 - **Evidence:** Recaps, trusted browser results, marker/CA and boot IDs.
 - **STOP if:** Missing secrets/images, TLS or login failure, unexpected role/bootstrap activity or marker loss.
-- **Next:** Phase 8.
 
 On the promoted host:
 
@@ -387,11 +511,9 @@ services, writable PostgreSQL, nginx, marker data and unchanged CA hash.
 
 - **Where:** Current primary via SSH; Proxmox node Shell for reboot.
 - **Preconditions:** Phase 7 passed; old primary fenced; sufficient disk; record any existing restore state.
-- **Command:** Configure archive, create verified backup and execute the isolated comparison below; cleanup only disposable state; repeat/reboot.
 - **PASS:** Before-row only in restored view; both live rows retained; restore is network-disabled/read-only; archive works after reboot.
 - **Evidence:** Backup and restore-point names, comparison, cleanup output, archive counters, capacity and boot IDs.
 - **STOP if:** Unverified backup, missing WAL, wrong restore target, archive failure or low space.
-- **Next:** Phase 9.
 
 Install the tool and its exact-file trust through the playbook:
 
@@ -409,17 +531,40 @@ python3 /opt/todo/bin/todo_backup.py status
 python3 /opt/todo/bin/todo_backup.py create
 ```
 
-Perform the full sequence in
-[../ansible/BACKUP-PITR.md](../ansible/BACKUP-PITR.md):
+Record the returned backup name. On the current primary, create a before-row,
+archive a named restore point, then create an after-row:
 
-1. insert `M15 before restore point`;
-2. archive restore point `m15_before_after`;
-3. insert `M15 after restore point`;
-4. restore the recorded base backup to the point;
-5. require isolated status `t|t|on`;
-6. require only the before-row in restored data;
-7. require both rows in live data;
-8. remove only the fixed disposable restore resources.
+```bash
+podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 \
+  --command "INSERT INTO todos (title, completed) VALUES ('PITR before restore point', false);"
+python3 /opt/todo/bin/todo_backup.py mark --name acceptance_before_after
+podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 \
+  --command "INSERT INTO todos (title, completed) VALUES ('PITR after restore point', false);"
+python3 /opt/todo/bin/todo_backup.py restore \
+  --backup base-YYYYMMDDTHHMMSSZ --target acceptance_before_after
+python3 /opt/todo/bin/todo_backup.py restore-status
+podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}'
+podman exec todo-postgres-restore psql --username todo --dbname todo \
+  --command "SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;"
+podman exec todo-postgres psql --username todo --dbname todo \
+  --command "SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;"
+```
+
+Replace the backup placeholder with the recorded verified backup. Require
+`recovery|paused|read_only = t|t|on`, network `none`, only the before-row in
+restored data and both rows in live data. Never substitute a live volume as a
+restore target. Existing disposable restore state is a STOP condition; inspect
+it using troubleshooting before authorizing any replacement.
+
+After explicit cleanup approval:
+
+```bash
+python3 /opt/todo/bin/todo_backup.py cleanup-restore --confirm todo-postgres-restore
+```
+
+Verify that only disposable restore resources disappeared; live data and the
+backup volume must remain. Record the comparison and cleanup evidence. The
+backup is on the same VM and does not protect against VM/host loss.
 
 Rerun configuration and require `changed=0`. Reboot current primary and verify
 application readiness, writable database, backup persistence, zero archive
@@ -429,11 +574,9 @@ failures and bounded WAL use.
 
 - **Where:** Proxmox node Shell for isolated boot/quarantine; current primary controls guest Ansible tasks.
 - **Preconditions:** Phase 8 passed; reviewed backup/PITR evidence; old primary remains fenced; explicit reseed approval.
-- **Command:** Use tested quarantine procedure, configure only required replication access, run preflight and then rebuild below with sudo prompting.
 - **PASS:** Authenticated replication check precedes deletion; rebuilt host is read-only and streaming with zero lag; new authenticated marker replicates.
 - **Evidence:** Approvals, STOPPED and active firewall rules, full recap, slot/role checks and marker ID.
 - **STOP if:** Any failed gate or partial rebuild: preserve state, diagnose, never repeat destructive reseed blindly.
-- **Next:** Phase 10; keep quarantine and its replication exception.
 
 Use the quarantine route already prepared and rehearsed in phase 5:
 [PROXMOX-QUARANTINE.md](PROXMOX-QUARANTINE.md). Start the old VM with every
@@ -477,11 +620,9 @@ Run `ansible/cluster-status.yml`, create an authenticated Todo through
 
 - **Where:** Proxmox node Shell for one reboot at a time; current primary for cluster checks; client/build host for HTTPS.
 - **Preconditions:** Phase 9 passed, both roles independently verified and streaming healthy.
-- **Command:** Follow the numbered sequence below; verify standby fully before rebooting primary.
 - **PASS:** Roles/data/CA/backup survive, application healthy, streaming zero lag and no failed units.
 - **Evidence:** Each before/after boot ID, fresh cluster status, health, TLS/issuer and markers.
 - **STOP if:** Standby not recovered, replication unhealthy or any data/TLS failure. Do not reboot the other host.
-- **Next:** Phase 11.
 
 1. Reboot only rebuilt standby.
 2. Require `t|on`, database-only services and resumed streaming.
@@ -501,11 +642,9 @@ standby, and healthy application through trusted HTTPS.
 
 - **Where:** Client/build host collects evidence; both guests supply fresh checks.
 - **Preconditions:** All previous phases passed on the recorded revision; any repair recorded.
-- **Command:** Review the checks below and the private phase record; do not repeat an already verified reboot just because a new agent resumed.
 - **PASS:** CLEAN PASS only for complete unchanged-revision evidence; otherwise record repaired functional pass or incomplete status.
 - **Evidence:** Final role/topology record, phase outputs, real browser results and exact verdict with deviations.
 - **STOP if:** Missing evidence, skipped authenticated tests, unresolved failure or revision drift; do not mark accepted.
-- **Next:** Hand off the working topology. No automatic reset, retirement or state-file editing.
 
 There is no migration stage in the normal DR path. Clean deployment,
 standby bootstrap, promotion, backup and rebuild must already use these
@@ -517,12 +656,14 @@ todo-keycloak.service  todo-keycloak pod
 todo-postgres.service  todo-postgres pod
 ```
 
-Run `python3 /opt/todo/bin/todo_dr_run.py ... verify` after a runner-completed
-rebuild. Always run `ansible/cluster-status.yml` directly for fresh evidence:
-the runner skips verification already marked completed. If rebuild needed a
-manual tail repair, preserve its failed runner state and use direct cluster
-verification; follow the [repair and handoff rules](MANUAL-DR-QUICKSTART.md).
-That run is a repaired functional pass, not a clean pass. Require
+Always obtain fresh cluster evidence directly:
+
+```bash
+ansible-playbook --inventory ansible/inventory-recovery.ini ansible/cluster-status.yml
+```
+
+Inspect reported lag and LSNs as well as the recap; a successful playbook exit
+alone does not prove zero lag or complete acceptance. Require
 schema migrations applied by the init container, healthy backend/frontend,
 nginx-to-backend loopback traffic, shared-service DNS through `todo.network`,
 unchanged PostgreSQL identity, persistent data, streaming replication and WAL
@@ -530,30 +671,10 @@ archive health.
 
 Use the sequential reboot evidence from phase 10; do not add another reboot.
 After those boots, require `NRestarts=0` for `todo-app.service`, no failed user
-units, readiness, stable issuer and trusted browser E2E. The legacy migration
-and rollback playbooks remain transition evidence only until this complete
-acceptance gate permits their retirement.
-
-## Historical evidence — not instructions or current acceptance
-
-The following result belongs to its recorded historical revision and does not
-approve the current grouped runtime or replace any phase card.
-
-### Verified clean nginx drill - 2026-09-01
-
-The full procedure passed from clean Oracle Linux 9.8 snapshots using source
-revision `d8506f75721f92b704eec0669bf2dda36ff18bdb`.
-
-- Both packages reported that exact clean revision.
-- Initial nginx deployment passed trusted HTTPS, two Playwright tests, reboot
-  and idempotent reinstall.
-- Promotion completed with zero local apply lag and produced `f|off`.
-- Stable issuer, authenticated failover write and reboot passed.
-- Base backup `base-20260901T160954Z` was 52 MiB and verified.
-- Isolated PITR contained only the before-row; live data retained both rows.
-- Rebuild produced `todo_rebuilt_standby|streaming|async|0`.
-- Final primary reported `f|off|on|1h`, zero archive failures and healthy apps.
-- Final standby reported `t|on` with receive/replay LSN `0/C0025E8`.
-- Backup use was 52 MiB base plus 161 MiB WAL, with 16 GiB free.
-- nginx CA SHA-256 remained
-  `a9b4ec01d39da1e5d1ef698308faf357655444867013c28c702da01a3f8a9e13`.
+units, readiness, stable issuer and trusted browser E2E with no skipped tests.
+CLEAN PASS requires every phase on the same clean revision, isolated PITR,
+sequential final reboots and a new authenticated marker read on rebuilt standby.
+Record repairs as REPAIRED FUNCTIONAL PASS, preserving original failures.
+Keep quarantine through verification. The stop helper is not a rebuilt-standby
+management tool: it expects all three original application units.
+Do not reset the working pair or repeat promotion/rebuild after the verdict.

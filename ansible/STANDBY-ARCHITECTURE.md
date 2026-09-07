@@ -28,6 +28,12 @@ ssh-copy-id -i "$HOME/.ssh/id_rsa.pub" gunstein@<standby-address>
 ssh -o BatchMode=yes gunstein@<standby-address> hostname
 ```
 
+`scripts/bootstrap-ssh-key.sh gunstein@<standby-address> <expected-fingerprint>`
+does the same, plus it pins the host key only after checking it against the
+fingerprint you supply (obtained through the independently verified connection
+above) instead of a blind interactive accept. Without a fingerprint argument
+it falls back to the same interactive prompt as `ssh-copy-id` alone.
+
 The final command must return the standby hostname without asking for a
 password. Keep the private key only on primary and never add it to an archive or
 the repository.

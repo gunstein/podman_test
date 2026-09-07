@@ -204,7 +204,9 @@ jobs:
             scripts/dev-up.sh \
             scripts/dev-down.sh \
             scripts/run-e2e.sh \
-            scripts/todo-quarantine.sh
+            scripts/todo-quarantine.sh \
+            scripts/trust-serving-ca.sh \
+            scripts/bootstrap-ssh-key.sh
 
       - name: Smoke-test nginx and TLS bootstrap
         shell: bash

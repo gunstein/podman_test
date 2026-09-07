@@ -170,6 +170,22 @@ commands are expected; distinguish absence from access errors. Unrelated Podman
 resources are outside these name-scoped checks. Inspect external firewall state
 separately; snapshot rollback does not reset it.
 
+From the Proxmox node Shell, also check each VM's own firewall, independent of
+the guest checks above:
+
+```bash
+pvesh get /nodes/localhost/qemu/<PRIMARY_VMID>/firewall/options
+pvesh get /nodes/localhost/qemu/<STANDBY_VMID>/firewall/options
+```
+
+Require `enable: 0` on both. A prior drill's quarantine profile (`enable: 1`
+with `policy_in`/`policy_out: DROP`) lives in the Proxmox configuration, not
+the VM disk snapshot, and survives a snapshot rollback unnoticed; left in
+place it silently blocks HTTPS, SSH or replication traffic later in the run
+without any Todo-state symptom above. If found, clear or disable it explicitly
+(`pvesh set /nodes/localhost/qemu/<VMID>/firewall/options -enable 0`) and
+record why it was present before continuing.
+
 Pass when identities differ, security services are active, SELinux is enforcing,
 Podman is rootless, user systemd is available and no Todo state exists. A VM
 snapshot is a lab convenience, not part of the application recovery model.
@@ -274,6 +290,10 @@ must run; adapter tests with a test double do not replace them.
 
 ### Client trust and real browser verification
 
+`scripts/trust-serving-ca.sh user@serving-host` performs the fingerprint
+comparison and both trust-store updates below in one step, for operators who
+already understand the manual sequence. It changes nothing that the commands
+below do not already do explicitly.
 
 On the client, inspect the existing `todo.test` mapping and replace only that
 entry with the current serving host's IP. Initially this is `.102`; after

@@ -217,17 +217,57 @@
         - frontend_image.rc == 1
         - deployment_mode == "offline"
 
+
+    - name: Check whether the proxy image exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - image
+          - exists
+          - localhost/todo-proxy:m12
+      register: proxy_image
+      changed_when: false
+      failed_when: proxy_image.rc not in [0, 1]
+
+    - name: Build the proxy image
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['podman', 'build']
+            + (['--pull'] if refresh_images | bool else [])
+            + ['--file', project_root + '/proxy/Containerfile',
+               '--tag', 'localhost/todo-proxy:m12', project_root]
+          }}
+      register: proxy_built
+      changed_when: true
+      when:
+        - proxy_image.rc == 1 or refresh_images | bool
+        - deployment_mode == "build"
+
+    - name: Load the proxy image from the offline bundle
+      ansible.builtin.command:
+        argv:
+          - podman
+          - load
+          - --input
+          - "{{ bundle_directory }}/images/todo-proxy-m12.tar"
+      register: proxy_loaded
+      changed_when: true
+      when:
+        - proxy_image.rc == 1
+        - deployment_mode == "offline"
+
     - name: Inspect the frontend proxy implementation
       ansible.builtin.command:
-        argv: [podman, image, inspect, localhost/todo-frontend:m12]
-      register: frontend_image_inspection
+        argv: [podman, image, inspect, localhost/todo-proxy:m12]
+      register: proxy_image_inspection
       changed_when: false
 
     - name: Require the nginx frontend image
       ansible.builtin.assert:
         that:
           - >-
-            (frontend_image_inspection.stdout | from_json | first).Labels.get(
+            (proxy_image_inspection.stdout | from_json | first).Labels.get(
               'io.todo.proxy', ''
             ) == 'nginx'
         fail_msg: >-

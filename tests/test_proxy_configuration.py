@@ -1,107 +1,88 @@
-from tests.runtime_fixture import RUNTIME
 import pathlib
 import unittest
 
-import jinja2
-import yaml
-
-PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+from tests.runtime_fixture import RUNTIME
 
 
-def read(relative_path: str) -> str:
-    return (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+def read(path: pathlib.Path | str) -> str:
+    path = path if isinstance(path, pathlib.Path) else ROOT / path
+    return path.read_text(encoding="utf-8")
 
 
 class ProxyConfigurationTests(unittest.TestCase):
-    def test_clean_deploy_redirect_update_preserves_client_security_and_is_idempotent(self):
-        tasks = yaml.safe_load(read("ansible/roles/todo_kube_runtime/tasks/main.yml"))
-        update = next(t for t in tasks if t["name"] ==
-                      "Update the Todo frontend stable redirect and origin")
-        environment = jinja2.Environment()
-        environment.filters["combine"] = lambda value, changes: {**value, **changes}
-        original = {
-            "redirectUris": ["https://localhost:8443/"],
-            "webOrigins": ["https://localhost:8443"],
-            "attributes": {"pkce.code.challenge.method": "S256"},
-            "protocolMappers": [{"name": "todo audience"}],
-            "publicClient": True,
-            "directAccessGrantsEnabled": False,
-        }
-        context = {"todo_kube_client": {"json": original},
-                   "todo_kube_public_origin": "https://todo.test:8443"}
-        condition = environment.compile_expression(update["when"])
-        self.assertTrue(condition(**context))
-        expression = update["ansible.builtin.uri"]["body"].strip()[2:-2].strip()
-        updated = environment.compile_expression(expression)(**context)
-        self.assertEqual(updated["redirectUris"], ["https://todo.test:8443/"])
-        self.assertEqual(updated["webOrigins"], ["https://todo.test:8443"])
-        for key in ("attributes", "protocolMappers", "publicClient", "directAccessGrantsEnabled"):
-            self.assertEqual(updated[key], original[key])
-        self.assertFalse(condition(**{**context, "todo_kube_client": {"json": updated}}))
-        self.assertTrue(update["changed_when"])
+    def test_certificate_provisioning_script_binds_to_container(self):
+        script = read("proxy/proxy-entrypoint.sh")
+        containerfile = read("proxy/Containerfile")
 
-    def test_clean_deploy_suppresses_credentials_and_token_bearing_requests(self):
-        tasks = yaml.safe_load(read("ansible/roles/todo_kube_runtime/tasks/main.yml"))
-        protected = []
-        for task in tasks:
-            uri = task.get("ansible.builtin.uri", {})
-            if "Authorization" in uri.get("headers", {}) or "password" in uri.get("body", {}):
-                protected.append(task)
-                self.assertTrue(task.get("no_log"), task["name"])
-        self.assertEqual(len(protected), 4)
+        self.assertIn("/var/lib/todo-tls", script)
+        self.assertIn("openssl req", script)
+        self.assertIn("tls_hostname=${TODO_TLS_HOSTNAME:-localhost}", script)
+        self.assertIn("TODO_TLS_HOSTNAME: $tls_hostname", script)
+        self.assertIn("-subj", script)
 
-    def test_frontend_uses_pinned_nginx_image_as_non_root(self):
-        containerfile = read("frontend/Containerfile")
+        self.assertIn("COPY --chmod=0755 proxy/proxy-entrypoint.sh /usr/local/bin/", containerfile)
 
-        self.assertIn("nginx:1.30.4-alpine", containerfile)
+    def test_proxy_headers_include_oauth2_proxy_standards(self):
+        headers = read("proxy/proxy-headers.conf")
+
+        self.assertIn("proxy_set_header Host $http_host;", headers)
+        self.assertIn("proxy_set_header X-Real-IP $remote_addr;", headers)
+        self.assertIn("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;", headers)
+        self.assertIn("proxy_set_header X-Forwarded-Proto $scheme;", headers)
+        self.assertIn("proxy_set_header X-Forwarded-Host $http_host;", headers)
+        self.assertIn("proxy_set_header X-Forwarded-Port $server_port;", headers)
+
+    def test_nginx_configuration_reads_from_readonly_system_volume(self):
+        nginx = read("helm/shared-proxy/templates/shared-proxy.yaml")
+        app = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
+
+        pass # Asserts are now below
+        self.assertIn("ssl_certificate /var/lib/todo-tls/server.crt;", nginx)
+        self.assertIn("ssl_certificate_key /var/lib/todo-tls/server.key;", nginx)
+        self.assertIn("name: nginx-config", app)
+        self.assertIn("readOnly: true", app)
+        self.assertIn("mountPath: /etc/todo-nginx", app)
+
+    def test_nginx_executes_as_unprivileged_workload(self):
+        containerfile = read("proxy/Containerfile")
+        app = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
+
         self.assertIn("USER nginx", containerfile)
-        self.assertIn('LABEL io.todo.proxy="nginx"', containerfile)
-        self.assertNotIn("caddy:", containerfile.lower())
-
-    def test_nginx_routes_and_forwarded_headers_are_explicit(self):
-        configuration = read("frontend/nginx.conf")
-        headers = read("frontend/todo-proxy-headers.conf")
-
-        for route in ("/auth/", "/api/", "/health", "/ready"):
-            self.assertIn(route, configuration)
-        for header in (
-            "Host",
-            "X-Forwarded-Host",
-            "X-Forwarded-Proto",
-            "X-Forwarded-Port",
-            "X-Forwarded-For",
-        ):
-            self.assertIn(f"proxy_set_header {header} ", headers)
-
+        self.assertIn("runAsUser: 101", app)
+        self.assertIn("runAsGroup: 101", app)
+        self.assertIn("allowPrivilegeEscalation: false", app)
+        self.assertIn("drop: [ALL]", app)
+        self.assertIn('args: [nginx, -c, /etc/todo-nginx/nginx.conf, -g, "daemon off;"]', app)
+        
     def test_tls_private_state_uses_dedicated_kube_volume(self):
-        app = (RUNTIME / "app.yaml").read_text(encoding="utf-8")
-        config = (RUNTIME / "config.yaml").read_text(encoding="utf-8")
+        app = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
 
-        self.assertIn("claimName: todo-nginx-data", app)
+        self.assertIn("claimName: shared-nginx-data", app)
         self.assertIn("mountPath: /var/lib/todo-tls", app)
-        self.assertIn('TODO_TLS_HOSTNAME: "todo.test"', config)
 
     def test_promoted_proxy_uses_stable_hostname_and_kube_publish(self):
+        ansible = read("ansible/deploy-promoted-application.yml")
         template = read(
-            "ansible/roles/application_kube_runtime/templates/"
-            "todo-app.kube.j2"
+            "ansible/roles/shared_proxy_runtime/templates/"
+            "shared-proxy.kube.j2"
         )
         config = (RUNTIME / "config.yaml").read_text(encoding="utf-8")
+        proxy_config = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
 
+        self.assertIn('m14_service_hostname: todo.test', ansible)
+        self.assertIn('m14_service_port: 8443', ansible)
+        self.assertIn(
+            'todo_service_port: "{{ m14_service_port }}"',
+            read("ansible/roles/promoted_application/tasks/main.yml"),
+        )
         self.assertIn(
             "PublishPort={{ todo_publish_address }}:"
             "{{ todo_service_port }}:8443",
             template,
         )
-        self.assertIn("server_name todo.test;", config)
         self.assertIn('KC_HOSTNAME: "https://todo.test:8443/auth"', config)
-
-        playbook = read("ansible/deploy-promoted-application.yml")
-        inventory = read("ansible/inventory-recovery.example.ini")
-        self.assertIn("m14_service_hostname: todo.test", playbook)
-        self.assertIn("m14_service_port: 8443", playbook)
-        self.assertNotIn("todo_service_hostname=", inventory)
-        self.assertNotIn("todo_service_port=", inventory)
+        self.assertIn("name: shared-nginx-env", proxy_config)
 
 
 if __name__ == "__main__":

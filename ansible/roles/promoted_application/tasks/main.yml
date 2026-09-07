@@ -134,6 +134,14 @@
     todo_publish_address: "{{ m14_node_address }}"
     todo_service_port: "{{ m14_service_port }}"
 
+- name: Install the shared Kube proxy on the promoted host
+  ansible.builtin.include_role:
+    name: shared_proxy_runtime
+  vars:
+    todo_rendered_manifest_directory: "{{ m14_bundle_directory }}/kube/runtime"
+    todo_publish_address: "{{ m14_node_address }}"
+    todo_service_port: "{{ m14_service_port }}"
+
 - name: Stop changed grouped application workloads
   ansible.builtin.command:
     argv: [systemctl, --user, stop, "{{ item }}"]

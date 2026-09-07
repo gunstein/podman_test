@@ -33,7 +33,8 @@ podman wait --condition healthy todo-postgres >/dev/null
 setup_roles
 podman kube play --no-pod-prefix --network todo-network --configmap "$generated/config.yaml" \
   "$generated/keycloak.yaml"
+podman kube play --no-pod-prefix --network todo-network --configmap "$generated/config.yaml" "$generated/app.yaml"
 podman kube play --no-pod-prefix --network todo-network --configmap "$generated/config.yaml" \
   --publish 127.0.0.1:8080:8080 --publish 127.0.0.1:8443:8443 \
-  "$generated/app.yaml"
+  "$generated/shared-proxy.yaml"
 setup_roles

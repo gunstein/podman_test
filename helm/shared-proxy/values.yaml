@@ -1,0 +1,6 @@
+proxy:
+  image: localhost/todo-proxy:m12
+  memory: 128Mi
+runtime:
+  publicHostname: todo.test
+  publicPort: 8443

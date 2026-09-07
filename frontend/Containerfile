@@ -1,13 +1,7 @@
 FROM docker.io/library/nginx:1.30.4-alpine
-LABEL io.todo.proxy="nginx"
-
-RUN apk add --no-cache openssl \
-    && mkdir -p /var/lib/todo-tls \
-    && chown nginx:nginx /var/lib/todo-tls
+LABEL io.todo.frontend="nginx"
 
 COPY frontend/nginx.conf /etc/nginx/nginx.conf
-COPY frontend/todo-proxy-headers.conf /etc/nginx/todo-proxy-headers.conf
-COPY --chmod=0755 frontend/todo-nginx-entrypoint.sh /usr/local/bin/todo-nginx-entrypoint
 COPY frontend/index.html /usr/share/nginx/html/index.html
 COPY frontend/app.js /usr/share/nginx/html/app.js
 COPY frontend/auth.js frontend/keycloak-adapter.js /usr/share/nginx/html/
@@ -15,7 +9,6 @@ COPY frontend/style.css /usr/share/nginx/html/style.css
 COPY frontend/vendor /usr/share/nginx/html/vendor
 
 USER nginx
-EXPOSE 8080 8443
+EXPOSE 8080
 
-ENTRYPOINT ["/usr/local/bin/todo-nginx-entrypoint"]
 CMD ["nginx", "-g", "daemon off;"]

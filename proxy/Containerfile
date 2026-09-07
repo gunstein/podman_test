@@ -1,0 +1,15 @@
+FROM docker.io/library/nginx:1.30.4-alpine
+LABEL io.todo.proxy="nginx"
+
+RUN apk add --no-cache openssl \
+    && mkdir -p /var/lib/todo-tls \
+    && chown nginx:nginx /var/lib/todo-tls
+
+COPY proxy/proxy-headers.conf /etc/nginx/todo-proxy-headers.conf
+COPY --chmod=0755 proxy/proxy-entrypoint.sh /usr/local/bin/proxy-entrypoint
+
+USER nginx
+EXPOSE 8080 8443
+
+ENTRYPOINT ["/usr/local/bin/proxy-entrypoint"]
+CMD ["nginx", "-g", "daemon off;"]

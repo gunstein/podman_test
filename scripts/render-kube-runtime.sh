@@ -19,7 +19,13 @@ for manifest in app keycloak postgres config; do
   perl -0pi -e 's/\n+\z/\n/' "$work_directory/$manifest.yaml"
 done
 
+"$helm_command" template shared-proxy "$project_root/helm/shared-proxy" \
+  --values "$values_file" --show-only "templates/shared-proxy.yaml" \
+  > "$work_directory/shared-proxy.yaml"
+perl -0pi -e 's/\n+\z/\n/' "$work_directory/shared-proxy.yaml"
+
+
 mkdir -p "$output_directory"
-for manifest in app keycloak postgres config; do
+for manifest in app keycloak postgres config shared-proxy; do
   cp "$work_directory/$manifest.yaml" "$output_directory/$manifest.yaml"
 done

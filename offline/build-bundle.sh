@@ -14,11 +14,13 @@ mkdir -p "$(dirname "$output")"
 
 podman build --pull --file "$project_root/backend/Containerfile" --tag localhost/todo-backend:m12 "$project_root"
 podman build --pull --file "$project_root/frontend/Containerfile" --tag localhost/todo-frontend:m12 "$project_root"
+podman build --pull --file "$project_root/proxy/Containerfile" --tag localhost/todo-proxy:m12 "$project_root"
 podman build --pull --file "$project_root/keycloak/Containerfile" --tag localhost/todo-keycloak:m12 "$project_root"
 podman pull docker.io/library/postgres:17.11
 
 podman save --format oci-archive --output "$bundle_directory/images/todo-backend-m12.tar" localhost/todo-backend:m12
 podman save --format oci-archive --output "$bundle_directory/images/todo-frontend-m12.tar" localhost/todo-frontend:m12
+podman save --format oci-archive --output "$bundle_directory/images/todo-proxy-m12.tar" localhost/todo-proxy:m12
 podman save --format oci-archive --output "$bundle_directory/images/todo-keycloak-m12.tar" localhost/todo-keycloak:m12
 podman save --format oci-archive --output "$bundle_directory/images/postgres-17.11.tar" docker.io/library/postgres:17.11
 

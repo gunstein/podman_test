@@ -1,0 +1,6 @@
+runtime:
+  publicHostname: localhost
+  publicPort: 8443
+frontend:
+  image: localhost/todo-frontend:m12
+  memory: 128Mi

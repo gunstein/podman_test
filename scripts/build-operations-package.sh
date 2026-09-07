@@ -61,6 +61,7 @@ cp "$project_root/quadlet/todo.network" \
   "$project_root/quadlet/todo-postgres-backup.volume" \
   "$project_root/quadlet/todo-nginx-data.volume" \
   "$package_directory/quadlet/"
+"$project_root/scripts/render-kube-runtime.sh" "$project_root/helm/todo/values-prod.yaml" "$package_directory/kube/runtime"
 cp -r "$project_root/kube/runtime" "$package_directory/kube/"
 cp "$project_root/scripts/todo_dr.py" \
   "$project_root/scripts/todo-quarantine.sh" \

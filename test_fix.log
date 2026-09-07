@@ -1,0 +1,55 @@
+....................F..F.....FFE.........................F.................................
+======================================================================
+ERROR: test_helm_is_the_single_workload_template_source (test_kube_runtime.KubeRuntimeTests.test_helm_is_the_single_workload_template_source)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/gunstein/koding/podman_test/tests/test_kube_runtime.py", line 241, in test_helm_is_the_single_workload_template_source
+    proxy_template = read(PROJECT_ROOT / "helm/shared-proxy/templates/shared-proxy.yaml")
+                          ^^^^^^^^^^^^
+NameError: name 'PROJECT_ROOT' is not defined
+
+======================================================================
+FAIL: test_current_workloads_preserve_operator_container_names (test_kube_name_contract.KubeNameContractTests.test_current_workloads_preserve_operator_container_names) (pod='todo-app')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/gunstein/koding/podman_test/tests/test_kube_name_contract.py", line 22, in test_current_workloads_preserve_operator_container_names
+    self.assertEqual(
+AssertionError: Items in the second set but not the first:
+'todo-frontend'
+
+======================================================================
+FAIL: test_active_runtime_keeps_loopback_and_shared_dns (test_kube_runtime.KubeRuntimeTests.test_active_runtime_keeps_loopback_and_shared_dns)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/gunstein/koding/podman_test/tests/test_kube_runtime.py", line 120, in test_active_runtime_keeps_loopback_and_shared_dns
+    self.assertIn("server todo-keycloak:8080;", config)
+AssertionError: 'server todo-keycloak:8080;' not found in '---\n# Source: todo/templates/config.yaml\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: todo-postgres-config\ndata:\n  POSTGRES_DB: todo\n  POSTGRES_USER: todo\n\n\n---\n# Source: todo/templates/config.yaml\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: todo-backend-config\ndata:\n  DATABASE_HOST: todo-postgres\n  DATABASE_PORT: "5432"\n  DATABASE_NAME: todo\n  DATABASE_USER: todo_app\n  LOG_LEVEL: "info"\n  OIDC_ISSUER: "https://todo.test:8443/auth/realms/todo"\n  OIDC_JWKS_URL: http://todo-keycloak:8080/auth/realms/todo/protocol/openid-connect/certs\n  OIDC_AUDIENCE: todo-frontend\n\n\n---\n# Source: todo/templates/config.yaml\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: todo-keycloak-config\ndata:\n  KC_BOOTSTRAP_ADMIN_USERNAME: admin\n  KC_DB: postgres\n  KC_DB_URL_HOST: todo-postgres\n  KC_DB_URL_PORT: "5432"\n  KC_DB_URL_DATABASE: todo\n  KC_DB_SCHEMA: keycloak\n  KC_DB_USERNAME: keycloak_app\n  KC_HTTP_ENABLED: "true"\n  KC_HTTP_RELATIVE_PATH: /auth\n  KC_HOSTNAME: "https://todo.test:8443/auth"\n  KC_PROXY_HEADERS: xforwarded\n  KC_HEALTH_ENABLED: "true"\n  KC_CACHE: ispn\n  KC_CACHE_STACK: jdbc-ping\n  KC_SPI_CACHE_EMBEDDED__DEFAULT__NODE_NAME: todo-keycloak\n'
+
+======================================================================
+FAIL: test_frontend_reuses_the_accepted_tls_volume (test_kube_runtime.KubeRuntimeTests.test_frontend_reuses_the_accepted_tls_volume)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/gunstein/koding/podman_test/tests/test_kube_runtime.py", line 95, in test_frontend_reuses_the_accepted_tls_volume
+    self.assertIn('volume.podman.io/uid: "101"', app)
+AssertionError: 'volume.podman.io/uid: "101"' not found in '---\n# Source: todo/templates/app.yaml\napiVersion: v1\nkind: Pod\nmetadata:\n  name: todo-app\n  labels:\n    app.kubernetes.io/name: todo\n    app.kubernetes.io/component: application\n  annotations:\n    io.podman.annotations.pids-limit/todo-migrate: "128"\n    io.podman.annotations.pids-limit/todo-backend: "128"\nspec:\n  restartPolicy: Never\n  initContainers:\n    - name: todo-migrate\n      image: "localhost/todo-backend:m12"\n      imagePullPolicy: Never\n      args: [python, -m, backend.migrate, --connect-timeout, "120", up]\n      envFrom:\n        - configMapRef:\n            name: todo-backend-config\n            optional: false\n      env:\n        - name: DATABASE_USER\n          value: todo_migrator\n        - name: DATABASE_PASSWORD_FILE\n          value: /run/secrets/todo-migrator/database-password\n      volumeMounts:\n        - name: migrator-secret\n          mountPath: /run/secrets/todo-migrator\n          readOnly: true\n      resources:\n        limits:\n          memory: "256Mi"\n      securityContext:\n        runAsUser: 1000\n        runAsGroup: 1000\n        allowPrivilegeEscalation: false\n        capabilities:\n          drop: [ALL]\n  containers:\n    - name: todo-backend\n      image: "localhost/todo-backend:m12"\n      imagePullPolicy: Never\n      ports:\n        - name: backend-http\n          containerPort: 8000\n      envFrom:\n        - configMapRef:\n            name: todo-backend-config\n            optional: false\n      env:\n        - name: DATABASE_PASSWORD_FILE\n          value: /run/secrets/todo-backend/database-password\n      volumeMounts:\n        - name: backend-secret\n          mountPath: /run/secrets/todo-backend\n          readOnly: true\n      livenessProbe:\n        exec:\n          command:\n            - python\n            - -c\n            - >-\n              import socket;\n              socket.create_connection(("127.0.0.1", 8000), 1).close()\n        initialDelaySeconds: 2\n        periodSeconds: 10\n        timeoutSeconds: 2\n        failureThreshold: 3\n      resources:\n        limits:\n          memory: "256Mi"\n      securityContext:\n        runAsUser: 1000\n        runAsGroup: 1000\n        allowPrivilegeEscalation: false\n        capabilities:\n          drop: [ALL]\n  volumes:\n    - name: backend-secret\n      secret:\n        secretName: todo-kube-backend-secret\n        optional: false\n        defaultMode: 0444\n    - name: migrator-secret\n      secret:\n        secretName: todo-kube-migrator-secret\n        optional: false\n        defaultMode: 0444\n'
+
+======================================================================
+FAIL: test_frontend_runtime_unit_maps_external_port_to_container_tls (test_kube_runtime.KubeRuntimeTests.test_frontend_runtime_unit_maps_external_port_to_container_tls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/gunstein/koding/podman_test/tests/test_kube_runtime.py", line 156, in test_frontend_runtime_unit_maps_external_port_to_container_tls
+    self.assertIn("127.0.0.1:8080:8080", template)
+AssertionError: '127.0.0.1:8080:8080' not found in '[Unit]\nDescription=Todo frontend and backend Podman Kube workload\nRequires=todo-postgres.service todo-keycloak.service\nAfter=todo-postgres.service todo-keycloak.service\n\n[Kube]\nYaml=app.yaml\nConfigMap=config.yaml\nNetwork=todo.network\nPodmanArgs=--no-pod-prefix\nExitCodePropagation=any\nLogDriver=journald\nSetWorkingDirectory=yaml\n\n[Service]\nRestart=on-failure\nRestartSec=5s\nTimeoutStartSec=180\nTimeoutStopSec=60\n\n[Install]\nWantedBy=default.target\n'
+
+======================================================================
+FAIL: test_promoted_proxy_uses_stable_hostname_and_kube_publish (test_proxy_configuration.ProxyConfigurationTests.test_promoted_proxy_uses_stable_hostname_and_kube_publish)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/gunstein/koding/podman_test/tests/test_proxy_configuration.py", line 91, in test_promoted_proxy_uses_stable_hostname_and_kube_publish
+    self.assertIn(
+AssertionError: 'PublishPort={{ todo_publish_address }}:{{ todo_service_port }}:8443' not found in '[Unit]\nDescription=Todo frontend and backend Podman Kube workload\nRequires=todo-postgres.service todo-keycloak.service\nAfter=todo-postgres.service todo-keycloak.service\n\n[Kube]\nYaml=app.yaml\nConfigMap=config.yaml\nNetwork=todo.network\nPodmanArgs=--no-pod-prefix\nExitCodePropagation=any\nLogDriver=journald\nSetWorkingDirectory=yaml\n\n[Service]\nRestart=on-failure\nRestartSec=5s\nTimeoutStartSec=180\nTimeoutStopSec=60\n\n[Install]\nWantedBy=default.target\n'
+
+----------------------------------------------------------------------
+Ran 91 tests in 15.201s
+
+FAILED (failures=5, errors=1)

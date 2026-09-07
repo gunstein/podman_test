@@ -44,7 +44,12 @@ Paste only the command block, not prompts such as `root@proxmox:~#`.
 After each operator action, inspect its result before giving the next mutation.
 Batch independent read-only checks; do not batch across a fencing or deletion
 gate. Agents should run available checks themselves instead of asking the
-operator to copy logs repeatedly. Report the next location explicitly.
+operator to copy logs repeatedly. Report the next location explicitly. If most
+steps end up relaying commands through the operator's terminal or the Proxmox
+node Shell, consider asking the operator about scoped Proxmox API or sudo
+access before starting the next run; that is the largest lever for reducing
+round trips, but it is the operator's access decision to make, not the
+agent's to assume.
 
 ### Run record / handoff template
 

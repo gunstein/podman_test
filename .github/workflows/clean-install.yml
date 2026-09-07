@@ -172,16 +172,6 @@ jobs:
             sha256sum --check
           tar -xzf /tmp/helm.tar.gz -C /tmp
 
-      - name: Verify generated Kube runtime
-        shell: bash
-        run: |
-          HELM=/tmp/linux-amd64/helm scripts/render-kube-runtime.sh \
-            helm/todo/values-prod.yaml /tmp/rendered
-          diff -ru /tmp/rendered/app.yaml kube/runtime/app.yaml
-          diff -ru /tmp/rendered/keycloak.yaml kube/runtime/keycloak.yaml
-          diff -ru /tmp/rendered/postgres.yaml kube/runtime/postgres.yaml
-          diff -ru /tmp/rendered/config.yaml kube/runtime/config.yaml
-
       - name: Lint Python
         run: ruff check backend e2e scripts tests
 

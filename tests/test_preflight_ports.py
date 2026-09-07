@@ -32,7 +32,8 @@ class PreflightHostPortTests(unittest.TestCase):
     def test_host_backend_port_is_not_reserved(self):
         self.assertEqual(self.check_ports({8000}), [5432, 8080, 8443])
         self.assertNotIn('"todo-backend:8000"', PREFLIGHT)
-        manifest = (ROOT / "kube/runtime/app.yaml").read_text()
+        from tests.runtime_fixture import RUNTIME
+        manifest = (RUNTIME / "app.yaml").read_text()
         self.assertIn("containerPort: 8000", manifest)
 
     def test_unexpected_published_port_conflicts_are_rejected(self):

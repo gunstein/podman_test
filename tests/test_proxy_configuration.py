@@ -1,3 +1,4 @@
+from tests.runtime_fixture import RUNTIME
 import pathlib
 import unittest
 
@@ -73,8 +74,8 @@ class ProxyConfigurationTests(unittest.TestCase):
             self.assertIn(f"proxy_set_header {header} ", headers)
 
     def test_tls_private_state_uses_dedicated_kube_volume(self):
-        app = read("kube/runtime/app.yaml")
-        config = read("kube/runtime/config.yaml")
+        app = (RUNTIME / "app.yaml").read_text(encoding="utf-8")
+        config = (RUNTIME / "config.yaml").read_text(encoding="utf-8")
 
         self.assertIn("claimName: todo-nginx-data", app)
         self.assertIn("mountPath: /var/lib/todo-tls", app)
@@ -85,7 +86,7 @@ class ProxyConfigurationTests(unittest.TestCase):
             "ansible/roles/application_kube_runtime/templates/"
             "todo-app.kube.j2"
         )
-        config = read("kube/runtime/config.yaml")
+        config = (RUNTIME / "config.yaml").read_text(encoding="utf-8")
 
         self.assertIn(
             "PublishPort={{ todo_publish_address }}:"

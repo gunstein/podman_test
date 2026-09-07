@@ -4,7 +4,7 @@ import unittest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-RUNTIME = ROOT / "kube" / "runtime"
+from tests.runtime_fixture import RUNTIME
 
 
 class KubeNameContractTests(unittest.TestCase):

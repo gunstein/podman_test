@@ -14,7 +14,7 @@
       {{
         (bundle_directory ~ '/kube/runtime')
         if deployment_mode == 'offline'
-        else (project_root ~ '/kube/runtime')
+        else (project_root ~ '/generated/kube-runtime')
       }}
     todo_publish_address: 127.0.0.1
     todo_service_port: 8443
@@ -27,6 +27,17 @@
           - deployment_mode != "offline" or bundle_directory | length > 0
           - deployment_mode != "offline" or not (refresh_images | bool)
         fail_msg: Offline deployment requires bundle_directory.
+
+    - name: Render Kube runtime manifests on the fly
+      ansible.builtin.command:
+        argv:
+          - "{{ project_root }}/scripts/render-kube-runtime.sh"
+          - "{{ project_root }}/helm/todo/values-prod.yaml"
+          - "{{ project_root }}/generated/kube-runtime"
+      delegate_to: localhost
+      run_once: true
+      when: deployment_mode == 'build'
+      changed_when: true
 
     - name: Check that Podman is installed
       ansible.builtin.command:

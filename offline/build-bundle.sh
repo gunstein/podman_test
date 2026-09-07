@@ -10,7 +10,7 @@ trap 'rm -rf "$work_directory"' EXIT
 mkdir -p "$bundle_directory/images" "$bundle_directory/docs" \
   "$bundle_directory/kube" "$bundle_directory/helm"
 mkdir -p "$(dirname "$output")"
-"$project_root/scripts/render-kube-runtime.sh"
+"$project_root/scripts/render-kube-runtime.sh" "$project_root/helm/todo/values-prod.yaml" "$bundle_directory/kube/runtime"
 
 podman build --pull --file "$project_root/backend/Containerfile" --tag localhost/todo-backend:m12 "$project_root"
 podman build --pull --file "$project_root/frontend/Containerfile" --tag localhost/todo-frontend:m12 "$project_root"

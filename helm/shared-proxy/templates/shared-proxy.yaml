@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: shared-nginx-data
+  name: todo-nginx-data
   annotations:
     volume.podman.io/uid: "101"
     volume.podman.io/gid: "101"
@@ -132,4 +132,4 @@ spec:
         defaultMode: 0444
     - name: tls-data
       persistentVolumeClaim:
-        claimName: shared-nginx-data
+        claimName: todo-nginx-data

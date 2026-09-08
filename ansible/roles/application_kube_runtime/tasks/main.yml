@@ -126,14 +126,11 @@
     - config.yaml
   register: todo_application_kube_manifests
 
-- name: Install application network and volume Quadlets
+- name: Install application network Quadlet
   ansible.builtin.copy:
-    src: "{{ project_root }}/quadlet/{{ item }}"
-    dest: "{{ todo_quadlet_directory }}/{{ item }}"
+    src: "{{ project_root }}/quadlet/todo.network"
+    dest: "{{ todo_quadlet_directory }}/todo.network"
     mode: "0644"
-  loop:
-    - todo.network
-    - todo-nginx-data.volume
   register: todo_application_kube_resources
 
 - name: Install application Kube Quadlets

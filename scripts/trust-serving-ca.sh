@@ -13,11 +13,11 @@ temporary=$(mktemp)
 trap 'rm -f "$temporary"' EXIT
 
 ssh -o StrictHostKeyChecking=yes "$ssh_target" \
-  'podman exec todo-frontend cat /var/lib/todo-tls/ca.crt' > "$temporary"
+  'podman exec nginx cat /var/lib/todo-tls/ca.crt' > "$temporary"
 
 local_fingerprint=$(openssl x509 -in "$temporary" -noout -fingerprint -sha256)
 remote_fingerprint=$(ssh -o BatchMode=yes "$ssh_target" \
-  'podman exec todo-frontend openssl x509 -in /var/lib/todo-tls/ca.crt -noout -fingerprint -sha256')
+  'podman exec nginx openssl x509 -in /var/lib/todo-tls/ca.crt -noout -fingerprint -sha256')
 
 if [[ "$local_fingerprint" != "$remote_fingerprint" ]]; then
   echo "Fingerprint mismatch: SSH-retrieved certificate does not match the" >&2

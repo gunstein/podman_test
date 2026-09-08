@@ -6,6 +6,7 @@
     - todo-frontend.service
     - todo-backend.service
     - todo-keycloak.service
+    - shared-proxy.service
     - todo-postgres.service
   register: m16_reseed_stopped
   changed_when: false
@@ -79,8 +80,10 @@
   loop:
     - todo-app.kube
     - todo-keycloak.kube
+    - shared-proxy.kube
     - app.yaml
     - keycloak.yaml
+    - shared-proxy.yaml
 
 - name: Remove the explicitly confirmed old database volume
   ansible.builtin.command: {argv: [podman, volume, rm, todo-postgres-data]}

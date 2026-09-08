@@ -180,7 +180,6 @@
     - todo-keycloak.service
     - todo-postgres.service
     - shared-proxy.service
-    - shared-proxy.service
   when: >-
     todo_kube_manifests.changed or
     todo_kube_resources.changed or
@@ -396,11 +395,10 @@
     - todo-keycloak.service
     - todo-postgres.service
     - shared-proxy.service
-    - shared-proxy.service
   register: todo_kube_service_sources
   changed_when: false
 
-- name: Require exactly the three Kube workload boundaries
+- name: Require exactly the four Kube workload boundaries
   ansible.builtin.assert:
     that:
       - item.stdout | trim is match('^.*/todo-kube-runtime/.*\.kube$')

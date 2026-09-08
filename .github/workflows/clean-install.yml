@@ -188,7 +188,7 @@ jobs:
             offline/build-bundle.sh \
             offline/install.sh \
             offline/preflight.sh \
-            frontend/todo-nginx-entrypoint.sh \
+            proxy/proxy-entrypoint.sh \
             scripts/build-operations-package.sh \
             scripts/render-kube-runtime.sh \
             scripts/dev-up.sh \
@@ -202,12 +202,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          image="todo-frontend-ci:${GITHUB_SHA}"
+          image="todo-proxy-ci:${GITHUB_SHA}"
           volume="todo-nginx-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           trap 'docker volume rm --force "$volume" >/dev/null 2>&1 || true' EXIT
 
           docker build \
-            --file frontend/Containerfile \
+            --file proxy/Containerfile \
             --tag "$image" \
             .
           docker volume create "$volume" >/dev/null

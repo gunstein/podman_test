@@ -89,7 +89,7 @@ class KubeRuntimeTests(unittest.TestCase):
     def test_frontend_reuses_the_accepted_tls_volume(self):
         app = read(RUNTIME / "app.yaml")
         proxy = read(RUNTIME / "shared-proxy.yaml")
-        self.assertIn("name: shared-nginx-data", proxy)
+        self.assertIn("name: todo-nginx-data", proxy)
         self.assertNotIn("todo-kube-nginx-data", app)
         self.assertIn('volume.podman.io/uid: "101"', proxy)
         self.assertNotIn('volume.podman.io/gid: "101"', app)

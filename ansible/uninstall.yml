@@ -23,6 +23,7 @@
       - todo-frontend.service
       - todo-backend.service
       - todo-keycloak.service
+      - shared-proxy.service
       - todo-db-grants.service
       - todo-migrate.service
       - todo-db-setup.service
@@ -33,6 +34,7 @@
       - todo-nginx-data-volume.service
     application_containers:
       - todo-frontend
+      - nginx
       - todo-backend
       - todo-keycloak
       - todo-migrate
@@ -42,6 +44,7 @@
     application_images:
       - localhost/todo-backend:m12
       - localhost/todo-frontend:m12
+      - localhost/todo-proxy:m12
       - localhost/todo-keycloak:m12
     remove_data: false
     later_milestone_markers:

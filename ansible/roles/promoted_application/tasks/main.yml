@@ -67,6 +67,8 @@
       archive: todo-backend-m12.tar
     - image: localhost/todo-frontend:m12
       archive: todo-frontend-m12.tar
+    - image: localhost/todo-proxy:m12
+      archive: todo-proxy-m12.tar
     - image: localhost/todo-keycloak:m12
       archive: todo-keycloak-m12.tar
   register: m14_image_checks
@@ -109,22 +111,22 @@
   loop_control:
     label: "{{ item.item.image }}"
 
-- name: Inspect the frontend proxy implementation
+- name: Inspect the shared proxy implementation
   ansible.builtin.command:
-    argv: [podman, image, inspect, localhost/todo-frontend:m12]
-  register: m14_frontend_image_inspection
+    argv: [podman, image, inspect, localhost/todo-proxy:m12]
+  register: m14_proxy_image_inspection
   changed_when: false
 
-- name: Require the nginx frontend image
+- name: Require the nginx proxy image
   ansible.builtin.assert:
     that:
       - >-
-        (m14_frontend_image_inspection.stdout | from_json | first).Labels.get(
+        (m14_proxy_image_inspection.stdout | from_json | first).Labels.get(
           'io.todo.proxy', ''
         ) == 'nginx'
     fail_msg: >-
-      The staged localhost/todo-frontend:m12 image does not identify nginx.
-      Load the frontend archive from the current verified offline bundle before failover.
+      The staged localhost/todo-proxy:m12 image does not identify nginx.
+      Load the proxy archive from the current verified offline bundle before failover.
 
 - name: Install the grouped Kube application on the promoted host
   ansible.builtin.include_role:
@@ -148,16 +150,24 @@
   loop:
     - todo-app.service
     - todo-keycloak.service
+    - shared-proxy.service
   changed_when: false
   register: m14_service_stopped
   failed_when: m14_service_stopped.rc not in [0, 5]
   when: >-
     todo_application_kube_changed or
+    todo_proxy_kube_changed or
     m14_images_loaded.changed | default(false)
 
 - name: Start the promoted grouped application
   ansible.builtin.systemd_service:
     name: todo-app.service
+    scope: user
+    state: started
+
+- name: Start the promoted shared proxy
+  ansible.builtin.systemd_service:
+    name: shared-proxy.service
     scope: user
     state: started
 
@@ -283,7 +293,7 @@
     argv:
       - podman
       - exec
-      - todo-frontend
+      - nginx
       - cat
       - /var/lib/todo-tls/ca.crt
   register: m14_nginx_root_certificate

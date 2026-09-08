@@ -58,7 +58,7 @@ class ProxyConfigurationTests(unittest.TestCase):
     def test_tls_private_state_uses_dedicated_kube_volume(self):
         app = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
 
-        self.assertIn("claimName: shared-nginx-data", app)
+        self.assertIn("claimName: todo-nginx-data", app)
         self.assertIn("mountPath: /var/lib/todo-tls", app)
 
     def test_promoted_proxy_uses_stable_hostname_and_kube_publish(self):

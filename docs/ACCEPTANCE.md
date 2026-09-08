@@ -278,9 +278,9 @@ systemctl --user is-active \
   todo-keycloak.service \
   todo-app.service
 systemctl --user --failed --no-pager
-podman image inspect localhost/todo-frontend:m12 \
+podman image inspect localhost/todo-proxy:m12 \
   --format '{{index .Labels "io.todo.proxy"}}'
-podman exec todo-frontend nginx -t
+podman exec nginx nginx -t
 curl --fail http://127.0.0.1:8080/health
 curl --fail http://127.0.0.1:8080/ready
 ```
@@ -304,7 +304,7 @@ On the client, inspect the existing `todo.test` mapping and replace only that
 entry with the current serving host's IP. Initially this is `.102`; after
 promotion it is `.108`. Do not leave two competing mappings. Retrieve only the
 public CA over verified SSH and compare its SHA-256 with the serving host's copy.
-On the initial host the public CA is in `todo-frontend:/var/lib/todo-tls/ca.crt`;
+On the initial host the public CA is in `nginx:/var/lib/todo-tls/ca.crt`;
 the promoted application role also exports it to `~/.config/todo/todo-nginx-root.crt`.
 Never export the private key. See [TLS](TLS.md) for the trust model.
 
@@ -313,11 +313,11 @@ Example from the client, using the verified current serving address:
 ```bash
 read -rp "Current serving host IPv4: " TODO_SERVING_IP
 ssh -o StrictHostKeyChecking=yes "gunstein@${TODO_SERVING_IP}" \
-  'podman exec todo-frontend cat /var/lib/todo-tls/ca.crt' > /tmp/todo-public-root.crt
+  'podman exec nginx cat /var/lib/todo-tls/ca.crt' > /tmp/todo-public-root.crt
 openssl x509 -in /tmp/todo-public-root.crt -noout -fingerprint -sha256
 ```
 
-Compare that fingerprint with `podman exec todo-frontend openssl x509 -in
+Compare that fingerprint with `podman exec nginx openssl x509 -in
 /var/lib/todo-tls/ca.crt -noout -fingerprint -sha256` on the serving host before
 import. On the Debian-family test client, after reviewing the existing target:
 

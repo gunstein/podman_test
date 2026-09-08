@@ -115,13 +115,15 @@ terminates HTTPS. OpenSSL provides a local demo CA, not managed production PKI.
 Client CA trust and server private-key protection are separate obligations.
 
 ```bash
-podman exec todo-frontend nginx -t
+podman exec nginx nginx -t
 curl --fail https://todo.test:8443/ready
 curl --fail https://todo.test:8443/auth/realms/todo/.well-known/openid-configuration
 ```
 
 These HTTPS commands require client name resolution and CA trust.
-Read `frontend/nginx.conf`, [TLS](TLS.md) and the frontend adapter chain:
+Read `frontend/nginx.conf` for static asset serving, the nginx ConfigMap in
+`helm/shared-proxy/templates/shared-proxy.yaml` for reverse-proxy routing,
+[TLS](TLS.md) and the frontend adapter chain:
 
 ```text
 app.js → auth.js → keycloak-adapter.js → Keycloak SDK

@@ -23,6 +23,19 @@ class AcceptanceGuideTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+        commands = "\n".join(shell_blocks()).replace("\\\n", "")
+        checks = [shlex.split(line) for line in commands.splitlines()
+                  if "systemctl --user is-active" in line]
+        self.assertTrue(checks)
+        for command in checks:
+            self.assertEqual(set(command[3:]), {
+                "todo-app.service", "todo-keycloak.service",
+                "todo-postgres.service", "shared-proxy.service",
+            })
+        for line in commands.splitlines():
+            if "podman exec nginx nginx -t" in line:
+                self.assertIn("-c /etc/todo-nginx/nginx.conf", line)
+
 
     def test_direct_mutation_examples_keep_exact_confirmation_arguments(self):
         commands = '\n'.join(shell_blocks()).replace('\\\n', '')

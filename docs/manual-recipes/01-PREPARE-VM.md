@@ -1,5 +1,12 @@
 # Prepare an Oracle Linux 9 VM
 
+This demonstrates the host prerequisites for all four pods. Run host commands
+inside a new disposable VM; use the Proxmox node Shell only where labelled.
+Package installation, user creation and reboot change the host. Do not repeat
+this preparation on a working installation or reuse occupied UID/GID ranges.
+If the final checks fail, inspect the failed service or package version and
+resolve it before installing Todo; do not disable SELinux or fapolicyd.
+
 **Precondition:** you have created the VM in Proxmox, installed Oracle Linux 9
 and have a user with sudo access. Do this preparation while the VM still has
 access to the Oracle Linux package repositories.

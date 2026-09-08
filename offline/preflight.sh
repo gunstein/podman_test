@@ -73,7 +73,7 @@ fi
 allowed_ports=""
 for container_ports in \
     "todo-postgres:5432" \
-    "todo-frontend:8080,8443"
+    "nginx:8080,8443"
 do
     container=${container_ports%%:*}
     ports=${container_ports#*:}

@@ -1,9 +1,8 @@
 # TLS and reverse proxy model
 
-The Todo frontend image uses nginx because the demo is also a migration rehearsal
-for a larger nginx-based service. nginx serves the static frontend and proxies
-only the documented backend and Keycloak routes. Rootless Podman publishes
-unprivileged host ports 8080 and 8443.
+The separate shared proxy image (`localhost/todo-proxy:m12`) terminates TLS
+in container `nginx`, owned by `shared-proxy.service`. It routes to the HTTP-only
+frontend, FastAPI and Keycloak over Podman DNS. Frontend holds no TLS material.
 
 Reverse-proxy choice and certificate authority choice are separate decisions.
 nginx never acts as a CA.
@@ -23,7 +22,10 @@ change causes a new leaf certificate from the same local CA. A container restart
 renews an expiring leaf certificate. Missing CA state causes a completely new
 trust root.
 
-Existing Caddy-tagged frontend images are rejected by clean deployment and application recovery. Rebuild with `refresh_images=true` on a connected controller, or explicitly load the frontend archive from a newly verified offline bundle before deployment.
+Clean deployment and application recovery require `io.todo.proxy=nginx` on
+`localhost/todo-proxy:m12`. Rebuild with `refresh_images=true` on a connected
+controller, or explicitly load the proxy archive from a verified current offline
+bundle before deployment. The frontend image has no proxy identity contract.
 
 This mode is deliberately self-contained and works offline, but it is not the
 recommended certificate lifecycle for multiple services or normal operations.

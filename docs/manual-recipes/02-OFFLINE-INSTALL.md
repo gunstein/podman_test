@@ -1,5 +1,13 @@
 # Offline install on one VM
 
+This demonstrates four pods delivered without target internet access, trusted
+HTTPS, public reads and authenticated writes. Use a clean lab VM, enough disk,
+rootless Podman on the build laptop, verified SSH and the prepared service user.
+Building runs on the laptop; installation and service checks run inside the VM.
+Do not run this initial installer on an existing replicated pair. If a command
+fails, stop and inspect its output and the affected user-service journal before
+continuing; use [troubleshooting](../ACCEPTANCE-TROUBLESHOOTING.md).
+
 **Precondition:** the repository, on branch `feature/podman-kube`, is on your
 Linux laptop. The laptop has internet access and is compatible with the
 target VM's CPU architecture. The target VM is prepared per
@@ -20,6 +28,7 @@ in CI, `.github/workflows/clean-install.yml`), then build:
 ```bash
 curl --fail --location --output /tmp/helm.tar.gz \
   https://get.helm.sh/helm-v4.2.4-linux-amd64.tar.gz
+echo "c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3  /tmp/helm.tar.gz" | sha256sum -c
 tar -xzf /tmp/helm.tar.gz -C /tmp
 export PATH="/tmp/linux-amd64:$PATH"
 
@@ -39,7 +48,7 @@ dist/todo-offline-m12.tar.gz
 dist/todo-offline-m12.tar.gz.sha256
 ```
 
-The bundle contains the backend, frontend, Keycloak and PostgreSQL images,
+The bundle contains the backend, frontend, shared proxy, Keycloak and PostgreSQL images,
 plus the installer and manifest files (see `offline/README.md`).
 
 ## 2. Copy the bundle to the VM
@@ -101,7 +110,8 @@ package index.
 systemctl --user is-active \
   todo-postgres.service \
   todo-keycloak.service \
-  todo-app.service
+  todo-app.service \
+  shared-proxy.service
 
 podman ps
 podman secret ls
@@ -109,7 +119,7 @@ podman secret ls
 curl --fail http://127.0.0.1:8080/ready
 ```
 
-All three services should be active, and the readiness check should succeed.
+All four services should be active, and the readiness check should succeed.
 
 ## 6. Open Todo from the laptop
 
@@ -136,3 +146,21 @@ The detailed source for this installation is the
 [offline bundle guide](../../offline/README.md). On a repeat installation you
 must use the same `--publish-address`, otherwise publication falls back to
 localhost.
+
+## 7. Try public reads and login
+
+From the laptop, verify `curl --fail https://todo.test:8443/ready` succeeds
+without `-k`. Open Todo: reads should work before login. In Keycloak's admin UI,
+create a lab user with email, first/last name, a non-temporary password and no
+required actions. Log in through Todo, create a uniquely named test Todo, edit
+it, reload the page and verify it remains. Delete only your own test item.
+Log out and verify writes require login again.
+
+If login loops or fails, inspect discovery at
+`https://todo.test:8443/auth/realms/todo/.well-known/openid-configuration`:
+issuer must be `https://todo.test:8443/auth/realms/todo`. Check the client mapping,
+CA trust and user profile; do not disable certificate verification.
+
+On the VM, `podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf` should
+report success. `nginx` belongs to `shared-proxy.service`; its CA persists in
+`todo-nginx-data`. `todo-frontend` only serves HTTP static files.

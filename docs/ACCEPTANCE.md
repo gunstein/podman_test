@@ -1,7 +1,7 @@
 # Acceptance
 
 This is the canonical normal execution sequence for full two-VM acceptance of
-the three-workload Podman Kube architecture. Use direct DR tools and Ansible
+the four-workload Podman Kube architecture. Use direct DR tools and Ansible
 playbooks below. The final rebuild permanently replaces old-primary database
 data; use disposable lab hosts and explicit infrastructure fencing.
 
@@ -135,7 +135,7 @@ With NAT, check the source address seen by the destination. Our primary saw
 `192.168.0.100` in `SSH_CLIENT`, different from the ThinkPad's own LAN address.
 Manual reset uses the Proxmox node Shell and requires no hypervisor SSH.
 
-Container DNS names (`todo-postgres`, `todo-keycloak`) stay unchanged. Editing
+Pod DNS names (`todo-app`, `todo-postgres`, `todo-keycloak`) stay unchanged. Editing
 inventory does not readdress running databases or update persisted DR config.
 These instructions prepare a clean topology; changing the IPs of an existing
 replicated pair requires a separate maintenance plan.
@@ -164,7 +164,7 @@ podman ps -a
 podman volume ls
 podman secret ls
 podman network ls
-find "$HOME/.config/containers/systemd" -type f \( -name 'todo*.container' -o -name 'todo*.kube' -o -name 'todo*.network' -o -name 'todo*.volume' \) -print
+find "$HOME/.config/containers/systemd" -type f \( -name 'todo*.container' -o -name 'todo*.kube' -o -name 'shared-proxy.kube' -o -name 'todo*.network' -o -name 'todo*.volume' \) -print
 ls -ld "$HOME/.config/todo" /opt/todo/bin/todo_dr.py /opt/todo/bin/todo_backup.py
 ```
 
@@ -222,7 +222,8 @@ tar -xOf todo-offline-m12.tar.gz todo-offline-m12/VERSION
 tar -xOf todo-operations.tar.gz todo-operations/VERSION
 ```
 
-Both `VERSION` files must contain the same full revision and
+After extraction, run `sha256sum -c SHA256SUMS` inside each package before
+running packaged tools. Both `VERSION` files must contain the same full revision and
 `source_state=clean`. Transfer each archive and checksum through a trusted path.
 On both VMs:
 
@@ -276,13 +277,15 @@ valid nginx configuration, health, readiness and Keycloak discovery:
 systemctl --user is-active \
   todo-postgres.service \
   todo-keycloak.service \
-  todo-app.service
+  todo-app.service \
+  shared-proxy.service
 systemctl --user --failed --no-pager
 podman image inspect localhost/todo-proxy:m12 \
   --format '{{index .Labels "io.todo.proxy"}}'
-podman exec nginx nginx -t
+podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf
 curl --fail http://127.0.0.1:8080/health
 curl --fail http://127.0.0.1:8080/ready
+curl --fail http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
 ```
 
 Export only the public demo root, trust it on the client, verify HTTPS, run both
@@ -376,7 +379,8 @@ application failover and final reboots, updating trust for a newly created CA.
 The test deletes its own Todo; create a separate authenticated persistent marker
 through the UI and record its ID/title for replication and reboot checks.
 
-Reboot the VM. Verify services, marker data and TLS CA persistence, then rerun
+Reboot the VM. Repeat the four-service and nginx configuration checks above;
+verify marker data and unchanged TLS CA fingerprint in `todo-nginx-data`, then rerun
 `sh ./install.sh --publish-address 192.168.0.102`. Pass when the second
 deployment reports `changed=0`.
 
@@ -530,7 +534,10 @@ root. Require system-trust HTTPS, health/readiness, stable issuer
 persistent authenticated failover marker.
 
 Rerun the playbook and require `changed=0`. Reboot promoted host and verify all
-services, writable PostgreSQL, nginx, marker data and unchanged CA hash.
+four workload services listed in phase 3, writable PostgreSQL,
+`podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf`, marker data
+and unchanged CA hash. The app pod shares loopback between frontend and backend,
+but the proxy reaches both over DNS; frontend serves HTTP only and holds no TLS keys.
 
 ## 8. Backup and isolated PITR
 
@@ -653,7 +660,8 @@ Run `ansible/cluster-status.yml`, create an authenticated Todo through
 2. Require `t|on`, database-only services and resumed streaming.
 3. Run `cluster-status.yml`.
 4. Reboot only current primary.
-5. Require all application services, `nginx -t`, `f|off|on|1h`, persistent
+5. Require all four workload services from phase 3,
+   `podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf`, `f|off|on|1h`, persistent
    backup, unchanged TLS CA and application readiness.
 6. Run `cluster-status.yml` again.
 7. Verify trusted HTTPS, stable issuer and all markers from the client.
@@ -679,6 +687,7 @@ workload services and pods:
 todo-app.service       todo-app pod
 todo-keycloak.service  todo-keycloak pod
 todo-postgres.service  todo-postgres pod
+shared-proxy.service   shared-proxy pod (container: nginx)
 ```
 
 Always obtain fresh cluster evidence directly:
@@ -690,16 +699,18 @@ ansible-playbook --inventory ansible/inventory-recovery.ini ansible/cluster-stat
 Inspect reported lag and LSNs as well as the recap; a successful playbook exit
 alone does not prove zero lag or complete acceptance. Require
 schema migrations applied by the init container, healthy backend/frontend,
-nginx-to-backend loopback traffic, shared-service DNS through `todo.network`,
+proxy-to-frontend/backend DNS routing to `todo-app:8080`/`todo-app:8000`,
+proxy-to-Keycloak DNS routing to `todo-keycloak:8080` through `todo.network`,
 unchanged PostgreSQL identity, persistent data, streaming replication and WAL
 archive health.
 
 Use the sequential reboot evidence from phase 10; do not add another reboot.
-After those boots, require `NRestarts=0` for `todo-app.service`, no failed user
+After those boots, require `NRestarts=0` for `todo-app.service` and
+`shared-proxy.service`, no failed user
 units, readiness, stable issuer and trusted browser E2E with no skipped tests.
 CLEAN PASS requires every phase on the same clean revision, isolated PITR,
 sequential final reboots and a new authenticated marker read on rebuilt standby.
 Record repairs as REPAIRED FUNCTIONAL PASS, preserving original failures.
 Keep quarantine through verification. The stop helper is not a rebuilt-standby
-management tool: it expects all three original application units.
+management tool: it expects all four original workload units (including `shared-proxy.service`).
 Do not reset the working pair or repeat promotion/rebuild after the verdict.

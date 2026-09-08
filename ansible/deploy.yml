@@ -256,13 +256,13 @@
         - proxy_image.rc == 1
         - deployment_mode == "offline"
 
-    - name: Inspect the frontend proxy implementation
+    - name: Inspect the shared proxy implementation
       ansible.builtin.command:
         argv: [podman, image, inspect, localhost/todo-proxy:m12]
       register: proxy_image_inspection
       changed_when: false
 
-    - name: Require the nginx frontend image
+    - name: Require the nginx shared proxy image
       ansible.builtin.assert:
         that:
           - >-
@@ -270,9 +270,9 @@
               'io.todo.proxy', ''
             ) == 'nginx'
         fail_msg: >-
-          The existing localhost/todo-frontend:m12 image predates the nginx
-          migration. In build mode rerun with refresh_images=true; in offline
-          mode load the frontend archive from the new verified bundle.
+          The existing localhost/todo-proxy:m12 image does not identify nginx.
+          In build mode rerun with refresh_images=true; in offline
+          mode load the proxy archive from the new verified bundle.
 
     - name: Check whether the Keycloak image exists
       ansible.builtin.command:

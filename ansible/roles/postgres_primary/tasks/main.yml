@@ -137,7 +137,7 @@
 
 - name: Restore the grouped application after a PostgreSQL restart
   ansible.builtin.systemd_service:
-    name: todo-app.service
+    name: shared-proxy.service
     scope: user
     state: started
   when: todo_postgres_kube_changed

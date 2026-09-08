@@ -13,7 +13,7 @@ its lifecycle. See [`kube/runtime/README.md`](../kube/runtime/README.md).
 
 | Topic | Demonstrated here | Deliberate simplification / production concern |
 |---|---|---|
-| Helm / Kube YAML | Build-time rendering, checked-in runtime drift checks and three lifecycle-grouped pods | Podman workload format, not Kubernetes orchestration; Helm is absent on targets |
+| Helm / Kube YAML | Build-time rendering, package/render consistency checks and four lifecycle-grouped pods | Podman workload format, not Kubernetes orchestration; Helm is absent on targets |
 | Identity adapter | Todo UI uses auth.js; Keycloak SDK is isolated in keycloak-adapter.js; backend validates issuer/JWKS/audience | Only Keycloak is implemented; changing IdP still requires configuration and integration tests |
 | Acceptance | Explicit operator gates, checksums, idempotence, trusted browser and full DR evidence on 688a0f6 | Revision-specific acceptance; no automatic full DR controller |
 | Rootless Podman | User namespaces, images, networks, volumes, ports and secrets | One service user and one application stack |
@@ -53,7 +53,7 @@ optional later switchover, not an automatic part of disaster recovery.
 
 ```text
 Helm          renders workload YAML at build time; absent from target hosts
-Kube YAML     defines three workloads, init containers and runtime settings
+Kube YAML     defines four workloads, init containers and runtime settings
 .kube Quadlet connects each workload to user systemd
 systemd       owns service lifecycle and boot behavior
 Ansible       provisions and verifies desired state

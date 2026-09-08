@@ -63,12 +63,12 @@ class OfflineScriptTests(unittest.TestCase):
     def test_render_failure_preserves_all_existing_manifests(self):
         output = self.directory / "output"
         output.mkdir()
-        names = ("app", "keycloak", "postgres", "config")
+        names = ("app", "keycloak", "postgres", "config", "shared-proxy")
         for name in names:
             (output / f"{name}.yaml").write_text(f"original {name}\n")
         failing_helm = self.executable(
             "helm-fails-later",
-            'case "$*" in *templates/postgres.yaml*) exit 1;; esac\nprintf "new content\\n"\n',
+            'case "$*" in *templates/shared-proxy.yaml*) exit 1;; esac\nprintf "new content\\n"\n',
         )
         for helm in (str(self.directory / "missing-helm"), failing_helm):
             with self.subTest(helm=helm):

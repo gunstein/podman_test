@@ -74,7 +74,7 @@ else:
         result, calls = self.run_helper("stop")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("STOPPED:", result.stdout)
-        self.assertIn("--user stop todo-app.service todo-keycloak.service todo-postgres.service", calls)
+        self.assertIn("--user stop shared-proxy.service todo-app.service todo-keycloak.service todo-postgres.service", calls)
         for settings in ({"CONTAINERS": "todo-postgres\n"}, {"STOP_RC": "1"},
                          {"PODMAN_RC": "125"},
                          {"ACTIVE_STATE": "activating"}, {"LOAD_STATE": "not-found"}):

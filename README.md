@@ -15,7 +15,9 @@ browser
    |
    | HTTPS :8443
    v
-nginx --------> Keycloak
+shared nginx proxy ----> Keycloak
+   |
+   +----------> Todo frontend (HTTP static assets)
    |
    v
 FastAPI backend
@@ -29,7 +31,7 @@ PostgreSQL primary =====async WAL=====> PostgreSQL standby
 - Plain HTML, CSS and JavaScript frontend
 - FastAPI backend
 - PostgreSQL 17.11
-- nginx for static content, TLS and reverse proxy routes
+- Separate shared nginx proxy for TLS and routing; HTTP-only Todo frontend
 - Keycloak with Authorization Code and PKCE S256
 - Rootless Podman Kube pods managed by `.kube` Quadlet and user systemd
 - Ansible for installation, configuration and verification
@@ -55,9 +57,10 @@ and is no longer part of the active tree.
 
 | Boundary | Files |
 |---|---|
-| Grouped application | [`app.yaml`](kube/runtime/app.yaml), [`todo-app.kube`](kube/runtime/todo-app.kube) |
-| Shared identity | [`keycloak.yaml`](kube/runtime/keycloak.yaml), [`todo-keycloak.kube`](kube/runtime/todo-keycloak.kube) |
-| Persistent database | [`postgres.yaml`](kube/runtime/postgres.yaml), [`todo-postgres.kube`](kube/runtime/todo-postgres.kube) |
+| Grouped application | `helm/todo/templates/app.yaml`; Ansible renders `todo-app.kube` |
+| Shared identity | `helm/todo/templates/keycloak.yaml`; `todo-keycloak.kube` |
+| Persistent database | `helm/todo/templates/postgres.yaml`; `todo-postgres.kube` |
+| Shared ingress | `helm/shared-proxy/`; `shared-proxy.kube`, container `nginx` |
 | Helm templates and values | [`helm/todo/`](helm/todo/) |
 | Shared network | [`todo.network`](quadlet/todo.network) |
 
@@ -114,16 +117,23 @@ Inspect the running system:
 systemctl --user is-active \
   todo-postgres.service \
   todo-keycloak.service \
-  todo-app.service
+  todo-app.service \
+  shared-proxy.service
 podman ps
 podman secret ls
 curl --fail http://127.0.0.1:8080/ready
 ```
 
 Quadlets live below `~/.config/containers/systemd/`. `todo-app.service` pulls in
-`todo-postgres.service` and `todo-keycloak.service`; the app pod runs a migration
-init container before backend and nginx. Database-role provisioning is separate.
+`todo-postgres.service` and `todo-keycloak.service`; `shared-proxy.service`
+pulls in app and Keycloak. The app pod runs a migration init container before
+backend and the HTTP-only frontend. Database-role provisioning is separate.
 Generated units must not be enabled manually.
+
+The proxy is an independent ingress boundary that could route to more services.
+This demo uses static Podman DNS routes and needs no dynamic proxy platform or
+new orchestration. External clients reach proxy → frontend/backend/Keycloak →
+PostgreSQL; TLS state belongs only to the proxy.
 
 ## Offline installation
 

@@ -38,12 +38,12 @@ ansible/.venv/bin/ansible-playbook \
 On the first run, the playbook asks for the PostgreSQL password and an initial
 Keycloak administrator password without echoing them. It creates rootless Podman
 secrets and generates independent passwords for the migration, backend and
-Keycloak database roles. It builds the backend, frontend and Keycloak images,
+Keycloak database roles. It builds the backend, frontend, shared proxy and Keycloak images,
 installs the Quadlet files, starts the service chain and verifies health,
 database readiness and Keycloak discovery.
 
-The clean path installs three `.kube` units directly: `todo-postgres`,
-`todo-keycloak` and grouped `todo-app`. It never installs legacy
+The clean path installs four `.kube` units directly: `todo-postgres`,
+`todo-keycloak`, grouped `todo-app` and `shared-proxy`. It never installs legacy
 per-container `.container` units or performs an in-place runtime migration.
 
 A normal repeat deploy is idempotent relative to the images already stored

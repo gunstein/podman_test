@@ -18,7 +18,7 @@ test "$service_uid" -gt 0
 as_user() {
   runuser -u "$service_user" -- env XDG_RUNTIME_DIR="/run/user/$service_uid" "$@"
 }
-for unit in todo-app.service todo-keycloak.service todo-postgres.service; do
+for unit in shared-proxy.service todo-app.service todo-keycloak.service todo-postgres.service; do
   test "$(as_user systemctl --user show "$unit" --property=LoadState --value)" = loaded
 done
 if [ "$action" = check ]; then
@@ -26,8 +26,8 @@ if [ "$action" = check ]; then
   printf 'READY: host=%s user=%s; no services changed\n' "$expected_host" "$service_user"
   exit 0
 fi
-as_user systemctl --user stop todo-app.service todo-keycloak.service todo-postgres.service
-for unit in todo-app.service todo-keycloak.service todo-postgres.service; do
+as_user systemctl --user stop shared-proxy.service todo-app.service todo-keycloak.service todo-postgres.service
+for unit in shared-proxy.service todo-app.service todo-keycloak.service todo-postgres.service; do
   state=$(as_user systemctl --user show "$unit" --property=ActiveState --value)
   case "$state" in
     inactive) ;;

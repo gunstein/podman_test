@@ -171,6 +171,12 @@ class AnsibleSafetyTests(unittest.TestCase):
         redundancy = read("ansible/roles/postgres_redundancy_primary/tasks/main.yml")
         self.assertIn("todo-app.service", backup)
         self.assertIn("todo-app.service", redundancy)
+        for role in ("postgres_primary", "postgres_backup", "postgres_redundancy_primary"):
+            tasks = yaml.safe_load(read(f"ansible/roles/{role}/tasks/main.yml"))
+            starts = [task["ansible.builtin.systemd_service"].get("name")
+                      for task in tasks if task.get("ansible.builtin.systemd_service", {}).get("state") == "started"]
+            self.assertIn("shared-proxy.service", starts, role)
+
         self.assertNotIn("else 'todo-frontend.service'", backup)
         self.assertNotIn("else 'todo-frontend.service'", redundancy)
 

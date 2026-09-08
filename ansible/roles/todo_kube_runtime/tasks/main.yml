@@ -183,7 +183,9 @@
   when: >-
     todo_kube_manifests.changed or
     todo_kube_resources.changed or
-    todo_kube_units.changed
+    todo_kube_units.changed or
+    proxy_built.changed | default(false) or
+    proxy_loaded.changed | default(false)
 
 - name: Start PostgreSQL through its Kube unit
   ansible.builtin.systemd_service:

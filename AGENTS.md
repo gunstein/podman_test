@@ -7,11 +7,13 @@ Current architecture and workflow:
 - docs/ARCHITECTURE.md describes the current design; docs/LEARNING-GUIDE.md
   teaches it. Use docs/ACCEPTANCE.md for
   acceptance; a NEW run must not depend on old chat or development history.
-- Helm renders workloads at build time. kube/runtime contains the canonical
-  rendered YAML and .kube units; targets do not need Helm.
-- todo-app groups migration init, FastAPI and nginx. Keycloak and PostgreSQL
-  are separate workloads connected through the rootless todo-network.
-- Unchanged-revision OL9 acceptance passed on 688a0f6; see
+- Helm renders workloads at build time. bundles contain canonical rendered YAML;
+  Ansible renders target .kube units from role templates; targets do not need Helm.
+- todo-app groups migration init, FastAPI and HTTP-only frontend. Shared nginx
+  proxy, Keycloak and PostgreSQL are separate workloads on rootless todo-network.
+  shared-proxy.service owns nginx and persistent TLS volume todo-nginx-data.
+- Four-pod shared-proxy architecture requires its own unchanged-revision acceptance.
+  Historical OL9 acceptance passed on 688a0f6; see
   docs/ACCEPTANCE-688a0f6.md. Legacy runtime/transition files are retired from
   the active tree; Git history and quadlet-reference-v1 preserve them.
 

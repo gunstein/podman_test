@@ -13,11 +13,11 @@ For the authoritative system overview and design boundaries, read
 ## 1. Follow the definition to the running service
 
 ```text
-helm/todo + values             build host only
+helm/todo + helm/shared-proxy + values             build host only
         ↓ render
 kube/runtime/*.yaml            reviewed, packaged workload definitions
         ↓ referenced by
-kube/runtime/*.kube            Quadlet lifecycle and host integration
+Ansible templates → *.kube     target Quadlet lifecycle and host integration
         ↓ generator
 systemd user services         ordering, restart, boot and stop
         ↓
@@ -25,7 +25,7 @@ rootless Podman                executes pods and containers
 ```
 
 Helm is a build-time template tool, not an installed target-host dependency.
-CI compares rendering with checked-in YAML. This is the Podman-supported
+CI compares packaged YAML with independent rendering. This is the Podman-supported
 subset of Kubernetes YAML: no Kubernetes cluster or portability promise.
 Read `helm/todo/templates/`, `helm/todo/values-prod.yaml`,
 `scripts/render-kube-runtime.sh` and `kube/runtime/README.md`.
@@ -34,7 +34,7 @@ To experiment, render into a temporary directory, never over deployed state:
 ```bash
 render_dir=$(mktemp -d)
 scripts/render-kube-runtime.sh helm/todo/values-prod.yaml "$render_dir"
-diff -u kube/runtime/app.yaml "$render_dir/app.yaml"
+cat "$render_dir/app.yaml" "$render_dir/shared-proxy.yaml"
 ```
 
 This experiment requires Helm on the build host. The remaining observation
@@ -46,10 +46,13 @@ commands run as the service user on an installed guest unless stated otherwise.
 |---|---|---|
 | `todo-postgres.service` | PostgreSQL | Data, replication and recovery outlive app deploys |
 | `todo-keycloak.service` | Keycloak | Identity has its own startup and health lifecycle |
-| `todo-app.service` | Migration init container, backend, nginx frontend | Migration gates startup; backend and proxy share app lifecycle |
+| `todo-app.service` | Migration init container, backend, nginx frontend | Migration gates startup; backend and frontend share app lifecycle |
 
 Read `kube/runtime/app.yaml`, `keycloak.yaml`, `postgres.yaml` and their
-`.kube` units. nginx reaches backend on loopback inside the app pod.
+`.kube` units. A fourth unit, `shared-proxy.service`, owns container `nginx`
+and TLS volume `todo-nginx-data`. It routes over DNS to `todo-app:8080`
+(frontend), `todo-app:8000` (backend) and `todo-keycloak:8080`.
+Frontend/backend share pod loopback, but frontend does not terminate TLS.
 Independent pods use `todo-network` DNS names `todo-postgres` and
 `todo-keycloak`. A shared pod is not a reason to put every dependency in it.
 
@@ -110,12 +113,13 @@ Read `backend/`, `ansible/roles/application_kube_runtime/` and
 
 ## 6. Browser, nginx, TLS and identity
 
-nginx serves plain HTML/CSS/JavaScript, proxies API and identity traffic and
+The Todo frontend serves plain HTML/CSS/JavaScript. The shared nginx proxy
+routes frontend, API and identity traffic and
 terminates HTTPS. OpenSSL provides a local demo CA, not managed production PKI.
 Client CA trust and server private-key protection are separate obligations.
 
 ```bash
-podman exec nginx nginx -t
+podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf
 curl --fail https://todo.test:8443/ready
 curl --fail https://todo.test:8443/auth/realms/todo/.well-known/openid-configuration
 ```

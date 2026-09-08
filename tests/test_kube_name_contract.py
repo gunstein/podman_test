@@ -3,8 +3,9 @@ import unittest
 
 import yaml
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
 from tests.runtime_fixture import RUNTIME
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class KubeNameContractTests(unittest.TestCase):
@@ -13,6 +14,7 @@ class KubeNameContractTests(unittest.TestCase):
             "app": ("todo-app", {"todo-backend", "todo-frontend"}),
             "keycloak": ("todo-keycloak", {"todo-keycloak"}),
             "postgres": ("todo-postgres", {"todo-postgres"}),
+            "shared-proxy": ("shared-proxy", {"nginx"}),
         }
         for filename, (pod, containers) in expected.items():
             with self.subTest(pod=pod):

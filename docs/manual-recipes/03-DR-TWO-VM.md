@@ -1,5 +1,14 @@
 # Two-VM DR walkthrough
 
+This demonstrates replication and application recovery on two disposable VMs.
+Complete recipes 1 and 2 first. Read-only status checks are observations; standby
+bootstrap changes the lab; fencing, promotion and reseeding are explicit lab
+disaster operations. Record independent fencing evidence and obtain operator
+approval before promotion. Reseeding requires its own approval and verified
+backup/PITR evidence. Never use this exercise to reset a working pair.
+If any preflight or intermediate step fails, stop and use
+[troubleshooting](../ACCEPTANCE-TROUBLESHOOTING.md); do not retry blindly.
+
 The simplest complete path through the DR functionality on
 `feature/podman-kube`: bootstrap a standby, simulate losing the primary,
 promote the standby, and optionally rebuild the old primary as a new standby.
@@ -21,7 +30,7 @@ todo.test
     |
     v
 VM1  todo-primary
-     App + Keycloak + PostgreSQL primary
+     Shared proxy + App + Keycloak + PostgreSQL primary
                        |
                        | async replication
                        v
@@ -35,7 +44,7 @@ todo.test
     |
     v
 VM2  todo-standby
-     App + Keycloak + PostgreSQL primary
+     Shared proxy + App + Keycloak + PostgreSQL primary
 ```
 
 VM1 is then rebuilt as the new standby.
@@ -162,7 +171,8 @@ Check:
 systemctl --user is-active \
   todo-postgres.service \
   todo-keycloak.service \
-  todo-app.service
+  todo-app.service \
+  shared-proxy.service
 
 curl --fail http://127.0.0.1:8080/ready
 ```
@@ -415,7 +425,9 @@ This installs one root-owned helper script on VM1 with exact `fapolicyd`
 trust; it does not stop anything. See
 [Proxmox quarantine](../PROXMOX-QUARANTINE.md) for the full model, including
 the optional Guest Agent `guest-exec` opt-in some Proxmox/SELinux
-configurations need. Step 21 below uses this tool instead of the VM console.
+configurations need. Rehearse the complete linked quarantine procedure now, including restoring
+healthy replication before any fencing. Installation alone is not evidence
+that quarantine works. Step 21 uses this procedure.
 
 ## The DR setup is now complete
 
@@ -435,7 +447,6 @@ VM1
 VM2
   PostgreSQL STANDBY
   DR tool
-  quarantine tool
   offline bundle
   operations package
 ```
@@ -457,7 +468,8 @@ And confirm `DR test before failover` exists in the application.
 
 ## 13. Simulate losing VM1
 
-Now VM1 gets fenced.
+Obtain explicit operator approval and record independent hypervisor fencing
+evidence before proceeding. Now VM1 gets fenced.
 
 This is more than just stopping PostgreSQL. The old primary must not be able
 to come back and start writing at the same time as the new primary.
@@ -508,7 +520,8 @@ If preflight fails: do not promote.
 
 ## 15. Promote VM2 to PostgreSQL primary
 
-On VM2:
+Require successful preflight, replicated marker, zero apply lag, unreachable
+old database and explicit promotion approval. Keep VM1 fenced. On VM2:
 
 ```bash
 python3 /opt/todo/bin/todo_dr.py promote \
@@ -586,7 +599,7 @@ sudo firewall-cmd --permanent --zone=public \
 sudo firewall-cmd --reload
 ```
 
-## 18. Start Todo and Keycloak on VM2
+## 18. Start Todo, Keycloak and the shared proxy on VM2
 
 On VM2:
 
@@ -608,7 +621,8 @@ Check:
 systemctl --user is-active \
   todo-postgres.service \
   todo-keycloak.service \
-  todo-app.service
+  todo-app.service \
+  shared-proxy.service
 
 curl --fail http://127.0.0.1:8080/health
 curl --fail http://127.0.0.1:8080/ready
@@ -675,109 +689,26 @@ New data can be written
 The DR test already works on VM2, but you now only have one copy of the
 database. The next step is to turn the old VM1 into the standby.
 
-## 21. Start old VM1 in quarantine
+## 21–25. Restore redundancy only after separate approval
 
-Do not just start VM1 normally. It contains an old, diverging primary.
+This permanently replaces VM1's old database. First complete and review
+[backup and isolated PITR](04-BACKUP-PITR.md) on VM2, then obtain explicit reseed
+approval. Keep VM1 fenced. Use the existing specialized procedure:
 
-Start it from Proxmox with all network links disconnected first, then use the
-quarantine tool installed in step 12 through Guest Agent — not the VM console
-— to stop its old services:
+- [Proxmox quarantine](../PROXMOX-QUARANTINE.md): rehearse it while the initial
+  pair is healthy; for recovery boot with every link disconnected, stop all four
+  services through Guest Agent, require completed `exitcode=0` and `STOPPED`,
+  inspect IPv4/IPv6 rules before reconnecting restricted SSH.
+- [Restore redundancy](../../ansible/RESTORE-REDUNDANCY.md) and
+  [acceptance phase 9](../ACCEPTANCE.md#9-rebuild-old-primary-as-standby): verify
+  reverse SSH/replication rules, run read-only preflight, then the separately
+  approved reseed. Authenticated `IDENTIFY_SYSTEM` must precede deletion.
 
-```bash
-qm start 100
-# with the network link(s) disconnected
-qm guest exec 100 -- /opt/todo/bin/todo-quarantine.sh stop todo-primary todo
-```
-
-Require a completed response with `exitcode: 0` and `STOPPED`. The helper
-checks hostname, user and service state itself; it does not require you to
-type anything inside the guest. See
-[Proxmox quarantine](../PROXMOX-QUARANTINE.md) for the firewall profile,
-the Guest Agent opt-ins some setups need, and what to do if the stop command
-fails, times out, or returns only a PID.
-
-Only after the stop is confirmed do you reconnect the network link (management
-SSH only, per the quarantine profile). `todo-postgres` must not be running.
-The repository requires this isolation because the old VM1 contains a
-previously writable database.
-
-## 22. Test SSH from VM2 to VM1
-
-On VM2:
-
-```bash
-ssh -o BatchMode=yes todo@192.168.1.50 hostname
-```
-
-Expect:
-
-```text
-todo-primary
-```
-
-Test Ansible:
-
-```bash
-cd ~/todo-operations
-
-ansible \
-  --inventory ansible/inventory-recovery.ini \
-  todo_cluster \
-  -m ping
-```
-
-## 23. Allow the new replication direction
-
-The roles are now reversed:
-
-```text
-VM2 primary -> VM1 standby
-```
-
-On VM2:
-
-```bash
-sudo firewall-cmd --permanent --zone=public \
-  --add-rich-rule='rule family="ipv4" source address="192.168.1.50/32" destination address="192.168.1.51" port port="5432" protocol="tcp" accept'
-
-sudo firewall-cmd --reload
-```
-
-## 24. Preflight before rebuilding VM1
-
-On VM2:
-
-```bash
-cd ~/todo-operations
-
-ansible-playbook \
-  --inventory ansible/inventory-recovery.ini \
-  ansible/preflight-standby-rebuild.yml \
-  --extra-vars \
-  '{"todo_confirm_old_primary_fenced":"todo-primary is fenced","todo_confirm_reseed":"todo-primary"}'
-```
-
-This should be green before the next step.
-
-## 25. Rebuild old VM1 as standby
-
-This deletes the old PostgreSQL database on VM1.
-
-Run from VM2:
-
-```bash
-ansible-playbook \
-  --inventory ansible/inventory-recovery.ini \
-  ansible/rebuild-standby.yml \
-  --extra-vars \
-  '{"todo_confirm_old_primary_fenced":"todo-primary is fenced","todo_confirm_reseed":"todo-primary"}'
-```
-
-The playbook deletes the old `todo-postgres-data`, takes a fresh
-`pg_basebackup` from VM2, and starts VM1 as a read-only standby. It also
-removes the application tier from VM1, so only PostgreSQL standby runs there.
-If it fails partway, do not repeat it blindly — see
-[Acceptance troubleshooting](../ACCEPTANCE-TROUBLESHOOTING.md).
+Substitute this recipe's actual addresses, VMIDs and service user in the linked
+procedures. Do not just start VM1 normally or interpret the stop helper as
+fencing. A failed or partial rebuild is a STOP condition; preserve evidence and
+never retry it blindly. Expected outcome: VM1 runs only read-only PostgreSQL,
+VM2 retains all four application workloads, and replication streams with zero lag.
 
 ## 26. Final check
 

@@ -36,7 +36,7 @@ offline/build-bundle.sh
 The connected build machine must provide Helm. It renders the production
 values before packaging; the isolated Oracle Linux target receives plain YAML.
 
-This builds the backend, frontend and Keycloak images, pulls PostgreSQL, and
+This builds the backend, frontend, shared proxy and Keycloak images, pulls PostgreSQL, and
 creates both the archive and its external checksum:
 
 ```text
@@ -117,3 +117,18 @@ to run if it detects later replication, promotion or backup state:
 ansible-playbook \
   --inventory ansible/inventory.ini ansible/uninstall.yml
 ```
+
+## Source and runtime contract
+
+The bundle contains all five OCI archives, rendered YAML for four pods, both
+complete Helm charts (`helm/todo` and `helm/shared-proxy`), and the clean-deploy
+Ansible role including target Quadlet templates. Helm is used only on the build
+host. The source checkout's `kube/runtime` contains guides; package YAML is fresh
+Helm output. Packaging tests compare it to independent rendering.
+
+The operations package contains complete operational roles (including
+`shared_proxy_runtime`), task includes, runtime manifests and shared resource
+Quadlets; it contains no OCI archives. Both packages record the full Git SHA
+and clean/dirty state in `VERSION`, checksum every file in `SHA256SUMS`, and
+supply an external archive checksum. Verify the archive before extraction and
+run `sha256sum -c SHA256SUMS` inside each extracted package.

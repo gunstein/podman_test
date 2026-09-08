@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import pathlib
 import unittest
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
 from tests.runtime_fixture import RUNTIME
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 def read(path: pathlib.Path | str) -> str:
@@ -37,7 +40,6 @@ class ProxyConfigurationTests(unittest.TestCase):
         nginx = read("helm/shared-proxy/templates/shared-proxy.yaml")
         app = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
 
-        pass # Asserts are now below
         self.assertIn("ssl_certificate /var/lib/todo-tls/server.crt;", nginx)
         self.assertIn("ssl_certificate_key /var/lib/todo-tls/server.key;", nginx)
         self.assertIn("name: nginx-config", app)

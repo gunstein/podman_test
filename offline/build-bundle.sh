@@ -42,8 +42,8 @@ cp "$project_root/quadlet/todo.network" \
   "$project_root/quadlet/todo-postgres-backup.volume" \
   "$project_root/quadlet/todo-nginx-data.volume" \
   "$bundle_directory/quadlet/"
-cp -r "$project_root/helm/todo" "$bundle_directory/helm/"
-cp -r "$project_root/kube/runtime" "$bundle_directory/kube/"
+cp -r "$project_root/helm/shared-proxy" "$project_root/helm/todo" "$bundle_directory/helm/"
+cp "$project_root/kube/runtime/README.md" "$project_root/kube/runtime/RESULTS.md" "$bundle_directory/kube/runtime/"
 mkdir -p "$bundle_directory/ansible"
 mkdir -p "$bundle_directory/ansible/roles"
 cp "$project_root/ansible/deploy.yml" \

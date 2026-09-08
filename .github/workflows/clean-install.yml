@@ -92,9 +92,23 @@ jobs:
               --syntax-check
           done
 
+      - name: Install verified Helm renderer
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location \
+            --output /tmp/helm.tar.gz \
+            https://get.helm.sh/helm-v4.2.4-linux-amd64.tar.gz
+          echo "c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3  /tmp/helm.tar.gz" |
+            sha256sum --check
+          tar -xzf /tmp/helm.tar.gz -C /tmp
+
       - name: Test DR and backup tools
+        env:
+          HELM: /tmp/linux-amd64/helm
         run: python -m unittest discover --start-directory tests --verbose
       - name: Build and verify the operations package
+        env:
+          HELM: /tmp/linux-amd64/helm
         shell: bash
         run: |
           set -euo pipefail
@@ -160,7 +174,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install pinned script tooling
-        run: python -m pip install "ruff==0.16.5" "shellcheck-py==0.11.0.1"
+        run: python -m pip install "ruff==0.16.5" "shellcheck-py==0.11.0.1" "PyYAML==6.0.3"
 
       - name: Install verified Helm renderer
         shell: bash
@@ -193,50 +207,27 @@ jobs:
             scripts/render-kube-runtime.sh \
             scripts/dev-up.sh \
             scripts/dev-down.sh \
+            scripts/smoke-proxy.sh \
             scripts/run-e2e.sh \
             scripts/todo-quarantine.sh \
             scripts/trust-serving-ca.sh \
             scripts/bootstrap-ssh-key.sh
 
-      - name: Smoke-test nginx and TLS bootstrap
+      - name: Prepare rootless Podman for smoke test
         shell: bash
         run: |
           set -euo pipefail
-          image="todo-proxy-ci:${GITHUB_SHA}"
-          volume="todo-nginx-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          trap 'docker volume rm --force "$volume" >/dev/null 2>&1 || true' EXIT
+          if ! command -v podman >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y podman
+          fi
+          podman --version
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
 
-          docker build \
-            --file proxy/Containerfile \
-            --tag "$image" \
-            .
-          docker volume create "$volume" >/dev/null
-          docker run --rm \
-            --user root \
-            --volume "$volume:/var/lib/todo-tls" \
-            --entrypoint chown \
-            "$image" \
-            nginx:nginx /var/lib/todo-tls
-          docker run --rm \
-            --add-host todo-backend:127.0.0.1 \
-            --add-host todo-keycloak:127.0.0.1 \
-            --env TODO_TLS_HOSTNAME=todo.test \
-            --volume "$volume:/var/lib/todo-tls" \
-            "$image" \
-            nginx -t
-          docker run --rm \
-            --volume "$volume:/var/lib/todo-tls:ro" \
-            --entrypoint sh \
-            "$image" \
-            -ec '
-              openssl x509 -in /var/lib/todo-tls/server.crt \
-                -noout -checkhost todo.test
-              openssl verify \
-                -CAfile /var/lib/todo-tls/ca.crt \
-                /var/lib/todo-tls/server.crt
-              test "$(stat -c "%a" /var/lib/todo-tls/ca.key)" = 600
-              test "$(stat -c "%a" /var/lib/todo-tls/server.key)" = 600
-            '
+      - name: Smoke-test nginx and TLS bootstrap
+        env:
+          HELM: /tmp/linux-amd64/helm
+        run: scripts/smoke-proxy.sh
 
 
   backend:

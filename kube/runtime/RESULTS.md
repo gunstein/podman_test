@@ -1,30 +1,15 @@
-# Grouped Podman Kube runtime results
+# Podman Kube runtime validation status
 
-## Static gate — passed
+The current architecture has four pods: `todo-app` (migration init, backend,
+HTTP frontend), `todo-keycloak`, `todo-postgres`, and `shared-proxy` (container
+`nginx`, persistent `todo-nginx-data` TLS volume).
 
-The canonical manifests define three workload boundaries: `todo-app`
-(`todo-migrate`, `todo-backend` and `todo-frontend`), `todo-keycloak`, and
-`todo-postgres`. The `.kube` units use `--no-pod-prefix`, so those explicit
-container names are also the stable Podman names.
-Static YAML and regression tests pass locally, including bounded connection
-retry and immediate failure for authentication and SQL errors.
+The four-pod change requires its own full unchanged-revision VM acceptance.
+Local tests and archive verification do not establish that verdict. Follow
+[Acceptance](../../docs/ACCEPTANCE.md) from a clean selected revision and baseline.
 
-## Oracle Linux acceptance — passed on 688a0f6
-
-Individual phases, including clean installation, idempotent redeploy, cold
-reboot, persistence and replication, have passed in repaired lab runs.
-Functional DR has also been demonstrated through promotion, application
-recovery, isolated PITR, standby rebuild and sequential reboots, including
-trusted Chromium tests and persistent markers. See the source repository's
-docs/history/DEVELOPMENT-JOURNAL.md development journal for evidence and repairs.
-
-The complete unchanged-revision acceptance passed on 2026-09-05 at
-`688a0f67d190cd48dc6a8e4cfbedba66a89a5e24`, including real Keycloak Chromium
-tests with TLS verification. See the [run record](../../docs/ACCEPTANCE-688a0f6.md).
-This verdict applies to that revision, not automatically to later changes.
-Legacy retirement is separate; no legacy files were removed during the test.
-
-Historical results
-for the superseded four-pod application shape are retained in
-[`RESULTS-FOUR-POD-HISTORICAL.md`](../../docs/history/RESULTS-FOUR-POD-HISTORICAL.md);
-they do not approve the grouped model.
+Historical unchanged-revision acceptance passed on 688a0f6; see its
+[record](../../docs/ACCEPTANCE-688a0f6.md). The subsequent simplification revision
+12c3bef received a full CLEAN PASS on 7 September 2026. Neither verdict accepts
+the newer shared-proxy architecture. Historical evidence remains in Git and
+revision-specific records, separate from the normal execution procedure.

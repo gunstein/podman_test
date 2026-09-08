@@ -151,6 +151,7 @@
   ansible.builtin.command:
     argv: [systemctl, --user, stop, "{{ item }}"]
   loop:
+    - shared-proxy.service
     - todo-app.service
     - todo-keycloak.service
   changed_when: false
@@ -204,7 +205,7 @@
 
 - name: Start the application tier after PostgreSQL restart
   ansible.builtin.systemd_service:
-    name: todo-app.service
+    name: shared-proxy.service
     scope: user
     state: started
 

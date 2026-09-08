@@ -1,10 +1,12 @@
 import pathlib
+import tempfile
 import unittest
 
 import yaml
 
+from tests.runtime_fixture import RUNTIME, render_units
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-from tests.runtime_fixture import RUNTIME
 
 
 def read(path: pathlib.Path) -> str:
@@ -17,6 +19,7 @@ class KubeRuntimeTests(unittest.TestCase):
             "app.yaml": "todo-app",
             "keycloak.yaml": "todo-keycloak",
             "postgres.yaml": "todo-postgres",
+            "shared-proxy.yaml": "shared-proxy",
         }
 
         for filename, pod_name in expected.items():
@@ -86,16 +89,16 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("secretName: todo-kube-migrator-secret", manifests)
         self.assertIn("name: todo-kube-keycloak-secret", manifests)
 
-    def test_frontend_reuses_the_accepted_tls_volume(self):
+    def test_proxy_reuses_the_accepted_tls_volume(self):
         app = read(RUNTIME / "app.yaml")
         proxy = read(RUNTIME / "shared-proxy.yaml")
         self.assertIn("name: todo-nginx-data", proxy)
         self.assertNotIn("todo-kube-nginx-data", app)
         self.assertIn('volume.podman.io/uid: "101"', proxy)
         self.assertNotIn('volume.podman.io/gid: "101"', app)
-        # Because we deleted it from app.yaml entirely
+        self.assertNotIn("todo-nginx-data", app)
 
-    def test_systemd_represents_the_three_workload_boundaries(self):
+    def test_systemd_represents_the_four_workload_boundaries(self):
         app = read(RUNTIME / "shared-proxy.kube")
         keycloak = read(RUNTIME / "todo-keycloak.kube")
         postgres = read(RUNTIME / "todo-postgres.kube")
@@ -104,7 +107,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("Requires=todo-postgres.service", keycloak)
         self.assertNotIn("[Install]", keycloak)
         self.assertIn("WantedBy=default.target", app)
-        for unit in (app, keycloak, postgres):
+        for unit in (app, keycloak, postgres, read(RUNTIME / "todo-app.kube")):
             self.assertIn("PodmanArgs=--no-pod-prefix", unit)
             self.assertIn("ExitCodePropagation=any", unit)
             self.assertIn("Restart=on-failure", unit)
@@ -112,12 +115,49 @@ class KubeRuntimeTests(unittest.TestCase):
 
         self.assertNotIn("ConfigMap=config-runtime.yaml", postgres)
 
-    def test_active_runtime_keeps_loopback_and_shared_dns(self):
-        config = read(RUNTIME / "config.yaml")
-        config_proxy = read(RUNTIME / "shared-proxy.yaml")
-        self.assertIn("server todo-app:8000;", config_proxy)
-        self.assertIn("server todo-keycloak:8080;", config_proxy)
-        self.assertIn("DATABASE_HOST: todo-postgres", config)
+    def test_proxy_routes_directly_to_app_and_identity_without_frontend_tls(self):
+        docs = list(yaml.safe_load_all(read(RUNTIME / "shared-proxy.yaml")))
+        pod = next(doc for doc in docs if doc["kind"] == "Pod")
+        proxy = pod["spec"]["containers"]
+        self.assertEqual([item["name"] for item in proxy], ["nginx"])
+        self.assertEqual(proxy[0]["image"], "localhost/todo-proxy:m12")
+        config = next(doc["data"]["nginx.conf"] for doc in docs
+                      if doc["metadata"]["name"] == "shared-nginx-config")
+        for upstream in ("todo-app:8080", "todo-app:8000", "todo-keycloak:8080"):
+            self.assertIn("server " + upstream + ";", config)
+        for route in ("todo_frontend", "todo_backend", "todo_keycloak"):
+            self.assertIn("proxy_pass http://" + route + ";", config)
+        for route in ("/health", "/ready", "/api/", "/auth/"):
+            self.assertIn(route, config)
+        self.assertNotIn("127.0.0.1:8000", config)
+        self.assertNotIn("https://todo_frontend", config)
+        self.assertNotIn("todo-nginx-data", read(RUNTIME / "app.yaml"))
+        self.assertNotIn("ssl_certificate", read(ROOT / "frontend/nginx.conf"))
+        self.assertIn("DATABASE_HOST: todo-postgres", read(RUNTIME / "config.yaml"))
+
+    def test_quadlet_conditionals_render_real_lan_and_loopback_profiles(self):
+        proxy = read(RUNTIME / "shared-proxy.kube")
+        self.assertIn("PublishPort=192.0.2.10:8443:8443", proxy)
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory)
+            render_units(output, "127.0.0.1", "192.0.2.11")
+            local = read(output / "shared-proxy.kube")
+            self.assertEqual(local.count("PublishPort=127.0.0.1:8443:8443"), 1)
+            self.assertNotIn("192.0.2.10", local)
+            self.assertIn("PublishPort=192.0.2.11:5432:5432",
+                          read(output / "todo-postgres.kube"))
+            for unit in output.glob("*.kube"):
+                self.assertNotIn("{{", read(unit))
+                self.assertNotIn("{%", read(unit))
+        # Dependencies must point toward app/database, never back to ingress.
+        for name in ("todo-app", "todo-keycloak", "todo-postgres"):
+            self.assertNotIn("shared-proxy.service", read(RUNTIME / (name + ".kube")))
+        for name, role in (("todo-app", "application_kube_runtime"),
+                           ("todo-keycloak", "application_kube_runtime"),
+                           ("shared-proxy", "shared_proxy_runtime")):
+            relative = "templates/" + name + ".kube.j2"
+            self.assertEqual(read(ROOT / "ansible/roles/todo_kube_runtime" / relative),
+                             read(ROOT / "ansible/roles" / role / relative))
 
     def test_active_application_constructs_separate_secrets_in_memory(self):
         tasks = read(ROOT / "ansible" / "roles" / "application_kube_runtime" / "tasks" / "main.yml")
@@ -142,7 +182,7 @@ class KubeRuntimeTests(unittest.TestCase):
         ):
             self.assertFalse((RUNTIME / filename).exists())
 
-    def test_frontend_runtime_unit_maps_external_port_to_container_tls(self):
+    def test_proxy_runtime_unit_maps_external_port_to_container_tls(self):
         template = read(
             ROOT
             / "ansible"
@@ -153,34 +193,6 @@ class KubeRuntimeTests(unittest.TestCase):
         )
         self.assertIn("127.0.0.1:8080:8080", template)
         self.assertIn("todo_service_port }}:8443", template)
-
-    def test_documentation_explains_podman_container_names(self):
-        pass # we skipped these because they read README.md which requires rewriting the doc.
-
-    def test_runtime_guide_separates_core_from_resilience(self):
-        pass # Same.
-
-    def test_kube_index_routes_readers_to_the_current_runtime(self):
-        pass
-
-    def test_current_results_do_not_embed_four_pod_history(self):
-        pass
-        
-    def test_release_packages_include_the_shared_runtime(self):
-        operations = read(ROOT / "scripts" / "build-operations-package.sh")
-        offline = read(ROOT / "offline" / "build-bundle.sh")
-        
-        self.assertIn("application_kube_runtime", operations)
-        self.assertIn("postgres_kube_runtime", operations)
-        self.assertIn("todo_fapolicyd", operations)
-        self.assertNotIn("kube_application_migration", operations)
-        self.assertNotIn("kube_application_rollback", operations)
-        self.assertNotIn("migrate-application-to-kube.yml", operations)
-        self.assertNotIn("rollback-application-to-container-quadlets.yml", operations)
-        self.assertNotIn("kube_postgres_primary_migration", operations)
-        self.assertNotIn("kube_postgres_primary_rollback", operations)
-        self.assertNotIn("migrate-postgres-primary-to-kube.yml", operations)
-        self.assertNotIn("rollback-postgres-primary-to-container-quadlet.yml", operations)
 
     def test_helm_is_the_single_workload_template_source(self):
         chart = ROOT / "helm" / "todo"

@@ -1,5 +1,15 @@
 # Backup and PITR on one VM
 
+This demonstrates a base backup plus WAL replay into a separate, read-only
+restore container. Build on the laptop; run the remaining commands as the
+service user on the current primary. Require sufficient free disk, known current
+roles, and no existing disposable restore state. Configuration can restart the
+application, so obtain a maintenance window on an existing installation.
+Status and SELECT are observations; marker rows are lab writes. Never substitute
+a live volume as the restore target. If backup verification, archiving or restore
+fails, stop and use [backup/PITR](../../ansible/BACKUP-PITR.md) and
+[troubleshooting](../ACCEPTANCE-TROUBLESHOOTING.md).
+
 This builds on [Offline install on one VM](02-OFFLINE-INSTALL.md). You should
 already have a working Todo installation on one VM.
 
@@ -257,7 +267,13 @@ First:
 python3 /opt/todo/bin/todo_backup.py restore-status
 ```
 
-Then:
+Require `recovery|paused|read_only = t|t|on` and verify networking is disabled:
+
+```bash
+podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}'
+```
+
+Expected: `none`. Then:
 
 ```bash
 podman exec todo-postgres-restore \
@@ -312,7 +328,8 @@ destroying the production database.
 
 ## 13. Clean up the restore test
 
-When done:
+After inspecting the restore result and obtaining explicit approval to delete
+only the disposable restore container/volume:
 
 ```bash
 python3 /opt/todo/bin/todo_backup.py cleanup-restore \

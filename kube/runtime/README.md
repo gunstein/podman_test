@@ -3,7 +3,7 @@
 This is the final application runtime and the normal clean-install target.
 The manifests make the lifecycle boundaries explicit:
 frontend and backend share one application pod, while PostgreSQL and Keycloak
-remain independent shared services on the user-defined network. PostgreSQL
+and the shared nginx proxy remain independent services on the user-defined network. PostgreSQL
 replication, backup and disaster recovery remain separate operational layers.
 
 For the whole-system design and responsibilities, see
@@ -18,7 +18,7 @@ canonical runtime files and their lifecycle contracts.
              +----------------+----------------+
              |                |                |
              v                v                v
-          todo-app       todo-keycloak    todo-postgres
+ shared-proxy → todo-app  todo-keycloak    todo-postgres
      +---------------+        pod              pod
      | migrate init  |                           |
      | backend       |                           +-- persistent data
@@ -26,11 +26,21 @@ canonical runtime files and their lifecycle contracts.
      +---------------+
 ```
 
+| Pod | User service | Long-running containers |
+|---|---|---|
+| `todo-app` | `todo-app.service` | `todo-backend`, `todo-frontend` |
+| `todo-keycloak` | `todo-keycloak.service` | `todo-keycloak` |
+| `todo-postgres` | `todo-postgres.service` | `todo-postgres` |
+| `shared-proxy` | `shared-proxy.service` | `nginx` |
+
 The files that define this architecture are:
 
 ```text
 ../../helm/todo/templates -> source workload and ConfigMap templates
 ../../helm/todo/values-*.yaml -> non-secret environment values
+../../helm/shared-proxy/templates -> independent ingress and ConfigMaps
+shared-proxy.yaml         -> rendered nginx proxy and persistent TLS volume
+shared-proxy.kube         -> independent proxy systemd lifecycle
 app.yaml                 -> rendered migration init, backend and frontend
 keycloak.yaml            -> rendered independent identity service
 postgres.yaml            -> rendered database and persistent volumes
@@ -41,17 +51,20 @@ todo-postgres.kube       -> database pod systemd lifecycle
 ../../quadlet/todo.network -> shared rootless network
 ```
 
-Helm is a build-time renderer, not a runtime orchestrator. The checked-in YAML
-is rendered from `values-prod.yaml` and its drift is checked in CI. The
+Helm is a build-time renderer, not a runtime orchestrator. The YAML
+is rendered from `values-prod.yaml` into a temporary build directory. CI compares
+actual package contents against fresh rendering; source checkout runtime files
+are guides, not generated manifests. Ansible templates render the target Quadlets. The
 offline bundle therefore needs no Helm binary on Oracle Linux. Development
 renders the same chart with `values-dev.yaml`; production installs the
 rendered YAML beside the matching `.kube` units.
 
-All three `.kube` units use `--no-pod-prefix`, so the grouped containers keep
+All four `.kube` units use `--no-pod-prefix`, so the grouped containers keep
 the stable names `todo-backend` and `todo-frontend` while one
-`todo-app.service` owns their shared lifecycle. Nginx reaches its colocated
-backend on `127.0.0.1:8000`; both containers reach the independent
-`todo-postgres` and `todo-keycloak` pods through `todo.network`.
+`todo-app.service` owns their shared lifecycle. The separate `shared-proxy.service` owns container `nginx`, terminates TLS using
+`todo-nginx-data`, and routes to `todo-app:8080` (frontend), `todo-app:8000`
+(backend), and `todo-keycloak:8080`. The frontend is HTTP-only; no TLS material
+belongs in `todo-frontend`. App containers share loopback, but the proxy does not.
 
 The `migrate` init container runs
 `python -m backend.migrate --connect-timeout 120 up` before either regular
@@ -79,7 +92,7 @@ the host-local raw Podman secrets.
 
 ## Operational resilience
 
-The core relationship is only app, identity, database, network, persistence and
+The core relationship is proxy, app, identity, database, network, persistence and
 external secrets. Replication, WAL archiving, backup, PITR, promotion and
 standby rebuild are a separate operational layer built around that core.
 
@@ -91,10 +104,10 @@ physical replication slot. A minimal educational workload would keep only the
 data claim; this runtime keeps both details to preserve the validated backup and
 replication contracts.
 
-All three `.kube` units pass `--no-pod-prefix`. PostgreSQL therefore retains
+All four `.kube` units pass `--no-pod-prefix`. PostgreSQL therefore retains
 the exact `todo-postgres` container name used by DR and backup commands, while
 the grouped app retains stable `todo-migrate`, `todo-backend` and
-`todo-frontend` names for verification and certificate export. This
+`todo-frontend` names for verification. Export the public CA from `nginx` only. This
 requires the tested Podman 5.8.2 platform.
 
 Its `.kube` unit also applies `--health-on-failure=kill` after each creation.
@@ -106,7 +119,7 @@ acceptance of 688a0f6. They remain recoverable from Git history; normal recovery
 uses the active DR runbooks, not runtime-format migration.
 
 Direct development requires the four Kube-compatible Podman secrets. Render
-and start the three workloads with:
+and start the four workloads with:
 
 ```bash
 scripts/dev-up.sh

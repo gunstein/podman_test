@@ -42,6 +42,7 @@ cp "$project_root/ansible/README.md" \
 for role in \
   standby_preflight \
   application_kube_runtime \
+  shared_proxy_runtime \
   postgres_kube_runtime \
   todo_fapolicyd \
   postgres_primary \
@@ -62,7 +63,7 @@ cp "$project_root/quadlet/todo.network" \
   "$project_root/quadlet/todo-nginx-data.volume" \
   "$package_directory/quadlet/"
 "$project_root/scripts/render-kube-runtime.sh" "$project_root/helm/todo/values-prod.yaml" "$package_directory/kube/runtime"
-cp -r "$project_root/kube/runtime" "$package_directory/kube/"
+cp "$project_root/kube/runtime/README.md" "$project_root/kube/runtime/RESULTS.md" "$package_directory/kube/runtime/"
 cp "$project_root/scripts/todo_dr.py" \
   "$project_root/scripts/todo-quarantine.sh" \
   "$project_root/scripts/todo_backup.py" "$package_directory/scripts/"
@@ -88,6 +89,13 @@ if source_revision=$(git -C "$project_root" rev-parse --verify HEAD 2>/dev/null)
 fi
 printf 'package=todo-operations\nsource_revision=%s\nsource_state=%s\n' \
   "$source_revision" "$source_state" > "$package_directory/VERSION"
+(
+  cd "$package_directory"
+  find . -type f ! -name SHA256SUMS -print0 |
+    sort -z |
+    xargs -0 sha256sum > "$work_directory/SHA256SUMS"
+  mv "$work_directory/SHA256SUMS" SHA256SUMS
+)
 tar -czf "$output" -C "$work_directory" "$(basename "$package_directory")"
 output_directory=$(dirname "$output")
 output_name=$(basename "$output")

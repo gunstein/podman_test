@@ -32,12 +32,13 @@ Git history (`c377161`), not in the active tree or operations package.
 Browser (plain HTML/CSS/JS)
     │ HTTPS: profile-specific service identity
     ▼
-nginx ── /api/, /health, /ready ──► FastAPI ──► PostgreSQL
+shared nginx proxy ── /api/, /health, /ready ──► FastAPI ──► PostgreSQL
     │                                            ▲
     └── /auth/ ─────────────────► Keycloak ───────┘
 ```
 
-nginx serves the frontend assets and terminates TLS. Public Todo reads are
+The shared nginx proxy terminates TLS and routes `/` to the HTTP-only Todo
+frontend. It routes API and identity requests to backend and Keycloak. Public Todo reads are
 allowed; create, update and delete require a valid access token.
 Todos are shared: authentication does not imply per-user row ownership.
 Both FastAPI and Keycloak persist data in PostgreSQL, using different
@@ -55,10 +56,12 @@ deployment choices constrained by host firewalls.
 
 ```text
 One service user's rootless Podman network: todo-network
+  ├── shared-proxy pod
+  │     └── nginx (TLS and routing)
   ├── todo-app pod
   │     ├── todo-migrate (init: schema migration)
   │     ├── todo-backend (FastAPI)
-  │     └── todo-frontend (nginx and static assets)
+  │     └── todo-frontend (HTTP static assets)
   ├── todo-keycloak pod
   │     └── todo-keycloak
   └── todo-postgres pod
@@ -66,13 +69,20 @@ One service user's rootless Podman network: todo-network
 ```
 
 The app's migration must succeed before its regular containers start.
-Backend and proxy share app deployment and restart semantics. PostgreSQL
+Backend and frontend share app deployment and restart semantics. The shared
+proxy is a separate ingress boundary that can serve additional services. This
+demo uses static DNS routes; it needs no dynamic proxy platform, service discovery
+framework or additional orchestration. PostgreSQL
 and Keycloak have independent lifecycles so app changes do not implicitly
 replace database or identity state. A rebuilt standby runs only PostgreSQL.
 
 The canonical definitions are under `kube/runtime/`, rendered from
-`helm/todo/`. Each pod has one `.kube` unit and generated user service:
-`todo-app.service`, `todo-keycloak.service`, `todo-postgres.service`.
+`helm/todo/` and `helm/shared-proxy/`. Each pod has one `.kube` unit and generated user service:
+`todo-app.service`, `todo-keycloak.service`, `todo-postgres.service`,
+`shared-proxy.service`. The proxy uses the operational container name `nginx`
+and the persistent TLS volume `todo-nginx-data`. It reaches the frontend/backend
+at `todo-app:8080`/`todo-app:8000` and Keycloak at `todo-keycloak:8080`.
+Loopback is shared only within a pod; it cannot connect the separate proxy to Todo.
 The units use `--no-pod-prefix` to preserve operational container names;
 the pinned OL9 lab baseline is Podman 5.8.2. Ansible additionally verifies
 that `podman kube play` exposes the required `--no-pod-prefix` capability.
@@ -92,6 +102,7 @@ This is a tested baseline, not a claim about the capability's minimum version.
 
 Host integration also uses shared `.network` and `.volume` Quadlets.
 User lingering enables services to run before interactive login.
+`shared-proxy.service` requires and starts after app and Keycloak;
 `todo-app.service` depends on PostgreSQL and Keycloak; PostgreSQL also has
 its own boot entrypoint to support a database-only host.
 
@@ -120,7 +131,9 @@ Target host(s) ──► .kube ──► systemd ──► Podman
 
 The operations package contains playbooks, roles, runtime definitions, Python
 and quarantine tools, and runbooks; it contains no OCI image archives.
-Rendered YAML is checked in and its drift is checked in CI.
+YAML is rendered into a temporary build directory and packaged. Source checkout
+`kube/runtime/` contains guides; Ansible role templates produce target-specific
+Quadlets. Tests compare packaged YAML with independent Helm rendering.
 Helm runs on the build host, not the Oracle Linux target. Images and rendered
 definitions are delivered offline; target execution does not fetch from a
 registry. Both acceptance artifacts must identify the same clean revision.
@@ -143,7 +156,8 @@ not rerun administrative role bootstrap.
 | Flow | Address boundary | Purpose |
 |---|---|---|
 | Browser → nginx | Published host HTTPS endpoint | Assets, API and identity proxy |
-| nginx → backend | 127.0.0.1:8000 inside app pod | API, health and readiness |
+| nginx → frontend | todo-app:8080 on rootless network | Static assets |
+| nginx → backend | todo-app:8000 on rootless network | API, health and readiness |
 | nginx → Keycloak | todo-keycloak:8080 on rootless network | OIDC browser endpoints under /auth |
 | Backend → PostgreSQL | todo-postgres:5432 | Application queries with restricted DB role |
 | Migrator → PostgreSQL | todo-postgres:5432 | Schema changes with migration identity |
@@ -153,8 +167,8 @@ not rerun administrative role bootstrap.
 
 The network resource is declared in `todo.network`; its runtime name is
 `todo-network`. Loopback is shared only within a pod. Cross-pod communication
-uses Podman DNS, not host IPs. The production workload supplies the grouped
-nginx configuration with a loopback backend upstream.
+uses Podman DNS, not host IPs. The production workload supplies the shared
+proxy ConfigMap with DNS upstreams for frontend, backend and Keycloak.
 
 Internal service HTTP and trusted-LAN replication are not universally
 TLS-enforced. The external HTTPS boundary must not be mistaken for encryption

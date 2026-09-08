@@ -1,4 +1,23 @@
 ---
+- name: Verify root access before any standby rebuild changes
+  hosts: todo_rebuild_standby
+  gather_facts: false
+  any_errors_fatal: true
+
+  tasks:
+    - name: Verify root access on the Ansible controller
+      ansible.builtin.command: /usr/bin/true
+      become: true
+      become_user: root
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Verify root access on the rebuild host
+      ansible.builtin.command: /usr/bin/true
+      become: true
+      become_user: root
+      changed_when: false
+
 - name: Run the destructive standby rebuild preflight
   ansible.builtin.import_playbook: preflight-standby-rebuild.yml
 

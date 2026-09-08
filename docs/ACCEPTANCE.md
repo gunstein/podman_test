@@ -633,7 +633,11 @@ ansible-playbook --ask-become-pass --inventory ansible/inventory-recovery.ini \
   '{"todo_confirm_old_primary_fenced":"todo-primary is fenced","todo_confirm_reseed":"todo-primary"}'
 ```
 
-Only after every assertion passes, run:
+Only after every assertion passes, run. Keep `--ask-become-pass`: the rebuild
+first verifies root access on both the Ansible controller and the rebuild host.
+Missing sudo access stops the entire run before primary configuration changes
+or deletion of the old database. The credentials must remain valid for the later
+DR-tool installation as well.
 
 ```bash
 ansible-playbook --ask-become-pass --inventory ansible/inventory-recovery.ini \

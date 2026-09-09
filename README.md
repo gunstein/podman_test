@@ -66,7 +66,10 @@ and is no longer part of the active tree.
 
 Start with the [Kube runtime guide](kube/runtime/README.md). DR tools support this
 core; retired PoCs and migration tooling remain in pre-retirement Git history.
- Revision 688a0f6 passed full Oracle Linux acceptance; see the [run record](docs/ACCEPTANCE-688a0f6.md).
+Revision 688a0f6 passed full evidence-grade Oracle Linux acceptance of the
+prior three-pod runtime; see the [run record](docs/ACCEPTANCE-688a0f6.md). The
+current four-pod shared-proxy runtime passed a lighter, process-level
+two-agent acceptance on 9e54cfb; see [that run record](docs/ACCEPTANCE-9e54cfb.md).
 
 ## Requirements
 

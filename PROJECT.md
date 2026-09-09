@@ -8,10 +8,15 @@ manages three .kube workloads. See [Architecture](docs/ARCHITECTURE.md) and
 
 ## Acceptance
 
-Full unchanged-revision Oracle Linux acceptance passed on `688a0f6`.
-See [the run record](docs/ACCEPTANCE-688a0f6.md) for evidence and deviations.
-The tested lab ended with VM108 as primary and VM107 as quarantined standby.
-This is recorded topology, not a substitute for fresh checks before operations.
+Full unchanged-revision Oracle Linux acceptance of the prior three-pod
+architecture passed on `688a0f6` and again on `12c3bef`; see
+[688a0f6](docs/ACCEPTANCE-688a0f6.md) and [12c3bef](docs/ACCEPTANCE-12c3bef.md)
+for evidence and deviations. The current four-pod shared-proxy architecture
+passed a process-level, evidence-light two-agent acceptance on `9e54cfb`; see
+[the run record](docs/ACCEPTANCE-9e54cfb.md). That run exercised a destructive
+standby rebuild again, so the topology recorded in the older runs is stale.
+No topology was captured for `9e54cfb`; this is not a substitute for fresh
+checks before operations.
 
 ## Current work and limitations
 

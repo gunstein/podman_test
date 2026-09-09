@@ -12,10 +12,13 @@ Current architecture and workflow:
 - todo-app groups migration init, FastAPI and HTTP-only frontend. Shared nginx
   proxy, Keycloak and PostgreSQL are separate workloads on rootless todo-network.
   shared-proxy.service owns nginx and persistent TLS volume todo-nginx-data.
-- Four-pod shared-proxy architecture requires its own unchanged-revision acceptance.
-  Historical OL9 acceptance passed on 688a0f6; see
-  docs/ACCEPTANCE-688a0f6.md. Legacy runtime/transition files are retired from
-  the active tree; Git history and quadlet-reference-v1 preserve them.
+- Four-pod shared-proxy architecture passed a two-agent acceptance pass on
+  9e54cfb; see docs/ACCEPTANCE-9e54cfb.md (process-level, not evidence-grade:
+  no phase-by-phase counts, markers or topology were captured). The prior
+  three-pod architecture's evidence-grade acceptance remains
+  docs/ACCEPTANCE-688a0f6.md and docs/ACCEPTANCE-12c3bef.md. Legacy
+  runtime/transition files are retired from the active tree; Git history and
+  quadlet-reference-v1 preserve them.
 
 Constraints:
 - Frontend: plain HTML, CSS and JavaScript. No Node.js framework.

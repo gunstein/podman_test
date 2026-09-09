@@ -1,8 +1,10 @@
 .venv/
+venv/
 .pytest_cache/
 .ruff_cache/
 .coverage
 .coverage.*
+*.log
 htmlcov/
 generated/
 __pycache__/

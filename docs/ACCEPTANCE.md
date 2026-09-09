@@ -5,10 +5,11 @@ the four-workload Podman Kube architecture. Use direct DR tools and Ansible
 playbooks below. The final rebuild permanently replaces old-primary database
 data; use disposable lab hosts and explicit infrastructure fencing.
 
-[688a0f6](ACCEPTANCE-688a0f6.md) is historical unchanged-revision evidence, not
-current machine state or authorization. A NEW run evaluates its own clean
-revision. Use [troubleshooting](ACCEPTANCE-TROUBLESHOOTING.md) only when a gate
-fails; [Proxmox quarantine](PROXMOX-QUARANTINE.md) supplies the specialized
+[688a0f6](ACCEPTANCE-688a0f6.md), [12c3bef](ACCEPTANCE-12c3bef.md) and
+[9e54cfb](ACCEPTANCE-9e54cfb.md) are historical evidence, not current machine
+state or authorization. A NEW run evaluates its own clean revision. Use
+[troubleshooting](ACCEPTANCE-TROUBLESHOOTING.md) only when a gate fails;
+[Proxmox quarantine](PROXMOX-QUARANTINE.md) supplies the specialized
 infrastructure procedure. Operation references describe contracts, not another
 acceptance sequence.
 

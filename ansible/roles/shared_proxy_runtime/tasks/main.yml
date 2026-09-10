@@ -40,14 +40,20 @@
     - config.yaml
   register: todo_proxy_kube_manifests
 
-- name: Install shared proxy network and TLS volume Quadlets
+- name: Remove obsolete volume Quadlets while preserving PVC data
+  ansible.builtin.file:
+    path: "{{ todo_quadlet_directory }}/{{ item }}.volume"
+    state: absent
+  loop:
+    - todo-nginx-data
+
+- name: Install shared proxy network Quadlet
   ansible.builtin.copy:
     src: "{{ project_root }}/quadlet/{{ item }}"
     dest: "{{ todo_quadlet_directory }}/{{ item }}"
     mode: "0644"
   loop:
     - todo.network
-    - todo-nginx-data.volume
   register: todo_proxy_kube_resources
 
 - name: Install the shared proxy Kube Quadlet

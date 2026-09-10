@@ -86,6 +86,16 @@ See `kube/runtime/RESULTS.md` for demonstrated behavior and revision-specific ac
 
 Containerfiles provide immutable app content. PostgreSQL data, nginx TLS state
 and backup each use persistent volumes with different lifecycles.
+The storage chain is `Helm/Kube → PersistentVolumeClaim → Podman named volume
+→ volumeMount.mountPath` (the container path). PVC creation annotations set
+PostgreSQL UID/GID `999:999` and nginx UID/GID `101:101`.
+Separately, `.kube → systemd user service → podman kube play/down` controls the
+workload lifecycle. Normal stop/start and reboot reuse the named volumes.
+A `.volume` Quadlet is only needed for an additional host/systemd storage
+contract; these PVCs need none. Never add `--force` to routine Kube shutdown.
+Standby/reseed plays the canonical data claim before streaming the base backup,
+without starting PostgreSQL; existing safety gates still apply.
+See [persistence and uninstall semantics](ARCHITECTURE.md#8-persistence-and-secrets).
 Root in a rootless container is not host root; subordinate IDs map ownership.
 SELinux `:z` sharing and `:Z` private labels differ from `:U` ownership.
 

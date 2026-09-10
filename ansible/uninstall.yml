@@ -5,6 +5,7 @@
 
   vars:
     quadlet_directory: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/containers/systemd"
+    # Include obsolete definitions for cleanup of earlier Kube installations.
     quadlet_files:
       - todo.network
       - todo-postgres-data.volume
@@ -29,6 +30,7 @@
       - todo-db-setup.service
       - todo-postgres.service
       - todo-network.service
+      # Missing legacy volume services are tolerated (rc 5); never data evidence.
       - todo-postgres-data-volume.service
       - todo-postgres-backup-volume.service
       - todo-nginx-data-volume.service

@@ -1,7 +1,5 @@
 [Unit]
 Description=Todo PostgreSQL Podman Kube workload
-Requires=todo-postgres-data-volume.service todo-postgres-backup-volume.service
-After=todo-postgres-data-volume.service todo-postgres-backup-volume.service
 
 [Kube]
 Yaml=postgres.yaml

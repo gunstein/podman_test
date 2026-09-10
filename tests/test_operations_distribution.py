@@ -99,7 +99,6 @@ class OperationsDistributionTests(unittest.TestCase):
                 "ansible/roles/shared_proxy_runtime/tasks/main.yml",
                 "ansible/roles/shared_proxy_runtime/templates/shared-proxy.kube.j2",
                 "kube/runtime/shared-proxy.yaml",
-                "quadlet/todo-nginx-data.volume",
                 "ansible/rebuild-standby.yml",
                 "ansible/install-quarantine-tool.yml",
                 "ansible/cluster-status.yml",
@@ -130,6 +129,7 @@ class OperationsDistributionTests(unittest.TestCase):
                 "ansible/roles/promoted_application/templates/todo-nginx-data.volume.j2",
             ):
                 self.assertNotIn(retired, names)
+            self.assertFalse(any(name.endswith((".volume", ".volume.j2")) for name in names))
             for name in names:
                 self.assertNotIn("docs/legacy", name)
                 self.assertNotIn("KUBE-MIGRATION.md", name)
@@ -226,5 +226,5 @@ class OperationsDistributionTests(unittest.TestCase):
                           "todo-keycloak-m12", "postgres-17.11"):
                 self.assertIn(f"images/{image}.tar", files)
             self.assertIn("ansible/roles/todo_kube_runtime/templates/shared-proxy.kube.j2", files)
-            self.assertIn("quadlet/todo-nginx-data.volume", files)
+            self.assertFalse(any(name.endswith((".volume", ".volume.j2")) for name in files))
             self.assertNotIn("docs/legacy", "\n".join(files))

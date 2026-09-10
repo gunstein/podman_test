@@ -100,7 +100,8 @@ This is a tested baseline, not a claim about the capability's minimum version.
 | Python tools | Guarded DR, backup and resumable operator stages | A second configuration-management system |
 | Podman | Rootless pods, containers, networks, volumes and secrets | Cluster scheduling |
 
-Host integration also uses shared `.network` and `.volume` Quadlets.
+Host network integration uses the shared `.network` Quadlet. Persistent storage
+is declared by Kube PVCs; no separate `.volume` Quadlets are needed here.
 User lingering enables services to run before interactive login.
 `shared-proxy.service` requires and starts after app and Keycloak;
 `todo-app.service` depends on PostgreSQL and Keycloak; PostgreSQL also has
@@ -204,6 +205,34 @@ An adapter seam is not evidence that Duende or another provider already works.
 | nginx CA and leaf-key state | todo-nginx-data | Survives local app recreation; promotion may create a new demo CA |
 | Base backups and WAL | todo-postgres-backup | Separate from live data; still on the same VM |
 | Runtime credentials | Host-local Podman secrets | Provisioned and transferred separately from YAML |
+
+Helm/Kube declares each persistent volume with a `PersistentVolumeClaim`.
+Podman maps `claimName` to the named volume; `volumeMount.mountPath` is the
+path inside the container. PostgreSQL data and backup claims specify creation
+UID/GID `999:999`; the nginx TLS claim specifies `101:101`. These are container
+IDs mapped through rootless Podman, not host IDs. Existing volumes are reused;
+creation annotations do not repair existing ownership.
+
+The `.kube` Quadlet owns the workload's user-systemd lifecycle, including boot.
+Normal `podman kube down` and systemd stop preserve these PVC volumes; do not
+use `--force` or `KubeDownForce=true` for routine shutdown. A separate `.volume`
+Quadlet is appropriate only for a necessary host/systemd storage contract beyond
+the PVC, such as a separately managed device or mount. None of these three
+volumes needs one. See the Podman [PVC documentation](https://docs.podman.io/en/latest/markdown/podman-kube-play.1.html)
+and [shutdown semantics](https://docs.podman.io/en/latest/markdown/podman-kube-down.1.html).
+
+Standby bootstrap and approved reseed play only the data PVC extracted from the
+canonical rendered `postgres.yaml` before `pg_basebackup`; they do not start
+PostgreSQL against an empty directory. Bootstrap still refuses existing data;
+reseed still requires all fencing and confirmation gates before deleting only
+`todo-postgres-data`. The existing helper ownership/SELinux handoff is preserved.
+Backup configuration requires the existing backup volume mounted read-write at
+`/var/lib/postgresql/backup` in active PostgreSQL; helpers still mount it at
+`/backup`. Runtime roles remove obsolete volume Quadlet files from earlier Kube
+installs without deleting named volumes. Uninstall retains tolerant cleanup of
+old definitions: normal uninstall preserves database and backup volumes but
+removes TLS state; `remove_data=true` additionally removes database data.
+The single-host uninstaller continues to refuse DR/backup hosts.
 
 The bootstrap/admin, migrator, application, Keycloak and replication
 identities have different jobs. Ansible constructs Kube-compatible secret

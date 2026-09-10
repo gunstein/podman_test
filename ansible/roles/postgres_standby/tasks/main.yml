@@ -57,9 +57,18 @@
       todo-postgres-data already exists on standby. Bootstrap never overwrites
       or repairs an existing database volume automatically.
 
-- name: Create the empty standby database volume
+- name: Create the empty standby database volume from the canonical PVC
   ansible.builtin.command:
-    argv: [podman, volume, create, todo-postgres-data]
+    argv: [podman, kube, play, "-"]
+    # Play only the data claim: PostgreSQL must not start before pg_basebackup.
+    stdin: >-
+      {{
+        lookup('ansible.builtin.file', todo_rendered_manifest_directory ~ '/postgres.yaml')
+        | from_yaml_all
+        | selectattr('kind', 'equalto', 'PersistentVolumeClaim')
+        | selectattr('metadata.name', 'equalto', 'todo-postgres-data')
+        | first | to_yaml
+      }}
   changed_when: true
 
 - name: Initialize standby from a streamed base backup

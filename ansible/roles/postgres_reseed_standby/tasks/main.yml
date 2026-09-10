@@ -89,8 +89,18 @@
   ansible.builtin.command: {argv: [podman, volume, rm, todo-postgres-data]}
   changed_when: true
 
-- name: Create the empty rebuilt standby volume
-  ansible.builtin.command: {argv: [podman, volume, create, todo-postgres-data]}
+- name: Create the empty rebuilt standby volume from the canonical PVC
+  ansible.builtin.command:
+    argv: [podman, kube, play, "-"]
+    # Play only the data claim: PostgreSQL must not start before pg_basebackup.
+    stdin: >-
+      {{
+        lookup('ansible.builtin.file', todo_rendered_manifest_directory ~ '/postgres.yaml')
+        | from_yaml_all
+        | selectattr('kind', 'equalto', 'PersistentVolumeClaim')
+        | selectattr('metadata.name', 'equalto', 'todo-postgres-data')
+        | first | to_yaml
+      }}
   changed_when: true
 
 - name: Stream a new base backup from the current primary

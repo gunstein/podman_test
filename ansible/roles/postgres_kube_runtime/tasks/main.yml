@@ -86,15 +86,21 @@
     - config.yaml
   register: todo_postgres_kube_manifests
 
-- name: Install PostgreSQL network and volume Quadlets
+- name: Remove obsolete volume Quadlets while preserving PVC data
+  ansible.builtin.file:
+    path: "{{ todo_quadlet_directory }}/{{ item }}.volume"
+    state: absent
+  loop:
+    - todo-postgres-data
+    - todo-postgres-backup
+
+- name: Install PostgreSQL network Quadlet
   ansible.builtin.copy:
     src: "{{ project_root }}/quadlet/{{ item }}"
     dest: "{{ todo_quadlet_directory }}/{{ item }}"
     mode: "0644"
   loop:
     - todo.network
-    - todo-postgres-data.volume
-    - todo-postgres-backup.volume
   register: todo_postgres_kube_resources
 
 - name: Install the PostgreSQL Kube Quadlet

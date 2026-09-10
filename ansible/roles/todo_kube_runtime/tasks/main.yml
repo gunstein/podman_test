@@ -141,16 +141,22 @@
     - shared-proxy.yaml
   register: todo_kube_manifests
 
-- name: Install shared network and volume Quadlets
+- name: Remove obsolete volume Quadlets while preserving PVC data
+  ansible.builtin.file:
+    path: "{{ todo_quadlet_directory }}/{{ item }}.volume"
+    state: absent
+  loop:
+    - todo-postgres-data
+    - todo-postgres-backup
+    - todo-nginx-data
+
+- name: Install shared network Quadlet
   ansible.builtin.copy:
     src: "{{ project_root }}/quadlet/{{ item }}"
     dest: "{{ todo_quadlet_directory }}/{{ item }}"
     mode: "0644"
   loop:
     - todo.network
-    - todo-postgres-data.volume
-    - todo-postgres-backup.volume
-    - todo-nginx-data.volume
   register: todo_kube_resources
 
 - name: Install Kube Quadlet units

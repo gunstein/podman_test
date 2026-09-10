@@ -58,9 +58,6 @@ do
 done
 cp -r "$project_root/ansible/tasks" "$package_directory/ansible/"
 cp "$project_root/quadlet/todo.network" \
-  "$project_root/quadlet/todo-postgres-data.volume" \
-  "$project_root/quadlet/todo-postgres-backup.volume" \
-  "$project_root/quadlet/todo-nginx-data.volume" \
   "$package_directory/quadlet/"
 "$project_root/scripts/render-kube-runtime.sh" "$project_root/helm/todo/values-prod.yaml" "$package_directory/kube/runtime"
 cp "$project_root/kube/runtime/README.md" "$project_root/kube/runtime/RESULTS.md" "$package_directory/kube/runtime/"

@@ -30,23 +30,27 @@
     argv: [podman, secret, exists, todo-replicator-password]
   changed_when: false
 
-- name: Install the backup volume Quadlet
-  ansible.builtin.template:
-    src: todo-postgres-backup.volume.j2
-    dest: "{{ m15_quadlet_directory }}/todo-postgres-backup.volume"
-    mode: "0644"
-  register: m15_backup_volume_quadlet
+- name: Require the backup volume created by the PostgreSQL PVC
+  ansible.builtin.command:
+    argv: [podman, volume, exists, todo-postgres-backup]
+  changed_when: false
 
-- name: Reload user systemd for the backup volume
-  ansible.builtin.systemd_service:
-    scope: user
-    daemon_reload: true
+- name: Inspect the active PostgreSQL mounts
+  ansible.builtin.command:
+    argv: [podman, inspect, --format, "{{ '{{json .Mounts}}' }}", todo-postgres]
+  register: m15_postgres_mounts
+  changed_when: false
 
-- name: Create the backup volume
-  ansible.builtin.systemd_service:
-    name: todo-postgres-backup-volume.service
-    scope: user
-    state: started
+- name: Require the PVC backup volume at the archive path
+  ansible.builtin.assert:
+    that:
+      - >-
+        (m15_postgres_mounts.stdout | from_json)
+        | selectattr('Type', 'equalto', 'volume')
+        | selectattr('Name', 'equalto', 'todo-postgres-backup')
+        | selectattr('Destination', 'equalto', '/var/lib/postgresql/backup')
+        | selectattr('RW', 'equalto', true) | list | length == 1
+    fail_msg: The active Kube PostgreSQL workload must mount its writable backup PVC.
 
 - name: Initialize private base-backup and WAL directories
   ansible.builtin.command:
@@ -240,7 +244,6 @@
   ansible.builtin.set_fact:
     m15_archive_verification_required: >-
       {{
-        m15_backup_volume_quadlet.changed or
         m15_backup_directories.changed or
         m15_archive_configured.changed | default(false)
       }}

@@ -1,6 +1,6 @@
 # Shared Quadlet resources and historical reference
 
-This directory now contains only the active shared network/volume definitions
+This directory now contains only the active shared network definition
 and this index. Runtime .kube units live in [kube/runtime](../kube/runtime/README.md).
 
 The seven historical .container units were retired after full acceptance of

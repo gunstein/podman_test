@@ -9,7 +9,7 @@ For a dependency-ordered walkthrough, use [LEARNING-GUIDE.md](LEARNING-GUIDE.md)
 
 The current implementation uses grouped Podman Kube workloads. Kube YAML defines pod contents,
 `.kube` Quadlet connects each workload to Podman and systemd, and systemd owns
-its lifecycle. See [`kube/runtime/README.md`](../kube/runtime/README.md).
+its lifecycle. See [`deploy/runtime/README.md`](../deploy/runtime/README.md).
 
 | Topic | Demonstrated here | Deliberate simplification / production concern |
 |---|---|---|

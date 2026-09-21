@@ -51,7 +51,7 @@ property this test is intended to verify.
 
 The Playwright Chromium build can use a certificate store different from the
 Ubuntu system store. Consequently, a successful trusted `curl` request is the
-lab's CA-trust assertion, while `scripts/run-e2e.sh` uses
+lab's CA-trust assertion, while `deploy/scripts/run-e2e.sh` uses
 `E2E_IGNORE_HTTPS_ERRORS=true` only to exercise the browser application flows.
 Do not interpret the Playwright setting as proof of certificate trust.
 

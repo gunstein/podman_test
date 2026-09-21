@@ -93,13 +93,13 @@ Build the application bundle (see
 for the Helm prerequisite):
 
 ```bash
-offline/build-bundle.sh
+deploy/offline/build-bundle.sh
 ```
 
 Build the DR/operations package:
 
 ```bash
-scripts/build-operations-package.sh
+deploy/scripts/build-operations-package.sh
 ```
 
 Check:
@@ -255,8 +255,8 @@ On VM1:
 ```bash
 cd ~/todo-operations
 
-cp ansible/inventory-initial.example.ini \
-   ansible/inventory-initial.ini
+cp deploy/ansible/inventories/initial/hosts.example.ini \
+   deploy/ansible/inventories/initial/hosts.ini
 ```
 
 Replace the addresses and user:
@@ -265,21 +265,28 @@ Replace the addresses and user:
 sed -i \
   -e 's/192\.0\.2\.10/192.168.1.50/g' \
   -e 's/192\.0\.2\.11/192.168.1.51/g' \
-  -e 's/ansible_user=gunstein/ansible_user=todo/' \
-  ansible/inventory-initial.ini
+  deploy/ansible/inventories/initial/hosts.ini
+
+sed -i \
+  -e 's/ansible_user: gunstein/ansible_user: todo/' \
+  deploy/ansible/inventories/initial/group_vars/todo_cluster.yaml
 ```
+
+Host addresses live in `hosts.ini`; the SSH account and account-specific paths live
+in the adjacent `group_vars/` files. Apply both edits in the extracted operations
+package. These YAML files contain configuration, not secrets.
 
 Check:
 
 ```bash
-cat ansible/inventory-initial.ini
+cat deploy/ansible/inventories/initial/hosts.ini
 ```
 
 Test the inventory:
 
 ```bash
 ansible-inventory \
-  --inventory ansible/inventory-initial.ini \
+  --inventory deploy/ansible/inventories/initial/hosts.ini \
   --graph
 ```
 
@@ -287,7 +294,7 @@ Test both machines:
 
 ```bash
 ansible \
-  --inventory ansible/inventory-initial.ini \
+  --inventory deploy/ansible/inventories/initial/hosts.ini \
   todo_cluster \
   -m ping
 ```
@@ -317,8 +324,8 @@ Still on VM1:
 cd ~/todo-operations
 
 ansible-playbook \
-  --inventory ansible/inventory-initial.ini \
-  ansible/preflight-standby.yml
+  --inventory deploy/ansible/inventories/initial/hosts.ini \
+  deploy/ansible/playbooks/preflight-standby.yml
 ```
 
 This should be green before you continue.
@@ -329,8 +336,8 @@ On VM1:
 
 ```bash
 ansible-playbook \
-  --inventory ansible/inventory-initial.ini \
-  ansible/bootstrap-standby.yml
+  --inventory deploy/ansible/inventories/initial/hosts.ini \
+  deploy/ansible/playbooks/bootstrap-standby.yml
 ```
 
 This, among other things:
@@ -361,8 +368,8 @@ On VM1:
 
 ```bash
 ansible-playbook \
-  --inventory ansible/inventory-initial.ini \
-  ansible/replication-status.yml
+  --inventory deploy/ansible/inventories/initial/hosts.ini \
+  deploy/ansible/playbooks/replication-status.yml
 ```
 
 You want, among other things:
@@ -381,8 +388,8 @@ While VM1 is still working:
 ```bash
 ansible-playbook \
   --ask-become-pass \
-  --inventory ansible/inventory-initial.ini \
-  ansible/install-dr-tool.yml
+  --inventory deploy/ansible/inventories/initial/hosts.ini \
+  deploy/ansible/playbooks/install-dr-tool.yml
 ```
 
 VM2 should now have:
@@ -417,8 +424,8 @@ while VM1 is still reachable and healthy:
 ```bash
 ansible-playbook \
   --ask-become-pass \
-  --inventory ansible/inventory-initial.ini \
-  ansible/install-quarantine-tool.yml
+  --inventory deploy/ansible/inventories/initial/hosts.ini \
+  deploy/ansible/playbooks/install-quarantine-tool.yml
 ```
 
 This installs one root-owned helper script on VM1 with exact `fapolicyd`
@@ -458,8 +465,8 @@ Check once more:
 cd ~/todo-operations
 
 ansible-playbook \
-  --inventory ansible/inventory-initial.ini \
-  ansible/replication-status.yml
+  --inventory deploy/ansible/inventories/initial/hosts.ini \
+  deploy/ansible/playbooks/replication-status.yml
 ```
 
 And confirm `DR test before failover` exists in the application.
@@ -562,8 +569,8 @@ On VM2:
 ```bash
 cd ~/todo-operations
 
-cp ansible/inventory-recovery.example.ini \
-   ansible/inventory-recovery.ini
+cp deploy/ansible/inventories/recovery/hosts.example.ini \
+   deploy/ansible/inventories/recovery/hosts.ini
 ```
 
 Set the addresses and user:
@@ -572,10 +579,18 @@ Set the addresses and user:
 sed -i \
   -e 's/192\.0\.2\.10/192.168.1.50/g' \
   -e 's/192\.0\.2\.11/192.168.1.51/g' \
-  -e 's/ansible_user=gunstein/ansible_user=todo/' \
+  deploy/ansible/inventories/recovery/hosts.ini
+
+sed -i \
+  -e 's/ansible_user: gunstein/ansible_user: todo/' \
   -e 's#/home/gunstein#/home/todo#g' \
-  ansible/inventory-recovery.ini
+  deploy/ansible/inventories/recovery/group_vars/all.yaml \
+  deploy/ansible/inventories/recovery/group_vars/todo_promoted.yaml
 ```
+
+Host addresses live in `hosts.ini`; the SSH account and account-specific paths live
+in the adjacent `group_vars/` files. Apply both edits in the extracted operations
+package. These YAML files contain configuration, not secrets.
 
 The roles now mean:
 
@@ -607,8 +622,8 @@ On VM2:
 cd ~/todo-operations
 
 ansible-playbook \
-  --inventory ansible/inventory-recovery.ini \
-  ansible/deploy-promoted-application.yml
+  --inventory deploy/ansible/inventories/recovery/hosts.ini \
+  deploy/ansible/playbooks/deploy-promoted-application.yml
 ```
 
 The playbook first checks that PostgreSQL is actually promoted and writable,
@@ -645,7 +660,7 @@ echo '192.168.1.51 todo.test' | sudo tee -a /etc/hosts
 
 VM2 creates its own demo CA the first time nginx starts, so you also need to
 trust VM2's public CA on the laptop — use
-`scripts/trust-serving-ca.sh todo@192.168.1.51`, or follow the
+`deploy/scripts/trust-serving-ca.sh todo@192.168.1.51`, or follow the
 [TLS guide](../TLS.md) manually.
 
 Open <https://todo.test:8443>.
@@ -699,7 +714,7 @@ approval. Keep VM1 fenced. Use the existing specialized procedure:
   pair is healthy; for recovery boot with every link disconnected, stop all four
   services through Guest Agent, require completed `exitcode=0` and `STOPPED`,
   inspect IPv4/IPv6 rules before reconnecting restricted SSH.
-- [Restore redundancy](../../ansible/RESTORE-REDUNDANCY.md) and
+- [Restore redundancy](../../deploy/ansible/RESTORE-REDUNDANCY.md) and
   [acceptance phase 9](../ACCEPTANCE.md#9-rebuild-old-primary-as-standby): verify
   reverse SSH/replication rules, run read-only preflight, then the separately
   approved reseed. Authenticated `IDENTIFY_SYSTEM` must precede deletion.
@@ -716,8 +731,8 @@ From VM2:
 
 ```bash
 ansible-playbook \
-  --inventory ansible/inventory-recovery.ini \
-  ansible/cluster-status.yml
+  --inventory deploy/ansible/inventories/recovery/hosts.ini \
+  deploy/ansible/playbooks/cluster-status.yml
 ```
 
 You should end up with:

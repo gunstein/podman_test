@@ -36,11 +36,11 @@ jobs:
         run: |
           set -euo pipefail
           for playbook in \
-            ansible/deploy.yml \
-            ansible/uninstall.yml
+            deploy/ansible/playbooks/deploy.yml \
+            deploy/ansible/playbooks/uninstall.yml
           do
             ansible-playbook \
-              --inventory ansible/inventory.ini \
+              --inventory deploy/ansible/inventories/local/hosts.ini \
               "$playbook" \
               --syntax-check
           done
@@ -50,15 +50,15 @@ jobs:
         run: |
           set -euo pipefail
           for playbook in \
-            ansible/preflight-standby.yml \
-            ansible/sync-standby-secrets.yml \
-            ansible/bootstrap-standby.yml \
-            ansible/install-dr-tool.yml \
-            ansible/install-quarantine-tool.yml \
-            ansible/replication-status.yml
+            deploy/ansible/playbooks/preflight-standby.yml \
+            deploy/ansible/playbooks/sync-standby-secrets.yml \
+            deploy/ansible/playbooks/bootstrap-standby.yml \
+            deploy/ansible/playbooks/install-dr-tool.yml \
+            deploy/ansible/playbooks/install-quarantine-tool.yml \
+            deploy/ansible/playbooks/replication-status.yml
           do
             ansible-playbook \
-              --inventory ansible/inventory-initial.example.ini \
+              --inventory deploy/ansible/inventories/initial/hosts.example.ini \
               "$playbook" \
               --syntax-check
           done
@@ -66,15 +66,15 @@ jobs:
       - name: Syntax-check promoted application playbook
         run: >-
           ansible-playbook
-          --inventory ansible/inventory-recovery.example.ini
-          ansible/deploy-promoted-application.yml
+          --inventory deploy/ansible/inventories/recovery/hosts.example.ini
+          deploy/ansible/playbooks/deploy-promoted-application.yml
           --syntax-check
 
       - name: Syntax-check backup playbook
         run: >-
           ansible-playbook
-          --inventory ansible/inventory-recovery.example.ini
-          ansible/configure-backup.yml
+          --inventory deploy/ansible/inventories/recovery/hosts.example.ini
+          deploy/ansible/playbooks/configure-backup.yml
           --syntax-check
 
       - name: Syntax-check standby rebuild playbooks
@@ -82,12 +82,12 @@ jobs:
         run: |
           set -euo pipefail
           for playbook in \
-            ansible/preflight-standby-rebuild.yml \
-            ansible/rebuild-standby.yml \
-            ansible/cluster-status.yml
+            deploy/ansible/playbooks/preflight-standby-rebuild.yml \
+            deploy/ansible/playbooks/rebuild-standby.yml \
+            deploy/ansible/playbooks/cluster-status.yml
           do
             ansible-playbook \
-              --inventory ansible/inventory-recovery.example.ini \
+              --inventory deploy/ansible/inventories/recovery/hosts.example.ini \
               "$playbook" \
               --syntax-check
           done
@@ -112,7 +112,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          scripts/build-operations-package.sh
+          deploy/scripts/build-operations-package.sh
           (
             cd dist
             sha256sum -c todo-operations.tar.gz.sha256
@@ -120,16 +120,16 @@ jobs:
           archive=dist/todo-operations.tar.gz
           for required in \
             todo-operations/ansible.cfg \
-            todo-operations/ansible/inventory-initial.example.ini \
-            todo-operations/ansible/inventory-recovery.example.ini \
-            todo-operations/ansible/deploy-promoted-application.yml \
-            todo-operations/ansible/configure-backup.yml \
-            todo-operations/ansible/rebuild-standby.yml \
-            todo-operations/ansible/roles/promoted_application/tasks/main.yml \
-            todo-operations/ansible/roles/postgres_backup/tasks/main.yml \
-            todo-operations/scripts/todo_dr.py \
-            todo-operations/scripts/todo_backup.py \
-            todo-operations/offline/FAPOLICYD.md \
+            todo-operations/deploy/ansible/inventories/initial/hosts.example.ini \
+            todo-operations/deploy/ansible/inventories/recovery/hosts.example.ini \
+            todo-operations/deploy/ansible/playbooks/deploy-promoted-application.yml \
+            todo-operations/deploy/ansible/playbooks/configure-backup.yml \
+            todo-operations/deploy/ansible/playbooks/rebuild-standby.yml \
+            todo-operations/deploy/ansible/roles/promoted_application/tasks/main.yml \
+            todo-operations/deploy/ansible/roles/postgres_backup/tasks/main.yml \
+            todo-operations/deploy/scripts/todo_dr.py \
+            todo-operations/deploy/scripts/todo_backup.py \
+            todo-operations/deploy/offline/FAPOLICYD.md \
             todo-operations/docs/SECRETS.md \
             todo-operations/docs/TLS.md \
             todo-operations/VERSION
@@ -160,7 +160,7 @@ jobs:
           "ansible-lint==26.8.0"
 
       - name: Lint Ansible content
-        run: ansible-lint ansible
+        run: ansible-lint deploy/ansible
 
   script-quality:
     name: Scripts and nginx smoke
@@ -187,7 +187,7 @@ jobs:
           tar -xzf /tmp/helm.tar.gz -C /tmp
 
       - name: Lint Python
-        run: ruff check backend e2e scripts tests
+        run: ruff check backend e2e deploy/scripts tests
 
       - name: Test frontend authentication adapter in Chromium
         run: |
@@ -199,19 +199,19 @@ jobs:
         shell: bash
         run: |
           shellcheck \
-            offline/build-bundle.sh \
-            offline/install.sh \
-            offline/preflight.sh \
+            deploy/offline/build-bundle.sh \
+            deploy/offline/install.sh \
+            deploy/offline/preflight.sh \
             proxy/proxy-entrypoint.sh \
-            scripts/build-operations-package.sh \
-            scripts/render-kube-runtime.sh \
-            scripts/dev-up.sh \
-            scripts/dev-down.sh \
-            scripts/smoke-proxy.sh \
-            scripts/run-e2e.sh \
-            scripts/todo-quarantine.sh \
-            scripts/trust-serving-ca.sh \
-            scripts/bootstrap-ssh-key.sh
+            deploy/scripts/build-operations-package.sh \
+            deploy/scripts/render-kube-runtime.sh \
+            deploy/scripts/dev-up.sh \
+            deploy/scripts/dev-down.sh \
+            deploy/scripts/smoke-proxy.sh \
+            deploy/scripts/run-e2e.sh \
+            deploy/scripts/todo-quarantine.sh \
+            deploy/scripts/trust-serving-ca.sh \
+            deploy/scripts/bootstrap-ssh-key.sh
 
       - name: Prepare rootless Podman for smoke test
         shell: bash
@@ -227,7 +227,7 @@ jobs:
       - name: Smoke-test nginx and TLS bootstrap
         env:
           HELM: /tmp/linux-amd64/helm
-        run: scripts/smoke-proxy.sh
+        run: deploy/scripts/smoke-proxy.sh
 
 
   backend:

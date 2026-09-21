@@ -49,7 +49,7 @@ class AcceptanceGuideTests(unittest.TestCase):
                              'todo-standby')
         self.assertNotRegex(commands, r'python\S* .*todo_dr_run\.py')
         rebuild = [shlex.split(line) for line in commands.splitlines()
-                   if 'ansible/rebuild-standby.yml' in line]
+                   if 'deploy/ansible/playbooks/rebuild-standby.yml' in line]
         self.assertTrue(rebuild)
         for command in rebuild:
             self.assertIn('--ask-become-pass', command)

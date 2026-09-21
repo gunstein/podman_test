@@ -7,7 +7,7 @@ roles, and no existing disposable restore state. Configuration can restart the
 application, so obtain a maintenance window on an existing installation.
 Status and SELECT are observations; marker rows are lab writes. Never substitute
 a live volume as the restore target. If backup verification, archiving or restore
-fails, stop and use [backup/PITR](../../ansible/BACKUP-PITR.md) and
+fails, stop and use [backup/PITR](../../deploy/ansible/BACKUP-PITR.md) and
 [troubleshooting](../ACCEPTANCE-TROUBLESHOOTING.md).
 
 This builds on [Offline install on one VM](02-OFFLINE-INSTALL.md). You should
@@ -41,7 +41,7 @@ From the repository:
 ```bash
 git switch feature/podman-kube
 
-scripts/build-operations-package.sh
+deploy/scripts/build-operations-package.sh
 
 cd dist
 sha256sum -c todo-operations.tar.gz.sha256
@@ -78,8 +78,8 @@ cd todo-operations
 Copy the recovery example:
 
 ```bash
-cp ansible/inventory-recovery.example.ini \
-   ansible/inventory-recovery.ini
+cp deploy/ansible/inventories/recovery/hosts.example.ini \
+   deploy/ansible/inventories/recovery/hosts.ini
 ```
 
 For a single-VM lab, we can use the VM as `todo_current_primary`.
@@ -96,10 +96,18 @@ Substitute the values:
 ```bash
 sed -i \
   -e 's/192\.0\.2\.11/192.168.1.50/g' \
-  -e 's/ansible_user=gunstein/ansible_user=todo/' \
+  deploy/ansible/inventories/recovery/hosts.ini
+
+sed -i \
+  -e 's/ansible_user: gunstein/ansible_user: todo/' \
   -e 's#/home/gunstein#/home/todo#g' \
-  ansible/inventory-recovery.ini
+  deploy/ansible/inventories/recovery/group_vars/all.yaml \
+  deploy/ansible/inventories/recovery/group_vars/todo_promoted.yaml
 ```
+
+Host addresses live in `hosts.ini`; the SSH account and account-specific paths live
+in the adjacent `group_vars/` files. Apply both edits in the extracted operations
+package. These YAML files contain configuration, not secrets.
 
 ## 4. Install and configure the backup feature
 
@@ -108,8 +116,8 @@ Run:
 ```bash
 ansible-playbook \
   --ask-become-pass \
-  --inventory ansible/inventory-recovery.ini \
-  ansible/configure-backup.yml
+  --inventory deploy/ansible/inventories/recovery/hosts.ini \
+  deploy/ansible/playbooks/configure-backup.yml
 ```
 
 This installs:

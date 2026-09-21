@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+output=${1:-"$project_root/dist/todo-operations.tar.gz"}
+work_directory=$(mktemp -d)
+package_directory="$work_directory/todo-operations"
+trap 'rm -rf "$work_directory"' EXIT
+
+mkdir -p "$package_directory/deploy/ansible/roles" \
+  "$package_directory/deploy/ansible/playbooks" \
+  "$package_directory/deploy/quadlet" \
+  "$package_directory/deploy/runtime" \
+  "$package_directory/deploy/scripts" \
+  "$package_directory/deploy/offline" \
+  "$package_directory/docs"
+mkdir -p "$(dirname "$output")"
+
+cp "$project_root/ansible.cfg" "$package_directory/"
+cp "$project_root/deploy/README.md" "$package_directory/deploy/"
+cp "$project_root/deploy/ansible/"*.md \
+  "$project_root/deploy/ansible/requirements.txt" "$package_directory/deploy/ansible/"
+for playbook in \
+  preflight-standby bootstrap-standby install-dr-tool install-quarantine-tool \
+  replication-status deploy-promoted-application configure-backup \
+  preflight-standby-rebuild rebuild-standby cluster-status sync-standby-secrets
+do
+  cp "$project_root/deploy/ansible/playbooks/$playbook.yml" \
+    "$package_directory/deploy/ansible/playbooks/"
+done
+for topology in initial recovery; do
+  destination="$package_directory/deploy/ansible/inventories/$topology"
+  mkdir -p "$destination/group_vars"
+  cp "$project_root/deploy/ansible/inventories/$topology/hosts.example.ini" "$destination/"
+  cp "$project_root/deploy/ansible/inventories/$topology/group_vars/"*.yaml "$destination/group_vars/"
+done
+for role in \
+  standby_preflight \
+  application_kube_runtime \
+  shared_proxy_runtime \
+  postgres_kube_runtime \
+  todo_fapolicyd \
+  postgres_primary \
+  postgres_standby \
+  todo_dr \
+  promoted_application \
+  postgres_backup \
+  postgres_redundancy_primary \
+  postgres_reseed_standby
+do
+  cp -r "$project_root/deploy/ansible/roles/$role" \
+    "$package_directory/deploy/ansible/roles/"
+done
+cp -r "$project_root/deploy/ansible/tasks" "$package_directory/deploy/ansible/"
+cp "$project_root/deploy/quadlet/todo.network" "$project_root/deploy/quadlet/"*.kube.j2 \
+  "$package_directory/deploy/quadlet/"
+"$project_root/deploy/scripts/render-kube-runtime.sh" "$project_root/deploy/environments/prod/values.yaml" "$package_directory/generated/kube-runtime"
+cp "$project_root/deploy/runtime/README.md" "$project_root/deploy/runtime/RESULTS.md" "$package_directory/deploy/runtime/"
+cp "$project_root/deploy/scripts/todo_dr.py" \
+  "$project_root/deploy/scripts/todo-quarantine.sh" \
+  "$project_root/deploy/scripts/todo_backup.py" "$package_directory/deploy/scripts/"
+cp "$project_root/deploy/offline/FAPOLICYD.md" "$project_root/deploy/offline/README.md" \
+  "$package_directory/deploy/offline/"
+cp "$project_root/deploy/quadlet/README.md" "$package_directory/deploy/quadlet/"
+cp "$project_root/docs/ARCHITECTURE.md" \
+  "$project_root/docs/SECRETS.md" \
+  "$project_root/docs/TLS.md" \
+  "$project_root/docs/SELINUX.md" \
+  "$project_root/docs/WHAT-YOU-LEARN.md" \
+  "$project_root/docs/LEARNING-GUIDE.md" \
+  "$project_root/docs/ACCEPTANCE.md" \
+  "$project_root/docs/ACCEPTANCE-TROUBLESHOOTING.md" \
+  "$project_root/docs/PROXMOX-QUARANTINE.md" \
+  "$package_directory/docs/"
+
+source_revision=unknown
+source_state=unknown
+if source_revision=$(git -C "$project_root" rev-parse --verify HEAD 2>/dev/null); then
+  source_state=clean
+  if test -n "$(git -C "$project_root" status --porcelain --untracked-files=normal)"; then
+    source_state=dirty
+  fi
+fi
+printf 'package=todo-operations\nsource_revision=%s\nsource_state=%s\n' \
+  "$source_revision" "$source_state" > "$package_directory/VERSION"
+(
+  cd "$package_directory"
+  find . -type f ! -name SHA256SUMS -print0 |
+    sort -z |
+    xargs -0 sha256sum > "$work_directory/SHA256SUMS"
+  mv "$work_directory/SHA256SUMS" SHA256SUMS
+)
+tar -czf "$output" -C "$work_directory" "$(basename "$package_directory")"
+output_directory=$(dirname "$output")
+output_name=$(basename "$output")
+(
+  cd "$output_directory"
+  sha256sum "$output_name" > "$output_name.sha256"
+)
+printf 'Created %s\n' "$output"
+printf 'Created %s.sha256\n' "$output"

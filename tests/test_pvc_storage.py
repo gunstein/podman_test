@@ -16,7 +16,7 @@ VOLUMES = {"todo-postgres-data", "todo-postgres-backup", "todo-nginx-data"}
 
 
 def tasks(role):
-    return yaml.safe_load((ROOT / f"ansible/roles/{role}/tasks/main.yml").read_text())
+    return yaml.safe_load((ROOT / f"deploy/ansible/roles/{role}/tasks/main.yml").read_text())
 
 
 def ansible_probe(directory, task_list, variables):
@@ -71,14 +71,14 @@ class PVCStorageTests(unittest.TestCase):
                 self.assertEqual(container["securityContext"]["runAsGroup"], uid)
 
     def test_no_volume_units_are_installed_or_required(self):
-        for path in (ROOT / "ansible/roles").rglob("*.kube.j2"):
+        for path in (ROOT / "deploy/quadlet").glob("*.kube.j2"):
             for line in path.read_text().splitlines():
                 if line.startswith(("Requires=", "After=", "Wants=")):
                     self.assertTrue(set(line.split("=", 1)[1].split()).isdisjoint(
                         {name + "-volume.service" for name in VOLUMES}), str(path))
                 self.assertNotEqual(line, "KubeDownForce=true")
-        self.assertEqual(list((ROOT / "quadlet").glob("*.volume")), [])
-        for path in (ROOT / "ansible/roles").rglob("*.yml"):
+        self.assertEqual(list((ROOT / "deploy/quadlet").glob("*.volume")), [])
+        for path in (ROOT / "deploy/ansible/roles").rglob("*.yml"):
             # Cleanup may name retired definitions, but no role may install them.
             def check(node):
                 if isinstance(node, list):
@@ -152,7 +152,7 @@ class PVCStorageTests(unittest.TestCase):
                 self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
     def test_uninstall_preserves_database_by_default_and_never_removes_backup(self):
-        play = yaml.safe_load((ROOT / "ansible/uninstall.yml").read_text())[0]
+        play = yaml.safe_load((ROOT / "deploy/ansible/playbooks/uninstall.yml").read_text())[0]
         self.assertFalse(play["vars"]["remove_data"])
         removals = [t for t in play["tasks"] if
                     t.get("ansible.builtin.command", {}).get("argv", [])[:3] ==

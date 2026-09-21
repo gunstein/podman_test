@@ -30,15 +30,15 @@ class KubeNameContractTests(unittest.TestCase):
                 self.assertIn("Restart=on-failure", unit)
 
     def test_legacy_runtime_and_transition_roles_stay_retired(self):
-        self.assertFalse(list((ROOT / "quadlet").glob("*.container")))
+        self.assertFalse(list((ROOT / "deploy/quadlet").glob("*.container")))
         for name in (
             "kube_application_migration",
             "kube_application_rollback",
             "kube_postgres_primary_migration",
             "kube_postgres_primary_rollback",
         ):
-            self.assertFalse((ROOT / "ansible" / "roles" / name).exists())
-        self.assertEqual({p.name for p in (ROOT / "kube").iterdir() if p.is_dir()}, {"runtime"})
+            self.assertFalse((ROOT / "deploy/ansible" / "roles" / name).exists())
+        self.assertFalse((ROOT / "kube").exists())
 
 
 if __name__ == "__main__":

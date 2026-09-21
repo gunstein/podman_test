@@ -27,7 +27,7 @@ class OfflineScriptTests(unittest.TestCase):
     def install(self, *arguments):
         bundle = self.directory / "bundle with spaces"
         bundle.mkdir(exist_ok=True)
-        shutil.copy(ROOT / "offline/install.sh", bundle / "install.sh")
+        shutil.copy(ROOT / "deploy/offline/install.sh", bundle / "install.sh")
         (bundle / "preflight.sh").write_text("exit 0\n")
         self.executable("sha256sum", "exit 0\n")
         self.executable("ansible-playbook", 'for arg do printf "%s\\n" "$arg"; done\n')
@@ -73,8 +73,8 @@ class OfflineScriptTests(unittest.TestCase):
         for helm in (str(self.directory / "missing-helm"), failing_helm):
             with self.subTest(helm=helm):
                 result = subprocess.run(
-                    ["bash", str(ROOT / "scripts/render-kube-runtime.sh"),
-                     str(ROOT / "helm/todo/values-prod.yaml"), str(output)],
+                    ["bash", str(ROOT / "deploy/scripts/render-kube-runtime.sh"),
+                     str(ROOT / "deploy/environments/prod/values.yaml"), str(output)],
                     env={**self.env, "HELM": helm}, capture_output=True, check=False,
                 )
                 self.assertNotEqual(result.returncode, 0)

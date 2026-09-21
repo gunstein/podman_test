@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-PREFLIGHT = (ROOT / "offline/preflight.sh").read_text()
+PREFLIGHT = (ROOT / "deploy/offline/preflight.sh").read_text()
 PORT_CHECK = PREFLIGHT.split("python3 - <<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
 
 
@@ -26,7 +26,7 @@ class PreflightHostPortTests(unittest.TestCase):
         with patch.object(socket, "socket", FakeSocket), patch.dict(
             os.environ, {"TODO_ALLOWED_PORTS": allowed}
         ):
-            exec(compile(PORT_CHECK, "offline/preflight.sh:port-check", "exec"), {})
+            exec(compile(PORT_CHECK, "deploy/offline/preflight.sh:port-check", "exec"), {})
         return checked
 
     def test_host_backend_port_is_not_reserved(self):

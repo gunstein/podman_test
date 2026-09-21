@@ -13,9 +13,9 @@ For the authoritative system overview and design boundaries, read
 ## 1. Follow the definition to the running service
 
 ```text
-helm/todo + helm/shared-proxy + values             build host only
+deploy/charts/todo + deploy/charts/shared-proxy + values             build host only
         ↓ render
-kube/runtime/*.yaml            reviewed, packaged workload definitions
+generated/kube-runtime/*.yaml            reviewed, packaged workload definitions
         ↓ referenced by
 Ansible templates → *.kube     target Quadlet lifecycle and host integration
         ↓ generator
@@ -27,13 +27,13 @@ rootless Podman                executes pods and containers
 Helm is a build-time template tool, not an installed target-host dependency.
 CI compares packaged YAML with independent rendering. This is the Podman-supported
 subset of Kubernetes YAML: no Kubernetes cluster or portability promise.
-Read `helm/todo/templates/`, `helm/todo/values-prod.yaml`,
-`scripts/render-kube-runtime.sh` and `kube/runtime/README.md`.
+Read `deploy/charts/todo/templates/`, `deploy/environments/prod/values.yaml`,
+`deploy/scripts/render-kube-runtime.sh` and `deploy/runtime/README.md`.
 To experiment, render into a temporary directory, never over deployed state:
 
 ```bash
 render_dir=$(mktemp -d)
-scripts/render-kube-runtime.sh helm/todo/values-prod.yaml "$render_dir"
+deploy/scripts/render-kube-runtime.sh deploy/environments/prod/values.yaml "$render_dir"
 cat "$render_dir/app.yaml" "$render_dir/shared-proxy.yaml"
 ```
 
@@ -48,7 +48,7 @@ commands run as the service user on an installed guest unless stated otherwise.
 | `todo-keycloak.service` | Keycloak | Identity has its own startup and health lifecycle |
 | `todo-app.service` | Migration init container, backend, nginx frontend | Migration gates startup; backend and frontend share app lifecycle |
 
-Read `kube/runtime/app.yaml`, `keycloak.yaml`, `postgres.yaml` and their
+Read `generated/kube-runtime/app.yaml`, `keycloak.yaml`, `postgres.yaml` and their
 `.kube` units. A fourth unit, `shared-proxy.service`, owns container `nginx`
 and TLS volume `todo-nginx-data`. It routes over DNS to `todo-app:8080`
 (frontend), `todo-app:8000` (backend) and `todo-keycloak:8080`.
@@ -64,8 +64,8 @@ podman network inspect todo-network
 
 ## 3. Learn development and production lifecycle separately
 
-Development uses direct `podman kube play/down` through `scripts/dev-up.sh`
-and `scripts/dev-down.sh`; read their cleanup scope before running them.
+Development uses direct `podman kube play/down` through `deploy/scripts/dev-up.sh`
+and `deploy/scripts/dev-down.sh`; read their cleanup scope before running them.
 Production uses generated user services from `.kube` Quadlets.
 `todo-app.service` requires PostgreSQL and Keycloak; PostgreSQL is also a
 boot entrypoint so database-only standby can run independently.
@@ -80,7 +80,7 @@ loginctl show-user "$USER" -p Linger
 
 Ordering is not readiness. Init migration, container health checks, systemd
 restart and Ansible readiness checks have different responsibilities.
-See `kube/runtime/RESULTS.md` for demonstrated behavior and revision-specific acceptance.
+See `deploy/runtime/RESULTS.md` for demonstrated behavior and revision-specific acceptance.
 
 ## 4. Images, rootless storage and external secrets
 
@@ -118,8 +118,8 @@ Host provisioning establishes database roles and grants with separate
 bootstrap, migrator, application, Keycloak and replication identities.
 The app pod's init container applies schema migrations before serving traffic.
 Ordinary app recovery does not repeat administrative role bootstrap.
-Read `backend/`, `ansible/roles/application_kube_runtime/` and
-`ansible/roles/promoted_application/`.
+Read `backend/`, `deploy/ansible/roles/application_kube_runtime/` and
+`deploy/ansible/roles/promoted_application/`.
 
 ## 6. Browser, nginx, TLS and identity
 
@@ -136,7 +136,7 @@ curl --fail https://todo.test:8443/auth/realms/todo/.well-known/openid-configura
 
 These HTTPS commands require client name resolution and CA trust.
 Read `frontend/nginx.conf` for static asset serving, the nginx ConfigMap in
-`helm/shared-proxy/templates/shared-proxy.yaml` for reverse-proxy routing,
+`deploy/charts/shared-proxy/templates/shared-proxy.yaml` for reverse-proxy routing,
 [TLS](TLS.md) and the frontend adapter chain:
 
 ```text
@@ -154,7 +154,7 @@ Backend validation uses configured issuer, JWKS and audience independently.
 Ansible installs and verifies state; systemd remains responsible afterwards.
 Both offline bundles must identify one clean revision in VERSION and pass
 archive checksums before extraction. Targets consume rendered YAML and OCI
-archives without Helm or registry access. Read `offline/README.md`.
+archives without Helm or registry access. Read `deploy/offline/README.md`.
 
 SELinux, Unix ownership, user namespaces, fapolicyd and firewalld are independent
 layers. The exact-file trust role waits boundedly for canonical path, size and
@@ -166,7 +166,7 @@ getenforce
 systemctl is-active fapolicyd firewalld
 ```
 
-Read `ansible/roles/todo_fapolicyd/`, `offline/FAPOLICYD.md` and
+Read `deploy/ansible/roles/todo_fapolicyd/`, `deploy/offline/FAPOLICYD.md` and
 [quarantine](PROXMOX-QUARANTINE.md). Do not disable security to diagnose failures.
 
 ## 8. Recovery is part of the architecture

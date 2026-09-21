@@ -1,0 +1,34 @@
+---
+- name: Pre-stage a Guest Agent stop helper on the initial primary
+  hosts: todo_primary
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    project_root: "{{ playbook_dir }}/../../.."
+    todo_quarantine_entrypoint_regex: /opt/todo/bin/todo-quarantine\.sh
+  tasks:
+    - name: Enable Guest Agent execution only with explicit operator consent
+      ansible.builtin.include_tasks: ../tasks/quarantine-guest-agent.yml
+      when: todo_quarantine_enable_guest_exec | default(false) | bool
+
+    - name: Install and trust the exact quarantine helper without stopping services
+      ansible.builtin.include_role:
+        name: todo_fapolicyd
+      vars:
+        todo_fapolicyd_files:
+          - source: "{{ project_root }}/deploy/scripts/todo-quarantine.sh"
+            dest: /opt/todo/bin/todo-quarantine.sh
+            mode: "0755"
+
+    - name: Configure the explicitly authorized SELinux entrypoint
+      ansible.builtin.include_tasks: ../tasks/quarantine-selinux.yml
+      when: todo_quarantine_enable_selinux_entrypoint | default(false) | bool
+
+    # Atomic file replacement can lose the existing persistent entrypoint label.
+    # Apply only the policy already configured; do not grant a new transition.
+    - name: Restore the helper label from existing persistent SELinux policy
+      ansible.builtin.command:
+        argv: [restorecon, -v, /opt/todo/bin/todo-quarantine.sh]
+      become: true
+      register: todo_quarantine_restorecon
+      changed_when: todo_quarantine_restorecon.stdout | trim != ''

@@ -48,7 +48,7 @@ ansible-playbook --version | head -1
 ```
 
 The repository's current Kube runtime is tested against Podman 5.8.2, systemd
-255 and ansible-core 2.14.18 or newer (see `offline/README.md`). If your
+255 and ansible-core 2.14.18 or newer (see `deploy/offline/README.md`). If your
 packages are older, get compatible versions before continuing.
 
 ## 2. Create a dedicated service user

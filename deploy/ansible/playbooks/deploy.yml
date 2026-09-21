@@ -1,0 +1,352 @@
+---
+- name: Deploy the Todo demo with rootless Podman
+  hosts: todo_hosts
+  gather_facts: false
+
+  vars:
+    project_root: "{{ playbook_dir }}/../../.."
+    deployment_mode: build
+    bundle_directory: ""
+    refresh_images: false
+    todo_quadlet_directory: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/containers/systemd"
+    todo_kube_runtime_directory: "{{ todo_quadlet_directory }}/todo-kube-runtime"
+    todo_rendered_manifest_directory: >-
+      {{
+        (bundle_directory ~ '/generated/kube-runtime')
+        if deployment_mode == 'offline'
+        else (project_root ~ '/generated/kube-runtime')
+      }}
+    todo_publish_address: 127.0.0.1
+    todo_service_port: 8443
+
+  pre_tasks:
+    - name: Validate the deployment mode
+      ansible.builtin.assert:
+        that:
+          - deployment_mode in ["build", "offline"]
+          - deployment_mode != "offline" or bundle_directory | length > 0
+          - deployment_mode != "offline" or not (refresh_images | bool)
+        fail_msg: Offline deployment requires bundle_directory.
+
+    - name: Render Kube runtime manifests on the fly
+      ansible.builtin.command:
+        argv:
+          - "{{ project_root }}/deploy/scripts/render-kube-runtime.sh"
+          - "{{ project_root }}/deploy/environments/prod/values.yaml"
+          - "{{ project_root }}/generated/kube-runtime"
+      delegate_to: localhost
+      when: deployment_mode == 'build'
+      changed_when: true
+
+    - name: Check that Podman is installed
+      ansible.builtin.command:
+        argv:
+          - podman
+          - --version
+      changed_when: false
+
+  tasks:
+    - name: Check whether the database secret exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - secret
+          - exists
+          - todo-db-password
+      register: database_secret
+      changed_when: false
+      failed_when: database_secret.rc not in [0, 1]
+
+    - name: Ask for the existing database password
+      ansible.builtin.pause:
+        prompt: Database password
+        echo: false
+      register: database_password
+      no_log: true
+      when: database_secret.rc == 1
+
+    - name: Create the rootless Podman secret
+      ansible.builtin.command:
+        argv:
+          - podman
+          - secret
+          - create
+          - todo-db-password
+          - "-"
+        stdin: "{{ database_password.user_input }}"
+        stdin_add_newline: false
+      no_log: true
+      register: secret_created
+      changed_when: true
+      when: database_secret.rc == 1
+
+    - name: Check whether runtime database secrets exist
+      ansible.builtin.command:
+        argv: [podman, secret, exists, "{{ item }}"]
+      loop:
+        - todo-migrator-password
+        - todo-app-password
+        - todo-keycloak-db-password
+      register: runtime_database_secret_checks
+      changed_when: false
+      failed_when: runtime_database_secret_checks.rc not in [0, 1]
+
+    - name: Generate missing runtime database passwords
+      ansible.builtin.set_fact:
+        generated_runtime_database_passwords: >-
+          {{
+            generated_runtime_database_passwords | default({})
+            | combine({item.item: lookup('password', '/dev/null length=32 chars=ascii_letters,digits')})
+          }}
+      loop: "{{ runtime_database_secret_checks.results }}"
+      no_log: true
+      when: item.rc == 1
+
+    - name: Create runtime database secrets
+      ansible.builtin.command:
+        argv: [podman, secret, create, "{{ item.item }}", "-"]
+        stdin: "{{ generated_runtime_database_passwords[item.item] }}"
+        stdin_add_newline: false
+      loop: "{{ runtime_database_secret_checks.results }}"
+      no_log: true
+      register: runtime_database_secrets_created
+      changed_when: true
+      when: item.rc == 1
+
+    - name: Check whether the Keycloak admin secret exists
+      ansible.builtin.command:
+        argv: [podman, secret, exists, todo-keycloak-admin-password]
+      register: keycloak_admin_secret
+      changed_when: false
+      failed_when: keycloak_admin_secret.rc not in [0, 1]
+
+    - name: Ask for the initial Keycloak admin password
+      ansible.builtin.pause:
+        prompt: Initial Keycloak admin password
+        echo: false
+      register: keycloak_admin_password
+      no_log: true
+      when: keycloak_admin_secret.rc == 1
+
+    - name: Create the rootless Keycloak admin secret
+      ansible.builtin.command:
+        argv: [podman, secret, create, todo-keycloak-admin-password, "-"]
+        stdin: "{{ keycloak_admin_password.user_input }}"
+        stdin_add_newline: false
+      no_log: true
+      register: keycloak_admin_secret_created
+      changed_when: true
+      when: keycloak_admin_secret.rc == 1
+
+    - name: Check whether the backend image exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - image
+          - exists
+          - localhost/todo-backend:m12
+      register: backend_image
+      changed_when: false
+      failed_when: backend_image.rc not in [0, 1]
+
+    - name: Build the backend image
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['podman', 'build']
+            + (['--pull'] if refresh_images | bool else [])
+            + ['--file', project_root + '/backend/Containerfile',
+               '--tag', 'localhost/todo-backend:m12', project_root]
+          }}
+      register: backend_built
+      changed_when: true
+      when:
+        - backend_image.rc == 1 or refresh_images | bool
+        - deployment_mode == "build"
+
+    - name: Load the backend image from the offline bundle
+      ansible.builtin.command:
+        argv:
+          - podman
+          - load
+          - --input
+          - "{{ bundle_directory }}/images/todo-backend-m12.tar"
+      register: backend_loaded
+      changed_when: true
+      when:
+        - backend_image.rc == 1
+        - deployment_mode == "offline"
+
+    - name: Check whether the frontend image exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - image
+          - exists
+          - localhost/todo-frontend:m12
+      register: frontend_image
+      changed_when: false
+      failed_when: frontend_image.rc not in [0, 1]
+
+    - name: Build the frontend image
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['podman', 'build']
+            + (['--pull'] if refresh_images | bool else [])
+            + ['--file', project_root + '/frontend/Containerfile',
+               '--tag', 'localhost/todo-frontend:m12', project_root]
+          }}
+      register: frontend_built
+      changed_when: true
+      when:
+        - frontend_image.rc == 1 or refresh_images | bool
+        - deployment_mode == "build"
+
+    - name: Load the frontend image from the offline bundle
+      ansible.builtin.command:
+        argv:
+          - podman
+          - load
+          - --input
+          - "{{ bundle_directory }}/images/todo-frontend-m12.tar"
+      register: frontend_loaded
+      changed_when: true
+      when:
+        - frontend_image.rc == 1
+        - deployment_mode == "offline"
+
+
+    - name: Check whether the proxy image exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - image
+          - exists
+          - localhost/todo-proxy:m12
+      register: proxy_image
+      changed_when: false
+      failed_when: proxy_image.rc not in [0, 1]
+
+    - name: Build the proxy image
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['podman', 'build']
+            + (['--pull'] if refresh_images | bool else [])
+            + ['--file', project_root + '/proxy/Containerfile',
+               '--tag', 'localhost/todo-proxy:m12', project_root]
+          }}
+      register: proxy_built
+      changed_when: true
+      when:
+        - proxy_image.rc == 1 or refresh_images | bool
+        - deployment_mode == "build"
+
+    - name: Load the proxy image from the offline bundle
+      ansible.builtin.command:
+        argv:
+          - podman
+          - load
+          - --input
+          - "{{ bundle_directory }}/images/todo-proxy-m12.tar"
+      register: proxy_loaded
+      changed_when: true
+      when:
+        - proxy_image.rc == 1
+        - deployment_mode == "offline"
+
+    - name: Inspect the shared proxy implementation
+      ansible.builtin.command:
+        argv: [podman, image, inspect, localhost/todo-proxy:m12]
+      register: proxy_image_inspection
+      changed_when: false
+
+    - name: Require the nginx shared proxy image
+      ansible.builtin.assert:
+        that:
+          - >-
+            (proxy_image_inspection.stdout | from_json | first).Labels.get(
+              'io.todo.proxy', ''
+            ) == 'nginx'
+        fail_msg: >-
+          The existing localhost/todo-proxy:m12 image does not identify nginx.
+          In build mode rerun with refresh_images=true; in offline
+          mode load the proxy archive from the new verified bundle.
+
+    - name: Check whether the Keycloak image exists
+      ansible.builtin.command:
+        argv: [podman, image, exists, "localhost/todo-keycloak:m12"]
+      register: keycloak_image
+      changed_when: false
+      failed_when: keycloak_image.rc not in [0, 1]
+
+    - name: Build the Keycloak image
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['podman', 'build']
+            + (['--pull'] if refresh_images | bool else [])
+            + ['--file', project_root + '/keycloak/Containerfile',
+               '--tag', 'localhost/todo-keycloak:m12', project_root]
+          }}
+      register: keycloak_built
+      changed_when: true
+      when:
+        - keycloak_image.rc == 1 or refresh_images | bool
+        - deployment_mode == "build"
+
+    - name: Load the Keycloak image from the offline bundle
+      ansible.builtin.command:
+        argv: [podman, load, --input, "{{ bundle_directory }}/images/todo-keycloak-m12.tar"]
+      register: keycloak_loaded
+      changed_when: true
+      when:
+        - keycloak_image.rc == 1
+        - deployment_mode == "offline"
+
+    - name: Check whether the PostgreSQL image exists
+      ansible.builtin.command:
+        argv:
+          - podman
+          - image
+          - exists
+          - docker.io/library/postgres:17.11
+      register: postgres_image
+      changed_when: false
+      failed_when: postgres_image.rc not in [0, 1]
+
+    - name: Pull the PostgreSQL image
+      ansible.builtin.command:
+        argv:
+          - podman
+          - pull
+          - docker.io/library/postgres:17.11
+      register: postgres_pulled
+      changed_when: true
+      when:
+        - postgres_image.rc == 1 or refresh_images | bool
+        - deployment_mode == "build"
+
+    - name: Load the PostgreSQL image from the offline bundle
+      ansible.builtin.command:
+        argv:
+          - podman
+          - load
+          - --input
+          - "{{ bundle_directory }}/images/postgres-17.11.tar"
+      register: postgres_loaded
+      changed_when: true
+      when:
+        - postgres_image.rc == 1
+        - deployment_mode == "offline"
+
+    - name: Create the rootless Quadlet directory
+      ansible.builtin.file:
+        path: "{{ todo_quadlet_directory }}"
+        state: directory
+        mode: "0700"
+
+    - name: Install the final Podman Kube runtime
+      ansible.builtin.include_role:
+        name: todo_kube_runtime

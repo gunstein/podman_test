@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class RebuildPrivilegeTests(unittest.TestCase):
     def test_privilege_failure_on_either_host_stops_all_later_plays(self):
-        plays = yaml.safe_load((ROOT / 'ansible/rebuild-standby.yml').read_text())
+        plays = yaml.safe_load((ROOT / 'deploy/ansible/playbooks/rebuild-standby.yml').read_text())
         gate = plays[0]
         self.assertEqual(gate['hosts'], 'todo_rebuild_standby')
         self.assertTrue(gate['any_errors_fatal'])

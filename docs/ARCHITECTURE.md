@@ -76,8 +76,8 @@ framework or additional orchestration. PostgreSQL
 and Keycloak have independent lifecycles so app changes do not implicitly
 replace database or identity state. A rebuilt standby runs only PostgreSQL.
 
-The canonical definitions are under `kube/runtime/`, rendered from
-`helm/todo/` and `helm/shared-proxy/`. Each pod has one `.kube` unit and generated user service:
+The canonical definitions are under `generated/kube-runtime/`, rendered from
+`deploy/charts/todo/` and `deploy/charts/shared-proxy/`. Each pod has one `.kube` unit and generated user service:
 `todo-app.service`, `todo-keycloak.service`, `todo-postgres.service`,
 `shared-proxy.service`. The proxy uses the operational container name `nginx`
 and the persistent TLS volume `todo-nginx-data`. It reaches the frontend/backend
@@ -133,7 +133,7 @@ Target host(s) ──► .kube ──► systemd ──► Podman
 The operations package contains playbooks, roles, runtime definitions, Python
 and quarantine tools, and runbooks; it contains no OCI image archives.
 YAML is rendered into a temporary build directory and packaged. Source checkout
-`kube/runtime/` contains guides; Ansible role templates produce target-specific
+`deploy/runtime/` contains guides; shared `deploy/quadlet/` templates produce target-specific
 Quadlets. Tests compare packaged YAML with independent Helm rendering.
 Helm runs on the build host, not the Oracle Linux target. Images and rendered
 definitions are delivered offline; target execution does not fetch from a
@@ -310,7 +310,7 @@ Complete unchanged-revision Oracle Linux acceptance passed on 688a0f6,
 including promotion, application recovery, backup/PITR, rebuild, persistent
 markers, sequential reboots and real Keycloak browser verification.
 See the [run record](ACCEPTANCE-688a0f6.md) for observations and exact scope.
-See [runtime results](../kube/runtime/RESULTS.md). Static tests or a green CI
+See [runtime results](../deploy/runtime/RESULTS.md). Static tests or a green CI
 run do not replace the full two-VM test.
 
 This is a production-shaped educational demo, not a complete production
@@ -325,11 +325,11 @@ outside the demonstrated recovery scope.
 |---|---|
 | How do I learn it? | [Learning Guide](LEARNING-GUIDE.md) |
 | What is demonstrated versus simplified? | [Concept coverage](WHAT-YOU-LEARN.md) |
-| Which definitions implement the pods? | [Kube runtime](../kube/runtime/README.md) |
-| How is replication arranged? | [Standby architecture](../ansible/STANDBY-ARCHITECTURE.md) |
+| Which definitions implement the pods? | [Kube runtime](../deploy/runtime/README.md) |
+| How is replication arranged? | [Standby architecture](../deploy/ansible/STANDBY-ARCHITECTURE.md) |
 | How do I run acceptance safely? | [Acceptance sequence and criteria](ACCEPTANCE.md) |
 | How does old-primary isolation work? | [Quarantine](PROXMOX-QUARANTINE.md) |
-| How do backup and reseeding work? | [Backup/PITR](../ansible/BACKUP-PITR.md), [restore redundancy](../ansible/RESTORE-REDUNDANCY.md) |
+| How do backup and reseeding work? | [Backup/PITR](../deploy/ansible/BACKUP-PITR.md), [restore redundancy](../deploy/ansible/RESTORE-REDUNDANCY.md) |
 | How are security details handled? | [SELinux](SELINUX.md), [secrets](SECRETS.md), [TLS](TLS.md) |
 
 Source paths identify implementation, not a second source of configuration.

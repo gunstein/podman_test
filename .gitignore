@@ -11,7 +11,11 @@ __pycache__/
 *.py[cod]
 .env
 dist/
-ansible/inventory-initial.ini
-ansible/inventory-recovery.ini
+deploy/ansible/inventories/initial/hosts.ini
+deploy/ansible/inventories/recovery/hosts.ini
 lab-dr.local.toml
 lab-dr.*.local.toml
+
+# Keep pre-refactor local inventories private as well.
+ansible/inventory-initial.ini
+ansible/inventory-recovery.ini

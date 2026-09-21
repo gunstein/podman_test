@@ -152,15 +152,15 @@ class KubeRuntimeTests(unittest.TestCase):
         # Dependencies must point toward app/database, never back to ingress.
         for name in ("todo-app", "todo-keycloak", "todo-postgres"):
             self.assertNotIn("shared-proxy.service", read(RUNTIME / (name + ".kube")))
-        for name, role in (("todo-app", "application_kube_runtime"),
-                           ("todo-keycloak", "application_kube_runtime"),
-                           ("shared-proxy", "shared_proxy_runtime")):
-            relative = "templates/" + name + ".kube.j2"
-            self.assertEqual(read(ROOT / "ansible/roles/todo_kube_runtime" / relative),
-                             read(ROOT / "ansible/roles" / role / relative))
+        self.assertEqual(
+            {path.name for path in (ROOT / "deploy/quadlet").glob("*.kube.j2")},
+            {"todo-app.kube.j2", "todo-keycloak.kube.j2",
+             "todo-postgres.kube.j2", "shared-proxy.kube.j2"},
+        )
+        self.assertEqual(list((ROOT / "deploy/ansible/roles").rglob("*.kube.j2")), [])
 
     def test_active_application_constructs_separate_secrets_in_memory(self):
-        tasks = read(ROOT / "ansible" / "roles" / "application_kube_runtime" / "tasks" / "main.yml")
+        tasks = read(ROOT / "deploy/ansible" / "roles" / "application_kube_runtime" / "tasks" / "main.yml")
         for name in (
             "todo-migrator-password",
             "todo-app-password",
@@ -183,19 +183,12 @@ class KubeRuntimeTests(unittest.TestCase):
             self.assertFalse((RUNTIME / filename).exists())
 
     def test_proxy_runtime_unit_maps_external_port_to_container_tls(self):
-        template = read(
-            ROOT
-            / "ansible"
-            / "roles"
-            / "shared_proxy_runtime"
-            / "templates"
-            / "shared-proxy.kube.j2"
-        )
+        template = read(ROOT / "deploy/quadlet/shared-proxy.kube.j2")
         self.assertIn("127.0.0.1:8080:8080", template)
         self.assertIn("todo_service_port }}:8443", template)
 
     def test_helm_is_the_single_workload_template_source(self):
-        chart = ROOT / "helm" / "todo"
+        chart = ROOT / "deploy/charts" / "todo"
         values = read(chart / "values.yaml")
         rendered = "\n".join(
             read(RUNTIME / filename) for filename in ("app.yaml", "keycloak.yaml", "postgres.yaml")
@@ -210,14 +203,14 @@ class KubeRuntimeTests(unittest.TestCase):
             self.assertTrue((chart / "templates" / filename).is_file())
         app_template = read(chart / "templates" / "app.yaml")
         self.assertIn("{{ .Values.backend.image | quote }}", app_template)
-        proxy_template = read(ROOT / "helm/shared-proxy/templates/shared-proxy.yaml")
+        proxy_template = read(ROOT / "deploy/charts/shared-proxy/templates/shared-proxy.yaml")
         self.assertIn("{{ .Values.proxy.memory | quote }}", proxy_template)
         self.assertNotIn("password", values.lower())
         self.assertIn("# Source: todo/templates/app.yaml", rendered)
 
     def test_clean_deploy_targets_kube_without_legacy_chain(self):
-        deploy = read(ROOT / "ansible" / "deploy.yml")
-        runtime = read(ROOT / "ansible" / "roles" / "todo_kube_runtime" / "tasks" / "main.yml")
+        deploy = read(ROOT / "deploy/ansible/playbooks/deploy.yml")
+        runtime = read(ROOT / "deploy/ansible" / "roles" / "todo_kube_runtime" / "tasks" / "main.yml")
 
         self.assertIn("name: todo_kube_runtime", deploy)
         for legacy in (
@@ -231,7 +224,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("Start the grouped application", runtime)
 
     def test_clean_dev_start_bootstraps_roles_before_shared_services(self):
-        script = read(ROOT / "scripts" / "dev-up.sh")
+        script = read(ROOT / "deploy/scripts" / "dev-up.sh")
         postgres = script.index('"$generated/postgres.yaml"')
         healthy = script.index("podman wait --condition healthy")
         first_setup = script.index("setup_roles\npodman kube play", healthy)
@@ -243,10 +236,10 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertEqual(script.splitlines().count("setup_roles"), 2)
 
     def test_offline_bundle_packages_rendered_kube_runtime(self):
-        offline = read(ROOT / "offline" / "build-bundle.sh")
-        self.assertIn('scripts/render-kube-runtime.sh"', offline)
-        self.assertIn("ansible/roles/todo_kube_runtime", offline)
-        self.assertIn("helm/todo", offline)
+        offline = read(ROOT / "deploy/offline" / "build-bundle.sh")
+        self.assertIn('deploy/scripts/render-kube-runtime.sh"', offline)
+        self.assertIn("deploy/ansible/roles/todo_kube_runtime", offline)
+        self.assertIn("deploy/charts/todo", offline)
 
 
 if __name__ == "__main__":

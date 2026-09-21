@@ -13,20 +13,15 @@ _tmp = tempfile.TemporaryDirectory()
 RUNTIME = Path(_tmp.name)
 
 subprocess.run(
-    [str(ROOT / "scripts/render-kube-runtime.sh"),
-     str(ROOT / "helm/todo/values-prod.yaml"), str(RUNTIME)],
+    [str(ROOT / "deploy/scripts/render-kube-runtime.sh"),
+     str(ROOT / "deploy/environments/prod/values.yaml"), str(RUNTIME)],
     check=True,
 )
 
 
 def render_units(destination, publish_address, postgres_address=""):
     destination.mkdir(parents=True, exist_ok=True)
-    templates = {
-        "todo-app": "application_kube_runtime",
-        "todo-keycloak": "application_kube_runtime",
-        "todo-postgres": "postgres_kube_runtime",
-        "shared-proxy": "shared_proxy_runtime",
-    }
+    templates = ("todo-app", "todo-keycloak", "todo-postgres", "shared-proxy")
     playbook = destination / "render.yml"
     playbook.write_text(yaml.safe_dump([{
         "name": "Render test Quadlets",
@@ -40,11 +35,11 @@ def render_units(destination, publish_address, postgres_address=""):
         "tasks": [{
             "name": "Render " + unit,
             "ansible.builtin.template": {
-                "src": str(ROOT / "ansible/roles" / role / "templates" / (unit + ".kube.j2")),
+                "src": str(ROOT / "deploy/quadlet" / (unit + ".kube.j2")),
                 "dest": str(destination / (unit + ".kube")),
                 "mode": "0600",
             },
-        } for unit, role in templates.items()],
+        } for unit in templates],
     }]))
     subprocess.run(
         [os.environ.get("ANSIBLE_PLAYBOOK", "ansible-playbook"),
@@ -56,4 +51,4 @@ def render_units(destination, publish_address, postgres_address=""):
 
 render_units(RUNTIME, "192.0.2.10")
 for name in ("README.md", "RESULTS.md"):
-    shutil.copy(ROOT / "kube/runtime" / name, RUNTIME)
+    shutil.copy(ROOT / "deploy/runtime" / name, RUNTIME)

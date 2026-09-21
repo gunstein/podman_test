@@ -8,7 +8,7 @@ Current architecture and workflow:
   teaches it. Use docs/ACCEPTANCE.md for
   acceptance; a NEW run must not depend on old chat or development history.
 - Helm renders workloads at build time. bundles contain canonical rendered YAML;
-  Ansible renders target .kube units from role templates; targets do not need Helm.
+  Ansible renders target .kube units from deploy/quadlet templates; targets do not need Helm.
 - todo-app groups migration init, FastAPI and HTTP-only frontend. Shared nginx
   proxy, Keycloak and PostgreSQL are separate workloads on rootless todo-network.
   shared-proxy.service owns nginx and persistent TLS volume todo-nginx-data.
@@ -44,7 +44,7 @@ Constraints:
 - Keep the accepted per-container Quadlet implementation recoverable through
   the quadlet-reference-v1 tag; do not rewrite that history.
 - Preserve and verify external secrets without plaintext YAML, network DNS, rootless
-  SELinux storage, direct-development cleanup, .kube/systemd failure
+  SELinux storage, direct-development cleanup, .deploy/systemd failure
   semantics and database persistence when changing the accepted architecture.
 - Preserve the complete fencing, promotion, backup, PITR and standby-rebuild
   safety boundaries.

@@ -32,7 +32,7 @@ echo "c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3  /tmp/hel
 tar -xzf /tmp/helm.tar.gz -C /tmp
 export PATH="/tmp/linux-amd64:$PATH"
 
-offline/build-bundle.sh
+deploy/offline/build-bundle.sh
 ```
 
 Building the bundle does not need `ansible-core` or a Python virtualenv on the
@@ -49,7 +49,7 @@ dist/todo-offline-m12.tar.gz.sha256
 ```
 
 The bundle contains the backend, frontend, shared proxy, Keycloak and PostgreSQL images,
-plus the installer and manifest files (see `offline/README.md`).
+plus the installer and manifest files (see `deploy/offline/README.md`).
 
 ## 2. Copy the bundle to the VM
 
@@ -135,7 +135,7 @@ Then open <https://todo.test:8443>.
 You need to trust the public demo CA from the installation to avoid
 certificate warnings. Follow the repository's [TLS guide](../TLS.md) to
 export and install the CA certificate — or use
-`scripts/trust-serving-ca.sh todo@192.168.1.50` from the laptop, which does
+`deploy/scripts/trust-serving-ca.sh todo@192.168.1.50` from the laptop, which does
 the fetch, fingerprint verification and trust-store update in one step.
 
 **Note:** the installation creates the Keycloak realm and client, but no
@@ -143,7 +143,7 @@ regular Todo user. Create a user in Keycloak afterward to be able to log in
 and change Todos.
 
 The detailed source for this installation is the
-[offline bundle guide](../../offline/README.md). On a repeat installation you
+[offline bundle guide](../../deploy/offline/README.md). On a repeat installation you
 must use the same `--publish-address`, otherwise publication falls back to
 localhost.
 

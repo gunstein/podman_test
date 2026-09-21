@@ -20,7 +20,7 @@ The assistant uses SSH after the isolated guest's Todo services are stopped.
 3. Install the stop helper on the initial primary using the operations package:
 
    ```bash
-   ansible-playbook --ask-become-pass --inventory ansible/inventory-initial.ini ansible/install-quarantine-tool.yml
+   ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/initial/hosts.ini deploy/ansible/playbooks/install-quarantine-tool.yml
    ```
 
    This installs one root-owned file with exact fapolicyd trust.
@@ -30,7 +30,7 @@ The assistant uses SSH after the isolated guest's Todo services are stopped.
    explicitly authorize execution support on the initial primary:
 
    ```bash
-   ansible-playbook --ask-become-pass --inventory ansible/inventory-initial.ini ansible/install-quarantine-tool.yml -e todo_quarantine_enable_guest_exec=true
+   ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/initial/hosts.ini deploy/ansible/playbooks/install-quarantine-tool.yml -e todo_quarantine_enable_guest_exec=true
    ```
 
    This grants Proxmox administrators arbitrary root command execution in

@@ -51,7 +51,7 @@ else:
             for name in ("id", "hostname", "runuser"):
                 (directory / name).symlink_to(fake)
             result = subprocess.run(
-                ["sh", str(ROOT / "scripts/todo-quarantine.sh"), action, expected, "gunstein"],
+                ["sh", str(ROOT / "deploy/scripts/todo-quarantine.sh"), action, expected, "gunstein"],
                 env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
                      "CALLS": str(log), **settings},
                 capture_output=True, text=True, check=False,

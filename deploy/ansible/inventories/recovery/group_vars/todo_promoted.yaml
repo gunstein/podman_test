@@ -1,0 +1,3 @@
+---
+# Point todo.test at the current primary on the client.
+todo_bundle_directory: /home/gunstein/todo-offline-m12

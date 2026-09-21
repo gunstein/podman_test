@@ -1,0 +1,4 @@
+---
+ansible_user: gunstein
+todo_user_home: /home/gunstein
+todo_rebuild_replication_slot: todo_rebuilt_standby

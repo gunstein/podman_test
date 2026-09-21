@@ -37,7 +37,7 @@ class ProxyConfigurationTests(unittest.TestCase):
         self.assertIn("proxy_set_header X-Forwarded-Port $server_port;", headers)
 
     def test_nginx_configuration_reads_from_readonly_system_volume(self):
-        nginx = read("helm/shared-proxy/templates/shared-proxy.yaml")
+        nginx = read("deploy/charts/shared-proxy/templates/shared-proxy.yaml")
         app = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
 
         self.assertIn("ssl_certificate /var/lib/todo-tls/server.crt;", nginx)
@@ -64,9 +64,9 @@ class ProxyConfigurationTests(unittest.TestCase):
         self.assertIn("mountPath: /var/lib/todo-tls", app)
 
     def test_promoted_proxy_uses_stable_hostname_and_kube_publish(self):
-        ansible = read("ansible/deploy-promoted-application.yml")
+        ansible = read("deploy/ansible/playbooks/deploy-promoted-application.yml")
         template = read(
-            "ansible/roles/shared_proxy_runtime/templates/"
+            "deploy/quadlet/"
             "shared-proxy.kube.j2"
         )
         config = (RUNTIME / "config.yaml").read_text(encoding="utf-8")
@@ -76,7 +76,7 @@ class ProxyConfigurationTests(unittest.TestCase):
         self.assertIn('m14_service_port: 8443', ansible)
         self.assertIn(
             'todo_service_port: "{{ m14_service_port }}"',
-            read("ansible/roles/promoted_application/tasks/main.yml"),
+            read("deploy/ansible/roles/promoted_application/tasks/main.yml"),
         )
         self.assertIn(
             "PublishPort={{ todo_publish_address }}:"

@@ -1,0 +1,5 @@
+---
+ansible_user: gunstein
+# Override if the remote account does not use /home/<ansible_user>.
+# todo_user_home: /srv/todo
+todo_rpo_target_seconds: 30

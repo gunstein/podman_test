@@ -77,4 +77,4 @@ fapolicyd to make the demo pass; that removes the mechanism the demo is meant
 to teach.
 
 For fapolicyd source and deployed-file trust lifecycle, see
-[`offline/FAPOLICYD.md`](../offline/FAPOLICYD.md).
+[`deploy/offline/FAPOLICYD.md`](../deploy/offline/FAPOLICYD.md).

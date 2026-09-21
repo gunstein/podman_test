@@ -1,6 +1,6 @@
 ---
 exclude_paths:
-  - ansible/.venv/
+  - deploy/ansible/.venv/
 
 # Milestone prefixes (m13_, m14_, m15_ and m16_) make the operational sequence
 # clearer than repeating long role directory names in this pedagogical demo.

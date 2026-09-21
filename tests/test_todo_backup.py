@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "todo_backup.py"
+SCRIPT = Path(__file__).parents[1] / "deploy/scripts" / "todo_backup.py"
 SPEC = importlib.util.spec_from_file_location("todo_backup", SCRIPT)
 assert SPEC and SPEC.loader
 todo_backup = importlib.util.module_from_spec(SPEC)

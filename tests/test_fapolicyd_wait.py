@@ -10,7 +10,7 @@ import unittest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-WAIT = ROOT / "ansible/roles/todo_fapolicyd/tasks/wait-trust.yml"
+WAIT = ROOT / "deploy/ansible/roles/todo_fapolicyd/tasks/wait-trust.yml"
 
 
 class FapolicydWaitTests(unittest.TestCase):
@@ -27,7 +27,7 @@ class FapolicydWaitTests(unittest.TestCase):
     def run_wait(self, refresh):
         ansible = shutil.which("ansible-playbook")
         if not ansible:
-            candidate = ROOT / "ansible/.venv/bin/ansible-playbook"
+            candidate = ROOT / "deploy/ansible/.venv/bin/ansible-playbook"
             if not candidate.is_file():
                 self.skipTest("Ansible is required for the trust-wait integration test")
             ansible = str(candidate)

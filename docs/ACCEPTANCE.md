@@ -127,8 +127,8 @@ require changing the realm, frontend, certificate hostname or Helm manifests.
 |---|---|---|
 | VM network | Guest OS or DHCP reservation | Fixed address per VM; verify with `ip -brief -4 address` |
 | Initial HTTPS binding | Primary: `sh ./install.sh --publish-address PRIMARY_IP` | Primary's own IPv4, on every install/rerun |
-| Replication and SSH | Primary's `todo-operations/ansible/inventory-initial.ini` | Replace example IPs `192.0.2.10` and `192.0.2.11`; standby needs both `ansible_host` and `todo_node_address` |
-| Recovery/rebuild | Promoted host's `todo-operations/ansible/inventory-recovery.ini` | Same machine IPs, new role groups; rebuild target needs both address fields |
+| Replication and SSH | Primary's `todo-operations/deploy/ansible/inventories/initial/hosts.ini` | Replace example IPs `192.0.2.10` and `192.0.2.11`; standby needs both `ansible_host` and `todo_node_address` |
+| Recovery/rebuild | Promoted host's `todo-operations/deploy/ansible/inventories/recovery/hosts.ini` | Same machine IPs, new role groups; rebuild target needs both address fields |
 | Browser destination | Client DNS or `/etc/hosts` | `PRIMARY_IP todo.test`; change to promoted host after failover |
 | Firewall | VM firewalld and manual hypervisor fencing/quarantine | Replace source/destination IPs in the rules; HTTPS from client, replication from peer |
 
@@ -214,8 +214,8 @@ On the connected build host:
 ```bash
 test -z "$(git status --porcelain)"
 git rev-parse HEAD
-offline/build-bundle.sh
-scripts/build-operations-package.sh
+deploy/offline/build-bundle.sh
+deploy/scripts/build-operations-package.sh
 cd dist
 sha256sum -c todo-offline-m12.tar.gz.sha256
 sha256sum -c todo-operations.tar.gz.sha256
@@ -299,7 +299,7 @@ must run; adapter tests with a test double do not replace them.
 
 ### Client trust and real browser verification
 
-`scripts/trust-serving-ca.sh user@serving-host` performs the fingerprint
+`deploy/scripts/trust-serving-ca.sh user@serving-host` performs the fingerprint
 comparison and both trust-store updates below in one step, for operators who
 already understand the manual sequence. It changes nothing that the commands
 below do not already do explicitly.
@@ -397,13 +397,13 @@ On `todo-primary`:
 
 ```bash
 cd "$HOME/todo-operations"
-cp ansible/inventory-initial.example.ini ansible/inventory-initial.ini
+cp deploy/ansible/inventories/initial/hosts.example.ini deploy/ansible/inventories/initial/hosts.ini
 sed -i \
   -e 's/192\.0\.2\.10/192.168.0.102/g' \
   -e 's/192\.0\.2\.11/192.168.0.108/g' \
-  ansible/inventory-initial.ini
-ansible-inventory --inventory ansible/inventory-initial.ini --graph
-ansible --inventory ansible/inventory-initial.ini todo_cluster -m ping
+  deploy/ansible/inventories/initial/hosts.ini
+ansible-inventory --inventory deploy/ansible/inventories/initial/hosts.ini --graph
+ansible --inventory deploy/ansible/inventories/initial/hosts.ini todo_cluster -m ping
 ```
 
 Before these Ansible commands, require passwordless primary-to-standby SSH:
@@ -415,7 +415,7 @@ ssh -o BatchMode=yes gunstein@192.168.0.108 hostname
 If a snapshot restore changed or removed SSH state, verify the standby host-key
 fingerprint through an independently verified connection (for example the
 client/build host's already trusted SSH connection), then follow
-`ansible/STANDBY-ARCHITECTURE.md` to
+`deploy/ansible/STANDBY-ARCHITECTURE.md` to
 install primary's public automation key. Do not weaken host-key checking.
 
 Allow only standby to reach the initial replication endpoint:
@@ -429,12 +429,12 @@ sudo firewall-cmd --reload
 Run:
 
 ```bash
-ansible-playbook --inventory ansible/inventory-initial.ini \
-  ansible/preflight-standby.yml
-ansible-playbook --inventory ansible/inventory-initial.ini \
-  ansible/bootstrap-standby.yml
-ansible-playbook --inventory ansible/inventory-initial.ini \
-  ansible/replication-status.yml
+ansible-playbook --inventory deploy/ansible/inventories/initial/hosts.ini \
+  deploy/ansible/playbooks/preflight-standby.yml
+ansible-playbook --inventory deploy/ansible/inventories/initial/hosts.ini \
+  deploy/ansible/playbooks/bootstrap-standby.yml
+ansible-playbook --inventory deploy/ansible/inventories/initial/hosts.ini \
+  deploy/ansible/playbooks/replication-status.yml
 ```
 
 Pass when primary reports `streaming|async`, the slot is active and usable,
@@ -454,8 +454,8 @@ Install both DR tools and exact-file trust through Ansible:
 
 ```bash
 ansible-playbook --ask-become-pass \
-  --inventory ansible/inventory-initial.ini \
-  ansible/install-dr-tool.yml
+  --inventory deploy/ansible/inventories/initial/hosts.ini \
+  deploy/ansible/playbooks/install-dr-tool.yml
 ```
 
 The central role keeps `fapolicyd` active, trusts only the verified source and
@@ -517,16 +517,16 @@ On the promoted host:
 
 ```bash
 cd "$HOME/todo-operations"
-cp ansible/inventory-recovery.example.ini ansible/inventory-recovery.ini
+cp deploy/ansible/inventories/recovery/hosts.example.ini deploy/ansible/inventories/recovery/hosts.ini
 sed -i \
   -e 's/192\.0\.2\.11/192.168.0.108/g' \
   -e 's/192\.0\.2\.10/192.168.0.102/g' \
-  ansible/inventory-recovery.ini
+  deploy/ansible/inventories/recovery/hosts.ini
 sudo firewall-cmd --permanent --zone=public \
   --add-rich-rule='rule family="ipv4" source address="192.168.0.100/32" destination address="192.168.0.108" port port="8443" protocol="tcp" accept'
 sudo firewall-cmd --reload
-ansible-playbook --ask-become-pass --inventory ansible/inventory-recovery.ini \
-  ansible/deploy-promoted-application.yml
+ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/recovery/hosts.ini \
+  deploy/ansible/playbooks/deploy-promoted-application.yml
 ```
 
 Map `todo.test` to `.108` on the client and install the exported public nginx
@@ -552,8 +552,8 @@ Install the tool and its exact-file trust through the playbook:
 
 ```bash
 cd "$HOME/todo-operations"
-ansible-playbook --ask-become-pass --inventory ansible/inventory-recovery.ini \
-  ansible/configure-backup.yml
+ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/recovery/hosts.ini \
+  deploy/ansible/playbooks/configure-backup.yml
 ```
 
 Require writable database, `archive_mode=on`,
@@ -628,8 +628,8 @@ Run read-only preflight:
 
 ```bash
 cd "$HOME/todo-operations"
-ansible-playbook --ask-become-pass --inventory ansible/inventory-recovery.ini \
-  ansible/preflight-standby-rebuild.yml \
+ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/recovery/hosts.ini \
+  deploy/ansible/playbooks/preflight-standby-rebuild.yml \
   --extra-vars \
   '{"todo_confirm_old_primary_fenced":"todo-primary is fenced","todo_confirm_reseed":"todo-primary"}'
 ```
@@ -641,8 +641,8 @@ or deletion of the old database. The credentials must remain valid for the later
 DR-tool installation as well.
 
 ```bash
-ansible-playbook --ask-become-pass --inventory ansible/inventory-recovery.ini \
-  ansible/rebuild-standby.yml \
+ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/recovery/hosts.ini \
+  deploy/ansible/playbooks/rebuild-standby.yml \
   --extra-vars \
   '{"todo_confirm_old_primary_fenced":"todo-primary is fenced","todo_confirm_reseed":"todo-primary"}'
 ```
@@ -650,7 +650,7 @@ ansible-playbook --ask-become-pass --inventory ansible/inventory-recovery.ini \
 Pass when authenticated `IDENTIFY_SYSTEM` precedes volume deletion, a fresh
 base backup initializes `.102`, and final state is `streaming|async`.
 
-Run `ansible/cluster-status.yml`, create an authenticated Todo through
+Run `deploy/ansible/playbooks/cluster-status.yml`, create an authenticated Todo through
 `todo.test`, and verify it directly on rebuilt standby.
 
 ## 10. Final reboot sequence
@@ -698,7 +698,7 @@ shared-proxy.service   shared-proxy pod (container: nginx)
 Always obtain fresh cluster evidence directly:
 
 ```bash
-ansible-playbook --inventory ansible/inventory-recovery.ini ansible/cluster-status.yml
+ansible-playbook --inventory deploy/ansible/inventories/recovery/hosts.ini deploy/ansible/playbooks/cluster-status.yml
 ```
 
 Inspect reported lag and LSNs as well as the recap; a successful playbook exit

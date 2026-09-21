@@ -1,5 +1,7 @@
 import base64
 import json
+import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -8,13 +10,13 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-ANSIBLE = ROOT / 'ansible/.venv/bin/ansible-playbook'
+ANSIBLE = os.environ.get('ANSIBLE_PLAYBOOK') or shutil.which('ansible-playbook')
 
 
 class QuarantineLabelTests(unittest.TestCase):
     def test_updates_restore_existing_policy_without_new_consent(self):
         tasks = yaml.safe_load(
-            (ROOT / 'ansible/install-quarantine-tool.yml').read_text()
+            (ROOT / 'deploy/ansible/playbooks/install-quarantine-tool.yml').read_text()
         )[0]['tasks']
         restore = tasks[-1]
         self.assertEqual(restore['ansible.builtin.command']['argv'],
@@ -23,16 +25,16 @@ class QuarantineLabelTests(unittest.TestCase):
         self.assertNotIn('when', restore)
         self.assertIn('stdout', restore['changed_when'])
         policy = next(task for task in tasks if task.get('ansible.builtin.include_tasks')
-                      == 'tasks/quarantine-selinux.yml')
+                      == '../tasks/quarantine-selinux.yml')
         self.assertIn('todo_quarantine_enable_selinux_entrypoint', policy['when'])
         self.assertIn('default(false)', policy['when'])
 
 
-@unittest.skipUnless(ANSIBLE.exists(), 'Ansible test environment required')
+@unittest.skipUnless(ANSIBLE, 'Ansible test environment required')
 class GuestAgentPolicyTests(unittest.TestCase):
     def evaluate(self, policy, expected=None):
         tasks = yaml.safe_load(
-            (ROOT / 'ansible/tasks/quarantine-guest-agent.yml').read_text()
+            (ROOT / 'deploy/ansible/tasks/quarantine-guest-agent.yml').read_text()
         )
         # Exercise the real extraction, validation and output expression,
         # but never run slurp, write configuration or restart a service.

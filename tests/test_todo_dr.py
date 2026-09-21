@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "todo_dr.py"
+SCRIPT = Path(__file__).parents[1] / "deploy/scripts" / "todo_dr.py"
 SPEC = importlib.util.spec_from_file_location("todo_dr", SCRIPT)
 assert SPEC and SPEC.loader
 todo_dr = importlib.util.module_from_spec(SPEC)

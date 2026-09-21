@@ -42,7 +42,9 @@ them. Per-user ownership is intentionally outside the demo.
 
 ## What you can learn
 
-Start with the current [Learning Guide](docs/LEARNING-GUIDE.md) and [Kube runtime guide](kube/runtime/README.md).
+Deployment sources and entry points are collected in [deploy/](deploy/README.md).
+
+Start with the current [Learning Guide](docs/LEARNING-GUIDE.md) and [Kube runtime guide](deploy/runtime/README.md).
 Historical learning material is available in Git; see the
 [history index](docs/history/README.md), not an alternate active runtime.
 
@@ -57,14 +59,14 @@ and is no longer part of the active tree.
 
 | Boundary | Files |
 |---|---|
-| Grouped application | `helm/todo/templates/app.yaml`; Ansible renders `todo-app.kube` |
-| Shared identity | `helm/todo/templates/keycloak.yaml`; `todo-keycloak.kube` |
-| Persistent database | `helm/todo/templates/postgres.yaml`; `todo-postgres.kube` |
-| Shared ingress | `helm/shared-proxy/`; `shared-proxy.kube`, container `nginx` |
-| Helm templates and values | [`helm/todo/`](helm/todo/) |
-| Shared network | [`todo.network`](quadlet/todo.network) |
+| Grouped application | `deploy/charts/todo/templates/app.yaml`; Ansible renders `todo-app.kube` |
+| Shared identity | `deploy/charts/todo/templates/keycloak.yaml`; `todo-keycloak.kube` |
+| Persistent database | `deploy/charts/todo/templates/postgres.yaml`; `todo-postgres.kube` |
+| Shared ingress | `deploy/charts/shared-proxy/`; `shared-proxy.kube`, container `nginx` |
+| Helm templates and values | [`deploy/charts/todo/`](deploy/charts/todo/) |
+| Shared network | [`todo.network`](deploy/quadlet/todo.network) |
 
-Start with the [Kube runtime guide](kube/runtime/README.md). DR tools support this
+Start with the [Kube runtime guide](deploy/runtime/README.md). DR tools support this
 core; retired PoCs and migration tooling remain in pre-retirement Git history.
 Revision 688a0f6 passed full evidence-grade Oracle Linux acceptance of the
 prior three-pod runtime; see the [run record](docs/ACCEPTANCE-688a0f6.md). The
@@ -91,16 +93,16 @@ site assumptions are recorded in [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md).
 Create a dedicated Ansible environment on a connected development host:
 
 ```bash
-python3 -m venv ansible/.venv
-ansible/.venv/bin/python -m pip install -r ansible/requirements.txt
+python3 -m venv deploy/ansible/.venv
+deploy/ansible/.venv/bin/python -m pip install -r deploy/ansible/requirements.txt
 ```
 
 Deploy the complete single-host application:
 
 ```bash
-ansible/.venv/bin/ansible-playbook \
-  --inventory ansible/inventory.ini \
-  ansible/deploy.yml
+deploy/ansible/.venv/bin/ansible-playbook \
+  --inventory deploy/ansible/inventories/local/hosts.ini \
+  deploy/ansible/playbooks/deploy.yml
 ```
 
 The first run asks for the PostgreSQL bootstrap password and a temporary
@@ -143,7 +145,7 @@ PostgreSQL; TLS state belongs only to the proxy.
 Build the image bundle on a connected, target-compatible machine:
 
 ```bash
-offline/build-bundle.sh
+deploy/offline/build-bundle.sh
 ```
 
 Transfer both generated files through a trusted path. On the target:
@@ -160,14 +162,14 @@ The external checksum is verified before extracted code runs. The internal
 manifest verifies every bundled file, and `VERSION` records the source Git
 revision plus clean/dirty build state. SHA-256 provides authenticity only when
 the checksum itself came through a trusted channel. See
-[offline/README.md](offline/README.md).
+[deploy/offline/README.md](deploy/offline/README.md).
 
 ## Two-node operations
 
 Build one source-only operations package:
 
 ```bash
-scripts/build-operations-package.sh
+deploy/scripts/build-operations-package.sh
 ```
 
 It contains the two inventory templates, Ansible workflows, guarded DR/backup
@@ -175,7 +177,7 @@ tools and operational documentation. It contains no images, credentials,
 site-specific inventory, SSH keys or database data.
 
 For a complete exercise, follow the single sequence in
-[Acceptance](docs/ACCEPTANCE.md). The [Ansible operation references](ansible/README.md)
+[Acceptance](docs/ACCEPTANCE.md). The [Ansible operation references](deploy/ansible/README.md)
 explain each tool's scope and safety contracts. Use
 [Acceptance troubleshooting](docs/ACCEPTANCE-TROUBLESHOOTING.md) for failed gates.
 
@@ -193,7 +195,7 @@ This is a reference demo, not a production deployment baseline.
 
 - SELinux remains enforcing; [docs/SELINUX.md](docs/SELINUX.md) separates labels,
   rootless UID mapping and ordinary permissions.
-- `fapolicyd` remains active; [offline/FAPOLICYD.md](offline/FAPOLICYD.md)
+- `fapolicyd` remains active; [deploy/offline/FAPOLICYD.md](deploy/offline/FAPOLICYD.md)
   documents exact-file trust and the RPM/DNF scaling direction.
 - [docs/SECRETS.md](docs/SECRETS.md) explains Podman-secret bootstrap,
   synchronization, runtime delivery, rotation and the single-node-loss boundary.
@@ -229,7 +231,7 @@ Browser tests use `backend/requirements-e2e.txt` and Playwright. The helper
 creates or updates `testuser` without storing either password:
 
 ```bash
-scripts/run-e2e.sh
+deploy/scripts/run-e2e.sh
 ```
 
 CI runs backend tests, Python and shell lint, nginx runtime smoke tests, Ansible
@@ -247,12 +249,12 @@ manual lab acceptance test.
 | Learn the system in dependency order | [Learning guide](docs/LEARNING-GUIDE.md) |
 | Run or hand off acceptance; change VM IPs (humans and agents: start here) | [Acceptance sequence](docs/ACCEPTANCE.md) |
 | Check demonstrated versus simplified concepts | [What you learn](docs/WHAT-YOU-LEARN.md) |
-| Operate deployment and recovery | [Ansible operations](ansible/README.md) |
+| Operate deployment and recovery | [Ansible operations](deploy/ansible/README.md) |
 | Understand SELinux and rootless ownership | [SELinux](docs/SELINUX.md) |
 | Understand runtime credentials | [Secrets](docs/SECRETS.md) |
 | Understand nginx and certificate trust | [TLS](docs/TLS.md) |
-| Install without network access | [Offline bundle](offline/README.md) |
-| Diagnose `fapolicyd` | [fapolicyd](offline/FAPOLICYD.md) |
+| Install without network access | [Offline bundle](deploy/offline/README.md) |
+| Diagnose `fapolicyd` | [fapolicyd](deploy/offline/FAPOLICYD.md) |
 | Read design history and live findings | [Development journal](docs/history/DEVELOPMENT-JOURNAL.md) |
 
 ## API

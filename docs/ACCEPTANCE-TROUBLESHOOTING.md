@@ -30,9 +30,9 @@ Then the operator may finish the non-destructive tail on the promoted host:
 ```bash
 cd "$HOME/todo-operations"
 ansible-playbook --ask-become-pass \
-  --inventory ansible/inventory-recovery.ini ansible/rebuild-standby.yml \
+  --inventory deploy/ansible/inventories/recovery/hosts.ini deploy/ansible/playbooks/rebuild-standby.yml \
   --start-at-task "Create the Todo DR configuration directory"
-ansible-playbook --inventory ansible/inventory-recovery.ini ansible/cluster-status.yml
+ansible-playbook --inventory deploy/ansible/inventories/recovery/hosts.ini deploy/ansible/playbooks/cluster-status.yml
 ```
 
 This is an exceptional repair, NOT the normal rebuild command. If the task name

@@ -12,12 +12,17 @@ command -v "$helm_command" >/dev/null || {
 }
 work_directory=$(mktemp -d)
 trap 'rm -rf "$work_directory"' EXIT
-for manifest in app keycloak postgres config; do
+for manifest in app postgres config; do
   "$helm_command" template todo "$project_root/deploy/charts/todo" \
     --values "$values_file" --show-only "templates/$manifest.yaml" \
     > "$work_directory/$manifest.yaml"
   perl -0pi -e 's/\n+\z/\n/' "$work_directory/$manifest.yaml"
 done
+
+"$helm_command" template keycloak "$project_root/deploy/charts/keycloak" \
+  --values "$values_file" --show-only "templates/keycloak.yaml" \
+  > "$work_directory/keycloak.yaml"
+perl -0pi -e 's/\n+\z/\n/' "$work_directory/keycloak.yaml"
 
 "$helm_command" template shared-proxy "$project_root/deploy/charts/shared-proxy" \
   --values "$values_file" --show-only "templates/shared-proxy.yaml" \

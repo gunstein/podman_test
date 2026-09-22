@@ -198,13 +198,11 @@ class KubeRuntimeTests(unittest.TestCase):
             read(RUNTIME / filename) for filename in ("app.yaml", "keycloak.yaml", "postgres.yaml")
         )
 
-        for filename in (
-            "app.yaml",
-            "keycloak.yaml",
-            "postgres.yaml",
-            "config.yaml",
-        ):
+        for filename in ("app.yaml", "postgres.yaml", "config.yaml"):
             self.assertTrue((chart / "templates" / filename).is_file())
+        self.assertFalse((chart / "templates/keycloak.yaml").exists())
+        self.assertTrue((ROOT / "deploy/charts/keycloak/templates/keycloak.yaml").is_file())
+        self.assertIn("# Source: keycloak/templates/keycloak.yaml", rendered)
         app_template = read(chart / "templates" / "app.yaml")
         self.assertIn("{{ .Values.backend.image | quote }}", app_template)
         proxy_template = read(ROOT / "deploy/charts/shared-proxy/templates/shared-proxy.yaml")

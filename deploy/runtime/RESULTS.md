@@ -4,6 +4,8 @@ The current single-host architecture has six pods: `todo-app`, `todo-postgres`,
 `notes-app`, `notes-postgres`, `keycloak` and `shared-proxy`. The apps have separate
 databases and audiences, sharing one realm, proxy, SAN certificate and network.
 DR, backup, promotion and rebuild remain Todo-only; Notes DR is a follow-up.
+The six-pod change requires its own full unchanged-revision VM acceptance
+before claiming the complete Oracle Linux operational baseline.
 
 ## Disposable single-host validation, 22 September 2026
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-set -eu
+set -efu
 
 tls_directory=/var/lib/todo-tls
 tls_hostname=${TODO_TLS_HOSTNAME:-localhost}
@@ -10,6 +10,31 @@ case "$tls_hostname" in
         exit 1
         ;;
 esac
+
+# One leaf certificate covers every registered public hostname.
+tls_hostnames=${APP_TLS_HOSTNAMES:-$tls_hostname}
+tls_san="DNS:$tls_hostname"
+for name in $tls_hostnames; do
+    case "$name" in
+        ""|*[!A-Za-z0-9.-]*)
+            echo "ERROR: invalid APP_TLS_HOSTNAMES entry: $name" >&2
+            exit 1
+            ;;
+    esac
+    if [ "$name" != "$tls_hostname" ]; then
+        tls_san="$tls_san,DNS:$name"
+    fi
+done
+
+# Use this pod's DNS, so one absent app cannot prevent other apps from starting.
+awk '$1 == "nameserver" {
+    address = index($2, ":") ? "[" $2 "]" : $2
+    servers = servers " " address
+} END {
+    if (servers == "") exit 1
+    print "resolver" servers " valid=5s;"
+    print "resolver_timeout 2s;"
+}' /etc/resolv.conf > /tmp/podman-resolver.conf
 
 umask 077
 mkdir -p "$tls_directory"
@@ -40,7 +65,7 @@ fi
 renew_server_certificate=true
 if [ -s "$tls_directory/server.crt" ] && \
     [ -s "$tls_directory/server.key" ] && \
-    openssl x509 -in "$tls_directory/server.crt" -noout -checkhost "$tls_hostname" >/dev/null 2>&1 && \
+    openssl verify -CAfile "$tls_directory/ca.crt" -verify_hostname "$tls_hostname" "$tls_directory/server.crt" >/dev/null 2>&1 && \
     openssl x509 -in "$tls_directory/server.crt" -noout -checkend 2592000 >/dev/null 2>&1 && \
     openssl verify -CAfile "$tls_directory/ca.crt" "$tls_directory/server.crt" >/dev/null 2>&1; then
     certificate_modulus=$(openssl x509 -in "$tls_directory/server.crt" -noout -modulus)
@@ -49,6 +74,13 @@ if [ -s "$tls_directory/server.crt" ] && \
         renew_server_certificate=false
     fi
 fi
+
+for name in $tls_hostnames; do
+    if ! openssl verify -CAfile "$tls_directory/ca.crt" -verify_hostname "$name" \
+        "$tls_directory/server.crt" >/dev/null 2>&1; then
+        renew_server_certificate=true
+    fi
+done
 
 if [ "$renew_server_certificate" = true ]; then
     temporary_directory=$(mktemp -d "$tls_directory/.issue.XXXXXX")
@@ -64,7 +96,7 @@ if [ "$renew_server_certificate" = true ]; then
         -out "$temporary_directory/server.csr"
 
     {
-        printf '%s\n' "subjectAltName=DNS:$tls_hostname"
+        printf '%s\n' "subjectAltName=$tls_san"
         printf '%s\n' "basicConstraints=critical,CA:FALSE"
         printf '%s\n' "keyUsage=critical,digitalSignature,keyEncipherment"
         printf '%s\n' "extendedKeyUsage=serverAuth"

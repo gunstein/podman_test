@@ -79,7 +79,8 @@ def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
 
 
 def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-                         publish_address="127.0.0.1", service_port=8443):
+                         publish_address="127.0.0.1", service_port=8443, applications=None):
+    applications = (apps.IDENTITY_DATABASE_APP,) if applications is None else applications
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         ("shared-proxy.yaml", "config.yaml"), ("shared-proxy.kube",),
@@ -88,5 +89,6 @@ def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_m
         "Unsupported legacy frontend container Quadlet is installed. Stop and "
         "review the host separately before installing the shared Kube proxy.",
         "shared proxy", {},
-        {"todo_publish_address": publish_address, "todo_service_port": service_port},
+        {"todo_publish_address": publish_address, "todo_service_port": service_port,
+         "app_services": [app.service("app") for app in applications]},
     )

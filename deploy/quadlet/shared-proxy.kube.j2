@@ -1,7 +1,7 @@
 [Unit]
 Description=Shared Nginx proxy for Kube workloads
-Requires=todo-app.service keycloak.service
-After=todo-app.service keycloak.service
+Requires={{ app_services | default(['todo-app.service']) | join(' ') }} keycloak.service
+After={{ app_services | default(['todo-app.service']) | join(' ') }} keycloak.service
 
 [Kube]
 Yaml=shared-proxy.yaml

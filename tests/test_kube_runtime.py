@@ -130,8 +130,8 @@ class KubeRuntimeTests(unittest.TestCase):
         config = next(doc["data"]["nginx.conf"] for doc in docs
                       if doc["metadata"]["name"] == "shared-nginx-config")
         for upstream in ("todo-app:8080", "todo-app:8000", "keycloak:8080"):
-            self.assertIn("server " + upstream + ";", config)
-        for route in ("todo_frontend", "todo_backend", "todo_keycloak"):
+            self.assertIn("server " + upstream + " resolve;", config)
+        for route in ("todo_frontend", "todo_backend", "shared_keycloak"):
             self.assertIn("proxy_pass http://" + route + ";", config)
         for route in ("/health", "/ready", "/api/", "/auth/"):
             self.assertIn(route, config)

@@ -25,18 +25,32 @@ podman build --file "$project_root/proxy/Containerfile" --tag "$image" "$project
 podman volume create "$volume" >/dev/null
 podman run --rm --user root --volume "$volume:/var/lib/todo-tls" \
   --entrypoint chown "$image" nginx:nginx /var/lib/todo-tls
-for attempt in 1 2; do
-  podman run --rm --add-host todo-app:127.0.0.1 --add-host keycloak:127.0.0.1 \
-    --env TODO_TLS_HOSTNAME=todo.test --volume "$volume:/var/lib/todo-tls" \
+for attempt in 1 2 3; do
+  hostnames=todo.test
+  if [[ "$attempt" != 1 ]]; then hostnames="todo.test notes.test"; fi
+  podman run --rm \
+    --env TODO_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=$hostnames" \
+    --volume "$volume:/var/lib/todo-tls" \
     --volume "$work_directory/nginx.conf:/etc/todo-nginx/nginx.conf:ro,Z" \
     "$image" nginx -t -c /etc/todo-nginx/nginx.conf
-  podman run --rm --volume "$volume:/var/lib/todo-tls:ro" --entrypoint sh "$image" -ec '
-    openssl x509 -in /var/lib/todo-tls/server.crt -noout -checkhost todo.test
-    openssl verify -CAfile /var/lib/todo-tls/ca.crt /var/lib/todo-tls/server.crt
+  podman run --rm --env "APP_TLS_HOSTNAMES=$hostnames" \
+    --volume "$volume:/var/lib/todo-tls:ro" --entrypoint sh "$image" -ec '
+    for name in $APP_TLS_HOSTNAMES; do
+      openssl verify -CAfile /var/lib/todo-tls/ca.crt -verify_hostname "$name" \
+        /var/lib/todo-tls/server.crt >/dev/null
+    done
     test "$(stat -c "%a" /var/lib/todo-tls/ca.key)" = 600
     test "$(stat -c "%a" /var/lib/todo-tls/server.key)" = 600
     sha256sum /var/lib/todo-tls/ca.crt /var/lib/todo-tls/server.crt
   ' > "$work_directory/tls-$attempt"
 done
-cmp "$work_directory/tls-1" "$work_directory/tls-2"
-cat "$work_directory/tls-2"
+# Expanding the SAN renews only the leaf; the next start changes neither certificate.
+head -n 1 "$work_directory/tls-1" > "$work_directory/ca-before"
+head -n 1 "$work_directory/tls-2" > "$work_directory/ca-after"
+cmp "$work_directory/ca-before" "$work_directory/ca-after"
+if cmp -s "$work_directory/tls-1" "$work_directory/tls-2"; then
+  echo 'Expected leaf renewal when adding notes.test' >&2
+  exit 1
+fi
+cmp "$work_directory/tls-2" "$work_directory/tls-3"
+cat "$work_directory/tls-3"

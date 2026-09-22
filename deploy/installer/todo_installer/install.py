@@ -92,7 +92,8 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         changed = workloads.install_application(
             *arguments, publish_address, service_port, app=app) or changed
     changed = workloads.install_keycloak(*arguments) or changed
-    changed = workloads.install_shared_proxy(*arguments, publish_address, service_port) or changed
+    changed = workloads.install_shared_proxy(
+        *arguments, publish_address, service_port, applications=applications) or changed
     selected_services = services(applications)
     if changed or images_changed:
         for service in selected_services:

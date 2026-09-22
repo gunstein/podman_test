@@ -4,3 +4,6 @@ proxy:
 runtime:
   publicHostname: todo.test
   publicPort: 8443
+
+# Populated by todo_installer.apps through the canonical renderer.
+apps: []

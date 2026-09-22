@@ -80,7 +80,11 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
             secrets.create_kube(secrets.postgres_secret_mapping(app))
             secrets.create_kube(secrets.application_secret_mapping(app))
         secrets.create_kube(secrets.keycloak_secret_mapping())
-        return up(rendered, applications, directory.parent / 'todo-installer-dev.json', images_changed)
+        changed = up(rendered, applications, directory.parent / 'todo-installer-dev.json', images_changed)
+        configured = keycloak.configure(
+            secrets.read(apps.IDENTITY_DATABASE_APP.secret('keycloak-admin')),
+            [(app.keycloak_client, app.hostname) for app in applications])
+        return changed or configured
     arguments = (root, directory, runtime, rendered)
     changed = False
     for app in applications:
@@ -102,10 +106,12 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         quadlet.systemctl('start', app.service('app'))
         setup_roles(app)
     quadlet.systemctl('start', 'shared-proxy.service')
-    keycloak.configure(secrets.read(apps.IDENTITY_DATABASE_APP.secret('keycloak-admin')))
+    configured = keycloak.configure(
+        secrets.read(apps.IDENTITY_DATABASE_APP.secret('keycloak-admin')),
+        [(app.keycloak_client, app.hostname) for app in applications])
     for service in selected_services:
         source = quadlet.systemctl('show', service + '.service', '--property=SourcePath',
                                   '--value').stdout.strip()
         if source != str(runtime / (service + '.kube')):
             raise RuntimeError(f'Unexpected SourcePath for {service}: {source}')
-    return changed or images_changed
+    return changed or images_changed or configured

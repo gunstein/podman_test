@@ -1,10 +1,13 @@
 """Local nginx readiness and Keycloak administration using the standard library."""
+import copy
 import json
 import re
 import time
 from urllib.error import URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
+
+from . import apps
 
 BASE = 'http://127.0.0.1:8080'
 
@@ -20,10 +23,11 @@ def request(path, method='GET', data=None, token=None, form=False):
         headers['Authorization'] = 'Bearer ' + token
     with urlopen(Request(BASE + path, data=body, headers=headers, method=method),
                  timeout=30) as response:
-        expected = 204 if method == 'PUT' else 200
+        expected = (204 if method == 'PUT' else
+                    201 if method == 'POST' and path.endswith('/clients') else 200)
         if response.status != expected:
             raise RuntimeError(f'Unexpected HTTP status {response.status} for {path}')
-        return json.load(response) if response.status != 204 else None
+        return json.load(response) if response.status == 200 else None
 
 
 def wait(path, attempts, delay, status=None):
@@ -39,7 +43,7 @@ def wait(path, attempts, delay, status=None):
     raise RuntimeError(f'Readiness failed after {attempts} attempts: {path}')
 
 
-def configure(admin_password):
+def configure(admin_password, clients=None):
     wait('/health', 30, 1, 'ok')
     wait('/ready', 30, 1, 'ready')
     discovery = wait('/auth/realms/todo/.well-known/openid-configuration', 90, 2)
@@ -51,13 +55,44 @@ def configure(admin_password):
         'grant_type': 'password', 'client_id': 'admin-cli', 'username': 'admin',
         'password': admin_password,
     }, form=True)['access_token']
-    clients = request('/auth/admin/realms/todo/clients?clientId=todo-frontend', token=token)
-    if len(clients) != 1:
-        raise RuntimeError('Expected exactly one Keycloak client named todo-frontend.')
-    path = '/auth/admin/realms/todo/clients/' + clients[0]['id']
-    client = request(path, token=token)
-    if client.get('redirectUris') == [origin + '/'] and client.get('webOrigins') == [origin]:
-        return False
-    client.update(redirectUris=[origin + '/'], webOrigins=[origin])
-    request(path, 'PUT', client, token)
-    return True
+    identities = ([(app.keycloak_client, app.hostname) for app in apps.APPS]
+                  if clients is None else list(clients))
+    parsed = urlsplit(issuer)
+    changed = False
+    template = None
+    for client_id, hostname in identities:
+        # The identity app follows the environment's canonical issuer (localhost in
+        # the original local profile); other apps use their registry hostnames.
+        client_origin = (origin if client_id == apps.IDENTITY_DATABASE_APP.keycloak_client
+                         else f'https://{hostname}' + (f':{parsed.port}' if parsed.port else ''))
+        matches = request('/auth/admin/realms/todo/clients?' + urlencode({'clientId': client_id}),
+                          token=token)
+        if len(matches) > 1:
+            raise RuntimeError(f'Expected at most one Keycloak client named {client_id}.')
+        if not matches:
+            if template is None:
+                raise RuntimeError('The identity application client must exist before adding clients.')
+            client = copy.deepcopy({key: value for key, value in template.items() if key in (
+                'publicClient', 'protocol', 'standardFlowEnabled', 'directAccessGrantsEnabled',
+                'serviceAccountsEnabled', 'attributes', 'defaultClientScopes',
+                'optionalClientScopes', 'protocolMappers')})
+            client.update(clientId=client_id, name=client_id, enabled=True,
+                          redirectUris=[client_origin + '/'], webOrigins=[client_origin])
+            for mapper in client.get('protocolMappers', []):
+                mapper.pop('id', None)
+                config = mapper.get('config', {})
+                if config.get('included.client.audience') == apps.IDENTITY_DATABASE_APP.keycloak_client:
+                    config['included.client.audience'] = client_id
+            request('/auth/admin/realms/todo/clients', 'POST', client, token)
+            changed = True
+            continue
+        path = '/auth/admin/realms/todo/clients/' + matches[0]['id']
+        client = request(path, token=token)
+        if client_id == apps.IDENTITY_DATABASE_APP.keycloak_client:
+            template = client
+        if client.get('redirectUris') == [client_origin + '/'] and client.get('webOrigins') == [client_origin]:
+            continue
+        client.update(redirectUris=[client_origin + '/'], webOrigins=[client_origin])
+        request(path, 'PUT', client, token)
+        changed = True
+    return changed

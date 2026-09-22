@@ -42,12 +42,12 @@ class InstallTests(unittest.TestCase):
                 install.install(ROOT, mode=mode, deployment_mode='offline',
                                 bundle_directory=root, quadlet_dir=directory)
                 if mode == 'server':
-                    configure.assert_called_once_with('fixture-password')
+                    configure.assert_called_once_with('fixture-password', [('todo-frontend', 'todo.test')])
                     self.assertEqual(len(list(runtime.glob('*.kube'))), 4)
                     self.assertEqual(len([a for a in calls if a[:3] == ['systemctl', '--user', 'show']]), 4)
                 else:
                     self.assertFalse(directory.exists())
-                    configure.assert_not_called()
+                    configure.assert_called_once_with('fixture-password', [('todo-frontend', 'todo.test')])
                 if repeat:
                     calls.clear()
                     install.install(ROOT, mode=mode, deployment_mode='offline',
@@ -170,6 +170,33 @@ class InstallTests(unittest.TestCase):
                     self.assertTrue(body['other-setting'])
                     self.assertEqual(body['webOrigins'], ['https://todo.test:8443'])
                     self.assertEqual(body['redirectUris'], ['https://todo.test:8443/'])
+
+    def test_keycloak_configures_each_client_origin_and_creates_missing_clients(self):
+        todo = {'id': 'todo-id', 'publicClient': True, 'attributes': {'pkce.code.challenge.method': 'S256'},
+                'redirectUris': ['https://todo.test:8443/'], 'webOrigins': ['https://todo.test:8443'],
+                'protocolMappers': [{'id': 'mapper-id', 'config': {
+                    'included.client.audience': 'todo-frontend'}}]}
+        for missing in (False, True):
+            responses = [{'access_token': 'token'}, [{'id': 'todo-id'}], todo]
+            responses += [[], None] if missing else [[{'id': 'notes-id'}], {
+                'id': 'notes-id', 'custom': True, 'redirectUris': [], 'webOrigins': []}, None]
+            with patch.object(keycloak, 'wait', side_effect=[{}, {}, {
+                    'issuer': 'https://todo.test:8443/auth/realms/todo'}]), \
+                    patch.object(keycloak, 'request', side_effect=responses) as request:
+                self.assertTrue(keycloak.configure('password', [
+                    ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.test')]))
+                call = request.call_args.args
+                self.assertEqual(call[1], 'POST' if missing else 'PUT')
+                self.assertEqual(call[2]['webOrigins'], ['https://notes.test:8443'])
+                self.assertEqual(call[2]['redirectUris'], ['https://notes.test:8443/'])
+                if missing:
+                    self.assertTrue(call[2]['publicClient'])
+                    self.assertEqual(call[2]['attributes']['pkce.code.challenge.method'], 'S256')
+                    mapper = call[2]['protocolMappers'][0]
+                    self.assertNotIn('id', mapper)
+                    self.assertEqual(mapper['config']['included.client.audience'], 'notes-frontend')
+                else:
+                    self.assertTrue(call[2]['custom'])
 
     def test_readiness_retries_connection_reset_during_proxy_startup(self):
         with patch.object(keycloak, 'request', side_effect=[ConnectionResetError(), {'status': 'ok'}]), \

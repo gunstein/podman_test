@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Notes Demo</title><link rel="stylesheet" href="/style.css">
+</head>
+<body><main>
+  <header><h1>Notes</h1><div class="auth">
+    <span id="user-status">Checking login...</span>
+    <button id="login" type="button" hidden>Log in</button>
+    <button id="logout" type="button" hidden>Log out</button>
+  </div></header>
+  <form id="note-form" hidden>
+    <label for="note-title">Title</label>
+    <input id="note-title" maxlength="200" required>
+    <label for="note-body">Note</label>
+    <textarea id="note-body" maxlength="10000" rows="5"></textarea>
+    <div class="actions"><button id="save">Add note</button>
+      <button id="cancel" type="button" hidden>Cancel edit</button></div>
+  </form>
+  <p id="message" role="status"></p>
+  <ul id="note-list"><li>Loading...</li></ul>
+</main><script type="module" src="/app.js"></script></body>
+</html>

@@ -1,0 +1,49 @@
+:root {
+  color: #1f2937;
+  background: #f3f4f6;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  width: min(90%, 36rem);
+  margin: 4rem auto;
+  padding: 2rem;
+  border-radius: 0.5rem;
+  background: white;
+  box-shadow: 0 0.25rem 1rem rgb(0 0 0 / 10%);
+}
+
+h1 {
+  margin: 0;
+}
+
+header, .auth {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+header {
+  margin-bottom: 1.5rem;
+}
+
+ul {
+  padding-left: 1.5rem;
+}
+
+li {
+  margin: 0.75rem 0;
+}
+
+#note-form { display: grid; gap: .75rem; }
+#note-form[hidden] { display: none; }
+textarea { width: 100%; box-sizing: border-box; padding: .75rem; font: inherit; }
+.note { display: block; padding: 1rem 0; border-bottom: 1px solid #ddd; }
+.note h2 { margin: 0 0 .5rem; font-size: 1.15rem; }
+.note-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.actions { display: flex; gap: .5rem; }

@@ -1,0 +1,14 @@
+FROM docker.io/library/nginx:1.30.4-alpine
+LABEL io.notes.frontend="nginx"
+
+COPY notes-frontend/nginx.conf /etc/nginx/nginx.conf
+COPY notes-frontend/index.html /usr/share/nginx/html/index.html
+COPY notes-frontend/app.js /usr/share/nginx/html/app.js
+COPY notes-frontend/auth.js notes-frontend/keycloak-adapter.js /usr/share/nginx/html/
+COPY notes-frontend/style.css /usr/share/nginx/html/style.css
+COPY notes-frontend/vendor /usr/share/nginx/html/vendor
+
+USER nginx
+EXPOSE 8080
+
+CMD ["nginx", "-g", "daemon off;"]

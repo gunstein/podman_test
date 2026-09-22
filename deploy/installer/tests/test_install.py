@@ -236,6 +236,7 @@ class UninstallTests(unittest.TestCase):
                 self.assertEqual(['podman', 'volume', 'rm', 'todo-postgres-data'] in calls, remove_data)
                 self.assertEqual(['podman', 'secret', 'rm', 'todo-db-password'] in calls, remove_data)
                 self.assertNotIn(['podman', 'volume', 'rm', 'todo-postgres-backup'], calls)
+                self.assertIn('app-network-network.service', calls[0])
                 self.assertIn(['podman', 'volume', 'rm', 'todo-nginx-data'], calls)
                 self.assertIn(['podman', 'volume', 'rm', 'todo-caddy-data'], calls)
 

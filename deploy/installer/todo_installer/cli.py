@@ -6,7 +6,7 @@ from pathlib import Path
 
 from jinja2 import TemplateError
 
-from . import install, kube_play, uninstall, workloads
+from . import apps, install, kube_play, uninstall, workloads
 
 
 def paths(parser):
@@ -49,8 +49,9 @@ def main(argv=None):
         elif args.command == 'uninstall':
             uninstall.uninstall(args.remove_data, args.quadlet_dir)
             if not args.remove_data:
-                print('Database volume todo-postgres-data and its database and Keycloak '
-                      'secrets were preserved. Use --remove-data to delete them permanently.')
+                volumes = ', '.join(app.volume('data') for app in apps.APPS)
+                print(f'Database volumes {volumes} and database and Keycloak secrets were '
+                      'preserved. Use --remove-data to delete them permanently.')
         elif args.command == 'down':
             kube_play.down(args.rendered_manifest_dir)
         else:

@@ -36,6 +36,9 @@ class App:
     def volume(self, purpose: str) -> str:
         return self.resource("postgres-" + purpose)
 
+    def legacy_volume_service(self, purpose: str) -> str:
+        return self.volume(purpose) + "-volume"
+
     def image(self, component: str) -> str:
         if component == "postgres":
             return "docker.io/library/postgres:17.11"

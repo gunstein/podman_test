@@ -83,7 +83,8 @@ def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_m
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         ("shared-proxy.yaml", "config.yaml"), ("shared-proxy.kube",),
-        ("todo-nginx-data",), ("todo-frontend.container",),
+        (apps.IDENTITY_DATABASE_APP.resource("nginx-data"),),
+        (apps.IDENTITY_DATABASE_APP.resource("frontend") + ".container",),
         "Unsupported legacy frontend container Quadlet is installed. Stop and "
         "review the host separately before installing the shared Kube proxy.",
         "shared proxy", {},

@@ -118,7 +118,7 @@
       loop:
         - shared-proxy.service
         - todo-app.service
-        - todo-keycloak.service
+        - keycloak.service
         - todo-postgres.service
       register: m16_rebuild_services
       changed_when: false

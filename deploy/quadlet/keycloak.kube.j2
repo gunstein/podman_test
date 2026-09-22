@@ -6,7 +6,7 @@ After=todo-postgres.service
 [Kube]
 Yaml=keycloak.yaml
 ConfigMap=config.yaml
-Network=todo.network
+Network=app-network.network
 PodmanArgs=--no-pod-prefix
 ExitCodePropagation=any
 LogDriver=journald

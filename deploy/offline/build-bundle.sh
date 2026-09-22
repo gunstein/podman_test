@@ -17,13 +17,13 @@ mkdir -p "$(dirname "$output")"
 podman build --pull --file "$project_root/backend/Containerfile" --tag localhost/todo-backend:m12 "$project_root"
 podman build --pull --file "$project_root/frontend/Containerfile" --tag localhost/todo-frontend:m12 "$project_root"
 podman build --pull --file "$project_root/proxy/Containerfile" --tag localhost/todo-proxy:m12 "$project_root"
-podman build --pull --file "$project_root/keycloak/Containerfile" --tag localhost/todo-keycloak:m12 "$project_root"
+podman build --pull --file "$project_root/keycloak/Containerfile" --tag localhost/keycloak:m12 "$project_root"
 podman pull docker.io/library/postgres:17.11
 
 podman save --format oci-archive --output "$bundle_directory/images/todo-backend-m12.tar" localhost/todo-backend:m12
 podman save --format oci-archive --output "$bundle_directory/images/todo-frontend-m12.tar" localhost/todo-frontend:m12
 podman save --format oci-archive --output "$bundle_directory/images/todo-proxy-m12.tar" localhost/todo-proxy:m12
-podman save --format oci-archive --output "$bundle_directory/images/todo-keycloak-m12.tar" localhost/todo-keycloak:m12
+podman save --format oci-archive --output "$bundle_directory/images/keycloak-m12.tar" localhost/keycloak:m12
 podman save --format oci-archive --output "$bundle_directory/images/postgres-17.11.tar" docker.io/library/postgres:17.11
 
 cp "$project_root/ansible.cfg" "$bundle_directory/"
@@ -40,7 +40,7 @@ cp "$project_root/docs/ARCHITECTURE.md" \
 
 cp "$project_root/deploy/README.md" "$bundle_directory/deploy/"
 cp "$project_root/deploy/quadlet/README.md" "$bundle_directory/deploy/quadlet/"
-cp "$project_root/deploy/quadlet/todo.network" "$project_root/deploy/quadlet/"*.kube.j2 \
+cp "$project_root/deploy/quadlet/app-network.network" "$project_root/deploy/quadlet/"*.kube.j2 \
   "$bundle_directory/deploy/quadlet/"
 cp -r "$project_root/deploy/charts/shared-proxy" "$project_root/deploy/charts/todo" "$bundle_directory/deploy/charts/"
 cp -r "$project_root/deploy/environments" "$bundle_directory/deploy/"

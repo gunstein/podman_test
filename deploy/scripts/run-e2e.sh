@@ -9,8 +9,8 @@ if [[ ! -x "$python" ]]; then
   exit 1
 fi
 
-if ! podman container exists todo-keycloak; then
-  echo "The todo-keycloak container is not running. Deploy the application first." >&2
+if ! podman container exists keycloak; then
+  echo "The keycloak container is not running. Deploy the application first." >&2
   exit 1
 fi
 

@@ -1,6 +1,6 @@
 ---
 - name: Inspect current primary rootless network
-  ansible.builtin.command: {argv: [podman, network, inspect, todo-network]}
+  ansible.builtin.command: {argv: [podman, network, inspect, app-network]}
   register: m16_primary_network
   changed_when: false
 
@@ -56,7 +56,7 @@
   loop:
     - shared-proxy.service
     - todo-app.service
-    - todo-keycloak.service
+    - keycloak.service
   register: m16_primary_services_stopped
   changed_when: false
   failed_when: m16_primary_services_stopped.rc not in [0, 5]

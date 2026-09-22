@@ -21,7 +21,7 @@ subprocess.run(
 def render_units(destination, publish_address, postgres_address=""):
     from todo_installer.quadlet import render
     destination.mkdir(parents=True, exist_ok=True)
-    for unit in ("todo-app", "todo-keycloak", "todo-postgres", "shared-proxy"):
+    for unit in ("todo-app", "keycloak", "todo-postgres", "shared-proxy"):
         (destination / (unit + ".kube")).write_bytes(render(ROOT, unit + ".kube", {
             "todo_publish_address": publish_address,
             "todo_service_port": 8443,

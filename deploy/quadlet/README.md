@@ -1,6 +1,6 @@
 # Shared Quadlet resources and historical reference
 
-This directory contains `todo.network` and the four canonical `.kube.j2`
+This directory contains `app-network.network` and the four canonical `.kube.j2`
 templates. Every Ansible runtime role uses these same files; there are no
 role-local copies. Ansible renders host-specific port bindings and installs the
 units beside the rendered workload YAML. See the [runtime guide](../runtime/README.md).

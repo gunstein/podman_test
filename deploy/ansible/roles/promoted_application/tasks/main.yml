@@ -69,8 +69,8 @@
       archive: todo-frontend-m12.tar
     - image: localhost/todo-proxy:m12
       archive: todo-proxy-m12.tar
-    - image: localhost/todo-keycloak:m12
-      archive: todo-keycloak-m12.tar
+    - image: localhost/keycloak:m12
+      archive: keycloak-m12.tar
   register: m14_image_checks
   changed_when: false
   failed_when: m14_image_checks.rc not in [0, 1]
@@ -149,7 +149,7 @@
     argv: [systemctl, --user, stop, "{{ item }}"]
   loop:
     - todo-app.service
-    - todo-keycloak.service
+    - keycloak.service
     - shared-proxy.service
   changed_when: false
   register: m14_service_stopped

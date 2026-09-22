@@ -1,16 +1,16 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: todo-keycloak
+  name: keycloak
   labels:
     app.kubernetes.io/name: todo
     app.kubernetes.io/component: identity
   annotations:
-    io.podman.annotations.pids-limit/todo-keycloak: "512"
+    io.podman.annotations.pids-limit/keycloak: "512"
 spec:
   restartPolicy: Never
   containers:
-    - name: todo-keycloak
+    - name: keycloak
       image: {{ .Values.keycloak.image | quote }}
       imagePullPolicy: Never
       args: [start, --import-realm]
@@ -23,7 +23,7 @@ spec:
           containerPort: 7800
       envFrom:
         - configMapRef:
-            name: todo-keycloak-config
+            name: keycloak-config
             optional: false
       env:
         - name: KCRAW_DB_PASSWORD

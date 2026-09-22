@@ -12,7 +12,7 @@ class KubeNameContractTests(unittest.TestCase):
     def test_current_workloads_preserve_operator_container_names(self):
         expected = {
             "app": ("todo-app", {"todo-backend", "todo-frontend"}),
-            "keycloak": ("todo-keycloak", {"todo-keycloak"}),
+            "keycloak": ("keycloak", {"keycloak"}),
             "postgres": ("todo-postgres", {"todo-postgres"}),
             "shared-proxy": ("shared-proxy", {"nginx"}),
         }

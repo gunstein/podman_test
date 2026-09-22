@@ -4,7 +4,7 @@ Description=Todo PostgreSQL Podman Kube workload
 [Kube]
 Yaml=postgres.yaml
 ConfigMap=config.yaml
-Network=todo.network
+Network=app-network.network
 PublishPort=127.0.0.1:5432:5432
 {% if todo_postgres_publish_address | default('') | length > 0 %}
 PublishPort={{ todo_postgres_publish_address }}:5432:5432

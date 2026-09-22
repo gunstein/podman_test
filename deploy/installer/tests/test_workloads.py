@@ -20,7 +20,7 @@ class WorkloadsTests(unittest.TestCase):
         for function, names, obsolete in (
             (workloads.install_postgres, ['todo-postgres'],
              ['todo-postgres-data', 'todo-postgres-backup']),
-            (workloads.install_application, ['todo-keycloak', 'todo-app'], []),
+            (workloads.install_application, ['keycloak', 'todo-app'], []),
             (workloads.install_shared_proxy, ['shared-proxy'], ['todo-nginx-data']),
         ):
             with self.subTest(function=function.__name__), tempfile.TemporaryDirectory() as temp:

@@ -64,7 +64,7 @@ def verify_package(test, archive, prefix):
         test.assertEqual(files[f"generated/kube-runtime/{name}.yaml"], (RUNTIME / f"{name}.yaml").read_bytes())
     guide = files["deploy/runtime/README.md"].decode()
     results = files["deploy/runtime/RESULTS.md"].decode()
-    for pod in ("todo-app", "todo-keycloak", "todo-postgres", "shared-proxy"):
+    for pod in ("todo-app", "keycloak", "todo-postgres", "shared-proxy"):
         test.assertIn(f"`{pod}`", guide)
         test.assertIn(f"`{pod}.service`", guide)
         test.assertIn(f"`{pod}`", results)
@@ -86,7 +86,7 @@ def verify_package(test, archive, prefix):
 from pathlib import Path
 from todo_installer.quadlet import render
 root = Path.cwd()
-for name in ('todo-app', 'todo-keycloak', 'todo-postgres', 'shared-proxy'):
+for name in ('todo-app', 'keycloak', 'todo-postgres', 'shared-proxy'):
     (root / (name + '.kube')).write_bytes(render(root, name + '.kube', {
         'todo_publish_address': '192.0.2.10', 'todo_service_port': 8443,
     }))
@@ -247,7 +247,7 @@ class OperationsDistributionTests(unittest.TestCase):
                         name = str(source.relative_to(ROOT))
                         self.assertEqual(files.get(name), source.read_bytes(), name)
             for image in ("todo-backend-m12", "todo-frontend-m12", "todo-proxy-m12",
-                          "todo-keycloak-m12", "postgres-17.11"):
+                          "keycloak-m12", "postgres-17.11"):
                 self.assertIn(f"images/{image}.tar", files)
             self.assertIn("deploy/quadlet/shared-proxy.kube.j2", files)
             self.assertFalse(any(name.endswith((".volume", ".volume.j2")) for name in files))

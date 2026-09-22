@@ -17,13 +17,13 @@ data:
   DATABASE_USER: todo_app
   LOG_LEVEL: {{ .Values.runtime.logLevel | quote }}
   OIDC_ISSUER: {{ printf "https://%s:%v/auth/realms/todo" .Values.runtime.publicHostname .Values.runtime.publicPort | quote }}
-  OIDC_JWKS_URL: http://todo-keycloak:8080/auth/realms/todo/protocol/openid-connect/certs
+  OIDC_JWKS_URL: http://keycloak:8080/auth/realms/todo/protocol/openid-connect/certs
   OIDC_AUDIENCE: todo-frontend
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: todo-keycloak-config
+  name: keycloak-config
 data:
   KC_BOOTSTRAP_ADMIN_USERNAME: admin
   KC_DB: postgres
@@ -39,4 +39,4 @@ data:
   KC_HEALTH_ENABLED: "true"
   KC_CACHE: ispn
   KC_CACHE_STACK: jdbc-ping
-  KC_SPI_CACHE_EMBEDDED__DEFAULT__NODE_NAME: todo-keycloak
+  KC_SPI_CACHE_EMBEDDED__DEFAULT__NODE_NAME: keycloak

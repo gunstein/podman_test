@@ -142,7 +142,7 @@ class TodoBackup:
         self._run(
             [
                 "podman", "run", "--rm",
-                "--network", "todo-network",
+                "--network", "app-network",
                 "--user", "postgres",
                 "--security-opt", "no-new-privileges",
                 "--cap-drop", "all",

@@ -29,7 +29,7 @@ class AcceptanceGuideTests(unittest.TestCase):
         self.assertTrue(checks)
         for command in checks:
             self.assertEqual(set(command[3:]), {
-                "todo-app.service", "todo-keycloak.service",
+                "todo-app.service", "keycloak.service",
                 "todo-postgres.service", "shared-proxy.service",
             })
         for line in commands.splitlines():

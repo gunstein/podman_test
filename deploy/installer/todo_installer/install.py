@@ -5,8 +5,8 @@ from . import images, keycloak, quadlet, secrets, workloads
 from .commands import run
 
 LEGACY = ('todo-postgres', 'todo-db-setup', 'todo-migrate', 'todo-db-grants',
-          'todo-backend', 'todo-keycloak', 'todo-frontend')
-SERVICES = ('todo-app', 'todo-keycloak', 'todo-postgres', 'shared-proxy')
+          'todo-backend', 'todo-keycloak', 'keycloak', 'todo-frontend')
+SERVICES = ('todo-app', 'keycloak', 'todo-postgres', 'shared-proxy')
 
 
 def preflight(quadlet_dir):
@@ -20,7 +20,7 @@ def preflight(quadlet_dir):
 
 
 def setup_roles():
-    argv = ['podman', 'run', '--rm', '--network', 'todo-network']
+    argv = ['podman', 'run', '--rm', '--network', 'app-network']
     for name in ('todo-db-password', 'todo-migrator-password', 'todo-app-password',
                  'todo-keycloak-db-password'):
         argv += ['--secret', name]

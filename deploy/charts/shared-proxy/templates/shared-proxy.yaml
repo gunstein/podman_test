@@ -40,7 +40,7 @@ data:
 
         upstream todo_frontend { server todo-app:8080; }
         upstream todo_backend { server todo-app:8000; }
-        upstream todo_keycloak { server todo-keycloak:8080; }
+        upstream todo_keycloak { server keycloak:8080; }
 
         server {
             listen 8080;

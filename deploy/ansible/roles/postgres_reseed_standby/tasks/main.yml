@@ -5,7 +5,7 @@
     - todo-app.service
     - todo-frontend.service
     - todo-backend.service
-    - todo-keycloak.service
+    - keycloak.service
     - shared-proxy.service
     - todo-postgres.service
   register: m16_reseed_stopped
@@ -67,7 +67,7 @@
   loop:
     - todo-frontend.container
     - todo-backend.container
-    - todo-keycloak.container
+    - keycloak.container
     - todo-db-setup.container
     - todo-migrate.container
     - todo-db-grants.container
@@ -79,7 +79,7 @@
     state: absent
   loop:
     - todo-app.kube
-    - todo-keycloak.kube
+    - keycloak.kube
     - shared-proxy.kube
     - app.yaml
     - keycloak.yaml

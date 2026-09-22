@@ -23,7 +23,7 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
     # Read and render everything before mutating the installation.
     files = [(runtime / name, (rendered / name).read_bytes(), 0o600)
              for name in manifests]
-    files += [(directory / "todo.network", (root / "deploy/quadlet/todo.network").read_bytes(),
+    files += [(directory / "app-network.network", (root / "deploy/quadlet/app-network.network").read_bytes(),
                0o644)]
     files += [(runtime / name, quadlet.render(root, name, variables), 0o644) for name in units]
     secrets.create_kube(mapping, values)
@@ -57,8 +57,9 @@ def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_ma
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         ("app.yaml", "keycloak.yaml", "config.yaml"),
-        ("todo-keycloak.kube", "todo-app.kube"), (),
-        ("todo-backend.container", "todo-keycloak.container", "todo-frontend.container"),
+        ("keycloak.kube", "todo-app.kube"), (),
+        ("todo-backend.container", "todo-keycloak.container", "keycloak.container",
+         "todo-frontend.container"),
         "Unsupported application container Quadlets are installed. Stop and review "
         "the host separately before installing the grouped Kube application.",
         "application", secrets.APPLICATION,

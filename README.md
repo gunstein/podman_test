@@ -60,11 +60,11 @@ and is no longer part of the active tree.
 | Boundary | Files |
 |---|---|
 | Grouped application | `deploy/charts/todo/templates/app.yaml`; Python renders `todo-app.kube` |
-| Shared identity | `deploy/charts/todo/templates/keycloak.yaml`; `todo-keycloak.kube` |
+| Shared identity | `deploy/charts/todo/templates/keycloak.yaml`; `keycloak.kube` |
 | Persistent database | `deploy/charts/todo/templates/postgres.yaml`; `todo-postgres.kube` |
 | Shared ingress | `deploy/charts/shared-proxy/`; `shared-proxy.kube`, container `nginx` |
 | Helm templates and values | [`deploy/charts/todo/`](deploy/charts/todo/) |
-| Shared network | [`todo.network`](deploy/quadlet/todo.network) |
+| Shared network | [`app-network.network`](deploy/quadlet/app-network.network) |
 
 Start with the [Kube runtime guide](deploy/runtime/README.md). DR tools support this
 core; retired PoCs and migration tooling remain in pre-retirement Git history.
@@ -122,7 +122,7 @@ Inspect the running system:
 ```bash
 systemctl --user is-active \
   todo-postgres.service \
-  todo-keycloak.service \
+  keycloak.service \
   todo-app.service \
   shared-proxy.service
 podman ps
@@ -131,7 +131,7 @@ curl --fail http://127.0.0.1:8080/ready
 ```
 
 Quadlets live below `~/.config/containers/systemd/`. `todo-app.service` pulls in
-`todo-postgres.service` and `todo-keycloak.service`; `shared-proxy.service`
+`todo-postgres.service` and `keycloak.service`; `shared-proxy.service`
 pulls in app and Keycloak. The app pod runs a migration init container before
 backend and the HTTP-only frontend. Database-role provisioning is separate.
 Generated units must not be enabled manually.

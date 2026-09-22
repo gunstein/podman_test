@@ -55,15 +55,15 @@ deployment choices constrained by host firewalls.
 ## 3. Runtime topology: group by lifecycle
 
 ```text
-One service user's rootless Podman network: todo-network
+One service user's rootless Podman network: app-network
   ├── shared-proxy pod
   │     └── nginx (TLS and routing)
   ├── todo-app pod
   │     ├── todo-migrate (init: schema migration)
   │     ├── todo-backend (FastAPI)
   │     └── todo-frontend (HTTP static assets)
-  ├── todo-keycloak pod
-  │     └── todo-keycloak
+  ├── keycloak pod
+  │     └── keycloak
   └── todo-postgres pod
         └── todo-postgres
 ```
@@ -78,10 +78,10 @@ replace database or identity state. A rebuilt standby runs only PostgreSQL.
 
 The canonical definitions are under `generated/kube-runtime/`, rendered from
 `deploy/charts/todo/` and `deploy/charts/shared-proxy/`. Each pod has one `.kube` unit and generated user service:
-`todo-app.service`, `todo-keycloak.service`, `todo-postgres.service`,
+`todo-app.service`, `keycloak.service`, `todo-postgres.service`,
 `shared-proxy.service`. The proxy uses the operational container name `nginx`
 and the persistent TLS volume `todo-nginx-data`. It reaches the frontend/backend
-at `todo-app:8080`/`todo-app:8000` and Keycloak at `todo-keycloak:8080`.
+at `todo-app:8080`/`todo-app:8000` and Keycloak at `keycloak:8080`.
 Loopback is shared only within a pod; it cannot connect the separate proxy to Todo.
 The units use `--no-pod-prefix` to preserve operational container names;
 the pinned OL9 lab baseline is Podman 5.8.2. The shared Python installer additionally verifies
@@ -167,15 +167,15 @@ not rerun administrative role bootstrap.
 | Browser → nginx | Published host HTTPS endpoint | Assets, API and identity proxy |
 | nginx → frontend | todo-app:8080 on rootless network | Static assets |
 | nginx → backend | todo-app:8000 on rootless network | API, health and readiness |
-| nginx → Keycloak | todo-keycloak:8080 on rootless network | OIDC browser endpoints under /auth |
+| nginx → Keycloak | keycloak:8080 on rootless network | OIDC browser endpoints under /auth |
 | Backend → PostgreSQL | todo-postgres:5432 | Application queries with restricted DB role |
 | Migrator → PostgreSQL | todo-postgres:5432 | Schema changes with migration identity |
 | Keycloak → PostgreSQL | todo-postgres:5432 | Identity persistence with Keycloak identity |
 | Backend → Keycloak | Internal configured JWKS endpoint | Signing-key retrieval for JWT validation |
 | Standby → current primary | Explicit host TCP5432 publication | Physical replication |
 
-The network resource is declared in `todo.network`; its runtime name is
-`todo-network`. Loopback is shared only within a pod. Cross-pod communication
+The network resource is declared in `app-network.network`; its runtime name is
+`app-network`. Loopback is shared only within a pod. Cross-pod communication
 uses Podman DNS, not host IPs. The production workload supplies the shared
 proxy ConfigMap with DNS upstreams for frontend, backend and Keycloak.
 

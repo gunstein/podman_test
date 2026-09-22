@@ -20,7 +20,7 @@ sudo firewall-cmd --reload
 
 Do not add a general PostgreSQL service or open TCP 5432 to the entire LAN.
 Rootless Podman port forwarding does not preserve the original client source
-address. The primary role therefore inspects `todo-network` and grants the
+address. The primary role therefore inspects `app-network` and grants the
 dedicated replication role access from that internal Podman subnet. In the
 verified Oracle Linux environment PostgreSQL saw `10.89.0.0/24`, not the
 standby LAN address; firewalld enforces the real machine boundary.

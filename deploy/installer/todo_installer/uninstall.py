@@ -6,13 +6,13 @@ from .commands import exists, run
 from .install import LEGACY
 from .quadlet import systemctl
 
-QUADLET_FILES = ('todo.network', 'todo-postgres-data.volume', 'todo-postgres-backup.volume',
+QUADLET_FILES = ('app-network.network', 'todo-postgres-data.volume', 'todo-postgres-backup.volume',
                  'todo-nginx-data.volume', 'todo-caddy-data.volume',
                  *(name + '.container' for name in LEGACY))
-SERVICES = ('todo-app', 'todo-frontend', 'todo-backend', 'todo-keycloak', 'shared-proxy',
-            'todo-db-grants', 'todo-migrate', 'todo-db-setup', 'todo-postgres', 'todo-network',
+SERVICES = ('todo-app', 'todo-frontend', 'todo-backend', 'keycloak', 'shared-proxy',
+            'todo-db-grants', 'todo-migrate', 'todo-db-setup', 'todo-postgres', 'app-network',
             'todo-postgres-data-volume', 'todo-postgres-backup-volume', 'todo-nginx-data-volume')
-CONTAINERS = ('todo-frontend', 'nginx', 'todo-backend', 'todo-keycloak', 'todo-migrate',
+CONTAINERS = ('todo-frontend', 'nginx', 'todo-backend', 'keycloak', 'todo-migrate',
               'todo-db-grants', 'todo-db-setup', 'todo-postgres')
 SECRETS = ('todo-db-password', 'todo-migrator-password', 'todo-app-password',
            'todo-keycloak-db-password', 'todo-kube-postgres-secret', 'todo-kube-migrator-secret',
@@ -44,12 +44,13 @@ def uninstall(remove_data=False, quadlet_dir=None):
     systemctl('daemon-reload')
     for name in CONTAINERS:
         run('podman', 'rm', '--force', '--ignore', name)
-    remove('network', 'todo-network')
+    remove('network', 'app-network')
     if remove_data:
         remove('volume', 'todo-postgres-data')
         for name in SECRETS:
             remove('secret', name)
     for name in ('backend', 'frontend', 'proxy', 'keycloak'):
-        remove('image', f'localhost/todo-{name}:m12')
+        remove('image', 'localhost/keycloak:m12' if name == 'keycloak'
+               else f'localhost/todo-{name}:m12')
     for name in ('todo-nginx-data', 'todo-caddy-data'):
         remove('volume', name)

@@ -173,7 +173,7 @@ class UninstallTests(unittest.TestCase):
                 patch('todo_installer.uninstall.exists', return_value=False), \
                 patch('subprocess.run', return_value=subprocess.CompletedProcess([], 1, '', '')):
             directory = Path(temp)
-            target = directory / 'todo.network'
+            target = directory / 'app-network.network'
             target.touch()
             with self.assertRaises(RuntimeError):
                 uninstall.uninstall(quadlet_dir=directory)

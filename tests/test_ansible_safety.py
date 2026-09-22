@@ -99,7 +99,7 @@ class AnsibleSafetyTests(unittest.TestCase):
 
         subnet_task = tasks[names.index("Read the local rootless port-proxy subnet")]
         self.assertIn(
-            "podman network inspect todo-network",
+            "podman network inspect app-network",
             " ".join(tasks[names.index("Inspect the local rootless network")]
                      ["ansible.builtin.command"]["argv"]),
         )

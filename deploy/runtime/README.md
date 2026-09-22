@@ -13,12 +13,12 @@ canonical runtime files and their lifecycle contracts.
 ## Core architecture
 
 ```text
-                         todo.network
+                         app-network.network
                               |
              +----------------+----------------+
              |                |                |
              v                v                v
- shared-proxy → todo-app  todo-keycloak    todo-postgres
+ shared-proxy → todo-app  keycloak    todo-postgres
      +---------------+        pod              pod
      | migrate init  |                           |
      | backend       |                           +-- persistent data
@@ -29,7 +29,7 @@ canonical runtime files and their lifecycle contracts.
 | Pod | User service | Long-running containers |
 |---|---|---|
 | `todo-app` | `todo-app.service` | `todo-backend`, `todo-frontend` |
-| `todo-keycloak` | `todo-keycloak.service` | `todo-keycloak` |
+| `keycloak` | `keycloak.service` | `keycloak` |
 | `todo-postgres` | `todo-postgres.service` | `todo-postgres` |
 | `shared-proxy` | `shared-proxy.service` | `nginx` |
 
@@ -40,7 +40,7 @@ deploy/charts/todo/templates/          app, identity, database and ConfigMap
 deploy/charts/shared-proxy/templates/  independent proxy and ConfigMaps
 deploy/environments/{local,prod}/values.yaml  non-secret environment overrides
 deploy/quadlet/*.kube.j2               four shared systemd workload templates
-deploy/quadlet/todo.network           shared rootless network
+deploy/quadlet/app-network.network           shared rootless network
 ```
 
 Helm is a build-time renderer, not a runtime orchestrator. Production rendering
@@ -59,7 +59,7 @@ All four `.kube` units use `--no-pod-prefix`, so the grouped containers keep
 the stable names `todo-backend` and `todo-frontend` while one
 `todo-app.service` owns their shared lifecycle. The separate `shared-proxy.service` owns container `nginx`, terminates TLS using
 `todo-nginx-data`, and routes to `todo-app:8080` (frontend), `todo-app:8000`
-(backend), and `todo-keycloak:8080`. The frontend is HTTP-only; no TLS material
+(backend), and `keycloak:8080`. The frontend is HTTP-only; no TLS material
 belongs in `todo-frontend`. App containers share loopback, but the proxy does not.
 
 The `migrate` init container runs

@@ -45,21 +45,21 @@ commands run as the service user on an installed guest unless stated otherwise.
 | Workload / service | Contents | Why separate? |
 |---|---|---|
 | `todo-postgres.service` | PostgreSQL | Data, replication and recovery outlive app deploys |
-| `todo-keycloak.service` | Keycloak | Identity has its own startup and health lifecycle |
+| `keycloak.service` | Keycloak | Identity has its own startup and health lifecycle |
 | `todo-app.service` | Migration init container, backend, nginx frontend | Migration gates startup; backend and frontend share app lifecycle |
 
 Read `generated/kube-runtime/app.yaml`, `keycloak.yaml`, `postgres.yaml` and their
 `.kube` units. A fourth unit, `shared-proxy.service`, owns container `nginx`
 and TLS volume `todo-nginx-data`. It routes over DNS to `todo-app:8080`
-(frontend), `todo-app:8000` (backend) and `todo-keycloak:8080`.
+(frontend), `todo-app:8000` (backend) and `keycloak:8080`.
 Frontend/backend share pod loopback, but frontend does not terminate TLS.
-Independent pods use `todo-network` DNS names `todo-postgres` and
-`todo-keycloak`. A shared pod is not a reason to put every dependency in it.
+Independent pods use `app-network` DNS names `todo-postgres` and
+`keycloak`. A shared pod is not a reason to put every dependency in it.
 
 ```bash
 podman pod ps
 podman ps --format 'table {{.Names}}\t{{.Status}}'
-podman network inspect todo-network
+podman network inspect app-network
 ```
 
 ## 3. Learn development and production lifecycle separately

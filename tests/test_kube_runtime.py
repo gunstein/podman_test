@@ -20,7 +20,7 @@ class KubeRuntimeTests(unittest.TestCase):
     def test_runtime_yaml_parses_and_uses_canonical_pod_names(self):
         expected = {
             "app.yaml": "todo-app",
-            "keycloak.yaml": "todo-keycloak",
+            "keycloak.yaml": "keycloak",
             "postgres.yaml": "todo-postgres",
             "shared-proxy.yaml": "shared-proxy",
         }
@@ -52,7 +52,7 @@ class KubeRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["name"] for item in keycloak["spec"]["containers"]],
-            ["todo-keycloak"],
+            ["keycloak"],
         )
 
     def test_app_pod_groups_migration_backend_and_frontend(self):
@@ -103,10 +103,10 @@ class KubeRuntimeTests(unittest.TestCase):
 
     def test_systemd_represents_the_four_workload_boundaries(self):
         app = read(RUNTIME / "shared-proxy.kube")
-        keycloak = read(RUNTIME / "todo-keycloak.kube")
+        keycloak = read(RUNTIME / "keycloak.kube")
         postgres = read(RUNTIME / "todo-postgres.kube")
 
-        self.assertIn("Requires=todo-app.service todo-keycloak.service", app)
+        self.assertIn("Requires=todo-app.service keycloak.service", app)
         self.assertIn("Requires=todo-postgres.service", keycloak)
         self.assertNotIn("[Install]", keycloak)
         self.assertIn("WantedBy=default.target", app)
@@ -126,7 +126,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertEqual(proxy[0]["image"], "localhost/todo-proxy:m12")
         config = next(doc["data"]["nginx.conf"] for doc in docs
                       if doc["metadata"]["name"] == "shared-nginx-config")
-        for upstream in ("todo-app:8080", "todo-app:8000", "todo-keycloak:8080"):
+        for upstream in ("todo-app:8080", "todo-app:8000", "keycloak:8080"):
             self.assertIn("server " + upstream + ";", config)
         for route in ("todo_frontend", "todo_backend", "todo_keycloak"):
             self.assertIn("proxy_pass http://" + route + ";", config)
@@ -153,11 +153,11 @@ class KubeRuntimeTests(unittest.TestCase):
                 self.assertNotIn("{{", read(unit))
                 self.assertNotIn("{%", read(unit))
         # Dependencies must point toward app/database, never back to ingress.
-        for name in ("todo-app", "todo-keycloak", "todo-postgres"):
+        for name in ("todo-app", "keycloak", "todo-postgres"):
             self.assertNotIn("shared-proxy.service", read(RUNTIME / (name + ".kube")))
         self.assertEqual(
             {path.name for path in (ROOT / "deploy/quadlet").glob("*.kube.j2")},
-            {"todo-app.kube.j2", "todo-keycloak.kube.j2",
+            {"todo-app.kube.j2", "keycloak.kube.j2",
              "todo-postgres.kube.j2", "shared-proxy.kube.j2"},
         )
         self.assertEqual(list((ROOT / "deploy/ansible/roles").rglob("*.kube.j2")), [])
@@ -218,7 +218,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("todo_installer", deploy)
         self.assertNotIn("include_role", deploy)
         self.assertEqual(set(install.SERVICES), {
-            "todo-app", "todo-keycloak", "todo-postgres", "shared-proxy"})
+            "todo-app", "keycloak", "todo-postgres", "shared-proxy"})
         self.assertIn("SourcePath", read(ROOT / "deploy/installer/todo_installer/install.py"))
 
     def test_clean_dev_start_bootstraps_roles_before_shared_services(self):

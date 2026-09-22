@@ -14,12 +14,15 @@ def prepare(project_root, deployment_mode, bundle_directory="", refresh_images=F
     changed = {}
     for name in ("backend", "frontend", "proxy", "keycloak", "postgres"):
         image = ("docker.io/library/postgres:17.11" if name == "postgres"
+                 else "localhost/keycloak:m12" if name == "keycloak"
                  else f"localhost/todo-{name}:m12")
         present = exists("image", image)
         changed[name] = False
         if not present or refresh_images:
             if deployment_mode == "offline":
-                archive = "postgres-17.11.tar" if name == "postgres" else f"todo-{name}-m12.tar"
+                archive = ("postgres-17.11.tar" if name == "postgres"
+                           else "keycloak-m12.tar" if name == "keycloak"
+                           else f"todo-{name}-m12.tar")
                 run("podman", "load", "--input", Path(bundle_directory) / "images" / archive)
             elif name == "postgres":
                 run("podman", "pull", image)

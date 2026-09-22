@@ -1,7 +1,7 @@
 # Podman Kube runtime validation status
 
 The current architecture has four pods: `todo-app` (migration init, backend,
-HTTP frontend), `todo-keycloak`, `todo-postgres`, and `shared-proxy` (container
+HTTP frontend), `keycloak`, `todo-postgres`, and `shared-proxy` (container
 `nginx`, persistent `todo-nginx-data` TLS volume).
 
 The four-pod change requires its own full unchanged-revision VM acceptance.

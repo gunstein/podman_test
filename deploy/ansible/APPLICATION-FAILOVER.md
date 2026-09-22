@@ -43,7 +43,7 @@ The playbook fails before changing application state unless:
 - all four application runtime secrets exist;
 - every missing application image has its corresponding staged offline archive.
 
-It loads only missing images, installs the grouped `todo-app` and independent `todo-keycloak` Kube
+It loads only missing images, installs the grouped `todo-app` and independent `keycloak` Kube
 workloads, starts them through `.kube` Quadlets, updates the existing Keycloak client to the stable
 origin, and checks health, readiness, discovery and public Todo reads.
 

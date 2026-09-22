@@ -68,10 +68,10 @@
     dest: "{{ todo_installer_target }}/deploy/quadlet/{{ item }}"
     mode: "0600"
   loop:
-    - todo.network
+    - app-network.network
     - todo-postgres.kube.j2
     - todo-app.kube.j2
-    - todo-keycloak.kube.j2
+    - keycloak.kube.j2
     - shared-proxy.kube.j2
 
 - name: Stage the caller's rendered workload manifests on the target

@@ -26,7 +26,7 @@ podman volume create "$volume" >/dev/null
 podman run --rm --user root --volume "$volume:/var/lib/todo-tls" \
   --entrypoint chown "$image" nginx:nginx /var/lib/todo-tls
 for attempt in 1 2; do
-  podman run --rm --add-host todo-app:127.0.0.1 --add-host todo-keycloak:127.0.0.1 \
+  podman run --rm --add-host todo-app:127.0.0.1 --add-host keycloak:127.0.0.1 \
     --env TODO_TLS_HOSTNAME=todo.test --volume "$volume:/var/lib/todo-tls" \
     --volume "$work_directory/nginx.conf:/etc/todo-nginx/nginx.conf:ro,Z" \
     "$image" nginx -t -c /etc/todo-nginx/nginx.conf

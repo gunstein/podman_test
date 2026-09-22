@@ -58,6 +58,6 @@ class DRInstallerTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             runtime = base / 'target/.config/containers/systemd/todo-kube-runtime'
             self.assertEqual({p.name for p in runtime.glob('*.kube')}, {
-                'todo-postgres.kube', 'todo-keycloak.kube', 'todo-app.kube', 'shared-proxy.kube'})
+                'todo-postgres.kube', 'keycloak.kube', 'todo-app.kube', 'shared-proxy.kube'})
             for path in runtime.iterdir():
                 self.assertEqual(path.read_bytes(), (RUNTIME / path.name).read_bytes())

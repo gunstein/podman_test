@@ -32,7 +32,7 @@
 
 - name: Inspect the local rootless network
   ansible.builtin.command:
-    argv: [podman, network, inspect, todo-network]
+    argv: [podman, network, inspect, app-network]
   register: m15_local_network
   changed_when: false
 
@@ -204,7 +204,7 @@
   loop:
     - shared-proxy.service
     - todo-app.service
-    - todo-keycloak.service
+    - keycloak.service
   changed_when: false
   register: m15_service_stopped
   failed_when: m15_service_stopped.rc not in [0, 5]

@@ -10,7 +10,7 @@ Current architecture and workflow:
 - Helm renders workloads at build time. bundles contain canonical rendered YAML;
   the Python installer renders target .kube units from deploy/quadlet templates; targets do not need Helm.
 - todo-app groups migration init, FastAPI and HTTP-only frontend. Shared nginx
-  proxy, Keycloak and PostgreSQL are separate workloads on rootless todo-network.
+  proxy, Keycloak and PostgreSQL are separate workloads on rootless app-network.
   shared-proxy.service owns nginx and persistent TLS volume todo-nginx-data.
 - Four-pod shared-proxy architecture passed a two-agent acceptance pass on
   9e54cfb; see docs/ACCEPTANCE-9e54cfb.md (process-level, not evidence-grade:

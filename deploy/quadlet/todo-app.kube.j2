@@ -1,12 +1,12 @@
 [Unit]
 Description=Todo frontend and backend Podman Kube workload
-Requires=todo-postgres.service todo-keycloak.service
-After=todo-postgres.service todo-keycloak.service
+Requires=todo-postgres.service keycloak.service
+After=todo-postgres.service keycloak.service
 
 [Kube]
 Yaml=app.yaml
 ConfigMap=config.yaml
-Network=todo.network
+Network=app-network.network
 PodmanArgs=--no-pod-prefix
 ExitCodePropagation=any
 LogDriver=journald

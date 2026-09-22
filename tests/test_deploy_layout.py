@@ -33,7 +33,7 @@ class DeployLayoutTests(unittest.TestCase):
                 pods = [d for p in output.glob("*.yaml") for d in yaml.safe_load_all(p.read_text())
                         if d["kind"] == "Pod"]
                 self.assertEqual({d["metadata"]["name"] for d in pods}, {
-                    "todo-app", "todo-postgres", "todo-keycloak", "shared-proxy",
+                    "todo-app", "todo-postgres", "keycloak", "shared-proxy",
                 })
 
     def test_inventory_loads_adjacent_group_vars_without_playbook_context(self):

@@ -170,7 +170,7 @@ Check:
 ```bash
 systemctl --user is-active \
   todo-postgres.service \
-  todo-keycloak.service \
+  keycloak.service \
   todo-app.service \
   shared-proxy.service
 
@@ -635,7 +635,7 @@ Check:
 ```bash
 systemctl --user is-active \
   todo-postgres.service \
-  todo-keycloak.service \
+  keycloak.service \
   todo-app.service \
   shared-proxy.service
 

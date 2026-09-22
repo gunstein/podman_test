@@ -2,7 +2,7 @@
 
 This directory contains the build-time workload definitions and installation
 and operations tooling for the rootless Podman demo. The four workloads remain
-`todo-app`, `todo-keycloak`, `todo-postgres` and `shared-proxy`.
+`todo-app`, `keycloak`, `todo-postgres` and `shared-proxy`.
 
 | Path | Responsibility |
 |---|---|

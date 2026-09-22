@@ -136,7 +136,7 @@ With NAT, check the source address seen by the destination. Our primary saw
 `192.168.0.100` in `SSH_CLIENT`, different from the ThinkPad's own LAN address.
 Manual reset uses the Proxmox node Shell and requires no hypervisor SSH.
 
-Pod DNS names (`todo-app`, `todo-postgres`, `todo-keycloak`) stay unchanged. Editing
+Pod DNS names (`todo-app`, `todo-postgres`, `keycloak`) stay unchanged. Editing
 inventory does not readdress running databases or update persisted DR config.
 These instructions prepare a clean topology; changing the IPs of an existing
 replicated pair requires a separate maintenance plan.
@@ -279,7 +279,7 @@ valid nginx configuration, health, readiness and Keycloak discovery:
 ```bash
 systemctl --user is-active \
   todo-postgres.service \
-  todo-keycloak.service \
+  keycloak.service \
   todo-app.service \
   shared-proxy.service
 systemctl --user --failed --no-pager
@@ -693,7 +693,7 @@ workload services and pods:
 
 ```text
 todo-app.service       todo-app pod
-todo-keycloak.service  todo-keycloak pod
+keycloak.service  keycloak pod
 todo-postgres.service  todo-postgres pod
 shared-proxy.service   shared-proxy pod (container: nginx)
 ```
@@ -708,7 +708,7 @@ Inspect reported lag and LSNs as well as the recap; a successful playbook exit
 alone does not prove zero lag or complete acceptance. Require
 schema migrations applied by the init container, healthy backend/frontend,
 proxy-to-frontend/backend DNS routing to `todo-app:8080`/`todo-app:8000`,
-proxy-to-Keycloak DNS routing to `todo-keycloak:8080` through `todo.network`,
+proxy-to-Keycloak DNS routing to `keycloak:8080` through `app-network.network`,
 unchanged PostgreSQL identity, persistent data, streaming replication and WAL
 archive health.
 

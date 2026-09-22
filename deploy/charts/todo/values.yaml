@@ -5,7 +5,7 @@ frontend:
   image: localhost/todo-frontend:m12
   memory: 128Mi
 keycloak:
-  image: localhost/todo-keycloak:m12
+  image: localhost/keycloak:m12
   memory: 1Gi
 postgres:
   image: docker.io/library/postgres:17.11

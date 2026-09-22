@@ -244,7 +244,7 @@ class KubeRuntimeTests(unittest.TestCase):
         offline = read(ROOT / "deploy/offline" / "build-bundle.sh")
         self.assertIn('deploy/scripts/render-kube-runtime.sh"', offline)
         self.assertIn("deploy/installer/todo_installer/", offline)
-        self.assertIn("deploy/charts/todo", offline)
+        self.assertIn("deploy/charts/.", offline)
 
 
 if __name__ == "__main__":

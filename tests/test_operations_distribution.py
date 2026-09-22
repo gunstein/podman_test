@@ -232,6 +232,10 @@ class OperationsDistributionTests(unittest.TestCase):
                 "args = sys.argv[1:]\n"
                 "if args[0] == 'save':\n"
                 "    pathlib.Path(args[args.index('--output') + 1]).write_text(args[-1])\n"
+                "elif args[:2] == ['image', 'exists']:\n"
+                "    raise SystemExit(1)\n"
+                "elif args[:2] == ['image', 'inspect']:\n"
+                "    print('[{\"Labels\":{\"io.todo.proxy\":\"nginx\"}}]')\n"
                 "elif args[0] not in ('build', 'pull'):\n"
                 "    raise SystemExit(99)\n"
             )
@@ -241,7 +245,7 @@ class OperationsDistributionTests(unittest.TestCase):
                            check=True, capture_output=True,
                            env={**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"]})
             files = verify_package(self, archive, "todo-offline-m12")
-            for chart in ("todo", "shared-proxy"):
+            for chart in ("todo", "notes", "keycloak", "shared-proxy"):
                 for source in (ROOT / "deploy/charts" / chart).rglob("*"):
                     if source.is_file():
                         name = str(source.relative_to(ROOT))

@@ -67,3 +67,25 @@ def prepare(project_root, deployment_mode, bundle_directory="", refresh_images=F
 
 def prepare_shared(project_root, deployment_mode, bundle_directory="", refresh_images=False):
     return _prepare(project_root, deployment_mode, bundle_directory, refresh_images, shared_images())
+
+
+def build_and_export(project_root, destination):
+    """Build and export each distinct registry image once for offline delivery."""
+    specifications = {image.reference: image for app in apps.APPS for image in image_list(app)}
+    specifications.update({image.reference: image for image in shared_images()})
+    _prepare(project_root, 'build', '', True, specifications.values())
+    destination = Path(destination)
+    destination.mkdir(parents=True, exist_ok=True)
+    for image in specifications.values():
+        run('podman', 'save', '--format', 'oci-archive', '--output',
+            destination / image.archive, image.reference)
+
+
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Build and export registered offline images')
+    parser.add_argument('project_root', type=Path)
+    parser.add_argument('destination', type=Path)
+    arguments = parser.parse_args()
+    build_and_export(arguments.project_root, arguments.destination)

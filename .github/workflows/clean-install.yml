@@ -187,7 +187,7 @@ jobs:
           tar -xzf /tmp/helm.tar.gz -C /tmp
 
       - name: Lint Python
-        run: ruff check backend e2e deploy/scripts deploy/installer tests
+        run: ruff check backend notes-backend e2e deploy/scripts deploy/installer tests
 
       - name: Test frontend authentication adapter in Chromium
         run: |
@@ -261,6 +261,9 @@ jobs:
 
       - name: Test migration startup retry
         run: python -m unittest discover --start-directory backend/unit_tests --verbose
+
+      - name: Test Notes CRUD, audience isolation and migration retry
+        run: python -m unittest discover --start-directory notes-backend/unit_tests --verbose
 
       - name: Exercise clean role setup and migrations
         shell: bash

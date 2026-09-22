@@ -161,7 +161,8 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertEqual(
             {path.name for path in (ROOT / "deploy/quadlet").glob("*.kube.j2")},
             {"todo-app.kube.j2", "keycloak.kube.j2",
-             "todo-postgres.kube.j2", "shared-proxy.kube.j2"},
+             "todo-postgres.kube.j2", "shared-proxy.kube.j2",
+             "notes-app.kube.j2", "notes-postgres.kube.j2"},
         )
         self.assertEqual(list((ROOT / "deploy/ansible/roles").rglob("*.kube.j2")), [])
 

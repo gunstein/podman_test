@@ -1,0 +1,14 @@
+backend:
+  image: localhost/notes-backend:m12
+  memory: 256Mi
+frontend:
+  image: localhost/notes-frontend:m12
+  memory: 128Mi
+postgres:
+  image: docker.io/library/postgres:17.11
+  memory: 512Mi
+  maxSlotWalKeepSize: 1GB
+runtime:
+  publicHostname: todo.test
+  publicPort: 8443
+  logLevel: info

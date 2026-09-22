@@ -34,7 +34,8 @@ class InstallTests(unittest.TestCase):
                     stdout = 'fixture-password\n'
                 elif argv[:3] == ['systemctl', '--user', 'show']:
                     stdout = (source_override or str(runtime / argv[3].replace('.service', '.kube'))) + '\n'
-                return subprocess.CompletedProcess(argv, 0, stdout, '')
+                rc = 1 if argv[:3] == ['podman', 'pod', 'exists'] else 0
+                return subprocess.CompletedProcess(argv, rc, stdout, '')
 
             with patch('subprocess.run', side_effect=command), \
                     patch.object(keycloak, 'configure') as configure:
@@ -90,6 +91,43 @@ class InstallTests(unittest.TestCase):
         self.assertIn('127.0.0.1:8443:8443', plays[-1][1])
         self.assertFalse(any(a[0] == 'systemctl' for a in calls))
 
+    def test_dev_repeat_preserves_pods_and_manifest_changes_reapply(self):
+        from todo_installer.apps import APPS
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            for name in ('app', 'postgres', 'config', 'keycloak', 'shared-proxy'):
+                (directory / (name + '.yaml')).write_text('fixture: ' + name)
+            state = directory / '.state.json'
+            present = set()
+
+            def exists(kind, name):
+                return kind == 'network' or name in present
+
+            def run(*args, **kwargs):
+                if args[:3] == ('podman', 'kube', 'play') and '--down' not in args:
+                    pod = {'app': 'todo-app', 'postgres': 'todo-postgres'}.get(
+                        Path(args[-1]).stem, Path(args[-1]).stem)
+                    present.add(pod)
+                return subprocess.CompletedProcess(args, 0, 'Running', '')
+
+            with patch.object(kube_play, 'exists', side_effect=exists), \
+                    patch.object(kube_play, 'run', side_effect=run) as command, \
+                    patch.object(kube_play, 'setup_roles') as roles:
+                self.assertTrue(kube_play.up(directory, APPS, state))
+                self.assertEqual(roles.call_count, 2)
+                command.reset_mock()
+                roles.reset_mock()
+                self.assertFalse(kube_play.up(directory, APPS, state))
+                roles.assert_not_called()
+                self.assertTrue(all(call.args[:3] == ('podman', 'pod', 'inspect')
+                                    for call in command.call_args_list))
+                (directory / 'config.yaml').write_text('changed: true')
+                self.assertTrue(kube_play.up(directory, APPS, state))
+                downs = [Path(call.args[-1]).stem for call in command.call_args_list
+                         if '--down' in call.args]
+                self.assertEqual(downs, ['shared-proxy', 'app', 'keycloak', 'postgres'])
+                self.assertEqual(roles.call_count, 2)
+
     def test_down_uses_reverse_order_and_only_existing_files(self):
         with tempfile.TemporaryDirectory() as temp, patch('todo_installer.kube_play.run') as run:
             root = Path(temp)
@@ -132,6 +170,12 @@ class InstallTests(unittest.TestCase):
                     self.assertTrue(body['other-setting'])
                     self.assertEqual(body['webOrigins'], ['https://todo.test:8443'])
                     self.assertEqual(body['redirectUris'], ['https://todo.test:8443/'])
+
+    def test_readiness_retries_connection_reset_during_proxy_startup(self):
+        with patch.object(keycloak, 'request', side_effect=[ConnectionResetError(), {'status': 'ok'}]), \
+                patch('todo_installer.keycloak.time.sleep') as sleep:
+            self.assertEqual(keycloak.wait('/health', 30, 1, 'ok'), {'status': 'ok'})
+            sleep.assert_called_once_with(1)
 
     def test_keycloak_rejects_non_https_issuer_before_token_request(self):
         with patch.object(keycloak, 'wait', return_value={'issuer': 'http://todo/auth/realms/todo'}), \

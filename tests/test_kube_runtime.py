@@ -225,8 +225,9 @@ class KubeRuntimeTests(unittest.TestCase):
 
     def test_clean_dev_start_bootstraps_roles_before_shared_services(self):
         from todo_installer.kube_play import up
-        with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
-            up(RUNTIME)
+        with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run, \
+                patch("todo_installer.kube_play.exists", return_value=False):
+            up(RUNTIME, state_file=RUNTIME / '.dev-state.json')
         calls = [call.args[0] for call in run.call_args_list]
         postgres = next(i for i, a in enumerate(calls) if a[-1] == str(RUNTIME / "postgres.yaml"))
         healthy = calls.index(["podman", "wait", "--condition", "healthy", "todo-postgres"])

@@ -32,7 +32,7 @@ def wait(path, attempts, delay, status=None):
             data = request(path)
             if status is None or data.get('status') == status:
                 return data
-        except (URLError, TimeoutError, ValueError, RuntimeError):
+        except (URLError, TimeoutError, ConnectionError, ValueError, RuntimeError):
             pass
         if attempt + 1 < attempts:
             time.sleep(delay)

@@ -32,7 +32,7 @@ class BuildInstallTests(unittest.TestCase):
                             (target / (name + '.yaml')).write_text('fixture: true\n')
                     elif argv == ['podman', 'kube', 'play', '--help']:
                         stdout = '--no-pod-prefix'
-                    elif argv[:3] == ['podman', 'image', 'exists']:
+                    elif argv[:3] in (['podman', 'image', 'exists'], ['podman', 'pod', 'exists']):
                         rc = 1
                     elif argv[:3] == ['podman', 'image', 'inspect']:
                         stdout = '[{"Labels":{"io.todo.proxy":"nginx"}}]'

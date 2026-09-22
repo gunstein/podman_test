@@ -4,9 +4,17 @@ from pathlib import Path
 from . import apps, images, keycloak, quadlet, secrets, workloads
 from .commands import run
 
-LEGACY = ('todo-postgres', 'todo-db-setup', 'todo-migrate', 'todo-db-grants',
-          'todo-backend', 'todo-keycloak', 'keycloak', 'todo-frontend')
-SERVICES = ('todo-app', 'keycloak', 'todo-postgres', 'shared-proxy')
+LEGACY = tuple(app.resource(component) for app in apps.APPS
+               for component in ('postgres', 'db-setup', 'migrate', 'db-grants', 'backend', 'frontend')) + (
+                   'todo-keycloak', 'keycloak')
+
+
+def services(applications):
+    return (*(app.resource('app') for app in applications), 'keycloak',
+            *(app.resource('postgres') for app in applications), 'shared-proxy')
+
+
+SERVICES = services(apps.APPS)
 
 
 def preflight(quadlet_dir):
@@ -19,20 +27,26 @@ def preflight(quadlet_dir):
             'migrate or remove existing runtime state.')
 
 
-def setup_roles():
-    argv = ['podman', 'run', '--rm', '--network', 'app-network']
-    for name in ('todo-db-password', 'todo-migrator-password', 'todo-app-password',
-                 'todo-keycloak-db-password'):
-        argv += ['--secret', name]
-    for value in ('DATABASE_HOST=todo-postgres', 'DATABASE_NAME=todo', 'DATABASE_BOOTSTRAP_USER=todo'):
+def setup_roles(app: apps.App = apps.APPS[0]):
+    argv = ['podman', 'run', '--rm', '--network', apps.NETWORK]
+    roles = ['db', 'migrator', 'app']
+    if app == apps.IDENTITY_DATABASE_APP:
+        roles.append('keycloak-db')
+    for role in roles:
+        argv += ['--secret', app.secret(role)]
+    for value in (f'DATABASE_HOST={app.resource("postgres")}',
+                  f'DATABASE_NAME={app.name}', f'DATABASE_BOOTSTRAP_USER={app.name}'):
         argv += ['--env', value]
     run(*argv, '--security-opt', 'no-new-privileges', '--cap-drop', 'ALL',
-        'localhost/todo-backend:m12', 'python', '-m', 'backend.setup_roles')
+        app.image('backend'), 'python', '-m', 'backend.setup_roles')
 
 
 def install(project_root, mode='server', deployment_mode='build', bundle_directory='',
             refresh_images=False, publish_address='127.0.0.1', service_port=8443,
-            quadlet_dir=None, kube_runtime_dir=None):
+            quadlet_dir=None, kube_runtime_dir=None, applications=None):
+    applications = apps.APPS if applications is None else tuple(applications)
+    if apps.IDENTITY_DATABASE_APP not in applications:
+        raise ValueError('The shared identity database application must be included.')
     if mode not in ('dev', 'server'):
         raise ValueError('mode must be dev or server')
     if deployment_mode not in ('build', 'offline') or (
@@ -52,32 +66,46 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         profile = 'local' if mode == 'dev' else 'prod'
         run(root / 'deploy/scripts/render-kube-runtime.sh',
             root / f'deploy/environments/{profile}/values.yaml', rendered)
-    secrets.provision()
-    image_changes = images.prepare(root, deployment_mode, bundle_directory, refresh_images)
+    secrets.provision(applications)
+    image_changes = {}
+    for app in applications:
+        image_changes[app.name] = images.prepare(
+            root, deployment_mode, bundle_directory, refresh_images, app=app, include_shared=False)
+    shared_images = images.prepare_shared(root, deployment_mode, bundle_directory, refresh_images)
+    images_changed = any(shared_images.values()) or any(
+        any(changes.values()) for changes in image_changes.values())
     if mode == 'dev':
         from .kube_play import up
-        secrets.create_kube(secrets.postgres_secret_mapping(apps.APPS[0]))
-        secrets.create_kube({**secrets.application_secret_mapping(apps.APPS[0]),
-         **secrets.keycloak_secret_mapping()})
-        up(rendered)
-        return
+        for app in applications:
+            secrets.create_kube(secrets.postgres_secret_mapping(app))
+            secrets.create_kube(secrets.application_secret_mapping(app))
+        secrets.create_kube(secrets.keycloak_secret_mapping())
+        return up(rendered, applications, directory.parent / 'todo-installer-dev.json', images_changed)
     arguments = (root, directory, runtime, rendered)
-    changed = workloads.install_postgres(*arguments)
+    changed = False
+    for app in applications:
+        changed = workloads.install_postgres(*arguments, app=app) or changed
+        changed = workloads.install_application(
+            *arguments, publish_address, service_port, app=app) or changed
     changed = workloads.install_keycloak(*arguments) or changed
-    changed = workloads.install_application(*arguments, publish_address, service_port) or changed
     changed = workloads.install_shared_proxy(*arguments, publish_address, service_port) or changed
-    if changed or image_changes['proxy']:
-        for service in SERVICES:
+    selected_services = services(applications)
+    if changed or images_changed:
+        for service in selected_services:
             quadlet.systemctl('stop', service + '.service')
-    quadlet.systemctl('start', 'todo-postgres.service')
-    run('podman', 'wait', '--condition=healthy', 'todo-postgres')
-    setup_roles()
-    quadlet.systemctl('start', 'todo-app.service')
-    setup_roles()
+    for app in applications:
+        quadlet.systemctl('start', app.service('postgres'))
+        run('podman', 'wait', '--condition=healthy', app.resource('postgres'))
+        setup_roles(app)
+    quadlet.systemctl('start', 'keycloak.service')
+    for app in applications:
+        quadlet.systemctl('start', app.service('app'))
+        setup_roles(app)
     quadlet.systemctl('start', 'shared-proxy.service')
-    keycloak.configure(secrets.read('todo-keycloak-admin-password'))
-    for service in SERVICES:
+    keycloak.configure(secrets.read(apps.IDENTITY_DATABASE_APP.secret('keycloak-admin')))
+    for service in selected_services:
         source = quadlet.systemctl('show', service + '.service', '--property=SourcePath',
                                   '--value').stdout.strip()
         if source != str(runtime / (service + '.kube')):
             raise RuntimeError(f'Unexpected SourcePath for {service}: {source}')
+    return changed or images_changed

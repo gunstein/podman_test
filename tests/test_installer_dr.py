@@ -60,4 +60,9 @@ class DRInstallerTests(unittest.TestCase):
             self.assertEqual({p.name for p in runtime.glob('*.kube')}, {
                 'todo-postgres.kube', 'keycloak.kube', 'todo-app.kube', 'shared-proxy.kube'})
             for path in runtime.iterdir():
-                self.assertEqual(path.read_bytes(), (RUNTIME / path.name).read_bytes())
+                expected = (RUNTIME / path.name).read_bytes()
+                if path.name == 'shared-proxy.kube':
+                    expected = expected.replace(b'todo-app.service notes-app.service keycloak.service',
+                                                b'todo-app.service keycloak.service')
+                    self.assertNotIn(b'notes-app.service', path.read_bytes())
+                self.assertEqual(path.read_bytes(), expected)

@@ -6,11 +6,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from functools import partial
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from todo_installer import images, quadlet, workloads  # noqa: E402
+from todo_installer import apps, images, quadlet, workloads  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -21,17 +22,21 @@ class WorkloadsTests(unittest.TestCase):
             (workloads.install_postgres, ['todo-postgres'],
              ['todo-postgres-data', 'todo-postgres-backup']),
             (workloads.install_application, ['todo-app'], []),
+            (partial(workloads.install_postgres, app=apps.APPS[1]), ['notes-postgres'],
+             ['notes-postgres-data', 'notes-postgres-backup']),
+            (partial(workloads.install_application, app=apps.APPS[1]), ['notes-app'], []),
             (workloads.install_keycloak, ['keycloak'], []),
             (workloads.install_shared_proxy, ['shared-proxy'], ['todo-nginx-data']),
         ):
-            with self.subTest(function=function.__name__), tempfile.TemporaryDirectory() as temp:
+            with self.subTest(function=str(function)), tempfile.TemporaryDirectory() as temp:
                 base = Path(temp)
                 directory = base / 'quadlet'
                 directory.mkdir()
                 runtime = directory / 'todo-kube-runtime'
                 rendered = base / 'rendered'
                 rendered.mkdir()
-                for name in ('postgres', 'keycloak', 'app', 'shared-proxy', 'config'):
+                for name in ('postgres', 'keycloak', 'app', 'shared-proxy', 'config',
+                             'notes-app', 'notes-postgres', 'notes-config'):
                     (rendered / f'{name}.yaml').write_text(f'fixture: {name}\n')
                 for name in obsolete + ['unrelated']:
                     (directory / f'{name}.volume').touch()
@@ -64,14 +69,16 @@ class WorkloadsTests(unittest.TestCase):
                     self.assertFalse(function(ROOT, directory, runtime, rendered))
                     self.assertEqual(initial, {p: p.stat().st_mtime_ns for p in runtime.iterdir()})
                     self.assertFalse(any(a[:3] == ['podman', 'secret', 'create'] for a, _ in calls))
-                    config = 'keycloak.yaml' if function == workloads.install_keycloak else 'config.yaml'
+                    config = ('keycloak.yaml' if function == workloads.install_keycloak else
+                              'notes-config.yaml' if names[0].startswith('notes-') else 'config.yaml')
                     (rendered / config).write_text('changed: true\n')
                     self.assertTrue(function(ROOT, directory, runtime, rendered))
                 for name in names:
                     self.assertTrue((runtime / f'{name}.kube').is_file())
                 self.assertEqual(list(directory.glob('*.volume')), [directory / 'unrelated.volume'])
                 self.assertEqual(runtime.stat().st_mode & 0o777, 0o700)
-                manifest = 'keycloak.yaml' if function == workloads.install_keycloak else 'config.yaml'
+                manifest = ('keycloak.yaml' if function == workloads.install_keycloak else
+                            'notes-config.yaml' if names[0].startswith('notes-') else 'config.yaml')
                 self.assertEqual((runtime / manifest).stat().st_mode & 0o777, 0o600)
 
     def test_invalid_runtime_directory_fails_before_commands(self):
@@ -84,6 +91,14 @@ class WorkloadsTests(unittest.TestCase):
         rendered = quadlet.render(ROOT, 'todo-postgres.kube', {}).decode()
         self.assertEqual(rendered.count('PublishPort='), 1)
         self.assertIn('PublishPort=127.0.0.1:5432:5432\n', rendered)
+
+    def test_notes_database_does_not_claim_todos_host_port_or_silently_enable_dr(self):
+        self.assertNotIn('PublishPort=', quadlet.render(ROOT, 'notes-postgres.kube', {}).decode())
+        with patch('subprocess.run') as run:
+            with self.assertRaisesRegex(ValueError, 'separate DR phase'):
+                workloads.install_postgres(ROOT, '/q', '/q/todo-kube-runtime', '/rendered',
+                                           publish_address='192.0.2.1', app=apps.APPS[1])
+            run.assert_not_called()
 
     def test_image_build_load_and_identity(self):
         for mode, present, refresh in [('build', False, False), ('build', True, False),

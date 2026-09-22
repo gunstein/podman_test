@@ -55,6 +55,7 @@ class App:
 
 APPS = (
     App(name="todo", chart="todo", hostname="todo.test", keycloak_client="todo-frontend"),
+    App(name="notes", chart="notes", hostname="notes.test", keycloak_client="notes-frontend"),
 )
 
 # The existing Todo database hosts the shared realm; preserve its stored credentials.

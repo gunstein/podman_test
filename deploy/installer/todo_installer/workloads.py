@@ -41,6 +41,8 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
 
 def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                      publish_address="", db_password=None, *, app: apps.App = apps.APPS[0]):
+    if publish_address and app != apps.IDENTITY_DATABASE_APP:
+        raise ValueError("Replication publication for additional apps requires the separate DR phase.")
     legacy = app.resource("postgres") + ".container"
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,

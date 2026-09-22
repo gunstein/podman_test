@@ -13,7 +13,8 @@ import yaml
 
 from tests.runtime_fixture import ROOT, RUNTIME
 
-VOLUMES = {"todo-postgres-data", "todo-postgres-backup", "todo-nginx-data"}
+VOLUMES = {"todo-postgres-data", "todo-postgres-backup", "todo-nginx-data",
+           "notes-postgres-data", "notes-postgres-backup"}
 
 
 def tasks(role):
@@ -42,6 +43,10 @@ class PVCStorageTests(unittest.TestCase):
             ("postgres.yaml", "todo-postgres", {
                 "todo-postgres-data": ("/var/lib/postgresql/data", 999),
                 "todo-postgres-backup": ("/var/lib/postgresql/backup", 999),
+            }),
+            ("notes-postgres.yaml", "notes-postgres", {
+                "notes-postgres-data": ("/var/lib/postgresql/data", 999),
+                "notes-postgres-backup": ("/var/lib/postgresql/backup", 999),
             }),
             ("shared-proxy.yaml", "shared-proxy", {
                 "todo-nginx-data": ("/var/lib/todo-tls", 101),
@@ -157,13 +162,14 @@ class PVCStorageTests(unittest.TestCase):
         for remove_data in (False, True):
             with tempfile.TemporaryDirectory() as directory, \
                     patch("todo_installer.uninstall.exists",
-                          side_effect=lambda kind, name: name != "todo-replicator-password"), \
+                          side_effect=lambda kind, name: not name.endswith("-replicator-password")), \
                     patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
                 uninstall.uninstall(remove_data=remove_data, quadlet_dir=directory)
                 commands = [call.args[0] for call in run.call_args_list]
                 volumes = [argv[-1] for argv in commands if argv[:3] == ["podman", "volume", "rm"]]
                 self.assertEqual(set(volumes), {"todo-nginx-data", "todo-caddy-data"} |
-                                 ({"todo-postgres-data"} if remove_data else set()))
+                                 ({"todo-postgres-data", "notes-postgres-data"} if remove_data else set()))
                 self.assertNotIn("todo-postgres-backup", volumes)
+                self.assertNotIn("notes-postgres-backup", volumes)
                 secrets = [argv[-1] for argv in commands if argv[:3] == ["podman", "secret", "rm"]]
                 self.assertEqual(set(secrets), set(uninstall.SECRETS) if remove_data else set())

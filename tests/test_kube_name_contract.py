@@ -14,6 +14,8 @@ class KubeNameContractTests(unittest.TestCase):
             "app": ("todo-app", {"todo-backend", "todo-frontend"}),
             "keycloak": ("keycloak", {"keycloak"}),
             "postgres": ("todo-postgres", {"todo-postgres"}),
+            "notes-app": ("notes-app", {"notes-backend", "notes-frontend"}),
+            "notes-postgres": ("notes-postgres", {"notes-postgres"}),
             "shared-proxy": ("shared-proxy", {"nginx"}),
         }
         for filename, (pod, containers) in expected.items():

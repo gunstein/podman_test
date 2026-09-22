@@ -6,21 +6,24 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from todo_installer import install, keycloak, kube_play, secrets, uninstall  # noqa: E402
+from todo_installer import apps, install, keycloak, kube_play, secrets, uninstall  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
 class InstallTests(unittest.TestCase):
-    def exercise_install(self, mode, repeat=False, source_override=None):
+    def exercise_install(self, mode, repeat=False, source_override=None, applications=None):
+        applications = (apps.IDENTITY_DATABASE_APP,) if applications is None else applications
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             directory = root / 'quadlet'
             runtime = directory / 'todo-kube-runtime'
             rendered = root / 'generated/kube-runtime'
             rendered.mkdir(parents=True)
-            for name in ('postgres', 'app', 'keycloak', 'shared-proxy', 'config'):
-                (rendered / (name + '.yaml')).write_text('fixture: true\n')
+            filenames = [app.manifest(component) for app in applications
+                         for component in ('postgres', 'app', 'config')] + ['keycloak.yaml', 'shared-proxy.yaml']
+            for filename in filenames:
+                (rendered / filename).write_text('fixture: true\n')
             calls = []
 
             def command(argv, **kwargs):
@@ -40,27 +43,55 @@ class InstallTests(unittest.TestCase):
             with patch('subprocess.run', side_effect=command), \
                     patch.object(keycloak, 'configure') as configure:
                 install.install(ROOT, mode=mode, deployment_mode='offline',
-                                bundle_directory=root, quadlet_dir=directory)
+                                bundle_directory=root, quadlet_dir=directory,
+                                applications=applications)
                 if mode == 'server':
-                    configure.assert_called_once_with('fixture-password', [('todo-frontend', 'todo.test')])
-                    self.assertEqual(len(list(runtime.glob('*.kube'))), 4)
-                    self.assertEqual(len([a for a in calls if a[:3] == ['systemctl', '--user', 'show']]), 4)
+                    configure.assert_called_once_with('fixture-password', [
+                        (app.keycloak_client, app.hostname) for app in applications])
+                    self.assertEqual(len(list(runtime.glob('*.kube'))), 2 * len(applications) + 2)
+                    self.assertEqual(len([a for a in calls if a[:3] == ['systemctl', '--user', 'show']]),
+                                     2 * len(applications) + 2)
                 else:
                     self.assertFalse(directory.exists())
-                    configure.assert_called_once_with('fixture-password', [('todo-frontend', 'todo.test')])
+                    configure.assert_called_once_with('fixture-password', [
+                        (app.keycloak_client, app.hostname) for app in applications])
                 if repeat:
                     calls.clear()
                     install.install(ROOT, mode=mode, deployment_mode='offline',
-                                    bundle_directory=root, quadlet_dir=directory)
+                                    bundle_directory=root, quadlet_dir=directory,
+                                applications=applications)
                     self.assertFalse(any(a[:3] == ['systemctl', '--user', 'stop'] for a in calls))
             bootstrap = [i for i, a in enumerate(calls) if a[-1] == 'backend.setup_roles']
-            self.assertEqual(len(bootstrap), 2)
+            self.assertEqual(len(bootstrap), 2 * len(applications))
             wait = next(i for i, a in enumerate(calls) if a[:2] == ['podman', 'wait'])
             self.assertLess(wait, bootstrap[0])
             for index in bootstrap:
                 self.assertIn('--cap-drop', calls[index])
                 self.assertIn('no-new-privileges', calls[index])
             return calls, bootstrap
+
+    def test_six_pod_server_and_repeat(self):
+        calls, bootstrap = self.exercise_install('server', applications=apps.APPS, repeat=True)
+        for app in apps.APPS:
+            setup = [calls[i] for i in bootstrap if f'DATABASE_HOST={app.resource("postgres")}' in calls[i]]
+            self.assertEqual(len(setup), 2)
+            for command in setup:
+                self.assertIn(app.secret('db'), command)
+                self.assertIn(app.secret('migrator'), command)
+                self.assertIn(app.secret('app'), command)
+                if app.name == 'notes':
+                    self.assertNotIn('todo-keycloak-db-password', command)
+        for service in ('keycloak', 'shared-proxy'):
+            self.assertEqual(calls.count(['systemctl', '--user', 'start', service + '.service']), 1)
+
+    def test_six_pod_dev_order(self):
+        calls, bootstrap = self.exercise_install('dev', applications=apps.APPS)
+        plays = [(i, a) for i, a in enumerate(calls)
+                 if a[:3] == ['podman', 'kube', 'play'] and '--help' not in a]
+        self.assertEqual([Path(a[-1]).stem for _, a in plays], [
+            'postgres', 'notes-postgres', 'keycloak', 'app', 'notes-app', 'shared-proxy'])
+        self.assertLess(bootstrap[1], plays[2][0])
+        self.assertLess(plays[-1][0], bootstrap[2])
 
     def test_server_install(self):
         calls, bootstrap = self.exercise_install('server')
@@ -113,16 +144,16 @@ class InstallTests(unittest.TestCase):
             with patch.object(kube_play, 'exists', side_effect=exists), \
                     patch.object(kube_play, 'run', side_effect=run) as command, \
                     patch.object(kube_play, 'setup_roles') as roles:
-                self.assertTrue(kube_play.up(directory, APPS, state))
+                self.assertTrue(kube_play.up(directory, (APPS[0],), state))
                 self.assertEqual(roles.call_count, 2)
                 command.reset_mock()
                 roles.reset_mock()
-                self.assertFalse(kube_play.up(directory, APPS, state))
+                self.assertFalse(kube_play.up(directory, (APPS[0],), state))
                 roles.assert_not_called()
                 self.assertTrue(all(call.args[:3] == ('podman', 'pod', 'inspect')
                                     for call in command.call_args_list))
                 (directory / 'config.yaml').write_text('changed: true')
-                self.assertTrue(kube_play.up(directory, APPS, state))
+                self.assertTrue(kube_play.up(directory, (APPS[0],), state))
                 downs = [Path(call.args[-1]).stem for call in command.call_args_list
                          if '--down' in call.args]
                 self.assertEqual(downs, ['shared-proxy', 'app', 'keycloak', 'postgres'])
@@ -164,7 +195,7 @@ class InstallTests(unittest.TestCase):
                     'issuer': 'https://todo.test:8443/auth/realms/todo'}]), \
                     patch.object(keycloak, 'request', side_effect=[
                         {'access_token': 'token'}, [{'id': 'client'}], client, None]) as request:
-                self.assertEqual(keycloak.configure('password'), not unchanged)
+                self.assertEqual(keycloak.configure('password', [('todo-frontend', 'todo.test')]), not unchanged)
                 if not unchanged:
                     body = request.call_args.args[2]
                     self.assertTrue(body['other-setting'])
@@ -181,7 +212,7 @@ class InstallTests(unittest.TestCase):
             responses += [[], None] if missing else [[{'id': 'notes-id'}], {
                 'id': 'notes-id', 'custom': True, 'redirectUris': [], 'webOrigins': []}, None]
             with patch.object(keycloak, 'wait', side_effect=[{}, {}, {
-                    'issuer': 'https://todo.test:8443/auth/realms/todo'}]), \
+                    'issuer': 'https://todo.test:8443/auth/realms/todo'}, {}, {}]), \
                     patch.object(keycloak, 'request', side_effect=responses) as request:
                 self.assertTrue(keycloak.configure('password', [
                     ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.test')]))
@@ -224,7 +255,7 @@ class UninstallTests(unittest.TestCase):
         for remove_data in (False, True):
             with tempfile.TemporaryDirectory() as temp, \
                     patch('todo_installer.uninstall.exists',
-                          side_effect=lambda kind, name: name != 'todo-replicator-password'), \
+                          side_effect=lambda kind, name: not name.endswith('-replicator-password')), \
                     patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
                 directory = Path(temp)
                 (directory / 'todo-kube-runtime').mkdir()

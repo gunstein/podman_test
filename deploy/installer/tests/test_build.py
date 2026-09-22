@@ -21,6 +21,7 @@ class BuildInstallTests(unittest.TestCase):
                 directory = root / 'quadlet'
                 runtime = directory / 'todo-kube-runtime'
                 calls = []
+                known_images = set()
 
                 def command(argv, **kwargs):
                     calls.append(argv)
@@ -28,12 +29,19 @@ class BuildInstallTests(unittest.TestCase):
                     if argv[0].endswith('render-kube-runtime.sh'):
                         target = Path(argv[-1])
                         target.mkdir(parents=True)
-                        for name in ('postgres', 'app', 'keycloak', 'shared-proxy', 'config'):
+                        for name in ('postgres', 'app', 'keycloak', 'shared-proxy', 'config',
+                                     'notes-app', 'notes-postgres', 'notes-config'):
                             (target / (name + '.yaml')).write_text('fixture: true\n')
                     elif argv == ['podman', 'kube', 'play', '--help']:
                         stdout = '--no-pod-prefix'
-                    elif argv[:3] in (['podman', 'image', 'exists'], ['podman', 'pod', 'exists']):
+                    elif argv[:3] == ['podman', 'image', 'exists']:
+                        rc = int(argv[3] not in known_images)
+                    elif argv[:3] == ['podman', 'pod', 'exists']:
                         rc = 1
+                    elif argv[:2] == ['podman', 'build']:
+                        known_images.add(argv[argv.index('--tag') + 1])
+                    elif argv[:2] == ['podman', 'pull']:
+                        known_images.add(argv[-1])
                     elif argv[:3] == ['podman', 'image', 'inspect']:
                         stdout = '[{"Labels":{"io.todo.proxy":"nginx"}}]'
                     elif argv[:3] == ['podman', 'secret', 'inspect']:
@@ -49,7 +57,7 @@ class BuildInstallTests(unittest.TestCase):
                           str(root / f'deploy/environments/{profile}/values.yaml'),
                           str(root / 'generated' / output)]
                 self.assertIn(render, calls)
-                self.assertEqual(sum(a[:2] == ['podman', 'build'] for a in calls), 4)
+                self.assertEqual(sum(a[:2] == ['podman', 'build'] for a in calls), 6)
                 self.assertEqual(sum(a[:2] == ['podman', 'pull'] for a in calls), 1)
                 self.assertLess(calls.index(render), next(i for i, a in enumerate(calls)
                                                          if a[:2] == ['podman', 'build']))

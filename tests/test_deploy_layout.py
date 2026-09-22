@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DeployLayoutTests(unittest.TestCase):
     def test_renderer_works_outside_checkout_and_applies_shared_environment(self):
-        for environment, hostname in (("local", "localhost"), ("prod", "todo.test")):
+        for environment, hostname in (("local", "todo.test"), ("prod", "todo.test")):
             with self.subTest(environment=environment), tempfile.TemporaryDirectory() as directory:
                 output = Path(directory) / "rendered"
                 subprocess.run([
@@ -24,6 +24,7 @@ class DeployLayoutTests(unittest.TestCase):
                 ], cwd=directory, check=True, capture_output=True)
                 self.assertEqual({p.name for p in output.iterdir()}, {
                     "app.yaml", "keycloak.yaml", "postgres.yaml", "config.yaml", "shared-proxy.yaml",
+                    "notes-app.yaml", "notes-postgres.yaml", "notes-config.yaml",
                 })
                 config = list(yaml.safe_load_all((output / "config.yaml").read_text()))
                 proxy = list(yaml.safe_load_all((output / "shared-proxy.yaml").read_text()))
@@ -33,7 +34,7 @@ class DeployLayoutTests(unittest.TestCase):
                 pods = [d for p in output.glob("*.yaml") for d in yaml.safe_load_all(p.read_text())
                         if d["kind"] == "Pod"]
                 self.assertEqual({d["metadata"]["name"] for d in pods}, {
-                    "todo-app", "todo-postgres", "keycloak", "shared-proxy",
+                    "todo-app", "todo-postgres", "notes-app", "notes-postgres", "keycloak", "shared-proxy",
                 })
 
     def test_inventory_loads_adjacent_group_vars_without_playbook_context(self):

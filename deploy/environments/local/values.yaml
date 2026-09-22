@@ -1,4 +1,4 @@
 runtime:
-  publicHostname: localhost
+  publicHostname: todo.test
   publicPort: 8443
   logLevel: debug

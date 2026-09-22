@@ -30,6 +30,8 @@ def main(argv=None):
     workload = subcommands.add_parser('install-workload')
     paths(workload)
     workload.add_argument('workload', choices=('postgres', 'application', 'keycloak', 'shared-proxy'))
+    workload.add_argument('--app', choices=[app.name for app in apps.APPS],
+                          default=apps.IDENTITY_DATABASE_APP.name)
     workload.add_argument('--rendered-manifest-dir', type=Path)
     workload.add_argument('--publish-address', default='127.0.0.1')
     workload.add_argument('--postgres-publish-address', default='')
@@ -63,13 +65,18 @@ def main(argv=None):
                 kwargs = {'publish_address': args.postgres_publish_address}
             if args.workload == 'keycloak':
                 kwargs = {}
+            selected_app = next(app for app in apps.APPS if app.name == args.app)
+            if args.workload in ('postgres', 'application'):
+                kwargs['app'] = selected_app
+            elif selected_app != apps.IDENTITY_DATABASE_APP:
+                raise ValueError('--app selects a postgres or application workload only.')
             function = {'postgres': workloads.install_postgres,
                         'application': workloads.install_application,
                         'keycloak': workloads.install_keycloak,
                         'shared-proxy': workloads.install_shared_proxy}[args.workload]
             changed = function(args.project_root, directory, runtime, manifests, **kwargs)
             # Existing Todo DR application calls also stage the shared identity workload.
-            if args.workload == 'application':
+            if args.workload == 'application' and selected_app == apps.IDENTITY_DATABASE_APP:
                 changed = workloads.install_keycloak(
                     args.project_root, directory, runtime, manifests) or changed
             print(json.dumps({'changed': changed}))

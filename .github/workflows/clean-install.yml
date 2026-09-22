@@ -248,6 +248,20 @@ jobs:
           --health-timeout 5s
           --health-retries 20
 
+      notes-postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_DB: notes_test
+          POSTGRES_USER: notes
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U notes -d notes_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -337,3 +351,22 @@ jobs:
 
           export TEST_DATABASE_URL='host=127.0.0.1 dbname=todo_test user=todo_migrator password=ci-migrator-not-a-secret'
           python -m pytest backend/tests
+
+      - name: Exercise Notes bootstrap, migrations and runtime privileges
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_directory=$(mktemp -d)
+          trap 'rm -rf "$secrets_directory"' EXIT
+          printf '%s' 'ci-only-not-a-secret' > "$secrets_directory/notes-db-password"
+          printf '%s' 'ci-notes-migrator-not-a-secret' > "$secrets_directory/notes-migrator-password"
+          printf '%s' 'ci-notes-app-not-a-secret' > "$secrets_directory/notes-app-password"
+          export DATABASE_HOST=127.0.0.1 DATABASE_PORT=5433 DATABASE_NAME=notes_test
+          export DATABASE_BOOTSTRAP_USER=notes DATABASE_SECRETS_DIRECTORY="$secrets_directory"
+          python -m notes-backend.setup_roles
+          export DATABASE_URL='host=127.0.0.1 port=5433 dbname=notes_test user=notes_migrator password=ci-notes-migrator-not-a-secret'
+          python -m notes-backend.migrate up
+          unset DATABASE_URL
+          python -m notes-backend.setup_roles
+          export DATABASE_USER=notes_app DATABASE_PASSWORD_FILE="$secrets_directory/notes-app-password"
+          NOTES_ROLE_TEST=1 python -m unittest discover --start-directory notes-backend/tests --verbose

@@ -49,3 +49,18 @@ class IndependentAppChartsTests(unittest.TestCase):
             self.assertEqual(backend['data']['OIDC_AUDIENCE'], name + '-frontend')
             self.assertEqual(backend['data']['OIDC_ISSUER'], 'https://todo.test:8443/auth/realms/todo')
         self.assertFalse(all_claims[0] & all_claims[1])
+
+    def test_shared_proxy_routes_both_hostnames_and_uses_one_san_certificate(self):
+        from tests.runtime_fixture import RUNTIME
+        documents = list(yaml.safe_load_all((RUNTIME / 'shared-proxy.yaml').read_text()))
+        config = next(d['data']['nginx.conf'] for d in documents
+                      if d['metadata']['name'] == 'shared-nginx-config')
+        environment = next(d['data'] for d in documents if d['metadata']['name'] == 'shared-nginx-env')
+        self.assertEqual(set(environment['APP_TLS_HOSTNAMES'].split()), {'todo.test', 'notes.test'})
+        for name in ('todo', 'notes'):
+            self.assertIn('server_name ' + name + '.test;', config)
+            self.assertIn('server ' + name + '-app:8000 resolve;', config)
+            self.assertIn('server ' + name + '-app:8080 resolve;', config)
+        self.assertEqual(config.count('proxy_pass http://shared_keycloak;'), 2)
+        self.assertEqual(config.count('ssl_certificate /var/lib/todo-tls/server.crt;'), 2)
+        self.assertEqual(config.count('ssl_certificate_key /var/lib/todo-tls/server.key;'), 2)

@@ -86,9 +86,10 @@ def verify_package(test, archive, prefix):
 from pathlib import Path
 from todo_installer.quadlet import render
 root = Path.cwd()
-for name in ('todo-app', 'keycloak', 'todo-postgres', 'shared-proxy'):
+for name in ('todo-app', 'notes-app', 'keycloak', 'todo-postgres', 'notes-postgres', 'shared-proxy'):
     (root / (name + '.kube')).write_bytes(render(root, name + '.kube', {
         'todo_publish_address': '192.0.2.10', 'todo_service_port': 8443,
+        'app_services': ['todo-app.service', 'notes-app.service'],
     }))
 """], cwd=package_root, capture_output=True, text=True,
             env={**os.environ, "PYTHONPATH": str(package_root / "deploy/installer")})
@@ -251,7 +252,7 @@ class OperationsDistributionTests(unittest.TestCase):
                         name = str(source.relative_to(ROOT))
                         self.assertEqual(files.get(name), source.read_bytes(), name)
             for image in ("todo-backend-m12", "todo-frontend-m12", "todo-proxy-m12",
-                          "keycloak-m12", "postgres-17.11"):
+                          "keycloak-m12", "postgres-17.11", "notes-backend-m12", "notes-frontend-m12"):
                 self.assertIn(f"images/{image}.tar", files)
             self.assertIn("deploy/quadlet/shared-proxy.kube.j2", files)
             self.assertFalse(any(name.endswith((".volume", ".volume.j2")) for name in files))

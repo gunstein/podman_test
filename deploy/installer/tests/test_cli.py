@@ -52,3 +52,12 @@ class CLITests(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(main(['install-workload', 'application']), 0)
             self.assertEqual(json.loads(output.getvalue()), {'changed': True})
+
+    def test_notes_application_does_not_reinstall_shared_identity(self):
+        with patch('todo_installer.workloads.install_application', return_value=False) as application, \
+                patch('todo_installer.workloads.install_keycloak') as identity, \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(['install-workload', 'application', '--app', 'notes']), 0)
+            self.assertEqual(application.call_args.kwargs['app'].name, 'notes')
+            identity.assert_not_called()
+            self.assertEqual(json.loads(output.getvalue()), {'changed': False})

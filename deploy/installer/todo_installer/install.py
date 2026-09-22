@@ -64,8 +64,9 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
                 else root / 'generated' / ('dev' if mode == 'dev' else 'kube-runtime'))
     if deployment_mode == 'build':
         profile = 'local' if mode == 'dev' else 'prod'
+        selection = [','.join(app.name for app in applications)] if tuple(applications) != apps.APPS else []
         run(root / 'deploy/scripts/render-kube-runtime.sh',
-            root / f'deploy/environments/{profile}/values.yaml', rendered)
+            root / f'deploy/environments/{profile}/values.yaml', rendered, *selection)
     secrets.provision(applications)
     image_changes = {}
     for app in applications:

@@ -23,6 +23,8 @@ class KubeRuntimeTests(unittest.TestCase):
             "keycloak.yaml": "keycloak",
             "postgres.yaml": "todo-postgres",
             "shared-proxy.yaml": "shared-proxy",
+            "notes-app.yaml": "notes-app",
+            "notes-postgres.yaml": "notes-postgres",
         }
 
         for filename, pod_name in expected.items():
@@ -101,21 +103,23 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertNotIn('volume.podman.io/gid: "101"', app)
         self.assertNotIn("todo-nginx-data", app)
 
-    def test_systemd_represents_the_four_workload_boundaries(self):
+    def test_systemd_represents_the_six_workload_boundaries(self):
         app = read(RUNTIME / "shared-proxy.kube")
         keycloak = read(RUNTIME / "keycloak.kube")
         postgres = read(RUNTIME / "todo-postgres.kube")
 
-        self.assertIn("Requires=todo-app.service keycloak.service", app)
+        self.assertIn("Requires=todo-app.service notes-app.service keycloak.service", app)
         self.assertIn("Requires=todo-postgres.service", keycloak)
         self.assertNotIn("[Install]", keycloak)
         self.assertIn("WantedBy=default.target", app)
-        for unit in (app, keycloak, postgres, read(RUNTIME / "todo-app.kube")):
+        for unit in (app, keycloak, postgres, read(RUNTIME / "todo-app.kube"),
+                     read(RUNTIME / "notes-app.kube"), read(RUNTIME / "notes-postgres.kube")):
             self.assertIn("PodmanArgs=--no-pod-prefix", unit)
             self.assertIn("ExitCodePropagation=any", unit)
             self.assertIn("Restart=on-failure", unit)
             if unit != keycloak:
-                self.assertIn("ConfigMap=config.yaml", unit)
+                config = "notes-config.yaml" if "Yaml=notes-" in unit else "config.yaml"
+                self.assertIn("ConfigMap=" + config, unit)
         self.assertNotIn("ConfigMap=", keycloak)
         self.assertIn("name: keycloak-config", read(RUNTIME / "keycloak.yaml"))
 
@@ -221,7 +225,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("todo_installer", deploy)
         self.assertNotIn("include_role", deploy)
         self.assertEqual(set(install.SERVICES), {
-            "todo-app", "keycloak", "todo-postgres", "shared-proxy"})
+            "todo-app", "notes-app", "keycloak", "todo-postgres", "notes-postgres", "shared-proxy"})
         self.assertIn("SourcePath", read(ROOT / "deploy/installer/todo_installer/install.py"))
 
     def test_clean_dev_start_bootstraps_roles_before_shared_services(self):
@@ -237,7 +241,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertLess(postgres, healthy)
         self.assertLess(healthy, setup[0])
         self.assertLess(setup[0], keycloak)
-        self.assertEqual(len(setup), 2)
+        self.assertEqual(len(setup), 4)
         self.assertIn("todo_installer install --mode dev", read(ROOT / "deploy/scripts/dev-up.sh"))
 
     def test_offline_bundle_packages_rendered_kube_runtime(self):

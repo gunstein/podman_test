@@ -110,15 +110,15 @@ def main() -> None:
             "ALTER DEFAULT PRIVILEGES FOR ROLE notes_migrator IN SCHEMA public "
             "REVOKE ALL ON SEQUENCES FROM notes_app"
         )
-        if connection.execute("SELECT to_regclass('public.notess')").fetchone()[0]:
+        if connection.execute("SELECT to_regclass('public.notes')").fetchone()[0]:
             connection.execute(
-                "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE notess TO notes_app"
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE notes TO notes_app"
             )
         if connection.execute(
-            "SELECT to_regclass('public.notess_id_seq')"
+            "SELECT to_regclass('public.notes_id_seq')"
         ).fetchone()[0]:
             connection.execute(
-                "GRANT USAGE, SELECT ON SEQUENCE notess_id_seq TO notes_app"
+                "GRANT USAGE, SELECT ON SEQUENCE notes_id_seq TO notes_app"
             )
 
         for role, search_path in (

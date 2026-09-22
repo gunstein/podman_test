@@ -12,8 +12,8 @@ from . import apps
 BASE = 'http://127.0.0.1:8080'
 
 
-def request(path, method='GET', data=None, token=None, form=False):
-    headers = {}
+def request(path, method='GET', data=None, token=None, form=False, hostname=None):
+    headers = {'Host': hostname} if hostname else {}
     body = None
     if data is not None:
         body = (urlencode(data) if form else json.dumps(data)).encode()
@@ -30,17 +30,17 @@ def request(path, method='GET', data=None, token=None, form=False):
         return json.load(response) if response.status == 200 else None
 
 
-def wait(path, attempts, delay, status=None):
+def wait(path, attempts, delay, status=None, hostname=None):
     for attempt in range(attempts):
         try:
-            data = request(path)
+            data = request(path, hostname=hostname) if hostname else request(path)
             if status is None or data.get('status') == status:
                 return data
         except (URLError, TimeoutError, ConnectionError, ValueError, RuntimeError):
             pass
         if attempt + 1 < attempts:
             time.sleep(delay)
-    raise RuntimeError(f'Readiness failed after {attempts} attempts: {path}')
+    raise RuntimeError(f'Readiness failed after {attempts} attempts: {hostname or BASE}{path}')
 
 
 def configure(admin_password, clients=None):
@@ -51,12 +51,16 @@ def configure(admin_password, clients=None):
     if not re.fullmatch(r'https://[^/]+/auth/realms/todo', issuer):
         raise RuntimeError('Expected an HTTPS issuer with the Todo realm path.')
     origin = issuer.removesuffix('/auth/realms/todo')
+    identities = ([(app.keycloak_client, app.hostname) for app in apps.APPS]
+                  if clients is None else list(clients))
+    for client_id, hostname in identities:
+        if client_id != apps.IDENTITY_DATABASE_APP.keycloak_client:
+            wait('/health', 30, 1, 'ok', hostname=hostname)
+            wait('/ready', 30, 1, 'ready', hostname=hostname)
     token = request('/auth/realms/master/protocol/openid-connect/token', 'POST', {
         'grant_type': 'password', 'client_id': 'admin-cli', 'username': 'admin',
         'password': admin_password,
     }, form=True)['access_token']
-    identities = ([(app.keycloak_client, app.hostname) for app in apps.APPS]
-                  if clients is None else list(clients))
     parsed = urlsplit(issuer)
     changed = False
     template = None

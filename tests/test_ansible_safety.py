@@ -82,6 +82,40 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertIn("m15_archive_timeout", tasks)
         self.assertNotIn("archive_timeout = '60s'", tasks)
 
+    def test_backup_refreshes_local_replication_access_before_base_backup(self):
+        # A promoted host inherits pg_hba.conf from whichever host it last
+        # streamed from, so its own rootless subnet is not yet permitted to
+        # open a local replication connection. Base backups use the
+        # replication protocol, so this must be fixed before any backup
+        # directory or archive task, using the host's own current subnet
+        # rather than a value inherited through basebackup/WAL replay.
+        tasks = yaml.safe_load(read("deploy/ansible/roles/postgres_backup/tasks/main.yml"))
+        names = [task["name"] for task in tasks]
+
+        hba_fix = names.index("Allow local replication access for base backups")
+        backup_volume = names.index(
+            "Require the backup volume created by the PostgreSQL PVC"
+        )
+        self.assertLess(hba_fix, backup_volume)
+
+        subnet_task = tasks[names.index("Read the local rootless port-proxy subnet")]
+        self.assertIn(
+            "podman network inspect todo-network",
+            " ".join(tasks[names.index("Inspect the local rootless network")]
+                     ["ansible.builtin.command"]["argv"]),
+        )
+        self.assertIn("subnets", subnet_task["ansible.builtin.set_fact"]["m15_local_rootless_subnet"])
+
+        fix_task = tasks[hba_fix]
+        self.assertIn("todo_replicator", str(fix_task["ansible.builtin.command"]["argv"]))
+        self.assertIn("m15_local_rootless_subnet", str(fix_task["ansible.builtin.command"]["argv"]))
+        self.assertEqual(fix_task["changed_when"], "m15_replication_hba.stdout | trim == 'changed'")
+
+        reload_task = tasks[names.index(
+            "Reload authentication configuration after local replication access change"
+        )]
+        self.assertEqual(reload_task["when"], "m15_replication_hba.changed")
+
     def test_cluster_status_preserves_backup_health(self):
         status = read("deploy/ansible/playbooks/cluster-status.yml")
 

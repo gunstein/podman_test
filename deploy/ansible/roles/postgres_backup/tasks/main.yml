@@ -30,6 +30,53 @@
     argv: [podman, secret, exists, todo-replicator-password]
   changed_when: false
 
+- name: Inspect the local rootless network
+  ansible.builtin.command:
+    argv: [podman, network, inspect, todo-network]
+  register: m15_local_network
+  changed_when: false
+
+- name: Read the local rootless port-proxy subnet
+  ansible.builtin.set_fact:
+    m15_local_rootless_subnet: >-
+      {{ (m15_local_network.stdout | from_json)[0].subnets[0].subnet }}
+
+- name: Allow local replication access for base backups
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - sh
+      - -c
+      - >-
+        current=$(grep '^host replication todo_replicator ' "$PGDATA/pg_hba.conf" || true);
+        if [ "$current" != "$1" ]; then
+          sed -i '/^host replication todo_replicator /d' "$PGDATA/pg_hba.conf";
+          printf '%s\n' "$1" >> "$PGDATA/pg_hba.conf";
+          printf 'changed\n';
+        fi
+      - sh
+      - "host replication todo_replicator {{ m15_local_rootless_subnet }} scram-sha-256"
+  register: m15_replication_hba
+  changed_when: m15_replication_hba.stdout | trim == 'changed'
+
+- name: Reload authentication configuration after local replication access change
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - todo-postgres
+      - psql
+      - --username
+      - todo
+      - --dbname
+      - postgres
+      - --command
+      - SELECT pg_reload_conf();
+  changed_when: false
+  when: m15_replication_hba.changed
+
 - name: Require the backup volume created by the PostgreSQL PVC
   ansible.builtin.command:
     argv: [podman, volume, exists, todo-postgres-backup]

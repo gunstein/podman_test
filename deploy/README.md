@@ -1,14 +1,16 @@
 # Deployment sources
 
 This directory contains the build-time workload definitions and installation
-and operations tooling for the rootless Podman demo. The four workloads remain
-`todo-app`, `keycloak`, `todo-postgres` and `shared-proxy`.
+and operations tooling for the rootless Podman demo. The six single-host workloads are
+`todo-app`, `todo-postgres`, `notes-app`, `notes-postgres`, `keycloak` and
+`shared-proxy`. DR remains Todo-only; Notes replication, backup, promotion and
+rebuild require a separate implementation and acceptance phase.
 
 | Path | Responsibility |
 |---|---|
-| `charts/todo/`, `charts/shared-proxy/` | Helm workload templates and chart defaults |
-| `environments/local/values.yaml`, `environments/prod/values.yaml` | Non-secret workload overrides, shared by both charts |
-| `quadlet/` | One source for the network and four systemd workload templates |
+| `charts/{todo,notes,keycloak,shared-proxy}/` | Helm workload templates and chart defaults |
+| `environments/local/values.yaml`, `environments/prod/values.yaml` | Non-secret workload overrides, shared by all four charts |
+| `quadlet/` | One source for the network and six systemd workload templates |
 | `ansible/inventories/` | Local installation and initial/recovery DR topologies |
 | `ansible/inventories/*/group_vars/` | Host/account/operations settings for those inventories |
 | `installer/` | Single-host Python installer and shared workload functions |
@@ -40,11 +42,14 @@ outside YAML and Git. Python copies rendered YAML without templating it a
 second time; only the existing `.kube.j2` host-integration files use Jinja2.
 The package needs Python 3.9+ and Jinja2. See [installer usage](installer/README.md).
 DR keeps Ansible for remote transport, fencing, replication and backup, calling
-the same Python workload functions on each target.
+the same Python workload functions on each target. Shared infrastructure uses
+`app-network` and `keycloak` consistently, including DR. No old-name runtime is
+maintained. The default DR workload calls select Todo only.
 
 Rendering defaults to `generated/kube-runtime/` for production and
 `generated/dev/` for development. These ignored build outputs are separate from
-source templates. Both delivery packages contain rendered YAML and the shared
+source templates. Rendering produces eight YAML files: Todo app/postgres/config,
+Notes notes-app/notes-postgres/notes-config, keycloak and shared-proxy. Both delivery packages contain rendered YAML and the shared
 Quadlet templates. Only the offline bundle contains OCI image archives. Rebuild
 and distribute both packages together after this layout change: older bundles
 with YAML under `kube/runtime/` do not match these playbooks.

@@ -4,6 +4,14 @@ Single-host installation and removal use the [Python installer](../installer/REA
 Ansible retains remote transport, fencing, replication, backup, promotion,
 standby rebuild, security integration and operational assertions.
 
+These operations currently protect **Todo only**, including the shared Keycloak
+database inside Todo PostgreSQL. Shared names are now `app-network` and
+`keycloak` everywhere. This rename does not implement Notes DR: independent
+Notes standby bootstrap, promotion, rebuild and backup are a dedicated follow-up
+phase. Do not use the Todo runbooks as evidence that Notes data is protected.
+The workload bridge defaults to Todo; shared-proxy dependencies in DR do not
+start Notes. Existing acceptance VMs must not be reused for multi-app experiments.
+
 Run playbooks from the repository or extracted operations-package root.
 `ansible.cfg` pins `/usr/bin/python3`, sets the role search path and enables
 pipelining. Install controller tooling on a connected development machine with:

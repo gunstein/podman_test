@@ -1,9 +1,10 @@
 # Shared Quadlet resources and historical reference
 
-This directory contains `app-network.network` and the four canonical `.kube.j2`
-templates. Every Ansible runtime role uses these same files; there are no
-role-local copies. Ansible renders host-specific port bindings and installs the
-units beside the rendered workload YAML. See the [runtime guide](../runtime/README.md).
+This directory contains `app-network.network` and the six canonical `.kube.j2`
+templates. The Python installer renders these same files with Jinja2; there are no
+role-local copies. Ansible DR calls the same workload functions for Todo.
+Host-specific units live beside the rendered YAML in
+`~/.config/containers/systemd/todo-kube-runtime/`. See the [runtime guide](../runtime/README.md).
 
 Persistent storage is declared by Helm/Kube PVCs. No `.volume` Quadlets are
 needed for the current workloads.

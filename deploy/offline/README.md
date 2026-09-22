@@ -136,8 +136,8 @@ its credentials is intended. Backup data is never removed by this command.
 
 ## Source and runtime contract
 
-The bundle contains all five OCI archives, rendered YAML for four pods, both
-complete Helm charts (`deploy/charts/todo` and `deploy/charts/shared-proxy`), and the portable Python
+The bundle contains seven OCI archives, eight YAML files for six pods, all four
+complete Helm charts (`todo`, `notes`, `keycloak`, `shared-proxy`), and the portable Python
 installer with the canonical target Quadlet templates. Helm is used only on the build
 host. The source checkout's `deploy/runtime` contains guides; package YAML is fresh
 Helm output. Packaging tests compare it to independent rendering.

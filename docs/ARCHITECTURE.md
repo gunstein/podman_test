@@ -1,6 +1,6 @@
 # System architecture
 
-This is the architectural overview of the current Todo demo: what runs,
+This is the architectural overview of the current Todo and Notes demo: what runs,
 which boundary owns each responsibility, and why. It describes the
 implementation, not an aspirational production platform.
 
@@ -37,17 +37,21 @@ shared nginx proxy ── /api/, /health, /ready ──► FastAPI ──► Pos
     └── /auth/ ─────────────────► Keycloak ───────┘
 ```
 
-The shared nginx proxy terminates TLS and routes `/` to the HTTP-only Todo
-frontend. It routes API and identity requests to backend and Keycloak. Public Todo reads are
-allowed; create, update and delete require a valid access token.
-Todos are shared: authentication does not imply per-user row ownership.
-Both FastAPI and Keycloak persist data in PostgreSQL, using different
-identities and privilege boundaries. Keycloak uses its own schema.
+The shared nginx proxy selects the application by hostname: `todo.test` or
+`notes.test`. Each host routes `/` to its HTTP-only frontend and `/api/`,
+`/health`, `/ready` to its own FastAPI backend. Both expose shared Keycloak at
+`/auth/`. Reads are public; writes require a valid app-specific access token.
+Rows are shared rather than owned per user.
+Each app has independent PostgreSQL data, bootstrap, migration and runtime
+identities. Keycloak remains in the `keycloak` schema of Todo PostgreSQL;
+therefore shared login still depends on Todo's database.
 
 Clients reach the profile's HTTPS hostname rather than a pod address.
-Production/acceptance uses `https://todo.test:8443`; development uses
-`https://localhost:8443`. Both derive from Helm's `runtime.publicHostname`
-and `runtime.publicPort` in the corresponding values file.
+Both local and production profiles use `https://todo.test:8443` and
+`https://notes.test:8443`. One SAN certificate covers both hostnames. Map both
+names to the serving host; direct development uses 127.0.0.1. The shared values
+file sets the canonical identity hostname/port, while the App registry supplies
+additional application hostnames.
 Port 8080 is published on loopback for
 local checks; remote HTTPS and replication publication are explicit
 deployment choices constrained by host firewalls.
@@ -62,6 +66,12 @@ One service user's rootless Podman network: app-network
   │     ├── todo-migrate (init: schema migration)
   │     ├── todo-backend (FastAPI)
   │     └── todo-frontend (HTTP static assets)
+  ├── notes-app pod
+  │     ├── notes-migrate (init: schema migration)
+  │     ├── notes-backend (FastAPI)
+  │     └── notes-frontend (HTTP static assets)
+  ├── notes-postgres pod
+  │     └── notes-postgres
   ├── keycloak pod
   │     └── keycloak
   └── todo-postgres pod
@@ -71,17 +81,17 @@ One service user's rootless Podman network: app-network
 The app's migration must succeed before its regular containers start.
 Backend and frontend share app deployment and restart semantics. The shared
 proxy is a separate ingress boundary that can serve additional services. This
-demo uses static DNS routes; it needs no dynamic proxy platform, service discovery
+demo uses explicit Podman DNS routes with nginx DNS re-resolution; it needs no dynamic proxy platform, service discovery
 framework or additional orchestration. PostgreSQL
 and Keycloak have independent lifecycles so app changes do not implicitly
 replace database or identity state. A rebuilt standby runs only PostgreSQL.
 
 The canonical definitions are under `generated/kube-runtime/`, rendered from
-`deploy/charts/todo/` and `deploy/charts/shared-proxy/`. Each pod has one `.kube` unit and generated user service:
+`deploy/charts/{todo,notes,keycloak,shared-proxy}/`. Each pod has one `.kube` unit and generated user service:
 `todo-app.service`, `keycloak.service`, `todo-postgres.service`,
-`shared-proxy.service`. The proxy uses the operational container name `nginx`
+`notes-app.service`, `notes-postgres.service`, `shared-proxy.service`. The proxy uses the operational container name `nginx`
 and the persistent TLS volume `todo-nginx-data`. It reaches the frontend/backend
-at `todo-app:8080`/`todo-app:8000` and Keycloak at `keycloak:8080`.
+at `<app>-app:8080`/`<app>-app:8000` and Keycloak at `keycloak:8080`.
 Loopback is shared only within a pod; it cannot connect the separate proxy to Todo.
 The units use `--no-pod-prefix` to preserve operational container names;
 the pinned OL9 lab baseline is Podman 5.8.2. The shared Python installer additionally verifies
@@ -104,8 +114,8 @@ This is a tested baseline, not a claim about the capability's minimum version.
 Host network integration uses the shared `.network` Quadlet. Persistent storage
 is declared by Kube PVCs; no separate `.volume` Quadlets are needed here.
 User lingering enables services to run before interactive login.
-`shared-proxy.service` requires and starts after app and Keycloak;
-`todo-app.service` depends on PostgreSQL and Keycloak; PostgreSQL also has
+`shared-proxy.service` requires and starts after both apps and Keycloak;
+each app service depends on its own PostgreSQL and shared Keycloak; PostgreSQL also has
 its own boot entrypoint to support a database-only host.
 
 Ordering is not readiness. Init-container success, health checks, systemd
@@ -143,13 +153,17 @@ Checksums establish integrity against the supplied digest, not publisher
 identity; organizational artifact signing is not implemented.
 
 The portable module lives in `deploy/installer/todo_installer/` and uses Jinja2
-plus the Python standard library. Its shared workload functions install files
+plus the Python standard library. `apps.py` is the single registry of per-app
+names; image, secret, workload, lifecycle and cleanup code consume App objects.
+Rendering loops through those charts using one environment values file, then
+renders Keycloak and shared-proxy once. Adding an App entry activates an
+already-supplied app/chart/template set. Its shared workload functions install files
 and reload systemd; callers retain responsibility for safe stop/start ordering.
 DR Ansible tasks stage controller-side templates/manifests on the target, call
 `install-workload`, and preserve the existing change facts. Hardened DR targets
 use the existing exact-file trust role for the Python sources.
 
-Development uses the same chart with development values and direct
+Development uses the same charts with development values and direct
 `podman kube play/down`. Production uses user systemd. These are different
 lifecycle owners; development cleanup must not target a production user store.
 
@@ -165,11 +179,11 @@ not rerun administrative role bootstrap.
 | Flow | Address boundary | Purpose |
 |---|---|---|
 | Browser → nginx | Published host HTTPS endpoint | Assets, API and identity proxy |
-| nginx → frontend | todo-app:8080 on rootless network | Static assets |
-| nginx → backend | todo-app:8000 on rootless network | API, health and readiness |
+| nginx → frontend | todo-app:8080 or notes-app:8080 on rootless network | Static assets |
+| nginx → backend | todo-app:8000 or notes-app:8000 on rootless network | API, health and readiness |
 | nginx → Keycloak | keycloak:8080 on rootless network | OIDC browser endpoints under /auth |
-| Backend → PostgreSQL | todo-postgres:5432 | Application queries with restricted DB role |
-| Migrator → PostgreSQL | todo-postgres:5432 | Schema changes with migration identity |
+| Backend → PostgreSQL | Its own app-postgres:5432 | Application queries with restricted DB role |
+| Migrator → PostgreSQL | Its own app-postgres:5432 | Schema changes with migration identity |
 | Keycloak → PostgreSQL | todo-postgres:5432 | Identity persistence with Keycloak identity |
 | Backend → Keycloak | Internal configured JWKS endpoint | Signing-key retrieval for JWT validation |
 | Standby → current primary | Explicit host TCP5432 publication | Physical replication |
@@ -189,15 +203,19 @@ of every internal flow.
 app.js → auth.js → keycloak-adapter.js → Keycloak SDK / OIDC endpoints
 ```
 
-Todo UI uses init, isAuthenticated, login, logout, getAccessToken and
+Both UIs use init, isAuthenticated, login, logout, getAccessToken and
 getUsername. The adapter owns SDK configuration, check-sso, S256 PKCE,
 redirects and token refresh. Token-refresh errors propagate rather than
 returning a stale token. Tokens are not deliberately persisted by Todo code.
 
 Backend validation is independent of the frontend adapter: it validates JWT
 signature, issuer and audience using configured JWKS. In production/acceptance,
-the public issuer is `https://todo.test:8443/auth/realms/todo`; development
-renders the equivalent issuer for `localhost` from its Helm values.
+both profiles use `https://todo.test:8443/auth/realms/todo`. The realm remains
+`todo`; clients `todo-frontend` and `notes-frontend` have separate audiences,
+redirect URIs and web origins. The installer creates the additional public
+client in existing realms and changes redirect/origin settings only if needed.
+Notes discovers the canonical identity origin so both apps use the same login
+cookie. A Todo token cannot authorize Notes writes, or vice versa.
 JWKS can be fetched through the internal Keycloak address without changing
 the profile's public issuer.
 
@@ -210,6 +228,8 @@ An adapter seam is not evidence that Duende or another provider already works.
 | State | Storage / identity | Lifecycle |
 |---|---|---|
 | App and identity database data | todo-postgres-data | Survives app replacement; explicitly replaced only during approved reseed |
+| Notes application data | notes-postgres-data | Independent database, preserved on normal uninstall |
+| Notes reserved backup storage | notes-postgres-backup | Volume only; Notes backup/DR not implemented |
 | nginx CA and leaf-key state | todo-nginx-data | Survives local app recreation; promotion may create a new demo CA |
 | Base backups and WAL | todo-postgres-backup | Separate from live data; still on the same VM |
 | Runtime credentials | Host-local Podman secrets | Provisioned and transferred separately from YAML |
@@ -225,7 +245,7 @@ The `.kube` Quadlet owns the workload's user-systemd lifecycle, including boot.
 Normal `podman kube down` and systemd stop preserve these PVC volumes; do not
 use `--force` or `KubeDownForce=true` for routine shutdown. A separate `.volume`
 Quadlet is appropriate only for a necessary host/systemd storage contract beyond
-the PVC, such as a separately managed device or mount. None of these three
+the PVC, such as a separately managed device or mount. None of these
 volumes needs one. See the Podman [PVC documentation](https://docs.podman.io/en/latest/markdown/podman-kube-play.1.html)
 and [shutdown semantics](https://docs.podman.io/en/latest/markdown/podman-kube-down.1.html).
 
@@ -274,7 +294,14 @@ Do not disable SELinux or fapolicyd to repair application failures.
 
 ## 10. Availability and disaster recovery
 
-Initially one host serves the full application and a second streams PostgreSQL
+The following DR flow is **Todo-only**. It also protects Keycloak's schema in
+Todo PostgreSQL. Shared names were cleanly changed to `app-network` and
+`keycloak` in Ansible as well as the installer. Notes standby bootstrap,
+promotion, rebuild and backup are deferred to a dedicated follow-up phase;
+a Notes backup PVC alone does not provide those operations. Todo-only DR proxy
+dependencies omit Notes, and nginx continues serving Todo when Notes is absent.
+
+Initially one host serves Todo and a second streams its PostgreSQL
 WAL asynchronously. Physical slots retain needed WAL within a configured bound;
 lag and invalidated slots require monitoring. Async replication cannot guarantee
 that unsent commits survive abrupt loss.
@@ -321,7 +348,12 @@ See the [run record](ACCEPTANCE-688a0f6.md) for observations and exact scope.
 See [runtime results](../deploy/runtime/RESULTS.md). Static tests or a green CI
 run do not replace the full two-VM test. The Python installer extraction has
 unit, real rendering, package and Ansible transport coverage; it still requires
-a new unchanged-revision VM acceptance run.
+a new unchanged-revision Oracle Linux DR acceptance run. The six-pod
+single-host implementation was separately exercised in a disposable Fedora 44
+VM, Podman 5.8.1, rootless and SELinux enforcing: dev/server, actual offline OCI
+loading without Helm, persistence, unchanged repeats, exact systemd SourcePaths,
+trusted SAN TLS and real browser SSO/CRUD/audience isolation. This test did not
+access the existing acceptance VMs and does not establish Notes DR support.
 
 This is a production-shaped educational demo, not a complete production
 platform: one standby, shared Todos, manual client routing and CA trust,

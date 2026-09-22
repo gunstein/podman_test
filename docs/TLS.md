@@ -2,7 +2,7 @@
 
 The separate shared proxy image (`localhost/todo-proxy:m12`) terminates TLS
 in container `nginx`, owned by `shared-proxy.service`. It routes to the HTTP-only
-frontend, FastAPI and Keycloak over Podman DNS. Frontend holds no TLS material.
+frontends, FastAPI backends and Keycloak over Podman DNS. Frontend holds no TLS material.
 
 Reverse-proxy choice and certificate authority choice are separate decisions.
 nginx never acts as a CA.
@@ -13,12 +13,14 @@ The container entrypoint uses the image's OpenSSL package on first start to
 create:
 
 - a local demo CA;
-- one server key and certificate for `TODO_TLS_HOSTNAME`; and
+- one server key and SAN certificate covering `todo.test` and `notes.test`
+  (`APP_TLS_HOSTNAMES`, derived from the App registry); and
 - a public `ca.crt` that an operator may explicitly install on a test client.
 
 The files persist in the host-local `todo-nginx-data` Podman volume. The CA
 private key and server private key never need to leave that volume. A hostname
-change causes a new leaf certificate from the same local CA. A container restart
+addition causes a new leaf certificate from the same local CA. Both nginx
+server blocks use that same leaf and key; there are no separate per-app CAs. A container restart
 renews an expiring leaf certificate. Missing CA state causes a completely new
 trust root.
 
@@ -31,6 +33,29 @@ This mode is deliberately self-contained and works offline, but it is not the
 recommended certificate lifecycle for multiple services or normal operations.
 Installing its public root after promotion makes trust distribution part of the
 lab failover time.
+
+### Local hostnames and trust
+
+For direct development, add this entry to the test client’s `/etc/hosts`:
+
+```text
+127.0.0.1 todo.test notes.test
+```
+
+For a VM or server, use its serving IP instead. Export only the public CA:
+
+```bash
+podman cp nginx:/var/lib/todo-tls/ca.crt ./todo-nginx-root.crt
+curl --cacert ./todo-nginx-root.crt https://todo.test:8443/ready
+curl --cacert ./todo-nginx-root.crt https://notes.test:8443/ready
+```
+
+Trust that CA in the browser as well. Both apps authenticate against the same
+canonical issuer `https://todo.test:8443/auth/realms/todo`; `/auth/` is reachable
+from either hostname. The new `e2e/test_multi_app.py` requires real CA trust
+(`E2E_CA_FILE` plus the browser trust store) and never ignores TLS errors.
+It checks both hostnames serve the same certificate and that login transfers
+from Todo to Notes without another password prompt.
 
 ### Replacing client trust
 
@@ -69,7 +94,7 @@ issuing CA
 ```
 
 Both leaf certificates contain the stable service DNS name, such as
-`todo.test`, while each node has a different private key. Clients trust the
+`todo.test` and `notes.test` in one SAN certificate, while each node has a different private key. Clients trust the
 root before an incident. Failover then changes only the active service address;
 it does not issue a certificate or modify client trust.
 

@@ -1,12 +1,14 @@
-# Todo demo
+# Todo and Notes demo
 
-A small reference application for learning rootless Podman on Oracle Linux.
+Two small reference applications for learning rootless Podman on Oracle Linux.
 See [System architecture](docs/ARCHITECTURE.md) for the complete model and responsibility boundaries.
 
 The repository demonstrates a complete lifecycle rather than only starting a
 few containers: offline installation, least-privilege database access, HTTPS,
 authentication, physical replication, controlled promotion, application
-failover, backup, point-in-time recovery and restoration of redundancy.
+failover, backup, point-in-time recovery and restoration of redundancy for Todo.
+Notes adds independent CRUD/storage and shared SSO on one host; full Notes DR
+is a separate follow-up phase.
 
 ## Architecture
 
@@ -15,29 +17,25 @@ browser
    |
    | HTTPS :8443
    v
-shared nginx proxy ----> Keycloak
+shared nginx proxy ----> shared Keycloak (todo realm)
+   |                         |
+   +--> todo-app ----------> todo-postgres ---> Todo-only DR
+   |    frontend + backend   (also Keycloak schema)
    |
-   +----------> Todo frontend (HTTP static assets)
-   |
-   v
-FastAPI backend
-   |
-   v
-PostgreSQL primary =====async WAL=====> PostgreSQL standby
-        |
-        +----base backup + WAL archive----> backup volume
+   +--> notes-app ---------> notes-postgres
+        frontend + backend   (independent Notes data)
 ```
 
 - Plain HTML, CSS and JavaScript frontend
 - FastAPI backend
 - PostgreSQL 17.11
-- Separate shared nginx proxy for TLS and routing; HTTP-only Todo frontend
+- Separate shared nginx proxy for TLS and routing; HTTP-only frontends
 - Keycloak with Authorization Code and PKCE S256
 - Rootless Podman Kube pods managed by `.kube` Quadlet and user systemd
 - Python installer for single-host installation; Ansible for multi-host DR and verification
 - OCI archives and checksums for offline delivery
 
-Anyone can read Todos. A Keycloak login is required to create, update or delete
+Anyone can read Todos and Notes. A Keycloak login is required to create, update or delete
 them. Per-user ownership is intentionally outside the demo.
 
 ## What you can learn
@@ -60,17 +58,17 @@ and is no longer part of the active tree.
 | Boundary | Files |
 |---|---|
 | Grouped application | `deploy/charts/todo/templates/app.yaml`; Python renders `todo-app.kube` |
-| Shared identity | `deploy/charts/todo/templates/keycloak.yaml`; `keycloak.kube` |
+| Notes app and database | `deploy/charts/notes/`; `notes-app.kube`, `notes-postgres.kube` |
+| Shared identity | `deploy/charts/keycloak/templates/keycloak.yaml`; `keycloak.kube` |
 | Persistent database | `deploy/charts/todo/templates/postgres.yaml`; `todo-postgres.kube` |
 | Shared ingress | `deploy/charts/shared-proxy/`; `shared-proxy.kube`, container `nginx` |
 | Helm templates and values | [`deploy/charts/todo/`](deploy/charts/todo/) |
 | Shared network | [`app-network.network`](deploy/quadlet/app-network.network) |
 
-Start with the [Kube runtime guide](deploy/runtime/README.md). DR tools support this
-core; retired PoCs and migration tooling remain in pre-retirement Git history.
+Start with the [Kube runtime guide](deploy/runtime/README.md). DR tools support Todo and shared identity; retired PoCs and migration tooling remain in pre-retirement Git history.
 Revision 688a0f6 passed full evidence-grade Oracle Linux acceptance of the
 prior three-pod runtime; see the [run record](docs/ACCEPTANCE-688a0f6.md). The
-current four-pod shared-proxy runtime passed a lighter, process-level
+historical four-pod shared-proxy runtime passed a lighter, process-level
 two-agent acceptance on 9e54cfb; see [that run record](docs/ACCEPTANCE-9e54cfb.md).
 
 ## Requirements
@@ -103,7 +101,7 @@ Deploy the complete single-host application:
 deploy/installer/.venv/bin/python -m todo_installer install --mode server --project-root "$PWD"
 ```
 
-The first run asks for the PostgreSQL bootstrap password and a temporary
+The first run asks for each app’s PostgreSQL bootstrap password and a temporary
 Keycloak administrator password. Other database-role passwords are generated
 independently. All values are stored as host-local Podman secrets and are not
 written to the repository. A normal repeat deployment preserves installed
@@ -112,9 +110,9 @@ Use `--refresh-images` to rebuild/pull images. Direct development uses
 `--mode dev` and `python -m todo_installer down`; the existing dev shell scripts
 remain thin wrappers. See [installer usage](deploy/installer/README.md).
 
-Production values use <https://todo.test:8443>; map `todo.test` to the serving
-host. Development values use `localhost`. nginx creates a persistent local
-demo CA; install only its public root on clients that should trust it. HTTP health checks remain available on
+Both profiles expose <https://todo.test:8443> and <https://notes.test:8443>.
+Map both names to the serving host (127.0.0.1 for direct development). nginx
+creates one SAN certificate for both names from a persistent local demo CA; install only its public root on clients that should trust it. HTTP health checks remain available on
 <http://127.0.0.1:8080>.
 
 Inspect the running system:
@@ -122,6 +120,8 @@ Inspect the running system:
 ```bash
 systemctl --user is-active \
   todo-postgres.service \
+  notes-postgres.service \
+  notes-app.service \
   keycloak.service \
   todo-app.service \
   shared-proxy.service
@@ -132,12 +132,12 @@ curl --fail http://127.0.0.1:8080/ready
 
 Quadlets live below `~/.config/containers/systemd/`. `todo-app.service` pulls in
 `todo-postgres.service` and `keycloak.service`; `shared-proxy.service`
-pulls in app and Keycloak. The app pod runs a migration init container before
+pulls in both apps and Keycloak. The app pod runs a migration init container before
 backend and the HTTP-only frontend. Database-role provisioning is separate.
 Generated units must not be enabled manually.
 
 The proxy is an independent ingress boundary that could route to more services.
-This demo uses static Podman DNS routes and needs no dynamic proxy platform or
+This demo uses Podman DNS routes with nginx DNS re-resolution and needs no dynamic proxy platform or
 new orchestration. External clients reach proxy → frontend/backend/Keycloak →
 PostgreSQL; TLS state belongs only to the proxy.
 
@@ -166,6 +166,9 @@ the checksum itself came through a trusted channel. See
 [deploy/offline/README.md](deploy/offline/README.md).
 
 ## Two-node operations
+
+These runbooks protect Todo and its shared Keycloak schema. Notes replication,
+backup, promotion and rebuild are a separate follow-up phase.
 
 Build one source-only operations package:
 

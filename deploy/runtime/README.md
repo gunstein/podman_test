@@ -13,53 +13,53 @@ canonical runtime files and their lifecycle contracts.
 ## Core architecture
 
 ```text
-                         app-network.network
-                              |
-             +----------------+----------------+
-             |                |                |
-             v                v                v
- shared-proxy → todo-app  keycloak    todo-postgres
-     +---------------+        pod              pod
-     | migrate init  |                           |
-     | backend       |                           +-- persistent data
-     | frontend      |
-     +---------------+
+app-network
+  shared-proxy (nginx, one SAN certificate)
+    ├── todo-app  ── todo-postgres (Todo + Keycloak schema)
+    ├── notes-app ── notes-postgres (Notes only)
+    └── keycloak (shared todo realm)
 ```
 
 | Pod | User service | Long-running containers |
 |---|---|---|
 | `todo-app` | `todo-app.service` | `todo-backend`, `todo-frontend` |
-| `keycloak` | `keycloak.service` | `keycloak` |
+| `notes-app` | `notes-app.service` | `notes-backend`, `notes-frontend` |
+| `notes-postgres` | `notes-postgres.service` | `notes-postgres` |
+| `keycloak` | `keycloak.service` | `notes-app` | `notes-app.service` | `notes-backend`, `notes-frontend` |
+| `notes-postgres` | `notes-postgres.service` | `notes-postgres` |
+| `keycloak` |
 | `todo-postgres` | `todo-postgres.service` | `todo-postgres` |
 | `shared-proxy` | `shared-proxy.service` | `nginx` |
 
 The source definitions, relative to the repository root, are:
 
 ```text
-deploy/charts/todo/templates/          app, identity, database and ConfigMap
+deploy/charts/{todo,notes}/templates/  per-app app, database and ConfigMap
+deploy/charts/keycloak/templates/      shared identity Pod and ConfigMap
 deploy/charts/shared-proxy/templates/  independent proxy and ConfigMaps
 deploy/environments/{local,prod}/values.yaml  non-secret environment overrides
-deploy/quadlet/*.kube.j2               four shared systemd workload templates
+deploy/quadlet/*.kube.j2               six shared systemd workload templates
 deploy/quadlet/app-network.network           shared rootless network
 ```
 
 Helm is a build-time renderer, not a runtime orchestrator. Production rendering
 writes `app.yaml`, `keycloak.yaml`, `postgres.yaml`, `config.yaml` and
-`shared-proxy.yaml` under `generated/kube-runtime/` by default. Development uses
+`shared-proxy.yaml`, plus `notes-app.yaml`, `notes-postgres.yaml` and
+`notes-config.yaml` under `generated/kube-runtime/` by default. Development uses
 `generated/dev/`; both output directories are ignored by Git. This directory
 contains documentation only.
 
 Packages contain freshly rendered YAML under `generated/kube-runtime/` and the
-same four source Quadlet templates under `deploy/quadlet/`. The Python installer renders the
+same six source Quadlet templates under `deploy/quadlet/`. The Python installer renders the
 target-specific `.kube` files and installs them beside the workload YAML under
 `~/.config/containers/systemd/todo-kube-runtime/`. Targets do not need Helm.
 CI compares actual package contents against fresh rendering.
 
-All four `.kube` units use `--no-pod-prefix`, so the grouped containers keep
+All six `.kube` units use `--no-pod-prefix`, so the grouped containers keep
 the stable names `todo-backend` and `todo-frontend` while one
 `todo-app.service` owns their shared lifecycle. The separate `shared-proxy.service` owns container `nginx`, terminates TLS using
 `todo-nginx-data`, and routes to `todo-app:8080` (frontend), `todo-app:8000`
-(backend), and `keycloak:8080`. The frontend is HTTP-only; no TLS material
+(backend), the corresponding `notes-app` ports, and `keycloak:8080`. The frontend is HTTP-only; no TLS material
 belongs in `todo-frontend`. App containers share loopback, but the proxy does not.
 
 The `migrate` init container runs
@@ -72,7 +72,7 @@ init container is removed after it completes. The migrations are
 idempotent, but database role bootstrap and grants remain separate operational
 steps.
 
-The workloads expect four externally provisioned Kube-compatible Podman
+The workloads expect seven externally provisioned Kube-compatible Podman
 secrets:
 
 - `todo-kube-backend-secret`, containing `database-password`;
@@ -80,7 +80,13 @@ secrets:
   `database-password`;
 - `todo-kube-keycloak-secret`, containing `database-password` and
   `bootstrap-admin-password`;
-- `todo-kube-postgres-secret`, containing `database-password`.
+- `todo-kube-postgres-secret`, containing `database-password`;
+- `notes-kube-backend-secret`, `notes-kube-migrator-secret` and
+  `notes-kube-postgres-secret`, each containing its own `database-password`.
+
+Raw credentials are separate for both apps. Shared identity retains the
+`todo-keycloak-*` secret names and Todo database schema; it is not a second
+identity installation. Notes uses `notes_migrator` and `notes_app` DB roles.
 
 Secret values are never stored in Helm values or rendered YAML. The shared
 Python installer constructs these Kube-compatible objects in memory from
@@ -90,7 +96,9 @@ the host-local raw Podman secrets.
 
 The core relationship is proxy, app, identity, database, network, persistence and
 external secrets. Replication, WAL archiving, backup, PITR, promotion and
-standby rebuild are a separate operational layer built around that core.
+standby rebuild are a separate **Todo-only** operational layer built around
+that core. Notes DR is a dedicated follow-up phase. Its backup PVC reserves
+storage but does not implement a backup policy or protected recovery flow.
 
 The PostgreSQL workload deliberately carries two Todo-specific resilience
 details which are not required for a basic PostgreSQL Kube workload: the
@@ -100,11 +108,12 @@ physical replication slot. A minimal educational workload would keep only the
 data claim; this runtime keeps both details to preserve the validated backup and
 replication contracts.
 
-All four `.kube` units pass `--no-pod-prefix`. PostgreSQL therefore retains
+All six `.kube` units pass `--no-pod-prefix`. PostgreSQL therefore retains
 the exact `todo-postgres` container name used by DR and backup commands, while
 the grouped app retains stable `todo-migrate`, `todo-backend` and
-`todo-frontend` names for verification. Export the public CA from `nginx` only. This
-requires the tested Podman 5.8.2 platform.
+`todo-frontend` names for verification. Export the public CA from `nginx` only. The
+Oracle Linux DR baseline is Podman 5.8.2; six-pod single-host tests also passed
+on Fedora 44 with Podman 5.8.1. The installer requires `--no-pod-prefix`.
 
 Its `.kube` unit also applies `--health-on-failure=kill` after each creation.
 This preserves the accepted health failure contract: Podman terminates a
@@ -114,13 +123,17 @@ The historical per-container migration and rollback tools were retired after
 acceptance of 688a0f6. They remain recoverable from Git history; normal recovery
 uses the active DR runbooks, not runtime-format migration.
 
-Direct development provisions the four Kube-compatible Podman secrets from
+Direct development provisions the seven Kube-compatible Podman secrets from
 host-local raw secrets. Install Python 3.9+ and Jinja2 first. Render
-and start the four workloads with:
+and start the six workloads with:
 
 ```bash
 deploy/scripts/dev-up.sh
 ```
+
+Map both `todo.test` and `notes.test` to the serving host and trust one shared
+CA; see [TLS instructions](../../docs/TLS.md). Both apps use the same `todo`
+realm, separate clients, and a single SAN certificate.
 
 The shell entry points are thin wrappers around `python3 -m todo_installer`.
 The installer invokes the existing renderer with local values, prepares images

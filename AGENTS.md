@@ -9,8 +9,11 @@ Current architecture and workflow:
   acceptance; a NEW run must not depend on old chat or development history.
 - Helm renders workloads at build time. bundles contain canonical rendered YAML;
   the Python installer renders target .kube units from deploy/quadlet templates; targets do not need Helm.
-- todo-app groups migration init, FastAPI and HTTP-only frontend. Shared nginx
-  proxy, Keycloak and PostgreSQL are separate workloads on rootless app-network.
+- todo-app and notes-app each group migration init, FastAPI and HTTP-only frontend.
+  Each app has its own PostgreSQL pod. Shared nginx and Keycloak bring the
+  single-host topology to six pods on rootless app-network. The App registry in
+  deploy/installer/todo_installer/apps.py owns per-app installer names.
+  DR/backup/rebuild remain Todo-only; Notes DR is a separate follow-up phase.
   shared-proxy.service owns nginx and persistent TLS volume todo-nginx-data.
 - Four-pod shared-proxy architecture passed a two-agent acceptance pass on
   9e54cfb; see docs/ACCEPTANCE-9e54cfb.md (process-level, not evidence-grade:

@@ -36,9 +36,6 @@ for topology in initial recovery; do
 done
 for role in \
   standby_preflight \
-  application_kube_runtime \
-  shared_proxy_runtime \
-  postgres_kube_runtime \
   todo_fapolicyd \
   postgres_primary \
   postgres_standby \
@@ -72,6 +69,11 @@ cp "$project_root/docs/ARCHITECTURE.md" \
   "$project_root/docs/ACCEPTANCE-TROUBLESHOOTING.md" \
   "$project_root/docs/PROXMOX-QUARANTINE.md" \
   "$package_directory/docs/"
+
+mkdir -p "$package_directory/deploy/installer/todo_installer"
+cp "$project_root/deploy/installer/README.md" "$project_root/deploy/installer/pyproject.toml" "$package_directory/deploy/installer/"
+cp "$project_root/deploy/installer/todo_installer/"*.py \
+  "$package_directory/deploy/installer/todo_installer/"
 
 source_revision=unknown
 source_state=unknown

@@ -34,7 +34,7 @@ PostgreSQL primary =====async WAL=====> PostgreSQL standby
 - Separate shared nginx proxy for TLS and routing; HTTP-only Todo frontend
 - Keycloak with Authorization Code and PKCE S256
 - Rootless Podman Kube pods managed by `.kube` Quadlet and user systemd
-- Ansible for installation, configuration and verification
+- Python installer for single-host installation; Ansible for multi-host DR and verification
 - OCI archives and checksums for offline delivery
 
 Anyone can read Todos. A Keycloak login is required to create, update or delete
@@ -59,7 +59,7 @@ and is no longer part of the active tree.
 
 | Boundary | Files |
 |---|---|
-| Grouped application | `deploy/charts/todo/templates/app.yaml`; Ansible renders `todo-app.kube` |
+| Grouped application | `deploy/charts/todo/templates/app.yaml`; Python renders `todo-app.kube` |
 | Shared identity | `deploy/charts/todo/templates/keycloak.yaml`; `todo-keycloak.kube` |
 | Persistent database | `deploy/charts/todo/templates/postgres.yaml`; `todo-postgres.kube` |
 | Shared ingress | `deploy/charts/shared-proxy/`; `shared-proxy.kube`, container `nginx` |
@@ -80,8 +80,8 @@ The deployed baseline requires:
 - Oracle Linux 9 or a compatible Linux host
 - rootless Podman with Quadlet support
 - user systemd and lingering for boot-before-login operation
-- Ansible Core 2.14 or newer
-- Python 3, Bash, `tar` and `sha256sum`
+- Python 3.9+ and Jinja2; Ansible Core 2.14 or newer for DR
+- Bash, `tar` and `sha256sum`
 - configured `/etc/subuid` and `/etc/subgid` ranges
 
 The full Oracle Linux acceptance drill uses two 4 GiB VMs, SELinux enforcing,
@@ -90,30 +90,31 @@ site assumptions are recorded in [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md).
 
 ## Quick start
 
-Create a dedicated Ansible environment on a connected development host:
+Install the portable installer on a connected development host:
 
 ```bash
-python3 -m venv deploy/ansible/.venv
-deploy/ansible/.venv/bin/python -m pip install -r deploy/ansible/requirements.txt
+python3 -m venv deploy/installer/.venv
+deploy/installer/.venv/bin/python -m pip install -e deploy/installer
 ```
 
 Deploy the complete single-host application:
 
 ```bash
-deploy/ansible/.venv/bin/ansible-playbook \
-  --inventory deploy/ansible/inventories/local/hosts.ini \
-  deploy/ansible/playbooks/deploy.yml
+deploy/installer/.venv/bin/python -m todo_installer install --mode server --project-root "$PWD"
 ```
 
 The first run asks for the PostgreSQL bootstrap password and a temporary
 Keycloak administrator password. Other database-role passwords are generated
 independently. All values are stored as host-local Podman secrets and are not
-written to the repository. A normal repeat deployment should report
-`changed=0`.
+written to the repository. A normal repeat deployment preserves installed
+definitions and credentials and does not restart unchanged workloads.
+Use `--refresh-images` to rebuild/pull images. Direct development uses
+`--mode dev` and `python -m todo_installer down`; the existing dev shell scripts
+remain thin wrappers. See [installer usage](deploy/installer/README.md).
 
-Open <https://localhost:8443>. nginx creates a persistent local demo CA and a
-certificate for `localhost`; install only its public root on clients that should
-trust it. HTTP health checks remain available on
+Production values use <https://todo.test:8443>; map `todo.test` to the serving
+host. Development values use `localhost`. nginx creates a persistent local
+demo CA; install only its public root on clients that should trust it. HTTP health checks remain available on
 <http://127.0.0.1:8080>.
 
 Inspect the running system:

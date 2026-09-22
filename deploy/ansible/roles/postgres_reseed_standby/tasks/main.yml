@@ -199,9 +199,9 @@
   no_log: true
 
 - name: Install the shared PostgreSQL Kube runtime on rebuilt standby
-  ansible.builtin.include_role:
-    name: postgres_kube_runtime
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
   vars:
+    todo_installer_workload: postgres
     todo_postgres_publish_address: ""
 
 - name: Start rebuilt PostgreSQL standby through its Kube unit

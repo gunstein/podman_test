@@ -1,6 +1,9 @@
+import json
 import pathlib
+import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import yaml
 
@@ -160,18 +163,19 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertEqual(list((ROOT / "deploy/ansible/roles").rglob("*.kube.j2")), [])
 
     def test_active_application_constructs_separate_secrets_in_memory(self):
-        tasks = read(ROOT / "deploy/ansible" / "roles" / "application_kube_runtime" / "tasks" / "main.yml")
-        for name in (
-            "todo-migrator-password",
-            "todo-app-password",
-            "todo-kube-migrator-secret",
-            "todo-kube-backend-secret",
-            "todo-kube-keycloak-secret",
-        ):
-            self.assertIn(name, tasks)
-        self.assertIn("no_log: true", tasks)
-        self.assertIn("stdin:", tasks)
-        self.assertIn("b64encode", tasks)
+        from todo_installer import secrets
+        with patch.object(secrets, "read", return_value="fixture-password"), \
+                patch.object(secrets, "exists", return_value=False), \
+                patch.object(secrets, "run") as run:
+            secrets.create_kube(secrets.APPLICATION)
+        payloads = {call.args[3]: json.loads(call.kwargs["input"])
+                    for call in run.call_args_list}
+        self.assertEqual(set(payloads), {
+            "todo-kube-migrator-secret", "todo-kube-backend-secret", "todo-kube-keycloak-secret"})
+        for payload in payloads.values():
+            self.assertEqual(payload["kind"], "Secret")
+            self.assertEqual(payload["data"]["database-password"], "Zml4dHVyZS1wYXNzd29yZA==")
+        self.assertIn("bootstrap-admin-password", payloads["todo-kube-keycloak-secret"]["data"])
 
     def test_superseded_separate_app_workloads_are_removed(self):
         for filename in (
@@ -209,36 +213,33 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("# Source: todo/templates/app.yaml", rendered)
 
     def test_clean_deploy_targets_kube_without_legacy_chain(self):
+        from todo_installer import install
         deploy = read(ROOT / "deploy/ansible/playbooks/deploy.yml")
-        runtime = read(ROOT / "deploy/ansible" / "roles" / "todo_kube_runtime" / "tasks" / "main.yml")
-
-        self.assertIn("name: todo_kube_runtime", deploy)
-        for legacy in (
-            "todo-backend.container",
-            "todo-frontend.container",
-            "todo-migrate.container",
-        ):
-            self.assertNotIn(legacy, deploy)
-        self.assertIn("Start PostgreSQL through its Kube unit", runtime)
-        self.assertIn("Provision database roles", runtime)
-        self.assertIn("Start the grouped application", runtime)
+        self.assertIn("todo_installer", deploy)
+        self.assertNotIn("include_role", deploy)
+        self.assertEqual(set(install.SERVICES), {
+            "todo-app", "todo-keycloak", "todo-postgres", "shared-proxy"})
+        self.assertIn("SourcePath", read(ROOT / "deploy/installer/todo_installer/install.py"))
 
     def test_clean_dev_start_bootstraps_roles_before_shared_services(self):
-        script = read(ROOT / "deploy/scripts" / "dev-up.sh")
-        postgres = script.index('"$generated/postgres.yaml"')
-        healthy = script.index("podman wait --condition healthy")
-        first_setup = script.index("setup_roles\npodman kube play", healthy)
-        keycloak = script.index('"$generated/keycloak.yaml"')
-
+        from todo_installer.kube_play import up
+        with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
+            up(RUNTIME)
+        calls = [call.args[0] for call in run.call_args_list]
+        postgres = next(i for i, a in enumerate(calls) if a[-1] == str(RUNTIME / "postgres.yaml"))
+        healthy = calls.index(["podman", "wait", "--condition", "healthy", "todo-postgres"])
+        setup = [i for i, a in enumerate(calls) if a[-1] == "backend.setup_roles"]
+        keycloak = next(i for i, a in enumerate(calls) if a[-1] == str(RUNTIME / "keycloak.yaml"))
         self.assertLess(postgres, healthy)
-        self.assertLess(healthy, first_setup)
-        self.assertLess(first_setup, keycloak)
-        self.assertEqual(script.splitlines().count("setup_roles"), 2)
+        self.assertLess(healthy, setup[0])
+        self.assertLess(setup[0], keycloak)
+        self.assertEqual(len(setup), 2)
+        self.assertIn("todo_installer install --mode dev", read(ROOT / "deploy/scripts/dev-up.sh"))
 
     def test_offline_bundle_packages_rendered_kube_runtime(self):
         offline = read(ROOT / "deploy/offline" / "build-bundle.sh")
         self.assertIn('deploy/scripts/render-kube-runtime.sh"', offline)
-        self.assertIn("deploy/ansible/roles/todo_kube_runtime", offline)
+        self.assertIn("deploy/installer/todo_installer/", offline)
         self.assertIn("deploy/charts/todo", offline)
 
 

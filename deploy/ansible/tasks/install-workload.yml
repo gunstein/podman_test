@@ -1,0 +1,130 @@
+---
+# Controller-to-target transport only. Python owns workload installation.
+- name: Resolve target installer paths
+  ansible.builtin.set_fact:
+    todo_installer_target: >-
+      {{ (todo_kube_user_home if todo_kube_user_home is defined else
+          todo_user_home if todo_user_home is defined else '/home/' ~ ansible_user)
+         ~ '/.local/share/todo-installer' }}
+    todo_installer_quadlet: >-
+      {{ todo_quadlet_directory | default(
+         (todo_kube_user_home if todo_kube_user_home is defined else
+          todo_user_home if todo_user_home is defined else '/home/' ~ ansible_user)
+         ~ '/.config/containers/systemd') }}
+
+- name: Require target Python templating dependency
+  ansible.builtin.command:
+    argv: [python3, -c, 'import jinja2']
+  changed_when: false
+
+- name: Create target installer staging directories
+  ansible.builtin.file:
+    path: "{{ todo_installer_target }}/{{ item }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - deploy/installer/todo_installer
+    - deploy/quadlet
+    - generated/kube-runtime
+
+- name: Detect target execution trust policy
+  ansible.builtin.command:
+    argv: [systemctl, is-active, fapolicyd]
+  register: todo_installer_fapolicyd
+  changed_when: false
+  failed_when: todo_installer_fapolicyd.rc not in [0, 3, 4]
+
+- name: Initialize exact installer file list
+  ansible.builtin.set_fact:
+    todo_installer_trust_files: []
+
+- name: Collect exact installer source and target paths
+  ansible.builtin.set_fact:
+    todo_installer_trust_files: >-
+      {{ todo_installer_trust_files + [{'source': item,
+         'dest': '/opt/todo/lib/todo_installer/' ~ (item | basename), 'mode': '0644'}] }}
+  loop: "{{ query('ansible.builtin.fileglob', project_root ~ '/deploy/installer/todo_installer/*.py') }}"
+  when: todo_installer_fapolicyd.rc == 0
+
+- name: Install and trust Python installer on hardened targets
+  ansible.builtin.include_role:
+    name: todo_fapolicyd
+  vars:
+    todo_fapolicyd_install_directory: /opt/todo/lib/todo_installer
+    todo_fapolicyd_files: "{{ todo_installer_trust_files }}"
+  when: todo_installer_fapolicyd.rc == 0
+
+- name: Stage shared Python installer on the target
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ todo_installer_target }}/deploy/installer/todo_installer/"
+    mode: "0600"
+  when: todo_installer_fapolicyd.rc != 0
+  loop: "{{ query('ansible.builtin.fileglob', project_root ~ '/deploy/installer/todo_installer/*.py') }}"
+
+- name: Stage canonical Quadlet templates and network on the target
+  ansible.builtin.copy:
+    src: "{{ project_root }}/deploy/quadlet/{{ item }}"
+    dest: "{{ todo_installer_target }}/deploy/quadlet/{{ item }}"
+    mode: "0600"
+  loop:
+    - todo.network
+    - todo-postgres.kube.j2
+    - todo-app.kube.j2
+    - todo-keycloak.kube.j2
+    - shared-proxy.kube.j2
+
+- name: Stage the caller's rendered workload manifests on the target
+  ansible.builtin.copy:
+    src: "{{ todo_rendered_manifest_directory | default(project_root ~ '/generated/kube-runtime') }}/{{ item }}"
+    dest: "{{ todo_installer_target }}/generated/kube-runtime/{{ item }}"
+    mode: "0600"
+  loop: >-
+    {{ {'postgres': ['postgres.yaml', 'config.yaml'],
+        'application': ['app.yaml', 'keycloak.yaml', 'config.yaml'],
+        'shared-proxy': ['shared-proxy.yaml', 'config.yaml']}[todo_installer_workload] }}
+
+- name: Install the shared workload with Python
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -m
+      - todo_installer
+      - install-workload
+      - "{{ todo_installer_workload }}"
+      - --project-root
+      - "{{ todo_installer_target }}"
+      - --quadlet-dir
+      - "{{ todo_installer_quadlet }}"
+      - --kube-runtime-dir
+      - "{{ todo_kube_runtime_directory | default(todo_installer_quadlet ~ '/todo-kube-runtime') }}"
+      - --rendered-manifest-dir
+      - "{{ todo_installer_target }}/generated/kube-runtime"
+      - --publish-address
+      - "{{ todo_publish_address | default('127.0.0.1') }}"
+      - --postgres-publish-address
+      - "{{ todo_postgres_publish_address | default('') }}"
+      - --service-port
+      - "{{ todo_service_port | default(8443) | string }}"
+  environment:
+    PYTHONPATH: >-
+      {{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0
+         else todo_installer_target ~ '/deploy/installer' }}
+    PYTHONDONTWRITEBYTECODE: "1"
+  register: todo_workload_install
+  changed_when: (todo_workload_install.stdout | from_json).changed
+
+- name: Preserve the postgres workload change fact
+  ansible.builtin.set_fact:
+    todo_postgres_kube_changed: "{{ (todo_workload_install.stdout | from_json).changed }}"
+  when: todo_installer_workload == 'postgres'
+
+- name: Preserve the application workload change fact
+  ansible.builtin.set_fact:
+    todo_application_kube_changed: "{{ (todo_workload_install.stdout | from_json).changed }}"
+  when: todo_installer_workload == 'application'
+
+- name: Preserve the shared-proxy workload change fact
+  ansible.builtin.set_fact:
+    todo_proxy_kube_changed: "{{ (todo_workload_install.stdout | from_json).changed }}"
+  when: todo_installer_workload == 'shared-proxy'

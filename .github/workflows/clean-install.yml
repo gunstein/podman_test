@@ -187,7 +187,7 @@ jobs:
           tar -xzf /tmp/helm.tar.gz -C /tmp
 
       - name: Lint Python
-        run: ruff check backend e2e deploy/scripts tests
+        run: ruff check backend e2e deploy/scripts deploy/installer tests
 
       - name: Test frontend authentication adapter in Chromium
         run: |

@@ -18,8 +18,7 @@ class AnsibleSafetyTests(unittest.TestCase):
                 kube = next(
                     i
                     for i, task in enumerate(tasks)
-                    if task.get("ansible.builtin.include_role", {}).get("name")
-                    == "postgres_kube_runtime"
+                    if task.get("vars", {}).get("todo_installer_workload") == "postgres"
                 )
                 helpers = []
                 for task in tasks[:kube]:

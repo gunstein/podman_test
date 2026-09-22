@@ -10,17 +10,27 @@ verified files that must be interpreted as code.
 
 ## Why the project uses two approaches
 
-The M12 offline installer uses only RPM-managed Python and Ansible. Run the
-newly extracted shell scripts through the trusted system shell:
+The single-host installer uses OS-managed Python and Jinja2 plus project-owned
+Python sources. Run extracted shell wrappers through the trusted system shell:
 
 ```bash
 sh ./preflight.sh
 sh ./install.sh
 ```
 
-The package-level `ansible.cfg` enables Ansible pipelining for every local and
-SSH connection. This avoids transferring and executing temporary Python
-modules under `~/.ansible/tmp`, so the M12 bundle needs no custom trust entries.
+Before running the installer on an enforcing host, trust only the verified
+`deploy/installer/todo_installer/*.py` files using the exact-file recipe in
+[offline installation](README.md#oracle-linux-9-with-fapolicyd). Replacing or
+moving the extraction requires refreshing those paths and hashes. The wrapper
+checks the internal manifest before importing the Python module. This differs
+from the historical Ansible-only single-host installer, which needed no project
+Python trust entries.
+
+The package-level `ansible.cfg` retains pipelining for local and SSH DR
+connections, avoiding transient Ansible Python modules under `~/.ansible/tmp`.
+The shared workload transport reuses `todo_fapolicyd` on active hardened
+targets to install root-owned modules under `/opt/todo/lib/todo_installer` and
+wait for exact source/target trust. It does not duplicate that role's trust logic.
 
 The DR and backup workflows add project-owned Python tools. Their shared
 `todo_fapolicyd` role refreshes exact source-file trust on the Ansible
@@ -102,8 +112,8 @@ or trusting an entire home, extraction or temporary directory.
 
 - **`sha256sum` cannot read a Python extension, executable or script:** This is
   a policy denial, not proof that the checksum is wrong. Inspect the `fanotify`
-  audit event. The supported M12 bundle avoids unpackaged Python runtime files
-  and uses the RPM-managed runtime.
+  audit event. The bundle uses the OS-managed runtime; its project Python sources require
+  exact-file trust after archive verification as described above.
 
 - **Ansible reports a checksum mismatch while copying a Python tool:** The
   target policy denied Ansible's temporary source file. Use the central `todo_fapolicyd` role. It refreshes exact source trust,
@@ -129,7 +139,8 @@ sudo fapolicyd-cli --file delete \
 sudo fapolicyd-cli --update
 ```
 
-The Ansible-managed tools use one dedicated `todo` trust source. Remove an
+The Ansible-managed tools use the dedicated `todo` trust source. Manual
+single-host installer entries use `todo-installer`. Remove an
 exact source entry on its controller and an exact installed entry on its target
 only when that tool is retired:
 

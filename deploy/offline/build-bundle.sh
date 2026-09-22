@@ -53,8 +53,6 @@ cp "$project_root/deploy/ansible/inventories/local/hosts.ini" \
   "$bundle_directory/deploy/ansible/inventories/local/"
 cp "$project_root/deploy/ansible/requirements.txt" "$project_root/deploy/ansible/"*.md \
   "$bundle_directory/deploy/ansible/"
-cp -r "$project_root/deploy/ansible/roles/todo_kube_runtime" \
-  "$bundle_directory/deploy/ansible/roles/"
 cp "$project_root/deploy/offline/install.sh" "$project_root/deploy/offline/preflight.sh" \
   "$bundle_directory/"
 cp "$project_root/deploy/offline/README.md" "$project_root/deploy/offline/FAPOLICYD.md" \
@@ -63,6 +61,11 @@ cp "$project_root/deploy/offline/README.md" "$project_root/deploy/offline/FAPOLI
 printf '%s\n' '# Todo offline bundle' '' \
   'See [offline installation](deploy/offline/README.md) for verification and installation.' \
   > "$bundle_directory/README.md"
+
+mkdir -p "$bundle_directory/deploy/installer/todo_installer"
+cp "$project_root/deploy/installer/README.md" "$project_root/deploy/installer/pyproject.toml" "$bundle_directory/deploy/installer/"
+cp "$project_root/deploy/installer/todo_installer/"*.py \
+  "$bundle_directory/deploy/installer/todo_installer/"
 
 source_revision=unknown
 source_state=unknown

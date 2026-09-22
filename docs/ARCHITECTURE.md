@@ -84,7 +84,7 @@ and the persistent TLS volume `todo-nginx-data`. It reaches the frontend/backend
 at `todo-app:8080`/`todo-app:8000` and Keycloak at `todo-keycloak:8080`.
 Loopback is shared only within a pod; it cannot connect the separate proxy to Todo.
 The units use `--no-pod-prefix` to preserve operational container names;
-the pinned OL9 lab baseline is Podman 5.8.2. Ansible additionally verifies
+the pinned OL9 lab baseline is Podman 5.8.2. The shared Python installer additionally verifies
 that `podman kube play` exposes the required `--no-pod-prefix` capability.
 This is a tested baseline, not a claim about the capability's minimum version.
 
@@ -96,7 +96,8 @@ This is a tested baseline, not a claim about the capability's minimum version.
 | Kube YAML | Pod contents, init ordering, runtime settings and secret references | Infrastructure fencing or host policy |
 | .kube Quadlet | Binding a workload to user systemd, published ports and dependencies | Database failover decisions |
 | systemd | Service ordering, restart, shutdown and boot behavior | PostgreSQL replication correctness |
-| Ansible | Provisioning, deployment, security integration and assertions | Continuous runtime supervision |
+| Python installer | Single-host dev/server lifecycle and shared workload installation | DR decisions or remote transport |
+| Ansible | Multi-host DR, security integration, transport and assertions | A separate workload installer |
 | Python tools | Guarded DR, backup and resumable operator stages | A second configuration-management system |
 | Podman | Rootless pods, containers, networks, volumes and secrets | Cluster scheduling |
 
@@ -108,7 +109,7 @@ User lingering enables services to run before interactive login.
 its own boot entrypoint to support a database-only host.
 
 Ordering is not readiness. Init-container success, health checks, systemd
-restart and Ansible readiness assertions address different conditions.
+restart and installer/Ansible readiness assertions address different conditions.
 The PostgreSQL unit applies health-on-failure kill so unhealthy database
 containers are replaced through the systemd lifecycle.
 
@@ -123,8 +124,8 @@ Deployment / recovery code and docs ──────► respective bundles
 Both bundles: VERSION + archive checksums
     │
     ▼
-Ansible controller
-  local target for clean offline install; operational host for DR
+Python installer for local clean installation
+  Ansible controller and the same Python workload functions for DR
     │
     ▼
 Target host(s) ──► .kube ──► systemd ──► Podman
@@ -140,6 +141,13 @@ definitions are delivered offline; target execution does not fetch from a
 registry. Both acceptance artifacts must identify the same clean revision.
 Checksums establish integrity against the supplied digest, not publisher
 identity; organizational artifact signing is not implemented.
+
+The portable module lives in `deploy/installer/todo_installer/` and uses Jinja2
+plus the Python standard library. Its shared workload functions install files
+and reload systemd; callers retain responsibility for safe stop/start ordering.
+DR Ansible tasks stage controller-side templates/manifests on the target, call
+`install-workload`, and preserve the existing change facts. Hardened DR targets
+use the existing exact-file trust role for the Python sources.
 
 Development uses the same chart with development values and direct
 `podman kube play/down`. Production uses user systemd. These are different
@@ -235,7 +243,7 @@ removes TLS state; `remove_data=true` additionally removes database data.
 The single-host uninstaller continues to refuse DR/backup hosts.
 
 The bootstrap/admin, migrator, application, Keycloak and replication
-identities have different jobs. Ansible constructs Kube-compatible secret
+identities have different jobs. The Python installer constructs Kube-compatible secret
 objects from existing secrets in memory. Secret values do not belong in Helm
 values, rendered YAML, Git or transcripts. Sensitive transfer tasks use SSH
 and suppress value-bearing output with no_log.
@@ -311,7 +319,9 @@ including promotion, application recovery, backup/PITR, rebuild, persistent
 markers, sequential reboots and real Keycloak browser verification.
 See the [run record](ACCEPTANCE-688a0f6.md) for observations and exact scope.
 See [runtime results](../deploy/runtime/RESULTS.md). Static tests or a green CI
-run do not replace the full two-VM test.
+run do not replace the full two-VM test. The Python installer extraction has
+unit, real rendering, package and Ansible transport coverage; it still requires
+a new unchanged-revision VM acceptance run.
 
 This is a production-shaped educational demo, not a complete production
 platform: one standby, shared Todos, manual client routing and CA trust,

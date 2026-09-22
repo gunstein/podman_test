@@ -13,12 +13,12 @@ The target machine must already provide:
   `/etc/subgid`
 - Podman's Quadlet systemd generator
 - A working `systemctl --user` session
-- RPM/deb-managed `ansible-core` 2.14 or newer and its system Python
+- OS-managed Python 3.9+ and Jinja2 (for example `python3-jinja2`)
 - `/bin/sh`, `tar` and `sha256sum`
 - Free host ports 5432, 8080 and 8443 on a clean target (8000 is internal to the app pod)
 
 The Kube runtime requires the tested Podman 5.8.2 platform, systemd 255 and
-ansible-core 2.14.18 or newer. Helm is not an offline target dependency. The
+Python/Jinja2. Ansible is required separately for DR operations. Helm is not an offline target dependency. The
 bundle must be built on a machine compatible with the target's CPU architecture.
 
 For a comfortable demo VM, provide at least 4 GiB memory and 10 GiB free disk.
@@ -58,6 +58,7 @@ Verify the archive before extracting or running any bundled code:
 sha256sum -c todo-offline-m12.tar.gz.sha256
 tar -xzf todo-offline-m12.tar.gz
 cd todo-offline-m12
+# With active fapolicyd, first apply the exact-file trust steps below.
 sh ./preflight.sh
 sh ./install.sh
 ```
@@ -73,29 +74,42 @@ firewalld. Allow TCP 8443 only from the intended client, following
 Running the scripts through the trusted system shell is intentional. On a
 machine with active `fapolicyd`, newly extracted scripts cannot yet be executed
 directly with `./script.sh`. The RPM-managed shell reads them as data. The
-installer does not add the extracted bundle to the trust database.
+installer does not add the extracted bundle to the trust database. Its Python
+sources need the exact-file trust described below before installation.
 
 The preflight script does not change host configuration. It verifies that the
-host-managed Ansible and Python are present.
+host-managed Python and Jinja2 are present.
 
 The installer verifies every bundled file, runs the same preflight
-automatically, loads missing container images and runs the same deployment
-playbook with the host's Ansible. On the first installation it asks
+automatically, loads missing container images and invokes the shared Python
+installer directly. No Ansible process is needed for single-host installation. On the first installation it asks
 for the database password and an initial Keycloak administrator password.
 Neither secret is stored in the bundle.
 
 ### Oracle Linux 9 with fapolicyd
 
-Install Ansible from Oracle Linux AppStream before disconnecting the target:
+Install OS-managed Python and Jinja2 before disconnecting the target:
 
 ```bash
-sudo dnf install -y ansible-core
+sudo dnf install -y python3 python3-jinja2
 ```
 
-The RPM installation makes Ansible and its Python dependencies trusted through
-the normal package database. The bundle therefore needs no custom `fapolicyd`
-rules or trust entries. Ansible pipelining avoids executing transient modules
-from `~/.ansible/tmp`. SELinux and `fapolicyd` remain enabled.
+After verifying the external archive checksum from a trusted source and
+extracting it, register only the installer Python files. From the bundle root:
+
+```bash
+for source in "$PWD"/deploy/installer/todo_installer/*.py; do
+  source=$(realpath "$source")
+  sudo fapolicyd-cli --file update "$source" --trust-file todo-installer ||
+    sudo fapolicyd-cli --file add "$source" --trust-file todo-installer
+done
+sudo fapolicyd-cli --update
+```
+
+Trust records must match the current resolved path, size and SHA-256 before
+running Python. Refresh them after replacing a bundle; never trust an entire
+home or temporary directory. SELinux and fapolicyd remain enabled. DR Ansible
+operations automate this through the existing exact-file trust role instead.
 
 See [FAPOLICYD.md](FAPOLICYD.md) for denial diagnostics, the difference
 between `add` and `update`, common Ansible symptoms and cleanup. Do not disable
@@ -110,25 +124,26 @@ checksums. For real distribution, sign the archive or manifest separately with
 an organizational GPG or Sigstore/cosign identity and verify that signature on
 the target before running `install.sh`.
 
-Uninstall this offline bundle while preserving database data. The playbook refuses
-to run if it detects later replication, promotion or backup state:
+Uninstall this offline bundle while preserving database data. The installer
+refuses replication, promotion and backup hosts:
 
 ```bash
-ansible-playbook \
-  --inventory deploy/ansible/inventories/local/hosts.ini deploy/ansible/playbooks/uninstall.yml
+PYTHONPATH=deploy/installer python3 -m todo_installer uninstall
 ```
+
+Use `--remove-data` only when permanently deleting the single-host database and
+its credentials is intended. Backup data is never removed by this command.
 
 ## Source and runtime contract
 
 The bundle contains all five OCI archives, rendered YAML for four pods, both
-complete Helm charts (`deploy/charts/todo` and `deploy/charts/shared-proxy`), and the clean-deploy
-Ansible role including target Quadlet templates. Helm is used only on the build
+complete Helm charts (`deploy/charts/todo` and `deploy/charts/shared-proxy`), and the portable Python
+installer with the canonical target Quadlet templates. Helm is used only on the build
 host. The source checkout's `deploy/runtime` contains guides; package YAML is fresh
 Helm output. Packaging tests compare it to independent rendering.
 
-The operations package contains complete operational roles (including
-`shared_proxy_runtime`), task includes, runtime manifests and shared resource
-Quadlets; it contains no OCI archives. Both packages record the full Git SHA
+The operations package contains complete DR/backup roles, task includes, the same Python
+installer, runtime manifests and shared resource Quadlets; it contains no OCI archives. Both packages record the full Git SHA
 and clean/dirty state in `VERSION`, checksum every file in `SHA256SUMS`, and
 supply an external archive checksum. Verify the archive before extraction and
 run `sha256sum -c SHA256SUMS` inside each extracted package.

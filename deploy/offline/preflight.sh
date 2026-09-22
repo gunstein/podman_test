@@ -10,7 +10,7 @@ require_command() {
     fi
 }
 
-for command in podman systemctl ansible-playbook python3 tar sha256sum df awk; do
+for command in podman systemctl python3 tar sha256sum df awk; do
     require_command "$command"
 done
 
@@ -18,19 +18,14 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 
-if systemctl is-active --quiet fapolicyd 2>/dev/null; then
-    echo "INFO: active fapolicyd detected; using RPM-managed Ansible and Python."
+if ! python3 -c 'import jinja2' >/dev/null 2>&1; then
+    echo "ERROR: Python Jinja2 is required (install the OS python3-jinja2 package)." >&2
+    failed=1
 fi
 
-ansible_version=$(ansible-playbook --version | awk 'NR == 1 {gsub(/[^0-9.]/, "", $3); print $3}')
-ansible_major=$(printf '%s' "$ansible_version" | awk -F. '{print $1}')
-ansible_minor=$(printf '%s' "$ansible_version" | awk -F. '{print $2}')
-if [ -z "$ansible_major" ] || [ "$ansible_major" -lt 2 ] || \
-    { [ "$ansible_major" -eq 2 ] && [ "$ansible_minor" -lt 14 ]; }; then
-    echo "ERROR: ansible-core 2.14 or newer is required." >&2
-    failed=1
-else
-    echo "INFO: using ansible-core $ansible_version"
+if systemctl is-active --quiet fapolicyd 2>/dev/null; then
+    echo "INFO: active fapolicyd: trust the verified installer Python files before running install.sh."
+    echo "See deploy/offline/FAPOLICYD.md for exact-file trust."
 fi
 
 if ! rootless=$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null); then

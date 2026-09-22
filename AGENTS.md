@@ -8,7 +8,7 @@ Current architecture and workflow:
   teaches it. Use docs/ACCEPTANCE.md for
   acceptance; a NEW run must not depend on old chat or development history.
 - Helm renders workloads at build time. bundles contain canonical rendered YAML;
-  Ansible renders target .kube units from deploy/quadlet templates; targets do not need Helm.
+  the Python installer renders target .kube units from deploy/quadlet templates; targets do not need Helm.
 - todo-app groups migration init, FastAPI and HTTP-only frontend. Shared nginx
   proxy, Keycloak and PostgreSQL are separate workloads on rootless todo-network.
   shared-proxy.service owns nginx and persistent TLS volume todo-nginx-data.
@@ -32,7 +32,9 @@ Constraints:
 - Production lifecycle: .kube Quadlet units managed by user systemd.
 - Workload boundary: group containers in one pod only when they share a
   lifecycle; connect independent workloads through a user-defined network.
-- Deployment: Ansible.
+- Deployment: Python installer for single-host, Ansible for DR/multi-host.
+- Shared workload installation lives in deploy/installer/todo_installer; DR calls
+  it through deploy/ansible/tasks/install-workload.yml. Keep one implementation.
 - Reverse proxy: nginx.
 - Offline delivery: rendered YAML and OCI images in the offline bundle;
   separate operations package contains tools/playbooks, not image archives.

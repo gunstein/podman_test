@@ -244,7 +244,7 @@ Stop if an extracted package and its archive identify different revisions.
 
 - **Where:** Initial primary via SSH; client/build host for trust and browser tests; Proxmox node Shell for reboot.
 - **Preconditions:** Phase 2 passed; initial primary identity confirmed; client source IP known.
-- **PASS:** Healthy app/identity/database, trusted HTTPS and real authenticated browser flow; marker/CA survive reboot; repeat changed=0.
+- **PASS:** Healthy app/identity/database, trusted HTTPS and real authenticated browser flow; marker/CA survive reboot; repeat preserves definitions, credentials and running containers.
 - **Evidence:** Recaps, browser results with no skips or TLS bypass, Todo ID/title, CA fingerprint and boot IDs.
 - **STOP if:** Skipped login test, TLS error, missing marker, failed services or non-idempotent repeat.
 
@@ -252,6 +252,8 @@ On `todo-primary`:
 
 ```bash
 cd "$HOME/todo-offline-m12"
+# First register the verified installer Python files using the exact-file
+# trust recipe in deploy/offline/README.md (fapolicyd remains active).
 sh ./preflight.sh
 sh ./install.sh --publish-address 192.168.0.102
 ```
@@ -383,7 +385,8 @@ through the UI and record its ID/title for replication and reboot checks.
 Reboot the VM. Repeat the four-service and nginx configuration checks above;
 verify marker data and unchanged TLS CA fingerprint in `todo-nginx-data`, then rerun
 `sh ./install.sh --publish-address 192.168.0.102`. Pass when the second
-deployment reports `changed=0`.
+deployment preserves the rendered definitions, secret IDs, container IDs and CA.
+Record their before/after values; the Python CLI does not emit an Ansible recap.
 
 ## 4. Initial standby bootstrap
 

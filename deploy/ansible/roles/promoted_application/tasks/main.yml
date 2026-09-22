@@ -129,17 +129,17 @@
       Load the proxy archive from the current verified offline bundle before failover.
 
 - name: Install the grouped Kube application on the promoted host
-  ansible.builtin.include_role:
-    name: application_kube_runtime
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
   vars:
+    todo_installer_workload: application
     todo_rendered_manifest_directory: "{{ m14_bundle_directory }}/generated/kube-runtime"
     todo_publish_address: "{{ m14_node_address }}"
     todo_service_port: "{{ m14_service_port }}"
 
 - name: Install the shared Kube proxy on the promoted host
-  ansible.builtin.include_role:
-    name: shared_proxy_runtime
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
   vars:
+    todo_installer_workload: shared-proxy
     todo_rendered_manifest_directory: "{{ m14_bundle_directory }}/generated/kube-runtime"
     todo_publish_address: "{{ m14_node_address }}"
     todo_service_port: "{{ m14_service_port }}"

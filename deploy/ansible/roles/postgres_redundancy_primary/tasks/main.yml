@@ -46,9 +46,9 @@
   changed_when: false
 
 - name: Install replication-capable PostgreSQL Kube runtime
-  ansible.builtin.include_role:
-    name: postgres_kube_runtime
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
   vars:
+    todo_installer_workload: postgres
     todo_postgres_publish_address: "{{ todo_node_address }}"
 
 - name: Stop application tier before current primary restart

@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -30,27 +31,30 @@ class OfflineScriptTests(unittest.TestCase):
         shutil.copy(ROOT / "deploy/offline/install.sh", bundle / "install.sh")
         (bundle / "preflight.sh").write_text("exit 0\n")
         self.executable("sha256sum", "exit 0\n")
-        self.executable("ansible-playbook", 'for arg do printf "%s\\n" "$arg"; done\n')
+        module = bundle / "deploy/installer/todo_installer"
+        module.mkdir(parents=True, exist_ok=True)
+        (module / "__main__.py").write_text("import json,sys; print(json.dumps(sys.argv[1:]))")
+        self.executable("python3", 'exec "' + sys.executable + '" "$@"\n')
         return subprocess.run(
             ["sh", str(bundle / "install.sh"), *arguments],
             env=self.env, capture_output=True, text=True, check=False,
         )
 
-    def test_install_passes_explicit_address_as_json(self):
+    def test_install_passes_explicit_address_to_python(self):
         result = self.install("--publish-address", "192.168.0.102")
         self.assertEqual(result.returncode, 0, result.stderr)
         values = json.loads(result.stdout.splitlines()[-1])
-        self.assertEqual(values["todo_publish_address"], "192.168.0.102")
-        self.assertEqual(values["deployment_mode"], "offline")
-        self.assertEqual(values["bundle_directory"], str(self.directory / "bundle with spaces"))
+        self.assertEqual(values[values.index("--publish-address") + 1], "192.168.0.102")
+        self.assertEqual(values[values.index("--deployment-mode") + 1], "offline")
+        self.assertEqual(values[values.index("--bundle-dir") + 1], str(self.directory / "bundle with spaces"))
 
     def test_default_remains_loopback(self):
         result = self.install()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout.splitlines()[-1])["todo_publish_address"],
-                         "127.0.0.1")
+        values = json.loads(result.stdout.splitlines()[-1])
+        self.assertEqual(values[values.index("--publish-address") + 1], "127.0.0.1")
 
-    def test_invalid_arguments_never_start_ansible(self):
+    def test_invalid_arguments_never_start_installer(self):
         for arguments in (("--unknown",), ("--publish-address",),
                           ("--publish-address", "0.0.0.0"),
                           ("--publish-address", "::1"),

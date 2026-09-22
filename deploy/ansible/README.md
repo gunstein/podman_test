@@ -1,112 +1,68 @@
-# Ansible deployment
+# Ansible DR and multi-host operations
 
-This playbook deploys the complete application to the current user on localhost.
-It uses only modules included with `ansible-core`. The project-level
-`ansible.cfg` pins `/usr/bin/python3`, sets `deploy/ansible/roles` as the role
-search path and enables pipelining for local and SSH connections. Run commands
-from the repository or extracted package root so this configuration is loaded. This keeps transport behavior consistent across operations and
-avoids transient Ansible Python files on hosts protected by `fapolicyd`.
+Single-host installation and removal use the [Python installer](../installer/README.md).
+Ansible retains remote transport, fencing, replication, backup, promotion,
+standby rebuild, security integration and operational assertions.
 
-## Install Ansible
-
-From the project root:
+Run playbooks from the repository or extracted operations-package root.
+`ansible.cfg` pins `/usr/bin/python3`, sets the role search path and enables
+pipelining. Install controller tooling on a connected development machine with:
 
 ```bash
 python3 -m venv deploy/ansible/.venv
 deploy/ansible/.venv/bin/python -m pip install -r deploy/ansible/requirements.txt
 ```
 
-## Podman secrets
+## Shared workload installer on targets
 
-The lab uses Podman secrets throughout. The first deployment creates the
-application credentials on the initial primary. Standby bootstrap transfers
-the required values through protected Ansible tasks and SSH, without a
-plaintext transfer file. Rebuild preflight verifies the replication credential
-before old database data can be removed.
+Each target needs Python 3.9+ and Jinja2, provisioned before offline operation
+(for example, the OS `python3-jinja2` package). No target needs Helm or pip.
+`tasks/install-workload.yml` stages the Python module, canonical Quadlet
+sources and each caller's already-rendered manifests. Controller source paths
+are preserved; remote commands receive target staging paths. The task sets
+`PYTHONPATH` explicitly, so no editable pip installation is required.
 
-Read [../../docs/SECRETS.md](../../docs/SECRETS.md) for runtime file-versus-environment
-delivery, synchronization, rotation and the explicit single-node-loss recovery
-boundary.
+On ordinary targets, staging is under the service user's
+`~/.local/share/todo-installer`. When target `fapolicyd` is active, the existing
+`todo_fapolicyd` role installs root-owned Python sources under
+`/opt/todo/lib/todo_installer`, refreshes exact controller/target file trust,
+and waits for the trust database. Supply the same controller/target become
+credentials as other hardened DR operations (`--ask-become-pass` when needed).
+Neither trust rules nor SELinux enforcement are relaxed.
 
-## Deploy
+The Python `install-workload` command returns one JSON line, `{"changed": true}`
+or `{"changed": false}`. The task preserves `todo_postgres_kube_changed`,
+`todo_application_kube_changed` and `todo_proxy_kube_changed`. Shared functions
+install definitions and reload systemd; DR callers retain their existing
+conditional restarts and safety ordering.
 
-```bash
-deploy/ansible/.venv/bin/ansible-playbook \
-  --inventory deploy/ansible/inventories/local/hosts.ini \
-  deploy/ansible/playbooks/deploy.yml
-```
+The four former shared/single-host runtime roles have been removed. The only
+Quadlet template source remains `deploy/quadlet/*.kube.j2`.
 
-On the first run, the playbook asks for the PostgreSQL password and an initial
-Keycloak administrator password without echoing them. It creates rootless Podman
-secrets and generates independent passwords for the migration, backend and
-Keycloak database roles. It builds the backend, frontend, shared proxy and Keycloak images,
-installs the Quadlet files, starts the service chain and verifies health,
-database readiness and Keycloak discovery.
+## Single-host compatibility entry points
 
-The clean path installs four `.kube` units directly: `todo-postgres`,
-`todo-keycloak`, grouped `todo-app` and `shared-proxy`. It never installs legacy
-per-container `.container` units or performs an in-place runtime migration.
+`playbooks/deploy.yml` and `playbooks/uninstall.yml` remain thin Python CLI
+wrappers for existing automation. They do not contain installation logic and
+conservatively report the command as changed. Their old variables are forwarded,
+including deployment mode, bundle path, image refresh, publish address/port,
+Quadlet directory and `remove_data`.
 
-A normal repeat deploy is idempotent relative to the images already stored
-locally. It does not check registries for security updates. Explicitly rebuild
-the application images, refresh their base images and pull PostgreSQL with:
-
-```bash
-deploy/ansible/.venv/bin/ansible-playbook \
-  --inventory deploy/ansible/inventories/local/hosts.ini \
-  deploy/ansible/playbooks/deploy.yml \
-  --extra-vars refresh_images=true
-```
-
-Image refresh is intentionally unavailable in offline mode because the bundle is
-the complete, fixed source of images there.
-
-The grouped `todo-app.kube` unit is the `default.target` entrypoint and pulls
-in the independent Keycloak and PostgreSQL Kube services. It starts with the
-user's systemd manager after login. For
-boot-before-login operation on an always-on host, an administrator must run
-`sudo loginctl enable-linger <service-user>`.
-
-The playbook does not install Podman, enable lingering, rotate an existing
-secret or modify system-wide configuration. Those operations require separate
-administrative decisions.
-
-The Keycloak account created from the prompted password is its temporary
-bootstrap administrator. This localhost demo retains it for repeatable
-administration and E2E setup; a real deployment should replace and remove it.
-
-## Single-host uninstall
-
-`uninstall.yml` is intentionally limited to the single-host deployment. It
-refuses to run when it detects replication, promotion, backup or
-rebuilt-standby state.
-Do not treat a promoted database or its backup archive as ordinary single-host data.
-
-Remove the deployed services, Quadlet files, containers, network and application
-images:
+Use the Python CLI directly for the first interactive installation. Ansible
+commands do not provide a TTY: missing bootstrap or Keycloak administrator
+secrets fail clearly instead of silently accepting empty input. Automated
+wrapper calls require those raw Podman secrets to exist already.
 
 ```bash
-deploy/ansible/.venv/bin/ansible-playbook \
-  --inventory deploy/ansible/inventories/local/hosts.ini \
-  deploy/ansible/playbooks/uninstall.yml
+PYTHONPATH=deploy/installer python3 -m todo_installer install --mode server
+PYTHONPATH=deploy/installer python3 -m todo_installer uninstall
+# Only when permanently deleting the single-host database is intended:
+PYTHONPATH=deploy/installer python3 -m todo_installer uninstall --remove-data
 ```
 
-The persistent `todo-postgres-data` volume and its database-related Podman
-secrets are preserved by default. Existing database data requires its existing
-credentials when the application is installed again. Permanently delete the
-database and its related secrets only when that is intentional:
-
-```bash
-deploy/ansible/.venv/bin/ansible-playbook \
-  --inventory deploy/ansible/inventories/local/hosts.ini \
-  deploy/ansible/playbooks/uninstall.yml \
-  --extra-vars remove_data=true
-```
-
-The second command permanently deletes all Todo and Keycloak data.
-
-Both uninstall modes remove `todo-nginx-data`. A reinstall creates a new
-demo CA, so any previously trusted demo root certificate must be replaced.
+Normal uninstall preserves database and backup volumes and database/Keycloak
+secrets; both modes remove proxy TLS state. The uninstaller refuses replication,
+promotion, backup and rebuilt-standby hosts. Existing data requires its existing
+credentials on reinstall. See [secrets](../../docs/SECRETS.md).
 
 ## Operations package and inventories
 

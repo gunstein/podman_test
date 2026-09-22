@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-generated="$project_root/generated/dev"
-
-for manifest in shared-proxy app keycloak postgres; do
-  test ! -f "$generated/$manifest.yaml" || \
-    podman kube play --down "$generated/$manifest.yaml"
-done
+export PYTHONPATH="$project_root/deploy/installer${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONDONTWRITEBYTECODE=1
+exec python3 -m todo_installer down "$@"

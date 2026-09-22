@@ -50,7 +50,7 @@ writes `app.yaml`, `keycloak.yaml`, `postgres.yaml`, `config.yaml` and
 contains documentation only.
 
 Packages contain freshly rendered YAML under `generated/kube-runtime/` and the
-same four source Quadlet templates under `deploy/quadlet/`. Ansible renders the
+same four source Quadlet templates under `deploy/quadlet/`. The Python installer renders the
 target-specific `.kube` files and installs them beside the workload YAML under
 `~/.config/containers/systemd/todo-kube-runtime/`. Targets do not need Helm.
 CI compares actual package contents against fresh rendering.
@@ -82,8 +82,8 @@ secrets:
   `bootstrap-admin-password`;
 - `todo-kube-postgres-secret`, containing `database-password`.
 
-Secret values are never stored in Helm values or rendered YAML. The clean
-Ansible deployment constructs these Kube-compatible objects in memory from
+Secret values are never stored in Helm values or rendered YAML. The shared
+Python installer constructs these Kube-compatible objects in memory from
 the host-local raw Podman secrets.
 
 ## Operational resilience
@@ -114,15 +114,20 @@ The historical per-container migration and rollback tools were retired after
 acceptance of 688a0f6. They remain recoverable from Git history; normal recovery
 uses the active DR runbooks, not runtime-format migration.
 
-Direct development requires the four Kube-compatible Podman secrets. Render
+Direct development provisions the four Kube-compatible Podman secrets from
+host-local raw secrets. Install Python 3.9+ and Jinja2 first. Render
 and start the four workloads with:
 
 ```bash
 deploy/scripts/dev-up.sh
 ```
 
-The wrapper contains only `helm template`, network/secret checks and ordered
-`podman kube play` calls. Stop the workloads in reverse order with:
+The shell entry points are thin wrappers around `python3 -m todo_installer`.
+The installer invokes the existing renderer with local values, prepares images
+and external secrets, then performs ordered `podman kube play` calls. Missing
+bootstrap/admin passwords require an interactive terminal; runtime-role
+passwords are generated only when missing. It provisions database roles before
+Keycloak/app startup and reapplies grants after proxy startup. Stop the workloads in reverse order with:
 
 ```bash
 deploy/scripts/dev-down.sh

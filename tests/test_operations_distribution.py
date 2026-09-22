@@ -70,46 +70,31 @@ def verify_package(test, archive, prefix):
         test.assertIn(f"`{pod}`", results)
     test.assertIn("`nginx`", guide)
     test.assertIn("requires its own full unchanged-revision VM acceptance", results)
-    # Render the actual packaged runtime template tasks. Resolving these
-    # outside the checkout catches missing shared templates or wrong src roots.
+    # Execute the packaged Python renderer outside the checkout. Neither imports
+    # nor template paths may accidentally resolve back to the source tree.
     with tempfile.TemporaryDirectory() as directory:
         package_root = Path(directory)
         for name, contents in files.items():
-            if name.startswith("deploy/quadlet/"):
+            if name.startswith(("deploy/quadlet/", "deploy/installer/")):
                 target = package_root / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(contents)
-        plays = []
-        outputs = []
-        for role in ("todo_kube_runtime", "postgres_kube_runtime",
-                     "application_kube_runtime", "shared_proxy_runtime"):
-            filename = f"deploy/ansible/roles/{role}/tasks/main.yml"
-            if filename not in files:
-                continue
-            output = package_root / role
-            output.mkdir()
-            outputs.append(output)
-            tasks = [task for task in yaml.safe_load(files[filename])
-                     if "ansible.builtin.template" in task]
-            test.assertTrue(tasks, role)
-            plays.append({
-                "name": "Render packaged " + role, "hosts": "localhost", "gather_facts": False,
-                "vars": {"project_root": str(package_root),
-                         "todo_kube_runtime_directory": str(output),
-                         "todo_publish_address": "192.0.2.10", "todo_service_port": 8443},
-                "tasks": tasks,
-            })
-        probe = package_root / "render.yml"
-        probe.write_text(yaml.safe_dump(plays))
-        result = subprocess.run([
-            os.environ.get("ANSIBLE_PLAYBOOK", "ansible-playbook"),
-            "-i", "localhost,", "-c", "local", str(probe),
-        ], cwd=package_root, capture_output=True, text=True)
+        for source in (ROOT / "deploy/installer/todo_installer").glob("*.py"):
+            relative = str(source.relative_to(ROOT))
+            test.assertEqual(files.get(relative), source.read_bytes(), relative)
+        result = subprocess.run([sys.executable, "-c", """
+from pathlib import Path
+from todo_installer.quadlet import render
+root = Path.cwd()
+for name in ('todo-app', 'todo-keycloak', 'todo-postgres', 'shared-proxy'):
+    (root / (name + '.kube')).write_bytes(render(root, name + '.kube', {
+        'todo_publish_address': '192.0.2.10', 'todo_service_port': 8443,
+    }))
+"""], cwd=package_root, capture_output=True, text=True,
+            env={**os.environ, "PYTHONPATH": str(package_root / "deploy/installer")})
         test.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for output in outputs:
-            test.assertTrue(list(output.glob("*.kube")))
-            for unit in output.glob("*.kube"):
-                test.assertEqual(unit.read_bytes(), (RUNTIME / unit.name).read_bytes())
+        for unit in package_root.glob("*.kube"):
+            test.assertEqual(unit.read_bytes(), (RUNTIME / unit.name).read_bytes())
     return files
 
 
@@ -136,7 +121,7 @@ class OperationsDistributionTests(unittest.TestCase):
                 names = {name.removeprefix("todo-operations/") for name in package.getnames()}
             for path in (
                 "deploy/ansible/playbooks/bootstrap-standby.yml",
-                "deploy/ansible/roles/shared_proxy_runtime/tasks/main.yml",
+                "deploy/installer/todo_installer/workloads.py",
                 "deploy/quadlet/shared-proxy.kube.j2",
                 "generated/kube-runtime/shared-proxy.yaml",
                 "deploy/ansible/playbooks/rebuild-standby.yml",
@@ -189,12 +174,9 @@ class OperationsDistributionTests(unittest.TestCase):
             # Execute only the real manifest-copy task, never bootstrap/reseed tasks.
             # Resolve defaults with each packaged caller's real play vars; syntax
             # checking alone cannot detect missing controller-side source paths.
-            role = unpacked / "deploy/ansible/roles/postgres_kube_runtime"
-            defaults = yaml.safe_load((role / "defaults/main.yml").read_text())
-            tasks = yaml.safe_load((role / "tasks/main.yml").read_text())
-            copy_task = next(task for task in tasks if
-                             task.get("ansible.builtin.copy", {}).get("src") ==
-                             "{{ todo_rendered_manifest_directory }}/{{ item }}")
+            tasks = yaml.safe_load((unpacked / "deploy/ansible/tasks/install-workload.yml").read_text())
+            copy_task = next(task for task in tasks if task["name"] ==
+                             "Stage the caller's rendered workload manifests on the target")
             probes = []
             destinations = []
             for filename in ("bootstrap-standby.yml", "rebuild-standby.yml"):
@@ -203,12 +185,12 @@ class OperationsDistributionTests(unittest.TestCase):
                     if "roles" not in play:
                         continue
                     destination = unpacked / ("probe-" + str(len(probes)))
-                    destination.mkdir()
-                    destinations.append(destination)
+                    (destination / "generated/kube-runtime").mkdir(parents=True)
+                    destinations.append(destination / "generated/kube-runtime")
                     probes.append({
                         "name": play["name"], "hosts": "localhost", "gather_facts": False,
-                        "vars": {**defaults, **play["vars"],
-                                 "todo_kube_runtime_directory": str(destination)},
+                        "vars": {**play["vars"], "todo_installer_workload": "postgres",
+                                 "todo_installer_target": str(destination)},
                         "tasks": [copy_task],
                     })
             self.assertEqual(len(probes), 4)
@@ -224,9 +206,10 @@ class OperationsDistributionTests(unittest.TestCase):
                 for manifest in ("postgres.yaml", "config.yaml"):
                     self.assertEqual((destination / manifest).read_bytes(),
                                      files["generated/kube-runtime/" + manifest])
-            # Static import forces Ansible to resolve the normally dynamic proxy role.
+            # Static import forces Ansible to parse the shared transport task.
             (unpacked / "deploy/ansible/playbooks/proxy-check.yml").write_text(
-                "- hosts: localhost\n  gather_facts: false\n  roles: [shared_proxy_runtime]\n")
+                "- hosts: localhost\n  gather_facts: false\n  tasks:\n"
+                "    - ansible.builtin.import_tasks: ../tasks/install-workload.yml\n")
             for playbook in ("deploy-promoted-application.yml", "proxy-check.yml"):
                 subprocess.run(
                     [os.environ.get("ANSIBLE_PLAYBOOK", "ansible-playbook"),

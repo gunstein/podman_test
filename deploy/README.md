@@ -11,7 +11,8 @@ and operations tooling for the rootless Podman demo. The four workloads remain
 | `quadlet/` | One source for the network and four systemd workload templates |
 | `ansible/inventories/` | Local installation and initial/recovery DR topologies |
 | `ansible/inventories/*/group_vars/` | Host/account/operations settings for those inventories |
-| `ansible/roles/`, `ansible/playbooks/` | Installation, security integration and guarded DR/backup operations |
+| `installer/` | Single-host Python installer and shared workload functions |
+| `ansible/roles/`, `ansible/playbooks/` | Security integration and guarded DR/backup operations; single-host compatibility wrappers |
 | `scripts/` | Rendering, direct development and operational tools |
 | `offline/` | OCI bundle builder, installer and offline requirements |
 | `runtime/` | Runtime documentation, not generated manifests |
@@ -25,19 +26,21 @@ layout and include the same configuration; run playbooks from the package root.
 deploy/scripts/render-kube-runtime.sh
 
 # Development uses local values and direct podman kube play/down.
-# Provision the required external secrets first (see the runtime guide).
+# Missing administrator secrets require an interactive terminal.
 deploy/scripts/dev-up.sh
 deploy/scripts/dev-down.sh
 
 # Production installation uses Quadlet/user-systemd.
-ansible-playbook -i deploy/ansible/inventories/local/hosts.ini \
-  deploy/ansible/playbooks/deploy.yml
+PYTHONPATH=deploy/installer python3 -m todo_installer install --mode server
 ```
 
 Workload settings belong in Helm values; host and operational settings belong
 in inventory/group_vars. Chart defaults stay inside each chart. Secrets stay
-outside YAML and Git. Ansible installs rendered YAML without templating it a
-second time; only the `.kube.j2` host-integration files use Jinja.
+outside YAML and Git. Python copies rendered YAML without templating it a
+second time; only the existing `.kube.j2` host-integration files use Jinja2.
+The package needs Python 3.9+ and Jinja2. See [installer usage](installer/README.md).
+DR keeps Ansible for remote transport, fencing, replication and backup, calling
+the same Python workload functions on each target.
 
 Rendering defaults to `generated/kube-runtime/` for production and
 `generated/dev/` for development. These ignored build outputs are separate from

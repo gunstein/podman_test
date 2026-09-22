@@ -1,7 +1,7 @@
 """Single-host orchestration; shared workload functions also serve Ansible DR."""
 from pathlib import Path
 
-from . import images, keycloak, quadlet, secrets, workloads
+from . import apps, images, keycloak, quadlet, secrets, workloads
 from .commands import run
 
 LEGACY = ('todo-postgres', 'todo-db-setup', 'todo-migrate', 'todo-db-grants',
@@ -56,8 +56,9 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     image_changes = images.prepare(root, deployment_mode, bundle_directory, refresh_images)
     if mode == 'dev':
         from .kube_play import up
-        secrets.create_kube(secrets.POSTGRES)
-        secrets.create_kube(secrets.APPLICATION)
+        secrets.create_kube(secrets.postgres_secret_mapping(apps.APPS[0]))
+        secrets.create_kube({**secrets.application_secret_mapping(apps.APPS[0]),
+         **secrets.keycloak_secret_mapping()})
         up(rendered)
         return
     arguments = (root, directory, runtime, rendered)

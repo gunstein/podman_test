@@ -49,3 +49,17 @@ class AppRegistryTests(unittest.TestCase):
         self.assertEqual([image.source for image in images], [
             "notes-backend", "notes-frontend", None])
         self.assertEqual(len(shared_images()), 2)
+
+    def test_secret_names_are_isolated_between_apps(self):
+        from todo_installer.secrets import application_secret_mapping, postgres_secret_mapping
+        mappings = []
+        for name in ("todo", "notes"):
+            app = App(name, name, name + ".test", name + "-frontend")
+            mapping = {**postgres_secret_mapping(app), **application_secret_mapping(app)}
+            self.assertEqual(mapping, {
+                name + "-kube-postgres-secret": {"database-password": name + "-db-password"},
+                name + "-kube-migrator-secret": {"database-password": name + "-migrator-password"},
+                name + "-kube-backend-secret": {"database-password": name + "-app-password"},
+            })
+            mappings.append(set(mapping) | {v for fields in mapping.values() for v in fields.values()})
+        self.assertFalse(mappings[0] & mappings[1])

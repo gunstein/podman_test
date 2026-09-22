@@ -5,7 +5,7 @@ creation or removal of obsolete files). DR uses it to decide when to restart.
 """
 from pathlib import Path
 
-from . import quadlet, secrets
+from . import apps, quadlet, secrets
 from .commands import run
 
 
@@ -47,7 +47,7 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
         ("todo-postgres-data", "todo-postgres-backup"), ("todo-postgres.container",),
         "Unsupported todo-postgres.container is installed. Stop and review the host "
         "separately; this operation does not migrate an existing PostgreSQL runtime.",
-        "PostgreSQL", secrets.POSTGRES, {"todo_postgres_publish_address": publish_address},
+        "PostgreSQL", secrets.postgres_secret_mapping(apps.APPS[0]), {"todo_postgres_publish_address": publish_address},
         {"todo-db-password": db_password} if db_password is not None else None,
     )
 
@@ -62,7 +62,8 @@ def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_ma
          "todo-frontend.container"),
         "Unsupported application container Quadlets are installed. Stop and review "
         "the host separately before installing the grouped Kube application.",
-        "application", secrets.APPLICATION,
+        "application", {**secrets.application_secret_mapping(apps.APPS[0]),
+         **secrets.keycloak_secret_mapping()},
         {"todo_publish_address": publish_address, "todo_service_port": service_port},
     )
 

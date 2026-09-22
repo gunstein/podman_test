@@ -2,17 +2,27 @@
 import base64
 import json
 
+from . import apps
 from .commands import exists, run
 
-POSTGRES = {"todo-kube-postgres-secret": {"database-password": "todo-db-password"}}
-APPLICATION = {
-    "todo-kube-migrator-secret": {"database-password": "todo-migrator-password"},
-    "todo-kube-backend-secret": {"database-password": "todo-app-password"},
-    "todo-kube-keycloak-secret": {
-        "database-password": "todo-keycloak-db-password",
-        "bootstrap-admin-password": "todo-keycloak-admin-password",
-    },
-}
+
+def postgres_secret_mapping(app: apps.App):
+    return {app.kube_secret("postgres"): {"database-password": app.secret("db")}}
+
+
+def application_secret_mapping(app: apps.App):
+    return {
+        app.kube_secret("migrator"): {"database-password": app.secret("migrator")},
+        app.kube_secret("backend"): {"database-password": app.secret("app")},
+    }
+
+
+def keycloak_secret_mapping():
+    app = apps.IDENTITY_DATABASE_APP
+    return {app.kube_secret("keycloak"): {
+        "database-password": app.secret("keycloak-db"),
+        "bootstrap-admin-password": app.secret("keycloak-admin"),
+    }}
 
 
 def read(name):
@@ -37,15 +47,20 @@ def create_kube(mapping, values=None):
     return changed
 
 
-def provision():
+def provision(applications=None):
     """Keep existing credentials; prompt for administrators, generate role passwords."""
     import getpass
     import secrets as random
     import string
     import sys
 
-    generated = ('todo-migrator-password', 'todo-app-password', 'todo-keycloak-db-password')
-    for name in ('todo-db-password', *generated, 'todo-keycloak-admin-password'):
+    applications = apps.APPS if applications is None else applications
+    generated = {app.secret(role) for app in applications for role in ("migrator", "app")}
+    identity = apps.IDENTITY_DATABASE_APP
+    generated.add(identity.secret("keycloak-db"))
+    names = [app.secret(role) for app in applications for role in ("db", "migrator", "app")]
+    names.extend((identity.secret("keycloak-db"), identity.secret("keycloak-admin")))
+    for name in names:
         if exists('secret', name):
             continue
         if name in generated:
@@ -54,7 +69,6 @@ def provision():
             if not sys.stdin.isatty():
                 raise RuntimeError(f'Missing {name}: an interactive terminal is required to enter '
                                    'the password. Provision the Podman secret before retrying.')
-            prompt = ('Database password: ' if name == 'todo-db-password'
-                      else 'Initial Keycloak admin password: ')
+            prompt = f'{name}: '
             value = getpass.getpass(prompt)
         run('podman', 'secret', 'create', name, '-', input=value)

@@ -167,7 +167,8 @@ class KubeRuntimeTests(unittest.TestCase):
         with patch.object(secrets, "read", return_value="fixture-password"), \
                 patch.object(secrets, "exists", return_value=False), \
                 patch.object(secrets, "run") as run:
-            secrets.create_kube(secrets.APPLICATION)
+            secrets.create_kube({**secrets.application_secret_mapping(secrets.apps.APPS[0]),
+                                 **secrets.keycloak_secret_mapping()})
         payloads = {call.args[3]: json.loads(call.kwargs["input"])
                     for call in run.call_args_list}
         self.assertEqual(set(payloads), {

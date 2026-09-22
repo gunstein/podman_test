@@ -63,6 +63,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         return
     arguments = (root, directory, runtime, rendered)
     changed = workloads.install_postgres(*arguments)
+    changed = workloads.install_keycloak(*arguments) or changed
     changed = workloads.install_application(*arguments, publish_address, service_port) or changed
     changed = workloads.install_shared_proxy(*arguments, publish_address, service_port) or changed
     if changed or image_changes['proxy']:

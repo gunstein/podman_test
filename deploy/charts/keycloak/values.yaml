@@ -1,3 +1,6 @@
 keycloak:
   image: localhost/keycloak:m12
   memory: 1Gi
+runtime:
+  publicHostname: todo.test
+  publicPort: 8443

@@ -29,7 +29,7 @@ def main(argv=None):
     deploy.add_argument('--service-port', type=int, default=8443)
     workload = subcommands.add_parser('install-workload')
     paths(workload)
-    workload.add_argument('workload', choices=('postgres', 'application', 'shared-proxy'))
+    workload.add_argument('workload', choices=('postgres', 'application', 'keycloak', 'shared-proxy'))
     workload.add_argument('--rendered-manifest-dir', type=Path)
     workload.add_argument('--publish-address', default='127.0.0.1')
     workload.add_argument('--postgres-publish-address', default='')
@@ -60,10 +60,17 @@ def main(argv=None):
             kwargs = {'publish_address': args.publish_address, 'service_port': args.service_port}
             if args.workload == 'postgres':
                 kwargs = {'publish_address': args.postgres_publish_address}
+            if args.workload == 'keycloak':
+                kwargs = {}
             function = {'postgres': workloads.install_postgres,
                         'application': workloads.install_application,
+                        'keycloak': workloads.install_keycloak,
                         'shared-proxy': workloads.install_shared_proxy}[args.workload]
             changed = function(args.project_root, directory, runtime, manifests, **kwargs)
+            # Existing Todo DR application calls also stage the shared identity workload.
+            if args.workload == 'application':
+                changed = workloads.install_keycloak(
+                    args.project_root, directory, runtime, manifests) or changed
             print(json.dumps({'changed': changed}))
     except (OSError, RuntimeError, ValueError, KeyError, TemplateError) as error:
         print(f'todo-installer: {error}', file=sys.stderr)

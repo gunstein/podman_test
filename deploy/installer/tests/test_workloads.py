@@ -20,7 +20,8 @@ class WorkloadsTests(unittest.TestCase):
         for function, names, obsolete in (
             (workloads.install_postgres, ['todo-postgres'],
              ['todo-postgres-data', 'todo-postgres-backup']),
-            (workloads.install_application, ['keycloak', 'todo-app'], []),
+            (workloads.install_application, ['todo-app'], []),
+            (workloads.install_keycloak, ['keycloak'], []),
             (workloads.install_shared_proxy, ['shared-proxy'], ['todo-nginx-data']),
         ):
             with self.subTest(function=function.__name__), tempfile.TemporaryDirectory() as temp:
@@ -63,13 +64,15 @@ class WorkloadsTests(unittest.TestCase):
                     self.assertFalse(function(ROOT, directory, runtime, rendered))
                     self.assertEqual(initial, {p: p.stat().st_mtime_ns for p in runtime.iterdir()})
                     self.assertFalse(any(a[:3] == ['podman', 'secret', 'create'] for a, _ in calls))
-                    (rendered / 'config.yaml').write_text('changed: true\n')
+                    config = 'keycloak.yaml' if function == workloads.install_keycloak else 'config.yaml'
+                    (rendered / config).write_text('changed: true\n')
                     self.assertTrue(function(ROOT, directory, runtime, rendered))
                 for name in names:
                     self.assertTrue((runtime / f'{name}.kube').is_file())
                 self.assertEqual(list(directory.glob('*.volume')), [directory / 'unrelated.volume'])
                 self.assertEqual(runtime.stat().st_mode & 0o777, 0o700)
-                self.assertEqual((runtime / 'config.yaml').stat().st_mode & 0o777, 0o600)
+                manifest = 'keycloak.yaml' if function == workloads.install_keycloak else 'config.yaml'
+                self.assertEqual((runtime / manifest).stat().st_mode & 0o777, 0o600)
 
     def test_invalid_runtime_directory_fails_before_commands(self):
         with patch('subprocess.run') as run:

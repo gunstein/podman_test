@@ -114,7 +114,10 @@ class KubeRuntimeTests(unittest.TestCase):
             self.assertIn("PodmanArgs=--no-pod-prefix", unit)
             self.assertIn("ExitCodePropagation=any", unit)
             self.assertIn("Restart=on-failure", unit)
-            self.assertIn("ConfigMap=config.yaml", unit)
+            if unit != keycloak:
+                self.assertIn("ConfigMap=config.yaml", unit)
+        self.assertNotIn("ConfigMap=", keycloak)
+        self.assertIn("name: keycloak-config", read(RUNTIME / "keycloak.yaml"))
 
         self.assertNotIn("ConfigMap=config-runtime.yaml", postgres)
 

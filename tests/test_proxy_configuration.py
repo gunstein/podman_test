@@ -83,7 +83,9 @@ class ProxyConfigurationTests(unittest.TestCase):
             "{{ todo_service_port }}:8443",
             template,
         )
-        self.assertIn('KC_HOSTNAME: "https://todo.test:8443/auth"', config)
+        self.assertIn('OIDC_ISSUER: "https://todo.test:8443/auth/realms/todo"', config)
+        self.assertIn('KC_HOSTNAME: "https://todo.test:8443/auth"',
+                      read(RUNTIME / 'keycloak.yaml'))
         self.assertIn("name: shared-nginx-env", proxy_config)
 
 

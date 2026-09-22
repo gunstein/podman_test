@@ -40,31 +40,41 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
 
 
 def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-                     publish_address="", db_password=None):
+                     publish_address="", db_password=None, *, app: apps.App = apps.APPS[0]):
+    legacy = app.resource("postgres") + ".container"
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        ("postgres.yaml", "config.yaml"), ("todo-postgres.kube",),
-        ("todo-postgres-data", "todo-postgres-backup"), ("todo-postgres.container",),
-        "Unsupported todo-postgres.container is installed. Stop and review the host "
+        (app.manifest("postgres"), app.manifest("config")), (app.unit("postgres"),),
+        (app.volume("data"), app.volume("backup")), (legacy,),
+        f"Unsupported {legacy} is installed. Stop and review the host "
         "separately; this operation does not migrate an existing PostgreSQL runtime.",
-        "PostgreSQL", secrets.postgres_secret_mapping(apps.APPS[0]), {"todo_postgres_publish_address": publish_address},
-        {"todo-db-password": db_password} if db_password is not None else None,
+        "PostgreSQL", secrets.postgres_secret_mapping(app),
+        {"todo_postgres_publish_address": publish_address},
+        {app.secret("db"): db_password} if db_password is not None else None,
     )
 
 
 def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-                        publish_address="127.0.0.1", service_port=8443):
+                        publish_address="127.0.0.1", service_port=8443, *,
+                        app: apps.App = apps.APPS[0]):
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        ("app.yaml", "keycloak.yaml", "config.yaml"),
-        ("keycloak.kube", "todo-app.kube"), (),
-        ("todo-backend.container", "todo-keycloak.container", "keycloak.container",
-         "todo-frontend.container"),
+        (app.manifest("app"), app.manifest("config")), (app.unit("app"),), (),
+        tuple(app.resource(component) + ".container" for component in ("backend", "frontend")),
         "Unsupported application container Quadlets are installed. Stop and review "
         "the host separately before installing the grouped Kube application.",
-        "application", {**secrets.application_secret_mapping(apps.APPS[0]),
-         **secrets.keycloak_secret_mapping()},
+        "application", secrets.application_secret_mapping(app),
         {"todo_publish_address": publish_address, "todo_service_port": service_port},
+    )
+
+
+def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir):
+    return _install(
+        project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
+        ("keycloak.yaml",), ("keycloak.kube",), (),
+        ("todo-keycloak.container", "keycloak.container"),
+        "Unsupported identity container Quadlet is installed. Stop and review the host separately.",
+        "identity", secrets.keycloak_secret_mapping(), {},
     )
 
 

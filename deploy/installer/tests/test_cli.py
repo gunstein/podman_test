@@ -16,12 +16,14 @@ class CLITests(unittest.TestCase):
                                    ('application', 'install_application'),
                                    ('shared-proxy', 'install_shared_proxy')]:
             with patch('todo_installer.workloads.' + function, return_value=False) as run, \
+                    patch('todo_installer.workloads.install_keycloak', return_value=False) as identity, \
                     contextlib.redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(main(['install-workload', workload, '--project-root', '/source',
                                        '--quadlet-dir', '/q', '--kube-runtime-dir', '/q/todo-kube-runtime',
                                        '--rendered-manifest-dir', '/rendered',
                                        '--postgres-publish-address', '192.0.2.1',
                                        '--publish-address', '192.0.2.2', '--service-port', '9443']), 0)
+                self.assertEqual(identity.call_count, int(workload == 'application'))
                 self.assertEqual(json.loads(output.getvalue()), {'changed': False})
                 self.assertEqual(len(output.getvalue().splitlines()), 1)
                 self.assertEqual(run.call_args.args, tuple(map(Path, [
@@ -36,3 +38,17 @@ class CLITests(unittest.TestCase):
             self.assertEqual(main(['install-workload', 'postgres']), 1)
             self.assertEqual(output.getvalue(), '')
             self.assertIn('failed', error.getvalue())
+
+    def test_identity_has_its_own_workload_command(self):
+        with patch('todo_installer.workloads.install_keycloak', return_value=True) as identity, \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(['install-workload', 'keycloak']), 0)
+            self.assertEqual(identity.call_count, 1)
+            self.assertEqual(json.loads(output.getvalue()), {'changed': True})
+
+    def test_dr_application_preserves_identity_change_result(self):
+        with patch('todo_installer.workloads.install_application', return_value=False), \
+                patch('todo_installer.workloads.install_keycloak', return_value=True), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(['install-workload', 'application']), 0)
+            self.assertEqual(json.loads(output.getvalue()), {'changed': True})

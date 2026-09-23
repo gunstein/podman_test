@@ -12,7 +12,7 @@ def read(relative_path: str) -> str:
 
 class AnsibleSafetyTests(unittest.TestCase):
     def test_final_standby_helper_hands_shared_selinux_label_to_kube(self):
-        for role in ("postgres_standby", "postgres_reseed_standby"):
+        for role in ("postgres_reseed_standby",):
             with self.subTest(role=role):
                 tasks = yaml.safe_load(read(f"deploy/ansible/roles/{role}/tasks/main.yml"))
                 kube = next(
@@ -205,7 +205,8 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertIn("todo-app.service", backup)
         self.assertIn("todo-app.service", redundancy)
         for role in ("postgres_primary", "postgres_backup", "postgres_redundancy_primary"):
-            tasks = yaml.safe_load(read(f"deploy/ansible/roles/{role}/tasks/main.yml"))
+            tasks = yaml.safe_load(read(f"deploy/ansible/roles/{role}/tasks/" +
+                                          ("primary.yml" if role == "postgres_primary" else "main.yml")))
             starts = [task["ansible.builtin.systemd_service"].get("name")
                       for task in tasks if task.get("ansible.builtin.systemd_service", {}).get("state") == "started"]
             self.assertIn("shared-proxy.service", starts, role)

@@ -1,6 +1,7 @@
 """Check the actual operations archive, not only its builder's source."""
 
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -178,6 +179,11 @@ class OperationsDistributionTests(unittest.TestCase):
             tasks = yaml.safe_load((unpacked / "deploy/ansible/tasks/install-workload.yml").read_text())
             copy_task = next(task for task in tasks if task["name"] ==
                              "Stage the caller's rendered workload manifests on the target")
+            metadata_result = subprocess.run(
+                [sys.executable, '-m', 'todo_installer', 'app-info'], cwd=unpacked,
+                env={**os.environ, 'PYTHONPATH': str(unpacked / 'deploy/installer')},
+                capture_output=True, text=True, check=True)
+            metadata = json.loads(metadata_result.stdout)
             probes = []
             destinations = []
             for filename in ("bootstrap-standby.yml", "rebuild-standby.yml"):
@@ -191,7 +197,7 @@ class OperationsDistributionTests(unittest.TestCase):
                     probes.append({
                         "name": play["name"], "hosts": "localhost", "gather_facts": False,
                         "vars": {**play["vars"], "todo_installer_workload": "postgres",
-                                 "todo_installer_target": str(destination)},
+                                 "todo_installer_target": str(destination), "todo_app_metadata": metadata},
                         "tasks": [copy_task],
                     })
             self.assertEqual(len(probes), 4)

@@ -66,3 +66,70 @@ class DRInstallerTests(unittest.TestCase):
                                                 b'todo-app.service keycloak.service')
                     self.assertNotIn(b'notes-app.service', path.read_bytes())
                 self.assertEqual(path.read_bytes(), expected)
+
+
+class ReplicationBridgeTests(unittest.TestCase):
+    def probe(self, base, tasks, standby=False):
+        binaries = base / 'bin'
+        binaries.mkdir()
+        fixture = (ROOT / 'tests/fake_replication_runtime.py').read_text()
+        for name in ('podman', 'systemctl'):
+            path = binaries / name
+            path.write_text(f'#!{sys.executable}\n' + fixture)
+            path.chmod(0o755)
+        playbook = base / 'probe.yml'
+        playbook.write_text(yaml.safe_dump([{
+            'hosts': 'localhost', 'gather_facts': False,
+            'environment': {'PATH': str(binaries) + ':' + os.environ['PATH'],
+                            'REPLICATION_TEST_STATE': str(base / 'state.json'),
+                            'REPLICATION_TEST_STANDBY': '1' if standby else '0'},
+            'vars': {'project_root': str(ROOT), 'todo_user_home': str(base / 'target'),
+                     'todo_rendered_manifest_directory': str(RUNTIME),
+                     'todo_node_address': '192.0.2.50',
+                     'todo_replication_primary_address': '192.0.2.50'},
+            'tasks': tasks,
+        }]))
+        return subprocess.run([os.environ.get('ANSIBLE_PLAYBOOK', 'ansible-playbook'),
+                               '-i', 'localhost,', '-c', 'local', str(playbook)],
+                              capture_output=True, text=True)
+
+    def bridge(self, operation, app):
+        return {'name': f'{operation} for {app}', 'ansible.builtin.include_tasks':
+                str(ROOT / 'deploy/ansible/tasks/replicate-workload.yml'),
+                'vars': {'todo_replication_operation': operation, 'todo_replication_app': app}}
+
+    def test_replication_bridge_reports_idempotent_primary_and_status(self):
+        from todo_installer import apps
+        tasks = []
+        for app in apps.REPLICATED_APPS:
+            for expected in ('true', 'false'):
+                tasks += [self.bridge('primary', app.name), {
+                    'name': 'Check replication change result', 'ansible.builtin.assert': {
+                        'that': [f'(todo_replication_result.stdout | from_json).changed == {expected}']}}]
+            tasks += [self.bridge('status', app.name), {
+                'name': 'Check read-only status operation', 'ansible.builtin.assert': {
+                    'that': ['not (todo_replication_result.stdout | from_json).changed',
+                             'not (todo_replication_result.stdout | from_json).status.in_recovery']}}]
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.probe(Path(directory), tasks)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_standby_bridge_stages_pvc_and_refuses_destructive_repeat(self):
+        import json
+
+        from todo_installer import apps
+        for app in apps.REPLICATED_APPS:
+            with self.subTest(app=app.name), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                repeated = {'name': 'Expect existing-data refusal', 'block': [self.bridge('standby', app.name),
+                    {'name': 'Unexpected successful repeat', 'ansible.builtin.fail': {'msg': 'overwrote data'}}],
+                    'rescue': [{'name': 'Require safe bootstrap refusal', 'ansible.builtin.assert': {
+                        'that': ["'never overwrites' in ansible_failed_result.stderr"]}}]}
+                result = self.probe(base, [self.bridge('standby', app.name), repeated], standby=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                state = json.loads((base / 'state.json').read_text())
+                self.assertEqual(state['volumes'], [app.volume('data')])
+                self.assertEqual(sum('pg_basebackup' in command for command in state['commands']), 1)
+                self.assertFalse(any(command[:3] == ['podman', 'volume', 'rm'] for command in state['commands']))
+                unit = base / 'target/.config/containers/systemd/todo-kube-runtime' / app.unit('postgres')
+                self.assertTrue(unit.exists())

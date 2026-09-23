@@ -1,0 +1,51 @@
+---
+# Transport only: replication.py owns PostgreSQL commands and App-derived names.
+- name: Stage the shared replication implementation
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/stage-installer.yml"
+
+- name: Require the DR YAML parser
+  ansible.builtin.command:
+    argv: [python3, -c, 'import yaml']
+  changed_when: false
+
+- name: Read the selected replication application
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/app-info.yml"
+  vars:
+    todo_metadata_app: "{{ todo_replication_app }}"
+
+- name: Stage canonical replication templates
+  ansible.builtin.copy:
+    src: "{{ project_root }}/deploy/quadlet/{{ item }}"
+    dest: "{{ todo_installer_target }}/deploy/quadlet/{{ item }}"
+    mode: "0600"
+  loop: "{{ todo_app_metadata.templates }}"
+  when: todo_replication_operation == 'standby'
+
+- name: Stage the canonical database and ConfigMap YAML
+  ansible.builtin.copy:
+    src: "{{ todo_rendered_manifest_directory | default(project_root ~ '/generated/kube-runtime') }}/{{ item }}"
+    dest: "{{ todo_installer_target }}/generated/kube-runtime/{{ item }}"
+    mode: "0600"
+  loop: "{{ todo_app_metadata.manifests.postgres }}"
+  when: todo_replication_operation == 'standby'
+
+- name: Execute replication mechanics for the selected application
+  ansible.builtin.command:
+    argv: >-
+      {{ ['python3', '-m', 'todo_installer', 'replicate-workload', todo_replication_operation,
+          '--app', todo_replication_app,
+          '--project-root', todo_installer_target,
+          '--quadlet-dir', todo_installer_quadlet,
+          '--kube-runtime-dir', todo_kube_runtime_directory | default(todo_installer_quadlet ~ '/todo-kube-runtime'),
+          '--rendered-manifest-dir', todo_installer_target ~ '/generated/kube-runtime',
+          '--node-address', todo_node_address | default(''),
+          '--primary-address', todo_replication_primary_address | default('')]
+         + (['--image-archive', todo_replication_image_archive] if todo_replication_image_archive is defined else [])
+         + (['--slot', todo_replication_slot] if todo_replication_slot is defined else []) }}
+  environment:
+    PYTHONPATH: >-
+      {{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0
+         else todo_installer_target ~ '/deploy/installer' }}
+    PYTHONDONTWRITEBYTECODE: "1"
+  register: todo_replication_result
+  changed_when: (todo_replication_result.stdout | from_json).changed

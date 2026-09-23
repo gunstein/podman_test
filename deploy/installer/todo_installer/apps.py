@@ -75,3 +75,32 @@ PROXY_ARCHIVE = IDENTITY_DATABASE_APP.image_archive("proxy")
 
 # Expand only after the Todo-only replication bridge has passed live acceptance.
 REPLICATED_APPS = (IDENTITY_DATABASE_APP,)
+
+
+def describe(app):
+    """Names and source files for transport-only Ansible bridges."""
+    identity = app == IDENTITY_DATABASE_APP
+    return {
+        "name": app.name,
+        "postgres_container": app.resource("postgres"),
+        "postgres_service": app.service("postgres"),
+        "application_service": app.service("app"),
+        "data_volume": app.volume("data"),
+        "backup_volume": app.volume("backup"),
+        "replication_secret": app.secret("replicator"),
+        "replication_role": app.database_role("replicator"),
+        "replication_slot": app.replication_slot(),
+        "rebuild_slot": app.replication_slot(rebuilt=True),
+        "replication_port": app.replication_port,
+        "postgres_image": app.image("postgres"),
+        "postgres_archive": app.image_archive("postgres"),
+        "templates": ["app-network.network", app.unit("postgres") + ".j2",
+                      app.unit("app") + ".j2", "keycloak.kube.j2", "shared-proxy.kube.j2"],
+        "manifests": {
+            "postgres": [app.manifest("postgres"), app.manifest("config")],
+            "application": [app.manifest("app"), app.manifest("config")]
+                           + (["keycloak.yaml"] if identity else []),
+            "keycloak": ["keycloak.yaml"],
+            "shared-proxy": ["shared-proxy.yaml", IDENTITY_DATABASE_APP.manifest("config")],
+        },
+    }

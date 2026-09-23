@@ -151,3 +151,10 @@ inventory.
 
 For full validation, follow [ACCEPTANCE.md](../../docs/ACCEPTANCE.md), which uses
 direct DR tools and playbooks as the single normal execution path.
+
+The replication bridge is `tasks/replicate-workload.yml`. It shares
+`stage-installer.yml` with workload installation, including exact file trust.
+`app-info` supplies names/files from the Python App registry; YAML does not
+reconstruct them. `replication-apps` supplies the complete configured replication
+group, currently Todo-only during the staged generalization. Initial bootstrap
+still refuses existing data. DR targets additionally need the OS PyYAML package.

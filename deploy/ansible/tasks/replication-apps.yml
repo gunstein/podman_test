@@ -1,0 +1,24 @@
+---
+- name: Stage the shared installer for replication
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/stage-installer.yml"
+
+- name: Read the replicated applications from the registry
+  ansible.builtin.command:
+    argv: [python3, -m, todo_installer, replication-apps]
+  environment:
+    PYTHONPATH: >-
+      {{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0
+         else todo_installer_target ~ '/deploy/installer' }}
+    PYTHONDONTWRITEBYTECODE: "1"
+  register: todo_replication_registry
+  changed_when: false
+
+- name: Require the complete registered replication group
+  ansible.builtin.assert:
+    that:
+      - apps_to_replicate | default(todo_replication_registry.stdout | from_json) == todo_replication_registry.stdout | from_json
+    fail_msg: Replication must use the complete ordered registry, never a partial application group.
+
+- name: Select the registered replication group
+  ansible.builtin.set_fact:
+    apps_to_replicate: "{{ todo_replication_registry.stdout | from_json }}"

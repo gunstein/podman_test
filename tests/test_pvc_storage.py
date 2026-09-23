@@ -104,7 +104,7 @@ class PVCStorageTests(unittest.TestCase):
     def test_standby_creation_plays_only_canonical_data_pvc_before_basebackup(self):
         canonical = next(d for d in yaml.safe_load_all((RUNTIME / "postgres.yaml").read_text())
                          if d["metadata"]["name"] == "todo-postgres-data")
-        for role in ("postgres_standby", "postgres_reseed_standby"):
+        for role in ("postgres_reseed_standby",):
             steps = tasks(role)
             commands = [t.get("ansible.builtin.command", {}).get("argv", []) for t in steps]
             creation = commands.index(["podman", "kube", "play", "-"])
@@ -135,6 +135,15 @@ class PVCStorageTests(unittest.TestCase):
                                        {"todo_rendered_manifest_directory": str(RUNTIME)})
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(list(yaml.safe_load_all(output.read_text())), [canonical])
+
+    def test_python_standby_consumes_the_actual_helm_data_claim(self):
+        from todo_installer import apps, replication
+        canonical = next(d for d in yaml.safe_load_all((RUNTIME / "postgres.yaml").read_text())
+                         if d["metadata"]["name"] == "todo-postgres-data")
+        self.assertEqual(yaml.safe_load(replication.data_claim(apps.IDENTITY_DATABASE_APP, RUNTIME)), canonical)
+        role = (ROOT / "deploy/ansible/roles/postgres_standby/tasks/main.yml").read_text()
+        self.assertIn('replicate-workload.yml', role)
+        self.assertIn('todo_replication_operation: standby', role)
 
     def test_backup_rejects_missing_wrong_readonly_or_misplaced_mounts(self):
         steps = tasks("postgres_backup")

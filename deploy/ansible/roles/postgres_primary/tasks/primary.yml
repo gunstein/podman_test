@@ -1,0 +1,31 @@
+---
+- name: Configure the selected primary replication identity
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
+  vars:
+    todo_replication_operation: primary
+
+- name: Install the shared PostgreSQL Kube runtime with LAN replication
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
+  vars:
+    todo_installer_workload: postgres
+    todo_installer_app: "{{ todo_replication_app }}"
+    todo_postgres_publish_address: "{{ todo_node_address }}"
+
+- name: Restart PostgreSQL with the LAN replication port
+  ansible.builtin.systemd_service:
+    name: "{{ todo_app_metadata.postgres_service }}"
+    scope: user
+    state: restarted
+  when: todo_postgres_kube_changed
+
+- name: Wait for healthy primary PostgreSQL
+  ansible.builtin.command:
+    argv: [podman, wait, --condition=healthy, "{{ todo_app_metadata.postgres_container }}"]
+  changed_when: false
+
+- name: Restore the grouped application after a PostgreSQL restart
+  ansible.builtin.systemd_service:
+    name: shared-proxy.service
+    scope: user
+    state: started
+  when: todo_postgres_kube_changed

@@ -42,3 +42,29 @@ unchanged script, the full preflight was rerun and promotion succeeded. Original
 and repaired outputs are retained outside Git under `/tmp/notes-dr-vms/`.
 This development checkpoint did not exercise fapolicyd (not yet active),
 backup/PITR or reseeding and does not accept Notes DR.
+
+## Checkpoint 2: Todo-only Ansible replication bridge
+
+Fresh disposable overlays were used for the bridge run; the checkpoint-1 disks
+were retained offline. Both new guests had active fapolicyd and firewalld,
+SELinux enforcing and distinct machine IDs. The actual operations archive was
+extracted and Ansible ran on `notes-dr-primary` over verified SSH to standby.
+
+The migrated `postgres_primary` and `postgres_standby` roles passed the real
+`bootstrap-standby.yml` playbook. The recap had zero failures/unreachable hosts.
+A new `todo-ansible-bridge-marker` row appeared on the read-only standby;
+primary reported `todo_standby|streaming|async|0|t|reserved`. Repeating the primary
+role reported `ok=83 changed=0 failed=0`; PostgreSQL restart was skipped.
+
+The first read-only preflight caught the test inventory inheriting the lab's
+`gunstein` SSH user from group_vars. The private inventory was corrected with
+host-level `ansible_user=notes` and `todo_user_home=/home/notes`, then preflight
+ran again through the bootstrap playbook. No database mutation preceded that
+identity/SSH correction. All original outputs remain in `/tmp/notes-dr-vms/`.
+
+All 147 repository tests passed with Ansible 2.14 and 2.20. The bridge tests run
+real Ansible/Python against inert runtime commands, verify unchanged primary
+repeats, and require existing-volume bootstrap refusal without a second base
+backup. Canonical Helm PVC comparison, isolated package execution, all-playbook
+syntax checks, Ruff and Ansible lint passed. Notes was still excluded from the
+replication registry throughout this checkpoint.

@@ -30,7 +30,8 @@ class BuildInstallTests(unittest.TestCase):
                         target = Path(argv[-1])
                         target.mkdir(parents=True)
                         for name in ('postgres', 'app', 'keycloak', 'shared-proxy', 'config',
-                                     'notes-app', 'notes-postgres', 'notes-config'):
+                                     'notes-app', 'notes-postgres', 'notes-config',
+                                     'keycloak-postgres', 'keycloak-config'):
                             (target / (name + '.yaml')).write_text('fixture: true\n')
                     elif argv == ['podman', 'kube', 'play', '--help']:
                         stdout = '--no-pod-prefix'

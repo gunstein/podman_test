@@ -13,13 +13,15 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
     directory = Path(rendered_manifest_dir)
     state_file = Path(state_file or directory.parent / '.todo-installer-dev.json')
     manifests = [app.manifest(component) for app in applications
-                 for component in ('postgres', 'config', 'app')] + ['keycloak.yaml', 'shared-proxy.yaml']
+                 for component in ('postgres', 'config', 'app')] + [
+        apps.KEYCLOAK_DATABASE.manifest('postgres'), apps.KEYCLOAK_DATABASE.manifest('config'),
+        'keycloak.yaml', 'shared-proxy.yaml']
     digest = hashlib.sha256()
     for name in manifests:
         digest.update(name.encode() + b'\0' + (directory / name).read_bytes())
     fingerprint = digest.hexdigest()
     pods = [app.resource(component) for app in applications for component in ('postgres', 'app')]
-    pods += ['keycloak', 'shared-proxy']
+    pods += [apps.KEYCLOAK_DATABASE.resource('postgres'), 'keycloak', 'shared-proxy']
     previous = json.loads(state_file.read_text()) if state_file.is_file() else None
     present = {pod for pod in pods if exists('pod', pod)}
     if previous and previous['fingerprint'] == fingerprint and not refresh and len(present) == len(pods):
@@ -46,6 +48,8 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
         play(app.manifest('postgres'), app.manifest('config'))
         run('podman', 'wait', '--condition', 'healthy', app.resource('postgres'))
         setup_roles(app)
+    play(apps.KEYCLOAK_DATABASE.manifest('postgres'), apps.KEYCLOAK_DATABASE.manifest('config'))
+    run('podman', 'wait', '--condition', 'healthy', apps.KEYCLOAK_DATABASE.resource('postgres'))
     play('keycloak.yaml')
     for app in applications:
         play(app.manifest('app'), app.manifest('config'))
@@ -54,7 +58,8 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
     for app in applications:
         setup_roles(app)
     teardown = ['shared-proxy.yaml', *(app.manifest('app') for app in reversed(applications)),
-                'keycloak.yaml', *(app.manifest('postgres') for app in reversed(applications))]
+                'keycloak.yaml', apps.KEYCLOAK_DATABASE.manifest('postgres'),
+                *(app.manifest('postgres') for app in reversed(applications))]
     state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(json.dumps({'fingerprint': fingerprint,
                                      'manifests': [str(directory / name) for name in teardown]}))
@@ -65,7 +70,8 @@ def down(rendered_manifest_dir, applications=None):
     applications = apps.APPS if applications is None else tuple(applications)
     directory = Path(rendered_manifest_dir)
     manifests = ('shared-proxy.yaml', *(app.manifest('app') for app in reversed(applications)),
-                 'keycloak.yaml', *(app.manifest('postgres') for app in reversed(applications)))
+                 'keycloak.yaml', apps.KEYCLOAK_DATABASE.manifest('postgres'),
+                 *(app.manifest('postgres') for app in reversed(applications)))
     for name in manifests:
         manifest = directory / name
         if manifest.is_file():

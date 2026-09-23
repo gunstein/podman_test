@@ -83,7 +83,7 @@ class TodoDr:
     def __init__(self, config: Config, runner: Runner = run_command,
                  connector: Connector = tcp_reachable, journal_path: Path = DEFAULT_JOURNAL):
         self.config, self.runner, self.connector = config, runner, connector
-        self.applications = tuple(apps.REPLICATED_APPS)
+        self.applications = tuple(apps.REPLICATED_DATABASES)
         expected = tuple(app.name for app in self.applications)
         if (config.applications and config.applications != expected) or (
                 not config.applications and len(expected) != 1):

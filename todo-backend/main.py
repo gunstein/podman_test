@@ -159,5 +159,5 @@ def delete_todo(todo_id: int, _user: Annotated[dict, Depends(require_user)]):
 
 
 if os.getenv("SERVE_FRONTEND", "true").lower() == "true":
-    frontend = Path(__file__).resolve().parent.parent / "frontend"
+    frontend = Path(__file__).resolve().parent.parent / "todo-frontend"
     app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")

@@ -4,6 +4,9 @@
   gather_facts: false
   any_errors_fatal: true
 
+  vars:
+    project_root: "{{ playbook_dir }}/../../.."
+
   tasks:
     - name: Read current primary hostname
       ansible.builtin.command: hostname
@@ -15,93 +18,34 @@
       register: m16_current_addresses
       changed_when: false
 
-    - name: Require active current PostgreSQL
-      ansible.builtin.command: {argv: [systemctl, --user, is-active, todo-postgres.service]}
-      register: m16_current_service
-      changed_when: false
-
-    - name: Require writable current primary and replication role
-      ansible.builtin.command:
-        argv:
-          - podman
-          - exec
-          - todo-postgres
-          - psql
-          - --username
-          - todo
-          - --dbname
-          - postgres
-          - --tuples-only
-          - --no-align
-          - --field-separator=|
-          - --command
-          - >-
-            SELECT pg_is_in_recovery(),
-            current_setting('transaction_read_only'),
-            COALESCE((SELECT rolreplication::text FROM pg_roles
-            WHERE rolname = 'todo_replicator'), '');
-      register: m16_current_database
-      changed_when: false
-
-    - name: Require local replication secret
-      ansible.builtin.command: {argv: [podman, secret, exists, todo-replicator-password]}
-      changed_when: false
-
-    - name: Read current primary replication credential
-      ansible.builtin.command:
-        argv:
-          - podman
-          - secret
-          - inspect
-          - --showsecret
-          - --format
-          - "{{ '{{.SecretData}}' }}"
-          - todo-replicator-password
-      register: m16_current_replication_secret
-      changed_when: false
-      no_log: true
-
-    - name: Require existing backup volume
-      ansible.builtin.command: {argv: [podman, volume, exists, todo-postgres-backup]}
-      changed_when: false
-
-    - name: Check the new physical replication slot is absent
-      ansible.builtin.command:
-        argv:
-          - podman
-          - exec
-          - todo-postgres
-          - psql
-          - --username
-          - todo
-          - --dbname
-          - postgres
-          - --tuples-only
-          - --no-align
-          - --command
-          - >-
-            SELECT count(*) FROM pg_replication_slots
-            WHERE slot_name = '{{ todo_rebuild_replication_slot }}';
-      register: m16_slot_count
-      changed_when: false
-
-    - name: Validate current primary state
+    - name: Validate current primary host identity
       ansible.builtin.assert:
         that:
           - m16_current_hostname.stdout | trim == inventory_hostname
           - todo_node_address in (m16_current_addresses.stdout | regex_findall('inet ([0-9.]+)/'))
-          - m16_current_service.stdout | trim == 'active'
-          - m16_current_database.stdout | trim == 'f|off|true'
-          - m16_slot_count.stdout | trim == '0'
-          - todo_rebuild_replication_slot is match('^[a-z][a-z0-9_]{0,62}$')
-        fail_msg: >-
-          Current primary is not ready, or the rebuild slot already exists.
-          Never treat a partial rebuild as a clean bootstrap.
+        fail_msg: Current primary host identity or address does not match the inventory.
+
+    - name: Resolve the complete registered replication group
+      ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/read-replication-registry.yml"
+
+    - name: Verify each registered database is ready to seed a rebuilt standby
+      ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
+      loop: "{{ todo_replication_metadata }}"
+      loop_control:
+        loop_var: todo_replication_app_meta
+        label: "{{ todo_replication_app_meta.name }}"
+      vars:
+        todo_replication_app: "{{ todo_replication_app_meta.name }}"
+        todo_replication_operation: rebuild-primary-check
 
 - name: Inspect the fenced old primary before destructive reseed
   hosts: todo_rebuild_standby
   gather_facts: false
   any_errors_fatal: true
+
+  vars:
+    project_root: "{{ playbook_dir }}/../../.."
+
   tasks:
     - name: Read rebuild host hostname
       ansible.builtin.command: hostname
@@ -113,62 +57,7 @@
       register: m16_rebuild_addresses
       changed_when: false
 
-    - name: Inspect Todo service states on the rebuild host
-      ansible.builtin.command: {argv: [systemctl, --user, is-active, "{{ item }}"]}
-      loop:
-        - shared-proxy.service
-        - todo-app.service
-        - keycloak.service
-        - todo-postgres.service
-      register: m16_rebuild_services
-      changed_when: false
-      failed_when: false
-
-    - name: Inspect running PostgreSQL containers on rebuild host
-      ansible.builtin.command:
-        argv:
-          - podman
-          - ps
-          - --filter
-          - name=todo-postgres
-          - --format
-          - "{{ '{{.Names}}' }}"
-      register: m16_rebuild_postgres_container
-      changed_when: false
-
-    - name: Require old database volume
-      ansible.builtin.command: {argv: [podman, volume, exists, todo-postgres-data]}
-      changed_when: false
-
-    - name: Require local replication secret
-      ansible.builtin.command: {argv: [podman, secret, exists, todo-replicator-password]}
-      changed_when: false
-
-    - name: Read rebuild host replication credential
-      ansible.builtin.command:
-        argv:
-          - podman
-          - secret
-          - inspect
-          - --showsecret
-          - --format
-          - "{{ '{{.SecretData}}' }}"
-          - todo-replicator-password
-      register: m16_rebuild_replication_secret
-      changed_when: false
-      no_log: true
-
-    - name: Require identical replication credentials before destructive reseed
-      ansible.builtin.assert:
-        that:
-          - >-
-            m16_rebuild_replication_secret.stdout ==
-            hostvars[groups['todo_current_primary'][0]].m16_current_replication_secret.stdout
-        fail_msg: >-
-          Replication credentials differ between the two hosts. Reconcile them
-          before rebuilding; no database data has been removed.
-
-    - name: Validate fenced rebuild host state and confirmations
+    - name: Validate fenced rebuild host topology and confirmations
       ansible.builtin.assert:
         that:
           - m16_rebuild_hostname.stdout | trim == inventory_hostname
@@ -176,10 +65,28 @@
           - groups['todo_current_primary'] | length == 1
           - groups['todo_rebuild_standby'] | length == 1
           - hostvars[groups['todo_current_primary'][0]].todo_node_address != todo_node_address
-          - m16_rebuild_services.results | map(attribute='stdout') | map('trim') | select('equalto', 'active') | list | length == 0
-          - m16_rebuild_postgres_container.stdout | trim == ''
           - todo_confirm_old_primary_fenced | default('') == inventory_hostname ~ ' is fenced'
           - todo_confirm_reseed | default('') == inventory_hostname
         fail_msg: >-
-          Rebuild host must remain infrastructure-fenced, all Todo services and
-          containers must be stopped, and both exact confirmations are required.
+          Rebuild host must remain infrastructure-fenced and both exact
+          confirmations are required before any destructive reseed.
+
+    - name: Resolve the complete registered replication group
+      ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/read-replication-registry.yml"
+
+    - name: Require the complete infrastructure quarantine before any destructive reseed
+      ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
+      vars:
+        todo_replication_app: "{{ todo_replication_metadata[0].name }}"
+        todo_replication_operation: quarantined
+
+    - name: Verify each registered database can be safely reseeded from the current primary
+      ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
+      loop: "{{ todo_replication_metadata }}"
+      loop_control:
+        loop_var: todo_replication_app_meta
+        label: "{{ todo_replication_app_meta.name }}"
+      vars:
+        todo_replication_app: "{{ todo_replication_app_meta.name }}"
+        todo_replication_operation: reseed-check
+        todo_replication_primary_address: "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}"

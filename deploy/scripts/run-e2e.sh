@@ -2,10 +2,10 @@
 set -euo pipefail
 
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-python="$project_root/backend/.venv/bin/python"
+python="$project_root/todo-backend/.venv/bin/python"
 
 if [[ ! -x "$python" ]]; then
-  echo "Create backend/.venv and install backend/requirements-e2e.txt first." >&2
+  echo "Create todo-backend/.venv and install todo-backend/requirements-e2e.txt first." >&2
   exit 1
 fi
 

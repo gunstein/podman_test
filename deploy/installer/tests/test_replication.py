@@ -170,3 +170,48 @@ class ReplicationTests(unittest.TestCase):
                 'host replication notes_replicator 10.77.0.0/24 scram-sha-256',
                 'host all all 127.0.0.1/32 scram-sha-256',
                 'host replication todo_replicator 10.99.0.0/24 scram-sha-256'])
+
+    def test_reseed_requires_exact_host_and_fencing_before_any_command(self):
+        with patch.object(replication.socket, 'gethostname', return_value='old-primary'), \
+                patch.object(replication, 'run') as run:
+            for fenced, confirmed in (('yes', 'old-primary'), ('old-primary is fenced', 'other-host')):
+                with self.assertRaisesRegex(RuntimeError, 'Exact local hostname'):
+                    replication.reseed_check(apps.APPS[0], '192.0.2.51', project_root='/tmp',
+                        quadlet_dir='/tmp/q', kube_runtime_dir='/tmp/q/todo-kube-runtime',
+                        rendered_manifest_dir='/tmp', confirm_fenced=fenced, confirm_reseed=confirmed)
+            run.assert_not_called()
+
+    def test_reseed_failure_cannot_delete_data_or_backup(self):
+        for app in apps.REPLICATED_APPS:
+            with patch.object(replication, 'reseed_check', side_effect=RuntimeError('authentication failed')), \
+                    patch.object(replication, 'run') as run:
+                with self.assertRaisesRegex(RuntimeError, 'authentication failed'):
+                    replication.reseed_standby(app, '192.0.2.51', confirm_fenced='old is fenced', confirm_reseed='old')
+                run.assert_not_called()
+
+    def test_confirmed_reseed_removes_only_selected_data_and_uses_its_rebuild_slot(self):
+        for app in apps.REPLICATED_APPS:
+            with patch.object(replication, 'reseed_check') as gate, \
+                    patch.object(replication, 'run') as run, \
+                    patch.object(replication, 'bootstrap_standby', return_value=True) as bootstrap:
+                self.assertTrue(replication.reseed_standby(app, '192.0.2.51',
+                    confirm_fenced='old is fenced', confirm_reseed='old', project_root='/source'))
+                gate.assert_called_once()
+                run.assert_called_once_with('podman', 'volume', 'rm', app.volume('data'))
+                bootstrap.assert_called_once_with(app, '192.0.2.51', project_root='/source',
+                                                  slot=app.replication_slot(rebuilt=True))
+
+    def test_stopped_service_requires_zero_pids_and_preserves_failed_state(self):
+        for state, main, control, accepted in [('inactive', '0', '0', True), ('failed', '0', '0', True),
+                                              ('failed', '10', '0', False), ('inactive', '0', '12', False),
+                                              ('activating', '0', '0', False)]:
+            result = subprocess.CompletedProcess([], 0,
+                f'LoadState=loaded\nActiveState={state}\nMainPID={main}\nControlPID={control}\n', '')
+            with patch.object(replication, 'run', return_value=result) as run:
+                if accepted:
+                    replication.require_stopped_service('notes-postgres.service')
+                else:
+                    with self.assertRaisesRegex(RuntimeError, 'zero MainPID/ControlPID'):
+                        replication.require_stopped_service('notes-postgres.service')
+                self.assertEqual(run.call_count, 1)
+                self.assertIn('show', run.call_args.args)

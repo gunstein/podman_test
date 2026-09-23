@@ -1,66 +1,27 @@
 ---
-- name: Stop all Todo services before reseed
-  ansible.builtin.command: {argv: [systemctl, --user, stop, "{{ item }}"]}
-  loop:
-    - todo-app.service
-    - todo-frontend.service
-    - todo-backend.service
-    - keycloak.service
-    - shared-proxy.service
-    - todo-postgres.service
+- name: Resolve the complete registered replication group
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/read-replication-registry.yml"
+
+- name: Select every infrastructure service for the destructive reseed quarantine
+  ansible.builtin.set_fact:
+    m16_reseed_services: >-
+      {{ ['shared-proxy.service'] + (todo_replication_metadata | map(attribute='application_service') | list)
+         + ['keycloak.service'] + (todo_replication_metadata | map(attribute='postgres_service') | list) }}
+
+- name: Stop all infrastructure services before reseed
+  ansible.builtin.command:
+    argv: "{{ ['systemctl', '--user', 'stop'] + m16_reseed_services }}"
   register: m16_reseed_stopped
   changed_when: false
   failed_when: m16_reseed_stopped.rc not in [0, 5]
 
-- name: Require PostgreSQL image before destructive reseed
-  ansible.builtin.command: {argv: [podman, image, exists, docker.io/library/postgres:17.11]}
-  changed_when: false
+- name: Require the complete infrastructure quarantine before any destructive reseed
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
+  vars:
+    todo_replication_app: "{{ todo_replication_metadata[0].name }}"
+    todo_replication_operation: quarantined
 
-- name: Verify rebuild host can reach current primary replication port
-  ansible.builtin.wait_for:
-    host: "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}"
-    port: 5432
-    connect_timeout: 2
-    timeout: 10
-    state: started
-    msg: >-
-      Rebuild host cannot reach current primary TCP 5432. Keep client traffic
-      fenced, but allow only this standby through the primary host firewall.
-
-- name: Authenticate replication before destructive reseed
-  ansible.builtin.command:
-    argv:
-      - podman
-      - run
-      - --rm
-      - --network
-      - host
-      - --user
-      - postgres
-      - --security-opt
-      - no-new-privileges
-      - --cap-drop
-      - all
-      - --pids-limit
-      - "64"
-      - --secret
-      - todo-replicator-password,type=env,target=PGPASSWORD
-      - docker.io/library/postgres:17.11
-      - psql
-      - >-
-        --dbname=host={{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}
-        port=5432 user=todo_replicator replication=true connect_timeout=5
-      - --no-psqlrc
-      - --tuples-only
-      - --no-align
-      - --command=IDENTIFY_SYSTEM;
-  register: m16_reseed_replication_probe
-  changed_when: false
-  failed_when: >-
-    m16_reseed_replication_probe.rc != 0 or
-    m16_reseed_replication_probe.stdout | trim == ''
-
-- name: Remove application-tier Quadlets from rebuilt standby
+- name: Remove legacy pre-Kube-play Todo container Quadlets from the rebuilt standby
   ansible.builtin.file:
     path: "{{ m16_quadlet_directory }}/{{ item }}"
     state: absent
@@ -73,163 +34,39 @@
     - todo-db-grants.container
     - todo-nginx-data.volume
 
-- name: Remove application Kube units from rebuilt standby
+- name: Remove the shared Kube units from the rebuilt standby
   ansible.builtin.file:
     path: "{{ m16_quadlet_directory }}/todo-kube-runtime/{{ item }}"
     state: absent
   loop:
-    - todo-app.kube
     - keycloak.kube
     - shared-proxy.kube
-    - app.yaml
     - keycloak.yaml
     - shared-proxy.yaml
 
-- name: Remove the explicitly confirmed old database volume
-  ansible.builtin.command: {argv: [podman, volume, rm, todo-postgres-data]}
-  changed_when: true
+- name: Remove each registered application's Kube unit from the rebuilt standby
+  ansible.builtin.file:
+    path: "{{ m16_quadlet_directory }}/todo-kube-runtime/{{ item.application_unit }}"
+    state: absent
+  loop: "{{ todo_replication_metadata }}"
+  loop_control:
+    label: "{{ item.name }}"
 
-- name: Create the empty rebuilt standby volume from the canonical PVC
-  ansible.builtin.command:
-    argv: [podman, kube, play, "-"]
-    # Play only the data claim: PostgreSQL must not start before pg_basebackup.
-    stdin: >-
-      {{
-        lookup('ansible.builtin.file', todo_rendered_manifest_directory ~ '/postgres.yaml')
-        | from_yaml_all
-        | selectattr('kind', 'equalto', 'PersistentVolumeClaim')
-        | selectattr('metadata.name', 'equalto', 'todo-postgres-data')
-        | first | to_yaml
-      }}
-  changed_when: true
+- name: Remove each registered application's rendered manifest from the rebuilt standby
+  ansible.builtin.file:
+    path: "{{ m16_quadlet_directory }}/todo-kube-runtime/{{ item.manifests.application[0] }}"
+    state: absent
+  loop: "{{ todo_replication_metadata }}"
+  loop_control:
+    label: "{{ item.name }}"
 
-- name: Stream a new base backup from the current primary
-  ansible.builtin.command:
-    argv:
-      - podman
-      - run
-      - --rm
-      - --network
-      - host
-      - --user
-      - postgres
-      - --security-opt
-      - no-new-privileges
-      - --cap-drop
-      - all
-      - --pids-limit
-      - "128"
-      - --volume
-      - todo-postgres-data:/var/lib/postgresql/data:U,Z
-      - --secret
-      - todo-replicator-password,type=env,target=PGPASSWORD
-      - docker.io/library/postgres:17.11
-      - pg_basebackup
-      - "--host={{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}"
-      - --port=5432
-      - --username=todo_replicator
-      - --pgdata=/var/lib/postgresql/data
-      - --format=plain
-      - --wal-method=stream
-      - --write-recovery-conf
-      - --create-slot
-      - "--slot={{ todo_rebuild_replication_slot }}"
-      - --progress
-  changed_when: true
-
-- name: Restrict rebuilt standby data permissions
-  ansible.builtin.command:
-    argv:
-      - podman
-      - run
-      - --rm
-      - --user
-      - postgres
-      - --security-opt
-      - no-new-privileges
-      - --cap-drop
-      - all
-      - --volume
-      - todo-postgres-data:/var/lib/postgresql/data:Z
-      - --entrypoint
-      - chmod
-      - docker.io/library/postgres:17.11
-      - "0700"
-      - /var/lib/postgresql/data
-  changed_when: true
-
-- name: Install rebuilt standby replication settings in the data volume
-  ansible.builtin.command:
-    argv:
-      - podman
-      - run
-      - --rm
-      - --user
-      - postgres
-      - --security-opt
-      - no-new-privileges
-      - --cap-drop
-      - all
-      - --volume
-      # The old database is already fenced, stopped and re-seeded here.
-      # Hand the replacement volume to Kube without a helper-private MCS label.
-      - todo-postgres-data:/var/lib/postgresql/data:z
-      - --secret
-      - todo-replicator-password
-      - --entrypoint
-      - /bin/sh
-      - docker.io/library/postgres:17.11
-      - -ec
-      - |
-        data=/var/lib/postgresql/data
-        passfile=$data/.todo-replication.pgpass
-        auto=$data/postgresql.auto.conf
-        umask 077
-        printf '%s:%s:replication:%s:' "$1" 5432 todo_replicator > "$passfile"
-        cat /run/secrets/todo-replicator-password >> "$passfile"
-        printf '\n' >> "$passfile"
-        sed -i '/^primary_conninfo =/d; /^primary_slot_name =/d' "$auto"
-        printf "primary_conninfo = 'host=%s port=5432 user=todo_replicator application_name=%s passfile=%s'\n" "$1" "$3" "$passfile" >> "$auto"
-        printf "primary_slot_name = '%s'\n" "$2" >> "$auto"
-      - todo-rebuilt-standby-config
-      - "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}"
-      - "{{ todo_rebuild_replication_slot }}"
-      - "{{ todo_rebuild_replication_slot }}"
-  changed_when: true
-  no_log: true
-
-- name: Install the shared PostgreSQL Kube runtime on rebuilt standby
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
+- name: Explicitly confirm the fenced host and reseed each registered database
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
+  loop: "{{ todo_replication_metadata }}"
+  loop_control:
+    loop_var: todo_replication_app_meta
+    label: "{{ todo_replication_app_meta.name }}"
   vars:
-    todo_installer_workload: postgres
-    todo_postgres_publish_address: ""
-
-- name: Start rebuilt PostgreSQL standby through its Kube unit
-  ansible.builtin.systemd_service:
-    name: todo-postgres.service
-    scope: user
-    state: started
-
-- name: Wait for healthy rebuilt PostgreSQL standby
-  ansible.builtin.command:
-    argv: [podman, wait, --condition=healthy, todo-postgres]
-  changed_when: false
-
-- name: Require rebuilt PostgreSQL recovery mode
-  ansible.builtin.command:
-    argv:
-      - podman
-      - exec
-      - todo-postgres
-      - psql
-      - --username
-      - todo
-      - --dbname
-      - postgres
-      - --tuples-only
-      - --no-align
-      - --command
-      - SELECT pg_is_in_recovery();
-  register: m16_reseed_recovery
-  changed_when: false
-  failed_when: m16_reseed_recovery.stdout | trim != 't'
+    todo_replication_app: "{{ todo_replication_app_meta.name }}"
+    todo_replication_operation: reseed
+    todo_replication_primary_address: "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}"

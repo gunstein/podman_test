@@ -41,7 +41,7 @@ class FakeRunner:
 
 class TodoDrTests(unittest.TestCase):
     def setUp(self):
-        registry = mock.patch.object(todo_dr.apps, 'REPLICATED_APPS', (todo_dr.apps.APPS[0],))
+        registry = mock.patch.object(todo_dr.apps, 'REPLICATED_DATABASES', (todo_dr.apps.APPS[0],))
         registry.start()
         self.addCleanup(registry.stop)
         self.temporary = tempfile.TemporaryDirectory()
@@ -162,7 +162,7 @@ class GroupPromotionTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.journal = Path(self.temporary.name) / 'promotion.json'
         self.apps = (todo_dr.apps.APPS[0], replace(todo_dr.apps.APPS[1], replication_port=5433))
-        self.registry = mock.patch.object(todo_dr.apps, 'REPLICATED_APPS', self.apps)
+        self.registry = mock.patch.object(todo_dr.apps, 'REPLICATED_DATABASES', self.apps)
         self.registry.start()
         self.addCleanup(self.registry.stop)
         self.hostname = mock.patch.object(socket, 'gethostname', return_value='standby')

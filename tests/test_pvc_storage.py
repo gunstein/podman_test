@@ -1,9 +1,7 @@
 """Protect PVC creation, operational consumers and non-destructive shutdown."""
-import copy
 import json
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,10 +13,6 @@ from tests.runtime_fixture import ROOT, RUNTIME
 
 VOLUMES = {"todo-postgres-data", "todo-postgres-backup", "todo-nginx-data",
            "notes-postgres-data", "notes-postgres-backup"}
-
-
-def tasks(role):
-    return yaml.safe_load((ROOT / f"deploy/ansible/roles/{role}/tasks/main.yml").read_text())
 
 
 def ansible_probe(directory, task_list, variables):
@@ -101,42 +95,11 @@ class PVCStorageTests(unittest.TestCase):
                         check(value)
             check(yaml.safe_load(path.read_text()))
 
-    def test_standby_creation_plays_only_canonical_data_pvc_before_basebackup(self):
-        canonical = next(d for d in yaml.safe_load_all((RUNTIME / "postgres.yaml").read_text())
-                         if d["metadata"]["name"] == "todo-postgres-data")
-        for role in ("postgres_reseed_standby",):
-            steps = tasks(role)
-            commands = [t.get("ansible.builtin.command", {}).get("argv", []) for t in steps]
-            creation = commands.index(["podman", "kube", "play", "-"])
-            backup = next(i for i, argv in enumerate(commands) if "pg_basebackup" in argv)
-            self.assertLess(creation, backup)
-            self.assertNotIn(["podman", "volume", "create", "todo-postgres-data"], commands)
-            if role == "postgres_reseed_standby":
-                removals = [argv for argv in commands if argv[:3] == ["podman", "volume", "rm"]]
-                self.assertEqual(removals, [["podman", "volume", "rm", "todo-postgres-data"]])
-                self.assertLess(commands.index(removals[0]), creation)
-            else:
-                guard = next(i for i, t in enumerate(steps)
-                             if "standby_volume_before_bootstrap.rc == 1"
-                             in t.get("ansible.builtin.assert", {}).get("that", []))
-                self.assertLess(guard, creation)
-            with tempfile.TemporaryDirectory() as directory:
-                tmp = Path(directory)
-                task = copy.deepcopy(steps[creation])
-                # Run the actual Ansible stdin expression, replacing only Podman
-                # with a recorder. This test cannot create or delete real volumes.
-                output = tmp / "claim.yaml"
-                task["ansible.builtin.command"]["argv"] = [
-                    sys.executable, "-c",
-                    "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text(sys.stdin.read())",
-                    str(output),
-                ]
-                result = ansible_probe(tmp, [task],
-                                       {"todo_rendered_manifest_directory": str(RUNTIME)})
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertEqual(list(yaml.safe_load_all(output.read_text())), [canonical])
-
     def test_python_standby_consumes_the_actual_helm_data_claim(self):
+        # replicate-workload.yml is transport only; replication.py's data_claim
+        # (used identically by bootstrap_standby and reseed_standby) owns playing
+        # only the canonical PVC before pg_basebackup, covered directly by
+        # deploy/installer/tests/test_replication.py.
         from todo_installer import apps, replication
         canonical = next(d for d in yaml.safe_load_all((RUNTIME / "postgres.yaml").read_text())
                          if d["metadata"]["name"] == "todo-postgres-data")
@@ -144,6 +107,9 @@ class PVCStorageTests(unittest.TestCase):
         role = (ROOT / "deploy/ansible/roles/postgres_standby/tasks/main.yml").read_text()
         self.assertIn('replicate-workload.yml', role)
         self.assertIn('todo_replication_operation: standby', role)
+        reseed_role = (ROOT / "deploy/ansible/roles/postgres_reseed_standby/tasks/main.yml").read_text()
+        self.assertIn('replicate-workload.yml', reseed_role)
+        self.assertIn('todo_replication_operation: reseed', reseed_role)
 
     def test_backup_rejects_missing_wrong_readonly_or_misplaced_mounts(self):
         from todo_installer import apps
@@ -181,8 +147,9 @@ class PVCStorageTests(unittest.TestCase):
                 commands = [call.args[0] for call in run.call_args_list]
                 volumes = [argv[-1] for argv in commands if argv[:3] == ["podman", "volume", "rm"]]
                 self.assertEqual(set(volumes), {"todo-nginx-data", "todo-caddy-data"} |
-                                 ({"todo-postgres-data", "notes-postgres-data"} if remove_data else set()))
-                self.assertNotIn("todo-postgres-backup", volumes)
-                self.assertNotIn("notes-postgres-backup", volumes)
+                                 ({"todo-postgres-data", "notes-postgres-data", "keycloak-postgres-data"}
+                                  if remove_data else set()))
+                for backup in ("todo-postgres-backup", "notes-postgres-backup", "keycloak-postgres-backup"):
+                    self.assertNotIn(backup, volumes)
                 secrets = [argv[-1] for argv in commands if argv[:3] == ["podman", "secret", "rm"]]
                 self.assertEqual(set(secrets), set(uninstall.SECRETS) if remove_data else set())

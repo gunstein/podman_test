@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from todo_installer.apps import APPS, App  # noqa: E402
+from todo_installer.apps import APPS, KEYCLOAK_DATABASE, REPLICATED_DATABASES, App  # noqa: E402
 
 
 class AppRegistryTests(unittest.TestCase):
@@ -37,8 +37,12 @@ class AppRegistryTests(unittest.TestCase):
             self.assertEqual(app.legacy_volume_service("data"), name + "-postgres-data-volume")
             self.assertEqual(app.image("backend"), "localhost/" + name + "-backend:m12")
             self.assertEqual(app.image_archive("backend"), name + "-backend-m12.tar")
-            self.assertEqual(app.source_directory("backend"), "backend" if name == "todo"
-                             else name + "-backend")
+            self.assertEqual(app.source_directory("backend"), name + "-backend")
+
+    def test_replicated_databases_append_keycloak_last(self):
+        self.assertEqual([d.name for d in REPLICATED_DATABASES], ["todo", "notes", "keycloak"])
+        self.assertIs(REPLICATED_DATABASES[-1], KEYCLOAK_DATABASE)
+        self.assertEqual(KEYCLOAK_DATABASE.replication_port, 5434)
 
     def test_images_come_from_the_app(self):
         from todo_installer.images import image_list, shared_images

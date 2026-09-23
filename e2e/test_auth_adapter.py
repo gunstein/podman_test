@@ -3,7 +3,7 @@ from pathlib import Path
 
 from playwright.sync_api import expect
 
-FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
+FRONTEND = Path(__file__).resolve().parents[1] / "todo-frontend"
 FAKE_SDK = """
 export default class Keycloak {
   constructor(config) {

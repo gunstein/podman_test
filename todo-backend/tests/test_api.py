@@ -1,7 +1,12 @@
+import importlib
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.main import app, connect
+_backend = Path(__file__).resolve().parents[1].name
+main = importlib.import_module(_backend + ".main")
+app, connect = main.app, main.connect
 
 client = TestClient(app)
 AUTHORIZATION = {"Authorization": "Bearer test-token"}
@@ -10,7 +15,8 @@ AUTHORIZATION = {"Authorization": "Bearer test-token"}
 @pytest.fixture(autouse=True)
 def valid_access_token(monkeypatch):
     monkeypatch.setattr(
-        "backend.main.validate_access_token",
+        main,
+        "validate_access_token",
         lambda token: {"sub": "test-user"},
     )
 
@@ -27,7 +33,7 @@ def test_connect_uses_password_file(monkeypatch, tmp_path):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("DATABASE_PASSWORD_FILE", str(password_file))
     monkeypatch.setenv("DATABASE_HOST", "database.example")
-    monkeypatch.setattr("backend.main.psycopg.connect", fake_connect)
+    monkeypatch.setattr(main.psycopg, "connect", fake_connect)
 
     connect()
 
@@ -51,7 +57,7 @@ def test_readiness_when_database_is_unavailable(monkeypatch):
     def unavailable():
         raise RuntimeError("Database unavailable")
 
-    monkeypatch.setattr("backend.main.connect", unavailable)
+    monkeypatch.setattr(main, "connect", unavailable)
     response = client.get("/ready")
     assert response.status_code == 503
     assert response.json() == {"detail": "Database unavailable"}

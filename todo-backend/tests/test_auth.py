@@ -1,4 +1,6 @@
+import importlib
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import jwt
 import pytest
@@ -12,7 +14,9 @@ from jwt.exceptions import (
     MissingRequiredClaimError,
 )
 
-from backend.main import get_jwks_client, validate_access_token
+_backend = Path(__file__).resolve().parents[1].name
+main = importlib.import_module(_backend + ".main")
+get_jwks_client, validate_access_token = main.get_jwks_client, main.validate_access_token
 
 ISSUER = "https://issuer.example/realms/todo"
 AUDIENCE = "todo-frontend"
@@ -34,7 +38,7 @@ def oidc_configuration(monkeypatch):
     monkeypatch.setenv("OIDC_ISSUER", ISSUER)
     monkeypatch.setenv("OIDC_JWKS_URL", "https://issuer.example/jwks")
     monkeypatch.setenv("OIDC_AUDIENCE", AUDIENCE)
-    monkeypatch.setattr("backend.main.get_jwks_client", lambda _url: JwksClient())
+    monkeypatch.setattr(main, "get_jwks_client", lambda _url: JwksClient())
 
 
 def token(**overrides):

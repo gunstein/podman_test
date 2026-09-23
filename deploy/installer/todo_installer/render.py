@@ -29,6 +29,8 @@ def render(project_root, values_file, output_directory, application_names=()):
         manifests = [(app.name, app.chart, component, app.manifest(component))
                      for app in selected for component in ('app', 'postgres', 'config')]
         manifests += [('keycloak', 'keycloak', 'keycloak', 'keycloak.yaml'),
+                      ('keycloak', 'keycloak', 'postgres', apps.KEYCLOAK_DATABASE.manifest('postgres')),
+                      ('keycloak', 'keycloak', 'config', apps.KEYCLOAK_DATABASE.manifest('config')),
                       ('shared-proxy', 'shared-proxy', 'shared-proxy', 'shared-proxy.yaml')]
         for release, chart, component, filename in manifests:
             result = subprocess.run([

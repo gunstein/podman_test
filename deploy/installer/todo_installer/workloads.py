@@ -41,7 +41,7 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
 
 def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                      publish_address="", db_password=None, *, app: apps.App = apps.APPS[0]):
-    if publish_address and app not in apps.REPLICATED_APPS:
+    if publish_address and app.name not in {d.name for d in apps.REPLICATED_DATABASES}:
         raise ValueError("Replication publication requires membership in the verified DR group.")
     legacy = app.resource("postgres") + ".container"
     return _install(

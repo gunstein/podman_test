@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-postgres-config
+data:
+  POSTGRES_DB: keycloak
+  POSTGRES_USER: keycloak

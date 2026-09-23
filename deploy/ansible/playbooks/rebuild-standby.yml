@@ -61,37 +61,26 @@
   gather_facts: false
   any_errors_fatal: true
 
+  vars:
+    project_root: "{{ playbook_dir }}/../../.."
+
   tasks:
-    - name: Wait for rebuilt standby streaming state
-      ansible.builtin.command:
-        argv:
-          - podman
-          - exec
-          - todo-postgres
-          - psql
-          - --username
-          - todo
-          - --dbname
-          - postgres
-          - --tuples-only
-          - --no-align
-          - --field-separator=|
-          - --command
-          - >-
-            SELECT application_name, state, sync_state,
-            pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)::bigint
-            FROM pg_stat_replication
-            WHERE application_name = '{{ todo_rebuild_replication_slot }}';
-      register: m16_final_streaming
-      changed_when: false
-      retries: 30
-      delay: 1
-      until: >-
-        (m16_final_streaming.stdout | trim).split('|') | length == 4 and
-        (m16_final_streaming.stdout | trim).split('|')[1] == 'streaming'
+    - name: Resolve the complete registered replication group
+      ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/read-replication-registry.yml"
+
+    - name: Wait for each rebuilt standby to reach streaming state
+      ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
+      loop: "{{ todo_replication_metadata }}"
+      loop_control:
+        loop_var: todo_replication_app_meta
+        label: "{{ todo_replication_app_meta.name }}"
+      vars:
+        todo_replication_app: "{{ todo_replication_app_meta.name }}"
+        todo_replication_operation: streaming
+        todo_replication_rebuilt: true
 
     - name: Report restored database redundancy
       ansible.builtin.debug:
         msg: >-
-          Restored asynchronous redundancy: {{ m16_final_streaming.stdout | trim }}.
+          Restored asynchronous redundancy for every registered database.
           The promoted host remains primary; the old primary is now a rebuilt standby.

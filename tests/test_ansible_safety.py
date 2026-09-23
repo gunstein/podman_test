@@ -11,40 +11,35 @@ def read(relative_path: str) -> str:
 
 
 class AnsibleSafetyTests(unittest.TestCase):
-    def test_final_standby_helper_hands_shared_selinux_label_to_kube(self):
-        for role in ("postgres_reseed_standby",):
-            with self.subTest(role=role):
-                tasks = yaml.safe_load(read(f"deploy/ansible/roles/{role}/tasks/main.yml"))
-                kube = next(
-                    i
-                    for i, task in enumerate(tasks)
-                    if task.get("vars", {}).get("todo_installer_workload") == "postgres"
-                )
-                helpers = []
-                for task in tasks[:kube]:
-                    argv = task.get("ansible.builtin.command", {}).get("argv", [])
-                    if "--volume" in argv:
-                        helpers.append((task, argv[argv.index("--volume") + 1]))
-                task, mount = helpers[-1]
-                self.assertEqual(mount, "todo-postgres-data:/var/lib/postgresql/data:z")
-                self.assertTrue(task["no_log"])
-                self.assertIn("todo-replicator-password", task["ansible.builtin.command"]["argv"])
+    def test_reseed_role_quarantines_then_reseeds_every_registered_database(self):
+        # replicate-workload.yml is transport only; replication.py owns the SELinux
+        # label helper, the authenticate-before-volume-removal ordering, and the
+        # credential check (a live authenticated connection), all covered directly
+        # by deploy/installer/tests/test_replication.py.
+        tasks = yaml.safe_load(read("deploy/ansible/roles/postgres_reseed_standby/tasks/main.yml"))
 
-    def test_replication_authentication_precedes_volume_removal(self):
-        tasks = read("deploy/ansible/roles/postgres_reseed_standby/tasks/main.yml")
+        def index(match):
+            return next(i for i, task in enumerate(tasks) if match(task))
 
-        authentication = tasks.index("- name: Authenticate replication before destructive reseed")
-        removal = tasks.index("- name: Remove the explicitly confirmed old database volume")
+        quarantine = index(lambda task: task.get("vars", {}).get("todo_replication_operation") == "quarantined")
+        removal = index(lambda task: "Remove the shared Kube units" in task["name"])
+        reseed = index(lambda task: task.get("vars", {}).get("todo_replication_operation") == "reseed")
 
-        self.assertLess(authentication, removal)
-        self.assertIn("--command=IDENTIFY_SYSTEM;", tasks)
+        self.assertLess(quarantine, removal)
+        self.assertLess(removal, reseed)
+        self.assertEqual(
+            tasks[reseed]["vars"]["todo_replication_primary_address"],
+            "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}",
+        )
 
-    def test_rebuild_preflight_compares_replication_credentials(self):
+    def test_rebuild_preflight_verifies_every_registered_database_before_destructive_reseed(self):
         preflight = read("deploy/ansible/playbooks/preflight-standby-rebuild.yml")
 
-        self.assertIn("podman\n          - secret\n          - inspect", preflight)
+        self.assertIn("todo_replication_operation: rebuild-primary-check", preflight)
+        self.assertIn("todo_replication_operation: reseed-check", preflight)
+        self.assertIn("todo_replication_operation: quarantined", preflight)
         self.assertIn(
-            "Require identical replication credentials before destructive reseed",
+            "Rebuild host must remain infrastructure-fenced",
             preflight,
         )
 
@@ -171,10 +166,11 @@ class AnsibleSafetyTests(unittest.TestCase):
         backup = read("deploy/ansible/roles/postgres_backup/tasks/main.yml")
         redundancy = read("deploy/ansible/roles/postgres_redundancy_primary/tasks/main.yml")
         self.assertIn("map(attribute='application_service')", backup)
-        self.assertIn("todo-app.service", redundancy)
+        self.assertIn("map(attribute='application_service')", redundancy)
         for role in ("postgres_primary", "postgres_backup", "postgres_redundancy_primary"):
             tasks = yaml.safe_load(read(f"deploy/ansible/roles/{role}/tasks/" +
-                                          ({"postgres_primary": "primary.yml", "postgres_backup": "database.yml"}.get(role, "main.yml"))))
+                                          ({"postgres_primary": "primary.yml", "postgres_backup": "database.yml",
+                                            "postgres_redundancy_primary": "primary.yml"}.get(role, "main.yml"))))
             starts = [task["ansible.builtin.systemd_service"].get("name")
                       for task in tasks if task.get("ansible.builtin.systemd_service", {}).get("state") == "started"]
             self.assertIn("shared-proxy.service", starts, role)

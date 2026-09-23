@@ -1,6 +1,10 @@
 keycloak:
   image: localhost/keycloak:m12
   memory: 1Gi
+postgres:
+  image: docker.io/library/postgres:17.11
+  memory: 512Mi
+  maxSlotWalKeepSize: 1GB
 runtime:
   publicHostname: todo.test
   publicPort: 8443

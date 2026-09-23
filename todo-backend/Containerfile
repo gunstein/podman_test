@@ -2,10 +2,10 @@ FROM docker.io/library/python:3.12.14-slim
 
 WORKDIR /app
 
-COPY backend/requirements.txt /app/backend/requirements.txt
+COPY todo-backend/requirements.txt /app/backend/requirements.txt
 RUN python -m pip install --no-cache-dir -r /app/backend/requirements.txt
 
-COPY backend /app/backend
+COPY todo-backend /app/backend
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1

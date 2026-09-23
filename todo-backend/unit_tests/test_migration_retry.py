@@ -1,10 +1,14 @@
 import argparse
+import importlib
+import sys
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import psycopg
 
-from backend import migrate
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+migrate = importlib.import_module(Path(__file__).resolve().parents[1].name + ".migrate")
 
 
 class MigrationRetryTests(unittest.TestCase):

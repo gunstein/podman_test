@@ -12,22 +12,26 @@ TLS_VOLUMES = (IDENTITY.resource('nginx-data'), IDENTITY.resource('caddy-data'))
 QUADLET_FILES = (apps.NETWORK + '.network',
                  *(app.volume(purpose) + '.volume' for app in apps.APPS
                    for purpose in ('data', 'backup')),
+                 *(apps.KEYCLOAK_DATABASE.volume(purpose) + '.volume' for purpose in ('data', 'backup')),
                  *(volume + '.volume' for volume in TLS_VOLUMES),
                  *(name + '.container' for name in LEGACY))
 SERVICES = (*(app.resource(component) for app in apps.APPS
               for component in ('app', 'frontend', 'backend', 'db-grants',
                                 'migrate', 'db-setup', 'postgres')),
-            'keycloak', 'shared-proxy', apps.NETWORK + '-network',
+            'keycloak', apps.KEYCLOAK_DATABASE.resource('postgres'), 'shared-proxy', apps.NETWORK + '-network',
             *(app.legacy_volume_service(purpose) for app in apps.APPS for purpose in ('data', 'backup')),
+            *(apps.KEYCLOAK_DATABASE.legacy_volume_service(purpose) for purpose in ('data', 'backup')),
             IDENTITY.resource('nginx-data-volume'))
 CONTAINERS = (*(app.resource(component) for app in apps.APPS
                 for component in ('frontend', 'backend', 'migrate', 'db-grants', 'db-setup', 'postgres')),
               'nginx', 'keycloak')
 PODS = ('shared-proxy', *(app.resource('app') for app in reversed(apps.APPS)),
-        'keycloak', *(app.resource('postgres') for app in reversed(apps.APPS)))
+        'keycloak', apps.KEYCLOAK_DATABASE.resource('postgres'),
+        *(app.resource('postgres') for app in reversed(apps.APPS)))
 MAPPINGS = {name: fields for app in apps.APPS
             for name, fields in {**secrets.postgres_secret_mapping(app),
                                  **secrets.application_secret_mapping(app)}.items()}
+MAPPINGS.update(secrets.postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
 MAPPINGS.update(secrets.keycloak_secret_mapping())
 SECRETS = tuple(dict.fromkeys([*MAPPINGS, *(source for fields in MAPPINGS.values()
                                           for source in fields.values())]))
@@ -42,7 +46,7 @@ def uninstall(remove_data=False, quadlet_dir=None):
     directory = Path(quadlet_dir or Path.home() / '.config/containers/systemd')
     markers = (Path.home() / '.config/todo/todo-standby-entrypoint.sh',
                Path('/opt/todo/bin/todo_dr.py'), Path('/opt/todo/bin/todo_backup.py'))
-    if any(exists('secret', app.secret('replicator')) for app in apps.APPS) or any(
+    if any(exists('secret', d.secret('replicator')) for d in apps.REPLICATED_DATABASES) or any(
             path.exists() for path in markers):
         raise RuntimeError(
             'uninstall.yml only supports a single-host deployment. This host contains '
@@ -68,6 +72,7 @@ def uninstall(remove_data=False, quadlet_dir=None):
     if remove_data:
         for app in apps.APPS:
             remove('volume', app.volume('data'))
+        remove('volume', apps.KEYCLOAK_DATABASE.volume('data'))
         for name in SECRETS:
             remove('secret', name)
     for app in apps.APPS:

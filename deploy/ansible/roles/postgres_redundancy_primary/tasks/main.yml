@@ -1,96 +1,16 @@
 ---
-- name: Inspect current primary rootless network
-  ansible.builtin.command: {argv: [podman, network, inspect, app-network]}
-  register: m16_primary_network
-  changed_when: false
+- name: Resolve the complete promoted database group
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/read-replication-registry.yml"
 
-- name: Read current primary rootless port-proxy subnet
+- name: Select all application services for database restarts
   ansible.builtin.set_fact:
-    m16_primary_rootless_subnet: >-
-      {{ (m16_primary_network.stdout | from_json)[0].subnets[0].subnet }}
-  changed_when: false
+    m16_application_services: >-
+      {{ ['shared-proxy.service'] + (todo_replication_metadata | map(attribute='application_service') | list)
+         + ['keycloak.service'] }}
 
-- name: Allow the dedicated replication role from rootless port forwarding
-  ansible.builtin.command:
-    argv:
-      - podman
-      - exec
-      - todo-postgres
-      - sh
-      - -c
-      - >-
-        current=$(grep '^host replication todo_replicator ' "$PGDATA/pg_hba.conf" || true);
-        if [ "$current" != "$1" ]; then
-          sed -i '/^host replication todo_replicator /d' "$PGDATA/pg_hba.conf";
-          printf '%s\n' "$1" >> "$PGDATA/pg_hba.conf";
-          printf 'changed\n';
-        fi
-      - sh
-      - "host replication todo_replicator {{ m16_primary_rootless_subnet }} scram-sha-256"
-  register: m16_primary_hba
-  changed_when: m16_primary_hba.stdout | trim == 'changed'
-
-- name: Reload current primary authentication configuration
-  ansible.builtin.command:
-    argv:
-      - podman
-      - exec
-      - todo-postgres
-      - psql
-      - --username
-      - todo
-      - --dbname
-      - postgres
-      - --command
-      - SELECT pg_reload_conf();
-  changed_when: false
-
-- name: Install replication-capable PostgreSQL Kube runtime
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
-  vars:
-    todo_installer_workload: postgres
-    todo_postgres_publish_address: "{{ todo_node_address }}"
-
-- name: Stop application tier before current primary restart
-  ansible.builtin.command: {argv: [systemctl, --user, stop, "{{ item }}"]}
-  loop:
-    - shared-proxy.service
-    - todo-app.service
-    - keycloak.service
-  register: m16_primary_services_stopped
-  changed_when: false
-  failed_when: m16_primary_services_stopped.rc not in [0, 5]
-  when: todo_postgres_kube_changed
-
-- name: Reload current primary user systemd
-  ansible.builtin.systemd_service:
-    scope: user
-    daemon_reload: true
-
-- name: Restart current primary with LAN replication endpoint
-  ansible.builtin.systemd_service:
-    name: todo-postgres.service
-    scope: user
-    state: restarted
-  when: todo_postgres_kube_changed
-
-- name: Wait for healthy current primary
-  ansible.builtin.command: {argv: [podman, wait, --condition=healthy, todo-postgres]}
-  changed_when: false
-
-- name: Restore application tier after current primary restart
-  ansible.builtin.systemd_service:
-    name: shared-proxy.service
-    scope: user
-    state: started
-
-- name: Wait for current application readiness
-  ansible.builtin.uri:
-    url: http://127.0.0.1:8080/ready
-    return_content: true
-  register: m16_primary_readiness
-  retries: 30
-  delay: 1
-  until: >-
-    m16_primary_readiness.status == 200 and
-    m16_primary_readiness.json.status == 'ready'
+- name: Restore each independent primary replication endpoint
+  ansible.builtin.include_tasks: primary.yml
+  loop: "{{ todo_replication_metadata }}"
+  loop_control:
+    loop_var: m16_app
+    label: "{{ m16_app.name }}"

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import psycopg
 
-from backend.main import connect
+from .main import connect
 
 DIRECTORY = Path(__file__).parent / "migrations"
 PATTERN = re.compile(r"^(\d+)_(.+)\.(up|down)\.sql$")

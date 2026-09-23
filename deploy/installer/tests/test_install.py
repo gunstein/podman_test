@@ -23,7 +23,9 @@ class InstallTests(unittest.TestCase):
             rendered = root / 'generated/kube-runtime'
             rendered.mkdir(parents=True)
             filenames = [app.manifest(component) for app in applications
-                         for component in ('postgres', 'app', 'config')] + ['keycloak.yaml', 'shared-proxy.yaml']
+                         for component in ('postgres', 'app', 'config')] + [
+                apps.KEYCLOAK_DATABASE.manifest('postgres'), apps.KEYCLOAK_DATABASE.manifest('config'),
+                'keycloak.yaml', 'shared-proxy.yaml']
             for filename in filenames:
                 (rendered / filename).write_text('fixture: true\n')
             calls = []
@@ -50,9 +52,9 @@ class InstallTests(unittest.TestCase):
                 if mode == 'server':
                     configure.assert_called_once_with('fixture-password', [
                         (app.keycloak_client, app.hostname) for app in applications])
-                    self.assertEqual(len(list(runtime.glob('*.kube'))), 2 * len(applications) + 2)
+                    self.assertEqual(len(list(runtime.glob('*.kube'))), 2 * len(applications) + 3)
                     self.assertEqual(len([a for a in calls if a[:3] == ['systemctl', '--user', 'show']]),
-                                     2 * len(applications) + 2)
+                                     2 * len(applications) + 3)
                 else:
                     self.assertFalse(directory.exists())
                     configure.assert_called_once_with('fixture-password', [
@@ -81,9 +83,7 @@ class InstallTests(unittest.TestCase):
                 self.assertIn(app.secret('db'), command)
                 self.assertIn(app.secret('migrator'), command)
                 self.assertIn(app.secret('app'), command)
-                if app.name == 'notes':
-                    self.assertNotIn('todo-keycloak-db-password', command)
-        for service in ('keycloak', 'shared-proxy'):
+        for service in ('keycloak', 'keycloak-postgres', 'shared-proxy'):
             self.assertEqual(calls.count(['systemctl', '--user', 'start', service + '.service']), 1)
 
     def test_six_pod_dev_order(self):
@@ -91,7 +91,7 @@ class InstallTests(unittest.TestCase):
         plays = [(i, a) for i, a in enumerate(calls)
                  if a[:3] == ['podman', 'kube', 'play'] and '--help' not in a]
         self.assertEqual([Path(a[-1]).stem for _, a in plays], [
-            'postgres', 'notes-postgres', 'keycloak', 'app', 'notes-app', 'shared-proxy'])
+            'postgres', 'notes-postgres', 'keycloak-postgres', 'keycloak', 'app', 'notes-app', 'shared-proxy'])
         self.assertLess(bootstrap[1], plays[2][0])
         self.assertLess(plays[-1][0], bootstrap[2])
 
@@ -116,7 +116,7 @@ class InstallTests(unittest.TestCase):
         plays = [(i, a) for i, a in enumerate(calls)
                  if a[:3] == ['podman', 'kube', 'play'] and '--help' not in a]
         self.assertEqual([Path(a[-1]).stem for _, a in plays],
-                         ['postgres', 'keycloak', 'app', 'shared-proxy'])
+                         ['postgres', 'keycloak-postgres', 'keycloak', 'app', 'shared-proxy'])
         self.assertLess(plays[0][0], bootstrap[0])
         self.assertLess(bootstrap[0], plays[1][0])
         self.assertLess(plays[-1][0], bootstrap[1])
@@ -128,7 +128,8 @@ class InstallTests(unittest.TestCase):
         from todo_installer.apps import APPS
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp)
-            for name in ('app', 'postgres', 'config', 'keycloak', 'shared-proxy'):
+            for name in ('app', 'postgres', 'config', 'keycloak-postgres', 'keycloak-config',
+                        'keycloak', 'shared-proxy'):
                 (directory / (name + '.yaml')).write_text('fixture: ' + name)
             state = directory / '.state.json'
             present = set()
@@ -158,7 +159,7 @@ class InstallTests(unittest.TestCase):
                 self.assertTrue(kube_play.up(directory, (APPS[0],), state))
                 downs = [Path(call.args[-1]).stem for call in command.call_args_list
                          if '--down' in call.args]
-                self.assertEqual(downs, ['shared-proxy', 'app', 'keycloak', 'postgres'])
+                self.assertEqual(downs, ['shared-proxy', 'app', 'keycloak', 'keycloak-postgres', 'postgres'])
                 self.assertEqual(roles.call_count, 2)
 
     def test_down_uses_reverse_order_and_only_existing_files(self):
@@ -179,7 +180,7 @@ class InstallTests(unittest.TestCase):
             prompt.assert_not_called()
 
     def test_generated_secrets_are_alphanumeric_and_existing_secrets_preserved(self):
-        missing = {'todo-migrator-password', 'todo-app-password', 'todo-keycloak-db-password'}
+        missing = {'todo-migrator-password', 'todo-app-password', 'keycloak-db-password'}
         with patch('todo_installer.secrets.exists', side_effect=lambda _, name: name not in missing), \
                 patch('todo_installer.secrets.run') as run:
             secrets.provision()
@@ -288,7 +289,7 @@ class UninstallTests(unittest.TestCase):
             commands = [call.args[0] for call in run.call_args_list]
             removals = [command for command in commands if command[:3] == ['podman', 'pod', 'rm']]
             self.assertEqual([command[-1] for command in removals],
-                             ['shared-proxy', 'notes-app', 'todo-app', 'keycloak',
+                             ['shared-proxy', 'notes-app', 'todo-app', 'keycloak', 'keycloak-postgres',
                               'notes-postgres', 'todo-postgres'])
             network = commands.index(['podman', 'network', 'rm', 'app-network'])
             self.assertTrue(all(commands.index(command) < network for command in removals))
@@ -353,7 +354,7 @@ class RecoveryClientTests(unittest.TestCase):
             self.assertEqual(cli.main(['configure-clients']), 0)
         self.assertEqual(run.call_args.args[0], [
             'podman', 'secret', 'inspect', '--showsecret', '--format', '{{.SecretData}}',
-            apps.IDENTITY_DATABASE_APP.secret('keycloak-admin')])
+            apps.KEYCLOAK_ADMIN_SECRET])
         configure.assert_called_once_with('private-admin-fixture', [
             (app.keycloak_client, app.hostname) for app in apps.REPLICATED_APPS])
         self.assertEqual(output.getvalue(), '{"changed": false}\n')

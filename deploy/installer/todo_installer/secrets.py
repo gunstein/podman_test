@@ -18,11 +18,7 @@ def application_secret_mapping(app: apps.App):
 
 
 def keycloak_secret_mapping():
-    app = apps.IDENTITY_DATABASE_APP
-    return {app.kube_secret("keycloak"): {
-        "database-password": app.secret("keycloak-db"),
-        "bootstrap-admin-password": app.secret("keycloak-admin"),
-    }}
+    return {apps.KEYCLOAK_KUBE_ADMIN_SECRET: {"bootstrap-admin-password": apps.KEYCLOAK_ADMIN_SECRET}}
 
 
 def read(name):
@@ -56,10 +52,9 @@ def provision(applications=None):
 
     applications = apps.APPS if applications is None else applications
     generated = {app.secret(role) for app in applications for role in ("migrator", "app")}
-    identity = apps.IDENTITY_DATABASE_APP
-    generated.add(identity.secret("keycloak-db"))
+    generated.add(apps.KEYCLOAK_DATABASE.secret("db"))
     names = [app.secret(role) for app in applications for role in ("db", "migrator", "app")]
-    names.extend((identity.secret("keycloak-db"), identity.secret("keycloak-admin")))
+    names.extend((apps.KEYCLOAK_DATABASE.secret("db"), apps.KEYCLOAK_ADMIN_SECRET))
     for name in names:
         if exists('secret', name):
             continue

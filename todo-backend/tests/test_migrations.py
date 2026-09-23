@@ -1,5 +1,11 @@
-from backend.main import connect
-from backend.migrate import applied_versions, load_migrations, migrate_up
+import importlib
+from pathlib import Path
+
+_backend = Path(__file__).resolve().parents[1].name
+connect = importlib.import_module(_backend + ".main").connect
+_migrate = importlib.import_module(_backend + ".migrate")
+applied_versions, load_migrations, migrate_up = (
+    _migrate.applied_versions, _migrate.load_migrations, _migrate.migrate_up)
 
 
 def test_migrations_have_up_and_down_files():

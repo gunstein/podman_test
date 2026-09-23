@@ -130,6 +130,8 @@ class ReplicationBridgeTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 state = json.loads((base / 'state.json').read_text())
                 self.assertEqual(state['volumes'], [app.volume('data')])
+                self.assertEqual(state['commands'].count(['podman', 'volume', 'exists', app.volume('data')]), 2,
+                                 'A failed mutating operation must never be retried automatically')
                 self.assertEqual(sum('pg_basebackup' in command for command in state['commands']), 1)
                 self.assertFalse(any(command[:3] == ['podman', 'volume', 'rm'] for command in state['commands']))
                 unit = base / 'target/.config/containers/systemd/todo-kube-runtime' / app.unit('postgres')

@@ -17,11 +17,11 @@ class LearningPathTests(unittest.TestCase):
         self.assertTrue((ROOT / "deploy/quadlet/README.md").is_file())
 
     def test_ui_does_not_depend_on_keycloak_sdk(self):
-        app = (ROOT / "frontend/app.js").read_text()
+        app = (ROOT / "todo-frontend/app.js").read_text()
         self.assertIn('from "./auth.js"', app)
         self.assertNotIn("keycloak", app.lower())
-        image = (ROOT / "frontend/Containerfile").read_text()
-        self.assertIn("frontend/auth.js frontend/keycloak-adapter.js", image)
+        image = (ROOT / "todo-frontend/Containerfile").read_text()
+        self.assertIn("todo-frontend/auth.js todo-frontend/keycloak-adapter.js", image)
 
     def test_ci_covers_adapter_and_quarantine(self):
         workflow = (ROOT / ".github/workflows/clean-install.yml").read_text()

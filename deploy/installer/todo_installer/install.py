@@ -11,7 +11,7 @@ LEGACY = tuple(app.resource(component) for app in apps.APPS
 
 def services(applications):
     return (*(app.resource('app') for app in applications), 'keycloak',
-            *(app.resource('postgres') for app in applications), 'shared-proxy')
+            *(app.resource('postgres') for app in applications), 'keycloak-postgres', 'shared-proxy')
 
 
 SERVICES = services(apps.APPS)
@@ -30,8 +30,6 @@ def preflight(quadlet_dir):
 def setup_roles(app: apps.App = apps.APPS[0]):
     argv = ['podman', 'run', '--rm', '--network', apps.NETWORK]
     roles = ['db', 'migrator', 'app']
-    if app == apps.IDENTITY_DATABASE_APP:
-        roles.append('keycloak-db')
     for role in roles:
         argv += ['--secret', app.secret(role)]
     for value in (f'DATABASE_HOST={app.resource("postgres")}',
@@ -80,10 +78,11 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         for app in applications:
             secrets.create_kube(secrets.postgres_secret_mapping(app))
             secrets.create_kube(secrets.application_secret_mapping(app))
+        secrets.create_kube(secrets.postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
         secrets.create_kube(secrets.keycloak_secret_mapping())
         changed = up(rendered, applications, directory.parent / 'todo-installer-dev.json', images_changed)
         configured = keycloak.configure(
-            secrets.read(apps.IDENTITY_DATABASE_APP.secret('keycloak-admin')),
+            secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
             [(app.keycloak_client, app.hostname) for app in applications])
         return changed or configured
     arguments = (root, directory, runtime, rendered)
@@ -92,6 +91,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         changed = workloads.install_postgres(*arguments, app=app) or changed
         changed = workloads.install_application(
             *arguments, publish_address, service_port, app=app) or changed
+    changed = workloads.install_postgres(*arguments, app=apps.KEYCLOAK_DATABASE) or changed
     changed = workloads.install_keycloak(*arguments) or changed
     changed = workloads.install_shared_proxy(
         *arguments, publish_address, service_port, applications=applications) or changed
@@ -103,13 +103,15 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         quadlet.systemctl('start', app.service('postgres'))
         run('podman', 'wait', '--condition=healthy', app.resource('postgres'))
         setup_roles(app)
+    quadlet.systemctl('start', apps.KEYCLOAK_DATABASE.service('postgres'))
+    run('podman', 'wait', '--condition=healthy', apps.KEYCLOAK_DATABASE.resource('postgres'))
     quadlet.systemctl('start', 'keycloak.service')
     for app in applications:
         quadlet.systemctl('start', app.service('app'))
         setup_roles(app)
     quadlet.systemctl('start', 'shared-proxy.service')
     configured = keycloak.configure(
-        secrets.read(apps.IDENTITY_DATABASE_APP.secret('keycloak-admin')),
+        secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
         [(app.keycloak_client, app.hostname) for app in applications])
     for service in selected_services:
         source = quadlet.systemctl('show', service + '.service', '--property=SourcePath',

@@ -1,10 +1,15 @@
+import importlib
 import os
+from pathlib import Path
 
 import pytest
 from psycopg.conninfo import conninfo_to_dict
 
-from backend.main import connect
-from backend.migrate import applied_versions, migrate_down, migrate_up
+_backend = Path(__file__).resolve().parents[1].name
+connect = importlib.import_module(_backend + ".main").connect
+_migrate = importlib.import_module(_backend + ".migrate")
+applied_versions, migrate_down, migrate_up = (
+    _migrate.applied_versions, _migrate.migrate_down, _migrate.migrate_up)
 
 
 def migration_versions() -> set[int]:

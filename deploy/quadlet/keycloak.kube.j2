@@ -1,7 +1,7 @@
 [Unit]
 Description=Todo Keycloak Podman Kube workload
-Requires=todo-postgres.service
-After=todo-postgres.service
+Requires=keycloak-postgres.service
+After=keycloak-postgres.service
 
 [Kube]
 Yaml=keycloak.yaml

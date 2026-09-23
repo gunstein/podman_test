@@ -2,12 +2,13 @@
 
 Initial bootstrap refuses existing data. The physical slot is created by
 pg_basebackup, as in the original Ansible role, so a partial attempt is never
-silently treated as a successful bootstrap. No function here deletes live data.
+silently treated as a successful bootstrap. Only explicitly confirmed reseed deletes the selected old data volume, after group gates.
 """
 import ipaddress
 import json
 import re
 import secrets as random
+import socket
 import string
 from pathlib import Path
 
@@ -217,7 +218,7 @@ def streaming_status(app, *, rebuilt=False):
 
 def require_promoted_group(journal_path):
     """Never expose an incomplete group, including a failed final verification."""
-    names = [app.name for app in apps.REPLICATED_APPS]
+    names = [app.name for app in apps.REPLICATED_DATABASES]
     try:
         decision = json.loads(Path(journal_path).read_text())
     except (OSError, ValueError) as error:
@@ -225,7 +226,7 @@ def require_promoted_group(journal_path):
     if (decision.get('state') != 'complete' or decision.get('applications') != names
             or decision.get('completed') != names):
         raise RuntimeError('Promotion record does not confirm the complete database group')
-    for app in apps.REPLICATED_APPS:
+    for app in apps.REPLICATED_DATABASES:
         if run('systemctl', '--user', 'is-active', app.service('postgres')).stdout.strip() != 'active':
             raise RuntimeError(f'{app.name}: database service is not active')
         if run('podman', 'inspect', '--format', '{{.State.Health.Status}}',
@@ -233,3 +234,78 @@ def require_promoted_group(journal_path):
             raise RuntimeError(f'{app.name}: database is not healthy')
         require_primary(app)
     return False
+
+
+def require_stopped_service(service):
+    output = run('systemctl', '--user', 'show', service, '--property=LoadState',
+                 '--property=ActiveState', '--property=MainPID', '--property=ControlPID').stdout
+    fields = dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
+    if (fields.get('LoadState') != 'loaded' or fields.get('ActiveState') not in ('inactive', 'failed')
+            or fields.get('MainPID') != '0' or fields.get('ControlPID') != '0'):
+        raise RuntimeError(f'{service}: require loaded, stopped service with zero MainPID/ControlPID')
+
+
+def require_quarantined_group():
+    for service in apps.services():
+        require_stopped_service(service)
+    if run('podman', 'ps', '--format', '{{.Names}}').stdout.strip():
+        raise RuntimeError('Running user containers remain; keep infrastructure quarantine in place')
+    return False
+
+
+def rebuild_primary_check(app):
+    require_primary(app)
+    if run('systemctl', '--user', 'is-active', app.service('postgres')).stdout.strip() != 'active':
+        raise RuntimeError(f'{app.name}: current database service is not active')
+    for kind, name in (('secret', app.secret('replicator')), ('volume', app.volume('backup'))):
+        if not exists(kind, name):
+            raise RuntimeError(f'{app.name}: required {kind} {name} is missing')
+    role = identifier(app.database_role('replicator'))
+    if sql(app, f"SELECT rolreplication FROM pg_roles WHERE rolname = '{role}';") != 't':
+        raise RuntimeError(f'{app.name}: replication role is missing or invalid')
+    slot = identifier(app.replication_slot(rebuilt=True))
+    if sql(app, f"SELECT count(*) FROM pg_replication_slots WHERE slot_name = '{slot}';") != '0':
+        raise RuntimeError(f'{app.name}: rebuild slot already exists; never retry a partial rebuild blindly')
+    return False
+
+
+def reseed_check(app, primary_address, *, project_root, quadlet_dir, kube_runtime_dir,
+                 rendered_manifest_dir, confirm_fenced, confirm_reseed):
+    host = socket.gethostname()
+    if confirm_fenced != host + ' is fenced' or confirm_reseed != host:
+        raise RuntimeError('Exact local hostname and infrastructure-fencing confirmations are required')
+    address(primary_address)
+    directory, runtime = Path(quadlet_dir), Path(kube_runtime_dir)
+    if runtime != directory / 'todo-kube-runtime' or runtime.is_symlink():
+        raise ValueError('kube_runtime_dir must be quadlet_dir/todo-kube-runtime')
+    if run('podman', 'info', '--format', '{{.Host.Security.Rootless}}').stdout.strip() != 'true':
+        raise RuntimeError('Destructive reseed requires rootless Podman')
+    require_stopped_service(app.service('postgres'))
+    if run('podman', 'ps', '--filter', 'name=^' + app.resource('postgres') + '$',
+           '--format', '{{.Names}}').stdout.strip():
+        raise RuntimeError(f'{app.name}: PostgreSQL is still running')
+    for kind, name in (('volume', app.volume('data')), ('image', app.image('postgres')),
+                       ('secret', app.secret('replicator')), ('secret', app.secret('db'))):
+        if not exists(kind, name):
+            raise RuntimeError(f'{app.name}: required {kind} {name} is missing; data was not removed')
+    if (directory / (app.resource('postgres') + '.container')).exists():
+        raise RuntimeError('Destructive reseed refuses a legacy PostgreSQL container Quadlet')
+    if '--no-pod-prefix' not in run('podman', 'kube', 'play', '--help').stdout:
+        raise RuntimeError('Destructive reseed requires Podman --no-pod-prefix')
+    # Validate every file before erasing anything, including the canonical PVC.
+    data_claim(app, rendered_manifest_dir)
+    (Path(rendered_manifest_dir) / app.manifest('config')).read_bytes()
+    (Path(project_root) / 'deploy/quadlet/app-network.network').read_bytes()
+    quadlet.render(project_root, app.unit('postgres'), {
+        'todo_postgres_publish_address': '', 'postgres_publish_port': app.replication_port})
+    authenticate(app, primary_address)
+    return False
+
+
+def reseed_standby(app, primary_address, *, confirm_fenced, confirm_reseed, **paths):
+    """One explicitly confirmed replacement, after the caller's all-app gates."""
+    reseed_check(app, primary_address, confirm_fenced=confirm_fenced,
+                 confirm_reseed=confirm_reseed, **paths)
+    # No force and no backup-volume removal. In-use data must fail closed.
+    run('podman', 'volume', 'rm', app.volume('data'))
+    return bootstrap_standby(app, primary_address, slot=app.replication_slot(rebuilt=True), **paths)

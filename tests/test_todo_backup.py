@@ -141,7 +141,7 @@ class TodoBackupTests(unittest.TestCase):
 
 class ApplicationBackupTests(unittest.TestCase):
     def test_each_backup_and_restore_stays_within_its_app(self):
-        for app in todo_backup.apps.REPLICATED_APPS:
+        for app in todo_backup.apps.REPLICATED_DATABASES:
             runner = FakeRunner()
             tool = todo_backup.TodoBackup(runner=runner, app=app)
             tool.create_backup()
@@ -152,7 +152,7 @@ class ApplicationBackupTests(unittest.TestCase):
             self.assertIn('--username=' + app.database_role('replicator'), backup)
             self.assertIn(app.secret('replicator') + ',type=env,target=PGPASSWORD', backup)
             self.assertIn(app.volume('backup') + ':/backup:z', backup)
-            for other in todo_backup.apps.REPLICATED_APPS:
+            for other in todo_backup.apps.REPLICATED_DATABASES:
                 if other == app:
                     continue
                 self.assertFalse(any(other.resource('postgres') in argument
@@ -163,7 +163,7 @@ class ApplicationBackupTests(unittest.TestCase):
             self.assertTrue(any('recovery_target_action=pause' in command for command in commands))
 
     def test_cleanup_cannot_target_the_other_apps_restore(self):
-        for app in todo_backup.apps.REPLICATED_APPS:
+        for app in todo_backup.apps.REPLICATED_DATABASES:
             runner = FakeRunner(containers={app.resource('postgres-restore')},
                                 volumes={app.volume('restore-data')})
             tool = todo_backup.TodoBackup(runner=runner, app=app)
@@ -177,9 +177,10 @@ class ApplicationBackupTests(unittest.TestCase):
                 ['podman', 'volume', 'rm', app.volume('restore-data')]])
 
     def test_group_backup_checks_last_app_before_first_base_backup(self):
-        instances = [mock.Mock(), mock.Mock()]
+        instances = [mock.Mock(), mock.Mock(), mock.Mock()]
         instances[0].archive_status.return_value = 'on|'
-        instances[1].require_writable_primary.side_effect = todo_backup.BackupError('notes is read-only')
+        instances[1].archive_status.return_value = 'on|'
+        instances[2].require_writable_primary.side_effect = todo_backup.BackupError('keycloak is read-only')
         with mock.patch.object(todo_backup, 'TodoBackup', side_effect=instances):
             self.assertEqual(todo_backup.main(['create']), 1)
         for tool in instances:

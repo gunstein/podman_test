@@ -30,21 +30,22 @@ def main(argv=None):
     workload = subcommands.add_parser('install-workload')
     paths(workload)
     workload.add_argument('workload', choices=('postgres', 'application', 'keycloak', 'shared-proxy'))
-    workload.add_argument('--app', choices=[app.name for app in apps.APPS],
+    workload.add_argument('--app', choices=[app.name for app in apps.APPS] + [apps.KEYCLOAK_DATABASE.name],
                           default=apps.IDENTITY_DATABASE_APP.name)
     workload.add_argument('--rendered-manifest-dir', type=Path)
     workload.add_argument('--publish-address', default='127.0.0.1')
     workload.add_argument('--postgres-publish-address', default='')
     workload.add_argument('--service-port', type=int, default=8443)
     info = subcommands.add_parser('app-info')
-    info.add_argument('--app', choices=[app.name for app in apps.APPS],
+    info.add_argument('--app', choices=[app.name for app in apps.APPS] + [apps.KEYCLOAK_DATABASE.name],
                       default=apps.IDENTITY_DATABASE_APP.name)
     registry = subcommands.add_parser('replication-apps')
     registry.add_argument('--details', action='store_true')
     replicate = subcommands.add_parser('replicate-workload')
     paths(replicate)
-    replicate.add_argument('operation', choices=('primary', 'standby', 'status', 'authenticate', 'streaming', 'hba'))
-    replicate.add_argument('--app', choices=[app.name for app in apps.REPLICATED_APPS],
+    replicate.add_argument('operation', choices=('primary', 'standby', 'status', 'authenticate', 'streaming', 'hba',
+                                                   'rebuild-primary-check', 'quarantined', 'reseed-check', 'reseed'))
+    replicate.add_argument('--app', choices=[d.name for d in apps.REPLICATED_DATABASES],
                            default=apps.IDENTITY_DATABASE_APP.name)
     replicate.add_argument('--node-address', default='')
     replicate.add_argument('--primary-address', default='')
@@ -52,6 +53,8 @@ def main(argv=None):
     replicate.add_argument('--image-archive', type=Path)
     replicate.add_argument('--slot')
     replicate.add_argument('--rebuilt', action='store_true')
+    replicate.add_argument('--confirm-fenced', default='')
+    replicate.add_argument('--confirm-reseed', default='')
     promoted = subcommands.add_parser('require-promoted-group')
     promoted.add_argument('--journal', type=Path,
                           default=Path.home() / '.config/todo/promotion.json')
@@ -69,24 +72,36 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == 'app-info':
-            print(json.dumps(apps.describe(next(app for app in apps.APPS if app.name == args.app))))
+            selected = (apps.KEYCLOAK_DATABASE if args.app == apps.KEYCLOAK_DATABASE.name
+                       else next(app for app in apps.APPS if app.name == args.app))
+            print(json.dumps(apps.describe(selected)))
         elif args.command == 'replication-apps':
-            print(json.dumps([apps.describe(app) if args.details else app.name
-                              for app in apps.REPLICATED_APPS]))
+            print(json.dumps([apps.describe(d) if args.details else d.name
+                              for d in apps.REPLICATED_DATABASES]))
         elif args.command == 'replicate-workload':
             from . import replication
-            app = next(app for app in apps.REPLICATED_APPS if app.name == args.app)
+            app = next(d for d in apps.REPLICATED_DATABASES if d.name == args.app)
             result = {'changed': False}
             if args.operation == 'primary':
                 result['changed'] = replication.configure_primary(app, args.node_address)
-            elif args.operation == 'standby':
+            elif args.operation in ('standby', 'reseed-check', 'reseed'):
                 directory = args.quadlet_dir.resolve()
-                result['changed'] = replication.bootstrap_standby(
-                    app, args.primary_address, project_root=args.project_root,
-                    quadlet_dir=directory,
-                    kube_runtime_dir=(args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve(),
-                    rendered_manifest_dir=args.rendered_manifest_dir or args.project_root / 'generated/kube-runtime',
-                    image_archive=args.image_archive, slot=args.slot)
+                options = dict(project_root=args.project_root, quadlet_dir=directory,
+                               kube_runtime_dir=(args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve(),
+                               rendered_manifest_dir=args.rendered_manifest_dir or args.project_root / 'generated/kube-runtime')
+                if args.operation == 'standby':
+                    result['changed'] = replication.bootstrap_standby(
+                        app, args.primary_address, image_archive=args.image_archive, slot=args.slot, **options)
+                else:
+                    if args.slot is not None or args.image_archive is not None:
+                        raise ValueError('Reseed uses the registered rebuild slot and requires the existing image')
+                    function = replication.reseed_check if args.operation == 'reseed-check' else replication.reseed_standby
+                    result['changed'] = function(app, args.primary_address, confirm_fenced=args.confirm_fenced,
+                                                 confirm_reseed=args.confirm_reseed, **options)
+            elif args.operation == 'rebuild-primary-check':
+                result['changed'] = replication.rebuild_primary_check(app)
+            elif args.operation == 'quarantined':
+                result['changed'] = replication.require_quarantined_group()
             elif args.operation == 'hba':
                 replication.require_primary(app)
                 result['changed'] = replication.refresh_hba(app)
@@ -109,7 +124,7 @@ def main(argv=None):
             print(json.dumps({'changed': changed}))
         elif args.command == 'configure-clients':
             from . import keycloak, secrets
-            changed = keycloak.configure(secrets.read(apps.IDENTITY_DATABASE_APP.secret('keycloak-admin')),
+            changed = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
                                          [(app.keycloak_client, app.hostname) for app in apps.REPLICATED_APPS])
             print(json.dumps({'changed': changed}))
         elif args.command == 'services':
@@ -121,7 +136,7 @@ def main(argv=None):
         elif args.command == 'uninstall':
             uninstall.uninstall(args.remove_data, args.quadlet_dir)
             if not args.remove_data:
-                volumes = ', '.join(app.volume('data') for app in apps.APPS)
+                volumes = ', '.join(d.volume('data') for d in apps.REPLICATED_DATABASES)
                 print(f'Database volumes {volumes} and database and Keycloak secrets were '
                       'preserved. Use --remove-data to delete them permanently.')
         elif args.command == 'down':
@@ -135,7 +150,12 @@ def main(argv=None):
                 kwargs = {'publish_address': args.postgres_publish_address}
             if args.workload == 'keycloak':
                 kwargs = {}
-            selected_app = next(app for app in apps.APPS if app.name == args.app)
+            if args.app == apps.KEYCLOAK_DATABASE.name:
+                if args.workload == 'application':
+                    raise ValueError('--app keycloak has no application workload; use postgres or keycloak.')
+                selected_app = apps.KEYCLOAK_DATABASE
+            else:
+                selected_app = next(app for app in apps.APPS if app.name == args.app)
             if args.workload in ('postgres', 'application'):
                 kwargs['app'] = selected_app
             elif selected_app != apps.IDENTITY_DATABASE_APP:

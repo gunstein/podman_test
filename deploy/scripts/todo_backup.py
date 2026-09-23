@@ -429,7 +429,7 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
         description="Manage independent application backups and disposable PITR."
     )
-    result.add_argument('--app', choices=[app.name for app in apps.REPLICATED_APPS],
+    result.add_argument('--app', choices=[d.name for d in apps.REPLICATED_DATABASES],
                         help='Select one app; status/create/mark default to the whole group')
     commands = result.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="Show live database and WAL archive status")
@@ -452,7 +452,7 @@ def parser() -> argparse.ArgumentParser:
 
 def main(arguments: Optional[Sequence[str]] = None) -> int:
     args = parser().parse_args(arguments)
-    selected = [app for app in apps.REPLICATED_APPS if args.app is None or app.name == args.app]
+    selected = [app for app in apps.REPLICATED_DATABASES if args.app is None or app.name == args.app]
     try:
         if args.command in ('restore', 'restore-status', 'cleanup-restore') and len(selected) != 1:
             raise BackupError('Disposable restore operations require an explicit --app')

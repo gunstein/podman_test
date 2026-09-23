@@ -92,7 +92,8 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertNotIn("stringData:", manifests)
         self.assertIn("secretName: todo-kube-backend-secret", manifests)
         self.assertIn("secretName: todo-kube-migrator-secret", manifests)
-        self.assertIn("name: todo-kube-keycloak-secret", manifests)
+        self.assertIn("name: keycloak-kube-admin-secret", manifests)
+        self.assertIn("secretName: keycloak-kube-postgres-secret", manifests)
 
     def test_proxy_reuses_the_accepted_tls_volume(self):
         app = read(RUNTIME / "app.yaml")
@@ -109,16 +110,22 @@ class KubeRuntimeTests(unittest.TestCase):
         postgres = read(RUNTIME / "todo-postgres.kube")
 
         self.assertIn("Requires=todo-app.service notes-app.service keycloak.service", app)
-        self.assertIn("Requires=todo-postgres.service", keycloak)
+        self.assertIn("Requires=keycloak-postgres.service", keycloak)
         self.assertNotIn("[Install]", keycloak)
         self.assertIn("WantedBy=default.target", app)
         for unit in (app, keycloak, postgres, read(RUNTIME / "todo-app.kube"),
-                     read(RUNTIME / "notes-app.kube"), read(RUNTIME / "notes-postgres.kube")):
+                     read(RUNTIME / "notes-app.kube"), read(RUNTIME / "notes-postgres.kube"),
+                     read(RUNTIME / "keycloak-postgres.kube")):
             self.assertIn("PodmanArgs=--no-pod-prefix", unit)
             self.assertIn("ExitCodePropagation=any", unit)
             self.assertIn("Restart=on-failure", unit)
             if unit != keycloak:
-                config = "notes-config.yaml" if "Yaml=notes-" in unit else "config.yaml"
+                if "Yaml=notes-" in unit:
+                    config = "notes-config.yaml"
+                elif "Yaml=keycloak-" in unit:
+                    config = "keycloak-config.yaml"
+                else:
+                    config = "config.yaml"
                 self.assertIn("ConfigMap=" + config, unit)
         self.assertNotIn("ConfigMap=", keycloak)
         self.assertIn("name: keycloak-config", read(RUNTIME / "keycloak.yaml"))
@@ -142,7 +149,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertNotIn("127.0.0.1:8000", config)
         self.assertNotIn("https://todo_frontend", config)
         self.assertNotIn("todo-nginx-data", read(RUNTIME / "app.yaml"))
-        self.assertNotIn("ssl_certificate", read(ROOT / "frontend/nginx.conf"))
+        self.assertNotIn("ssl_certificate", read(ROOT / "todo-frontend/nginx.conf"))
         self.assertIn("DATABASE_HOST: todo-postgres", read(RUNTIME / "config.yaml"))
 
     def test_quadlet_conditionals_render_real_lan_and_loopback_profiles(self):
@@ -160,13 +167,13 @@ class KubeRuntimeTests(unittest.TestCase):
                 self.assertNotIn("{{", read(unit))
                 self.assertNotIn("{%", read(unit))
         # Dependencies must point toward app/database, never back to ingress.
-        for name in ("todo-app", "keycloak", "todo-postgres"):
+        for name in ("todo-app", "keycloak", "todo-postgres", "keycloak-postgres"):
             self.assertNotIn("shared-proxy.service", read(RUNTIME / (name + ".kube")))
         self.assertEqual(
             {path.name for path in (ROOT / "deploy/quadlet").glob("*.kube.j2")},
             {"todo-app.kube.j2", "keycloak.kube.j2",
              "todo-postgres.kube.j2", "shared-proxy.kube.j2",
-             "notes-app.kube.j2", "notes-postgres.kube.j2"},
+             "notes-app.kube.j2", "notes-postgres.kube.j2", "keycloak-postgres.kube.j2"},
         )
         self.assertEqual(list((ROOT / "deploy/ansible/roles").rglob("*.kube.j2")), [])
 
@@ -180,11 +187,11 @@ class KubeRuntimeTests(unittest.TestCase):
         payloads = {call.args[3]: json.loads(call.kwargs["input"])
                     for call in run.call_args_list}
         self.assertEqual(set(payloads), {
-            "todo-kube-migrator-secret", "todo-kube-backend-secret", "todo-kube-keycloak-secret"})
-        for payload in payloads.values():
+            "todo-kube-migrator-secret", "todo-kube-backend-secret", "keycloak-kube-admin-secret"})
+        for name, payload in payloads.items():
             self.assertEqual(payload["kind"], "Secret")
-            self.assertEqual(payload["data"]["database-password"], "Zml4dHVyZS1wYXNzd29yZA==")
-        self.assertIn("bootstrap-admin-password", payloads["todo-kube-keycloak-secret"]["data"])
+            key = "bootstrap-admin-password" if name == "keycloak-kube-admin-secret" else "database-password"
+            self.assertEqual(payload["data"][key], "Zml4dHVyZS1wYXNzd29yZA==")
 
     def test_superseded_separate_app_workloads_are_removed(self):
         for filename in (
@@ -225,7 +232,8 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("todo_installer", deploy)
         self.assertNotIn("include_role", deploy)
         self.assertEqual(set(install.SERVICES), {
-            "todo-app", "notes-app", "keycloak", "todo-postgres", "notes-postgres", "shared-proxy"})
+            "todo-app", "notes-app", "keycloak", "todo-postgres", "notes-postgres",
+            "keycloak-postgres", "shared-proxy"})
         self.assertIn("SourcePath", read(ROOT / "deploy/installer/todo_installer/install.py"))
 
     def test_clean_dev_start_bootstraps_roles_before_shared_services(self):

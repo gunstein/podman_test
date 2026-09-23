@@ -80,17 +80,13 @@ def main() -> None:
             connection, "todo_migrator", read_secret("todo-migrator-password")
         )
         ensure_login_role(connection, "todo_app", read_secret("todo-app-password"))
-        ensure_login_role(
-            connection, "keycloak_app", read_secret("todo-keycloak-db-password")
-        )
 
-        connection.execute("REVOKE keycloak_app FROM todo_migrator")
         connection.execute(
             sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(
                 sql.Identifier(database)
             )
         )
-        for role in ("todo_migrator", "todo_app", "keycloak_app"):
+        for role in ("todo_migrator", "todo_app"):
             connection.execute(
                 sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
                     sql.Identifier(database), sql.Identifier(role)
@@ -126,17 +122,9 @@ def main() -> None:
                 "GRANT USAGE, SELECT ON SEQUENCE todos_id_seq TO todo_app"
             )
 
-        connection.execute(
-            "CREATE SCHEMA IF NOT EXISTS keycloak AUTHORIZATION keycloak_app"
-        )
-        connection.execute("ALTER SCHEMA keycloak OWNER TO keycloak_app")
-        transfer_schema_objects(connection, "keycloak", "keycloak_app")
-        connection.execute("GRANT ALL ON SCHEMA keycloak TO keycloak_app")
-
         for role, search_path in (
             ("todo_migrator", "public"),
             ("todo_app", "public"),
-            ("keycloak_app", "keycloak"),
         ):
             connection.execute(
                 sql.SQL("ALTER ROLE {} IN DATABASE {} SET search_path = {}").format(

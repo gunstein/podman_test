@@ -9,6 +9,10 @@ class App:
     hostname: str
     keycloak_client: str
     replication_port: int = 5432
+    api_collection: str = ""
+
+    def api_path(self) -> str:
+        return "/api/" + (self.api_collection or self.name)
 
     def resource(self, component: str) -> str:
         return f"{self.name}-{component}"
@@ -60,7 +64,7 @@ class App:
 
 
 APPS = (
-    App(name="todo", chart="todo", hostname="todo.test", keycloak_client="todo-frontend"),
+    App(name="todo", chart="todo", hostname="todo.test", keycloak_client="todo-frontend", api_collection="todos"),
     App(name="notes", chart="notes", hostname="notes.test", keycloak_client="notes-frontend", replication_port=5433),
 )
 
@@ -82,6 +86,7 @@ def describe(app):
     return {
         "name": app.name,
         "hostname": app.hostname,
+        "api_path": app.api_path(),
         "keycloak_client": app.keycloak_client,
         "application_unit": app.unit("app"),
         "postgres_unit": app.unit("postgres"),

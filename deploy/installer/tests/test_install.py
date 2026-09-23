@@ -1,7 +1,9 @@
+import io
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -340,3 +342,18 @@ class FailureBoundaryTests(unittest.TestCase):
                     keycloak.wait(path, attempts, delay, status)
                 self.assertEqual(sleep.call_count, attempts - 1)
                 self.assertTrue(all(call.args == (delay,) for call in sleep.call_args_list))
+
+
+class RecoveryClientTests(unittest.TestCase):
+    def test_client_configuration_reads_secrets_directly_without_logging_values(self):
+        from todo_installer import cli
+        output = io.StringIO()
+        with patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, 'private-admin-fixture\n', '')) as run, \
+                patch.object(keycloak, 'configure', return_value=False) as configure, redirect_stdout(output):
+            self.assertEqual(cli.main(['configure-clients']), 0)
+        self.assertEqual(run.call_args.args[0], [
+            'podman', 'secret', 'inspect', '--showsecret', '--format', '{{.SecretData}}',
+            apps.IDENTITY_DATABASE_APP.secret('keycloak-admin')])
+        configure.assert_called_once_with('private-admin-fixture', [
+            (app.keycloak_client, app.hostname) for app in apps.REPLICATED_APPS])
+        self.assertEqual(output.getvalue(), '{"changed": false}\n')

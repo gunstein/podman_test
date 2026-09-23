@@ -23,118 +23,45 @@
       - m14_service_port | int <= 65535
     fail_msg: Check the recovery inventory hostname, address, service name and port.
 
-- name: Require active promoted PostgreSQL
-  ansible.builtin.command:
-    argv: [systemctl, --user, is-active, todo-postgres.service]
-  register: m14_postgres_service
-  changed_when: false
-  failed_when: m14_postgres_service.stdout | trim != "active"
+- name: Resolve all applications from the trusted registry
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/read-replication-registry.yml"
 
-- name: Require a writable promoted database
+- name: Require completed promotion and healthy writable databases for the entire group
   ansible.builtin.command:
-    argv:
-      - podman
-      - exec
-      - todo-postgres
-      - psql
-      - --username
-      - todo
-      - --dbname
-      - postgres
-      - --tuples-only
-      - --no-align
-      - --command
-      - SELECT pg_is_in_recovery(), current_setting('transaction_read_only');
-  register: m14_database_role
+    argv: [python3, -m, todo_installer, require-promoted-group, --journal, "{{ m14_config_directory }}/promotion.json"]
+  environment:
+    PYTHONPATH: "{{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0 else todo_installer_target ~ '/deploy/installer' }}"
+    PYTHONDONTWRITEBYTECODE: "1"
   changed_when: false
-  failed_when: m14_database_role.stdout | trim != "f|off"
 
-- name: Require existing runtime secrets
+- name: Require existing credentials for every application
   ansible.builtin.command:
     argv: [podman, secret, exists, "{{ item }}"]
-  loop:
-    - todo-migrator-password
-    - todo-app-password
-    - todo-keycloak-db-password
-    - todo-keycloak-admin-password
+  loop: "{{ todo_replication_metadata | map(attribute='raw_secrets') | flatten | unique }}"
   changed_when: false
 
-- name: Check application images
+- name: Load missing application images and verify the nginx image identity
   ansible.builtin.command:
-    argv: [podman, image, exists, "{{ item.image }}"]
-  loop:
-    - image: localhost/todo-backend:m12
-      archive: todo-backend-m12.tar
-    - image: localhost/todo-frontend:m12
-      archive: todo-frontend-m12.tar
-    - image: localhost/todo-proxy:m12
-      archive: todo-proxy-m12.tar
-    - image: localhost/keycloak:m12
-      archive: keycloak-m12.tar
-  register: m14_image_checks
-  changed_when: false
-  failed_when: m14_image_checks.rc not in [0, 1]
-  loop_control:
-    label: "{{ item.image }}"
-
-- name: Check the archive for each missing application image
-  ansible.builtin.stat:
-    path: "{{ m14_bundle_directory }}/images/{{ item.item.archive }}"
-  loop: "{{ m14_image_checks.results }}"
-  when: item.rc == 1
-  register: m14_archives
-  loop_control:
-    label: "{{ item.item.archive }}"
-
-- name: Require an archive for each missing application image
-  ansible.builtin.assert:
-    that:
-      - item.stat.exists
-      - item.stat.isreg
-    fail_msg: "Missing offline image archive: {{ item.item.item.archive }}"
-  loop: "{{ m14_archives.results }}"
-  when: not (item.skipped | default(false))
-  loop_control:
-    label: "{{ item.item.item.archive }}"
-
-- name: Load missing application images
-  ansible.builtin.command:
-    argv:
-      - podman
-      - load
-      - --input
-      - "{{ m14_bundle_directory }}/images/{{ item.item.archive }}"
-  loop: "{{ m14_image_checks.results }}"
-  when: item.rc == 1
+    argv: [python3, -m, todo_installer, prepare-promoted-images, --bundle-dir, "{{ m14_bundle_directory }}"]
+  environment:
+    PYTHONPATH: "{{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0 else todo_installer_target ~ '/deploy/installer' }}"
+    PYTHONDONTWRITEBYTECODE: "1"
   register: m14_images_loaded
-  changed_when: true
+  changed_when: (m14_images_loaded.stdout | from_json).changed
+
+- name: Initialize group application changes
+  ansible.builtin.set_fact:
+    m14_apps_changed: false
+    m14_application_services: >-
+      {{ ['shared-proxy.service'] + (todo_replication_metadata | map(attribute='application_service') | list)
+         + ['keycloak.service'] }}
+
+- name: Install each grouped Kube application on the promoted host
+  ansible.builtin.include_tasks: application.yml
+  loop: "{{ todo_replication_metadata }}"
   loop_control:
-    label: "{{ item.item.image }}"
-
-- name: Inspect the shared proxy implementation
-  ansible.builtin.command:
-    argv: [podman, image, inspect, localhost/todo-proxy:m12]
-  register: m14_proxy_image_inspection
-  changed_when: false
-
-- name: Require the nginx proxy image
-  ansible.builtin.assert:
-    that:
-      - >-
-        (m14_proxy_image_inspection.stdout | from_json | first).Labels.get(
-          'io.todo.proxy', ''
-        ) == 'nginx'
-    fail_msg: >-
-      The staged localhost/todo-proxy:m12 image does not identify nginx.
-      Load the proxy archive from the current verified offline bundle before failover.
-
-- name: Install the grouped Kube application on the promoted host
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
-  vars:
-    todo_installer_workload: application
-    todo_rendered_manifest_directory: "{{ m14_bundle_directory }}/generated/kube-runtime"
-    todo_publish_address: "{{ m14_node_address }}"
-    todo_service_port: "{{ m14_service_port }}"
+    loop_var: m14_app
+    label: "{{ m14_app.name }}"
 
 - name: Install the shared Kube proxy on the promoted host
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
@@ -144,26 +71,22 @@
     todo_publish_address: "{{ m14_node_address }}"
     todo_service_port: "{{ m14_service_port }}"
 
-- name: Stop changed grouped application workloads
+- name: Stop changed application workloads as a group
   ansible.builtin.command:
-    argv: [systemctl, --user, stop, "{{ item }}"]
-  loop:
-    - todo-app.service
-    - keycloak.service
-    - shared-proxy.service
+    argv: "{{ ['systemctl', '--user', 'stop'] + m14_application_services }}"
   changed_when: false
   register: m14_service_stopped
   failed_when: m14_service_stopped.rc not in [0, 5]
-  when: >-
-    todo_application_kube_changed or
-    todo_proxy_kube_changed or
-    m14_images_loaded.changed | default(false)
+  when: m14_apps_changed or todo_proxy_kube_changed or m14_images_loaded.changed
 
-- name: Start the promoted grouped application
+- name: Start each promoted grouped application
   ansible.builtin.systemd_service:
-    name: todo-app.service
+    name: "{{ item.application_service }}"
     scope: user
     state: started
+  loop: "{{ todo_replication_metadata }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 - name: Start the promoted shared proxy
   ansible.builtin.systemd_service:
@@ -171,25 +94,14 @@
     scope: user
     state: started
 
-- name: Wait for backend health through local nginx
-  ansible.builtin.uri:
-    url: http://127.0.0.1:8080/health
-    return_content: true
-  register: m14_health
-  until: m14_health.status == 200 and m14_health.json.status == "ok"
-  retries: 30
-  delay: 1
+- name: Verify health readiness and public reads for every application
+  ansible.builtin.include_tasks: readiness.yml
+  loop: "{{ todo_replication_metadata }}"
+  loop_control:
+    loop_var: m14_app
+    label: "{{ m14_app.name }}"
 
-- name: Wait for database readiness through local nginx
-  ansible.builtin.uri:
-    url: http://127.0.0.1:8080/ready
-    return_content: true
-  register: m14_readiness
-  until: m14_readiness.status == 200 and m14_readiness.json.status == "ready"
-  retries: 30
-  delay: 1
-
-- name: Wait for Keycloak discovery through local nginx
+- name: Wait for the canonical shared Keycloak issuer
   ansible.builtin.uri:
     url: http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
     return_content: true
@@ -200,93 +112,14 @@
   retries: 90
   delay: 2
 
-- name: Read the existing Keycloak administrator secret
+- name: Configure redirects and origins for every registered frontend client
   ansible.builtin.command:
-    argv:
-      - podman
-      - secret
-      - inspect
-      - --showsecret
-      - --format
-      - "{{ '{{.SecretData}}' }}"
-      - todo-keycloak-admin-password
-  register: m14_keycloak_admin_password
-  changed_when: false
-  no_log: true
-
-- name: Obtain a short-lived Keycloak administrator token
-  ansible.builtin.uri:
-    url: http://127.0.0.1:8080/auth/realms/master/protocol/openid-connect/token
-    method: POST
-    body_format: form-urlencoded
-    body:
-      grant_type: password
-      client_id: admin-cli
-      username: admin
-      password: "{{ m14_keycloak_admin_password.stdout }}"
-    return_content: true
-    status_code: 200
-  register: m14_admin_token
-  no_log: true
-
-- name: Find the Todo frontend client
-  ansible.builtin.uri:
-    url: http://127.0.0.1:8080/auth/admin/realms/todo/clients?clientId=todo-frontend
-    headers:
-      Authorization: "Bearer {{ m14_admin_token.json.access_token }}"
-    return_content: true
-    status_code: 200
-  register: m14_client_query
-  no_log: true
-
-- name: Require exactly one Todo frontend client
-  ansible.builtin.assert:
-    that:
-      - m14_client_query.json | length == 1
-    fail_msg: Expected exactly one Keycloak client named todo-frontend.
-
-- name: Read the complete Todo frontend client representation
-  ansible.builtin.uri:
-    url: >-
-      http://127.0.0.1:8080/auth/admin/realms/todo/clients/{{
-      m14_client_query.json[0].id }}
-    headers:
-      Authorization: "Bearer {{ m14_admin_token.json.access_token }}"
-    return_content: true
-    status_code: 200
-  register: m14_client
-  no_log: true
-
-- name: Update the Todo frontend stable redirect and origin
-  ansible.builtin.uri:
-    url: >-
-      http://127.0.0.1:8080/auth/admin/realms/todo/clients/{{
-      m14_client_query.json[0].id }}
-    method: PUT
-    headers:
-      Authorization: "Bearer {{ m14_admin_token.json.access_token }}"
-    body_format: json
-    body: >-
-      {{
-        m14_client.json
-        | combine({
-            'redirectUris': [m14_service_origin ~ '/'],
-            'webOrigins': [m14_service_origin]
-          })
-      }}
-    status_code: 204
-  when: >-
-    m14_client.json.redirectUris != [m14_service_origin ~ '/'] or
-    m14_client.json.webOrigins != [m14_service_origin]
-  no_log: true
-
-- name: Verify public Todo reads through local nginx
-  ansible.builtin.uri:
-    url: http://127.0.0.1:8080/api/todos
-    return_content: true
-    status_code: 200
-  register: m14_todos
-  failed_when: m14_todos.json is not sequence
+    argv: [python3, -m, todo_installer, configure-clients]
+  environment:
+    PYTHONPATH: "{{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0 else todo_installer_target ~ '/deploy/installer' }}"
+    PYTHONDONTWRITEBYTECODE: "1"
+  register: m14_clients
+  changed_when: (m14_clients.stdout | from_json).changed
 
 - name: Read the promoted nginx public root certificate
   ansible.builtin.command:
@@ -308,6 +141,6 @@
 - name: Report successful promoted application deployment
   ansible.builtin.debug:
     msg: >-
-      Grouped Kube application is healthy on {{ m14_service_origin }}.
-      PostgreSQL was already promoted; schema migration ran only through the
-      todo-app init container and no database-role bootstrap ran.
+      All registered applications are healthy through the shared proxy and identity provider.
+      Every database was already promoted; only application init migrations ran.
+      No database-role bootstrap ran.

@@ -122,16 +122,6 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertIn("last_archived_wal", status)
         self.assertIn("last_archived_time >= last_failed_time", status)
 
-    def test_secret_reads_are_direct_and_suppressed(self):
-        promoted_tasks = read("deploy/ansible/roles/promoted_application/tasks/main.yml")
-        secret_block = promoted_tasks.split(
-            "- name: Read the existing Keycloak administrator secret", 1
-        )[1].split("- name: Obtain a short-lived Keycloak administrator token", 1)[0]
-        self.assertIn("- secret\n      - inspect", secret_block)
-        self.assertIn("--showsecret", secret_block)
-        self.assertNotIn("- run", secret_block)
-        self.assertIn("no_log: true", secret_block)
-
     def test_vault_provisioning_is_outside_demo_scope(self):
         for removed_path in (
             "deploy/ansible/provision-secrets.yml",

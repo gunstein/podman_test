@@ -116,3 +116,33 @@ Private evidence: `/tmp/notes-dr-vms/two-app-bootstrap-serialized.log`,
 `two-app-replication-evidence.log`, `bootstrap-backup-port-tests.log`; original
 failed preflight logs remain alongside these. This is an incremental repaired
 checkpoint, not the final unchanged-revision promotion/backup/rebuild acceptance.
+
+## Checkpoint 4b: group promotion and both applications
+
+On the same disposable pair, promotion was first refused while the primary was
+reachable. Notes WAL replay was then paused and an extra Notes marker was
+committed; observed local apply lag was 496 bytes. After the disposable primary
+QEMU process exited, an actual `promote` attempt refused the Notes lag before
+promoting either database. Both remained read-only and no decision record existed.
+After replay resumed and both databases caught up, the guarded tool promoted both
+and persisted a completed record listing Todo and Notes.
+
+Application deployment before completed promotion was also refused. After the
+successful group promotion, both application workloads, singular Keycloak and
+shared proxy deployed through the existing workload bridge. All six exact
+SourcePaths and original per-app database markers were checked. Real Chromium
+passed bidirectional SSO, CRUD and cross-audience rejection with strict TLS;
+OpenSSL verified both names against the same SAN certificate. The browser test
+runtime received exact file trust in the disposable guest's separate test trust
+file; SELinux and fapolicyd remained enforcing/active. Repeated application
+recovery reported `changed=0`.
+
+Evidence: `two-app-lag-refusal.log`, `two-app-primary-fenced.log`,
+`two-app-promotion-live.log`, `two-app-refuse-premature-application.log`,
+`two-app-promoted-deploy.log`, `two-app-promoted-repeat.log`, and
+`two-app-promoted-browser-fixed.log` under `/tmp/notes-dr-vms`.
+The browser harness initially used a virtualenv lacking Jinja2; using system
+Python plus the already-installed browser test dependencies fixed the harness.
+The complete suite passed 161 tests after replacing the old Ansible secret-read
+source assertion with an executed Python secret-read/output-suppression test.
+This remains a repaired development checkpoint, not final full DR acceptance.

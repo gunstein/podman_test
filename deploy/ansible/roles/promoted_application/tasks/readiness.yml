@@ -1,0 +1,32 @@
+---
+- name: Wait for backend health through the selected nginx virtual host
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/health
+    headers:
+      Host: "{{ m14_app.hostname }}"
+    return_content: true
+  register: m14_health
+  until: m14_health.status == 200 and m14_health.json.status == 'ok'
+  retries: 30
+  delay: 1
+
+- name: Wait for database readiness through the selected nginx virtual host
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/ready
+    headers:
+      Host: "{{ m14_app.hostname }}"
+    return_content: true
+  register: m14_readiness
+  until: m14_readiness.status == 200 and m14_readiness.json.status == 'ready'
+  retries: 30
+  delay: 1
+
+- name: Verify public application reads through the selected nginx virtual host
+  ansible.builtin.uri:
+    url: "{{ 'http://127.0.0.1:8080' ~ m14_app.api_path }}"
+    headers:
+      Host: "{{ m14_app.hostname }}"
+    return_content: true
+    status_code: 200
+  register: m14_public_reads
+  failed_when: m14_public_reads.json is not sequence

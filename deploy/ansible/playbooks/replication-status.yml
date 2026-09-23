@@ -1,125 +1,27 @@
 ---
-- name: Read replication state from primary
-  hosts: todo_primary
+- name: Verify replication on both initial database hosts
+  hosts: todo_cluster
+  # The shared trust role also updates exact controller file trust. Serialize it.
+  serial: 1
   gather_facts: false
-
+  any_errors_fatal: true
+  vars:
+    project_root: "{{ playbook_dir }}/../../.."
   tasks:
-    - name: Query the primary replication connection
-      ansible.builtin.command:
-        argv:
-          - podman
-          - exec
-          - todo-postgres
-          - psql
-          - --username
-          - todo
-          - --dbname
-          - postgres
-          - --tuples-only
-          - --no-align
-          - --field-separator=|
-          - --command
-          - >-
-            SELECT application_name, client_addr, state, sync_state,
-                   pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)::bigint
-            FROM pg_stat_replication
-            WHERE application_name = 'todo_standby';
-      register: m13_primary_status
-      changed_when: false
-      failed_when: m13_primary_status.stdout | trim == ''
+    - name: Select the complete database group
+      ansible.builtin.include_tasks: ../tasks/replication-apps.yml
 
-    - name: Parse the primary replication state
-      ansible.builtin.set_fact:
-        m13_primary_fields: >-
-          {{ (m13_primary_status.stdout | trim).split("|") }}
+    - name: Check each database role and replication state
+      ansible.builtin.include_tasks: ../tasks/replicate-workload.yml
+      loop: "{{ apps_to_replicate }}"
+      loop_control:
+        loop_var: todo_replication_app
+      vars:
+        todo_replication_operation: "{{ 'streaming' if todo_node_role == 'primary' else 'status' }}"
 
-    - name: Require active streaming replication
-      ansible.builtin.assert:
-        that:
-          - m13_primary_fields | length == 5
-          - m13_primary_fields[2] == "streaming"
-        fail_msg: The todo_standby connection is present but not streaming.
-
-    - name: Show primary replication state
-      ansible.builtin.debug:
-        msg: >-
-          primary: application|client|state|sync|lag_bytes =
-          {{ m13_primary_status.stdout | trim }}
-
-    - name: Query the physical replication slot
-      ansible.builtin.command:
-        argv:
-          - podman
-          - exec
-          - todo-postgres
-          - psql
-          - --username
-          - todo
-          - --dbname
-          - postgres
-          - --tuples-only
-          - --no-align
-          - --field-separator=|
-          - --command
-          - >-
-            SELECT slot_name, active, wal_status, safe_wal_size,
-                   COALESCE(invalidation_reason, '')
-            FROM pg_replication_slots
-            WHERE slot_name = 'todo_standby';
-      register: m13_primary_slot
-      changed_when: false
-      failed_when: m13_primary_slot.stdout | trim == ''
-
-    - name: Parse the physical replication slot state
-      ansible.builtin.set_fact:
-        m13_slot_fields: "{{ (m13_primary_slot.stdout | trim).split('|') }}"
-
-    - name: Require a usable active replication slot
-      ansible.builtin.assert:
-        that:
-          - m13_slot_fields | length == 5
-          - m13_slot_fields[1] == 't'
-          - m13_slot_fields[2] in ['reserved', 'extended']
-          - m13_slot_fields[4] == ''
-        fail_msg: >-
-          The todo_standby slot is inactive, losing WAL or invalidated.
-          Inspect it before attempting promotion or rebuilding standby.
-
-    - name: Show physical replication slot health
-      ansible.builtin.debug:
-        msg: >-
-          primary slot: name|active|wal_status|safe_wal_bytes|invalidation =
-          {{ m13_primary_slot.stdout | trim }}
-
-- name: Read recovery state from standby
-  hosts: todo_standby
-  gather_facts: false
-
-  tasks:
-    - name: Query standby recovery and replay state
-      ansible.builtin.command:
-        argv:
-          - podman
-          - exec
-          - todo-postgres
-          - psql
-          - --username
-          - todo
-          - --dbname
-          - postgres
-          - --tuples-only
-          - --no-align
-          - --field-separator=|
-          - --command
-          - >-
-            SELECT pg_is_in_recovery(), pg_last_wal_receive_lsn(),
-                   pg_last_wal_replay_lsn();
-      register: m13_standby_status
-      changed_when: false
-      failed_when: not (m13_standby_status.stdout | trim).startswith('t|')
-
-    - name: Show standby recovery state
-      ansible.builtin.debug:
-        msg: >-
-          standby: recovery|receive_lsn|replay_lsn =
-          {{ m13_standby_status.stdout | trim }}
+    - name: Require read-only recovery on each standby
+      ansible.builtin.include_tasks: ../tasks/require-standby.yml
+      loop: "{{ apps_to_replicate }}"
+      loop_control:
+        loop_var: todo_replication_app
+      when: todo_node_role == 'standby'

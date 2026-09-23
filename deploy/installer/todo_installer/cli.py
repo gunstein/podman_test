@@ -39,10 +39,11 @@ def main(argv=None):
     info = subcommands.add_parser('app-info')
     info.add_argument('--app', choices=[app.name for app in apps.APPS],
                       default=apps.IDENTITY_DATABASE_APP.name)
-    subcommands.add_parser('replication-apps')
+    registry = subcommands.add_parser('replication-apps')
+    registry.add_argument('--details', action='store_true')
     replicate = subcommands.add_parser('replicate-workload')
     paths(replicate)
-    replicate.add_argument('operation', choices=('primary', 'standby', 'status', 'authenticate'))
+    replicate.add_argument('operation', choices=('primary', 'standby', 'status', 'authenticate', 'streaming'))
     replicate.add_argument('--app', choices=[app.name for app in apps.REPLICATED_APPS],
                            default=apps.IDENTITY_DATABASE_APP.name)
     replicate.add_argument('--node-address', default='')
@@ -50,6 +51,15 @@ def main(argv=None):
     replicate.add_argument('--rendered-manifest-dir', type=Path)
     replicate.add_argument('--image-archive', type=Path)
     replicate.add_argument('--slot')
+    replicate.add_argument('--rebuilt', action='store_true')
+    promoted = subcommands.add_parser('require-promoted-group')
+    promoted.add_argument('--journal', type=Path,
+                          default=Path.home() / '.config/todo/promotion.json')
+    recovered_images = subcommands.add_parser('prepare-promoted-images')
+    recovered_images.add_argument('--bundle-dir', type=Path, required=True)
+    subcommands.add_parser('configure-clients')
+    service_list = subcommands.add_parser('services')
+    service_list.add_argument('--application-tier', action='store_true')
     remove = subcommands.add_parser('uninstall')
     remove.add_argument('--remove-data', action='store_true')
     remove.add_argument('--quadlet-dir', type=Path)
@@ -61,7 +71,8 @@ def main(argv=None):
         if args.command == 'app-info':
             print(json.dumps(apps.describe(next(app for app in apps.APPS if app.name == args.app))))
         elif args.command == 'replication-apps':
-            print(json.dumps([app.name for app in apps.REPLICATED_APPS]))
+            print(json.dumps([apps.describe(app) if args.details else app.name
+                              for app in apps.REPLICATED_APPS]))
         elif args.command == 'replicate-workload':
             from . import replication
             app = next(app for app in apps.REPLICATED_APPS if app.name == args.app)
@@ -76,11 +87,30 @@ def main(argv=None):
                     kube_runtime_dir=(args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve(),
                     rendered_manifest_dir=args.rendered_manifest_dir or args.project_root / 'generated/kube-runtime',
                     image_archive=args.image_archive, slot=args.slot)
+            elif args.operation == 'streaming':
+                result['status'] = replication.streaming_status(app, rebuilt=args.rebuilt)
             elif args.operation == 'authenticate':
                 result['system_identifier'] = replication.authenticate(app, args.primary_address)
             else:
                 result['status'] = replication.status(app)
             print(json.dumps(result))
+        elif args.command == 'require-promoted-group':
+            from . import replication
+            print(json.dumps({'changed': replication.require_promoted_group(args.journal)}))
+        elif args.command == 'prepare-promoted-images':
+            from . import images
+            changed = any(images.prepare_shared(args.bundle_dir, 'offline', args.bundle_dir).values())
+            for app in apps.REPLICATED_APPS:
+                changed = any(images.prepare(args.bundle_dir, 'offline', args.bundle_dir,
+                                             app=app, include_shared=False).values()) or changed
+            print(json.dumps({'changed': changed}))
+        elif args.command == 'configure-clients':
+            from . import keycloak, secrets
+            changed = keycloak.configure(secrets.read(apps.IDENTITY_DATABASE_APP.secret('keycloak-admin')),
+                                         [(app.keycloak_client, app.hostname) for app in apps.REPLICATED_APPS])
+            print(json.dumps({'changed': changed}))
+        elif args.command == 'services':
+            print(json.dumps(apps.services(databases=not args.application_tier)))
         elif args.command == 'install':
             install.install(args.project_root, args.mode, args.deployment_mode, args.bundle_dir,
                             args.refresh_images, args.publish_address, args.service_port,

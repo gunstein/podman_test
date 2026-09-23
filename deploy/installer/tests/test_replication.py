@@ -9,8 +9,8 @@ from todo_installer import apps, replication
 
 
 class ReplicationTests(unittest.TestCase):
-    def test_initial_registry_replicates_todo_only(self):
-        self.assertEqual([app.name for app in apps.REPLICATED_APPS], ['todo'])
+    def test_registry_replicates_each_independent_database(self):
+        self.assertEqual([app.name for app in apps.REPLICATED_APPS], ['todo', 'notes'])
         app = apps.IDENTITY_DATABASE_APP
         self.assertEqual(app.replication_slot(), 'todo_standby')
         self.assertEqual(app.replication_slot(rebuilt=True), 'todo_rebuilt_standby')
@@ -120,3 +120,28 @@ class ReplicationTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'not fully replayed'):
                 replication.promote(apps.APPS[0])
             run.assert_not_called()
+
+    def test_streaming_requires_each_apps_own_usable_slot(self):
+        for app in apps.REPLICATED_APPS:
+            slot = app.replication_slot()
+            with patch.object(replication, 'require_primary'), patch.object(replication, 'sql') as sql:
+                sql.side_effect = [f'{slot}|192.0.2.51|streaming|async|0', f'{slot}|t|reserved|1000|']
+                self.assertEqual(replication.streaming_status(app)['slot'][0], slot)
+                self.assertTrue(all(call.args[0] == app for call in sql.call_args_list))
+                for invalid in (f'{slot}|f|reserved|1000|', f'{slot}|t|lost||wal_removed'):
+                    sql.side_effect = [f'{slot}|192.0.2.51|streaming|async|0', invalid]
+                    with self.assertRaisesRegex(RuntimeError, 'losing WAL or invalidated'):
+                        replication.streaming_status(app)
+
+    def test_incomplete_promotion_record_cannot_expose_any_application(self):
+        names = [app.name for app in apps.REPLICATED_APPS]
+        with tempfile.TemporaryDirectory() as temp:
+            journal = Path(temp) / 'promotion.json'
+            for decision in ({'state': 'failed', 'applications': names, 'completed': names},
+                             {'state': 'promoting', 'applications': names, 'completed': names[:1]},
+                             {'state': 'complete', 'applications': names[:1], 'completed': names[:1]}):
+                journal.write_text(json.dumps(decision))
+                with patch.object(replication, 'run') as run:
+                    with self.assertRaisesRegex(RuntimeError, 'complete database group'):
+                        replication.require_promoted_group(journal)
+                    run.assert_not_called()

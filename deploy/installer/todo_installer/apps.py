@@ -10,7 +10,6 @@ class App:
     keycloak_client: str
     replication_port: int = 5432
 
-
     def resource(self, component: str) -> str:
         return f"{self.name}-{component}"
 
@@ -62,7 +61,7 @@ class App:
 
 APPS = (
     App(name="todo", chart="todo", hostname="todo.test", keycloak_client="todo-frontend"),
-    App(name="notes", chart="notes", hostname="notes.test", keycloak_client="notes-frontend"),
+    App(name="notes", chart="notes", hostname="notes.test", keycloak_client="notes-frontend", replication_port=5433),
 )
 
 # The existing Todo database hosts the shared realm; preserve its stored credentials.
@@ -73,8 +72,8 @@ KEYCLOAK_ARCHIVE = "keycloak-m12.tar"
 PROXY_IMAGE = IDENTITY_DATABASE_APP.image("proxy")
 PROXY_ARCHIVE = IDENTITY_DATABASE_APP.image_archive("proxy")
 
-# Expand only after the Todo-only replication bridge has passed live acceptance.
-REPLICATED_APPS = (IDENTITY_DATABASE_APP,)
+# Todo-only bridge and guarded promotion passed live two-host checkpoints first.
+REPLICATED_APPS = APPS
 
 
 def describe(app):
@@ -82,6 +81,12 @@ def describe(app):
     identity = app == IDENTITY_DATABASE_APP
     return {
         "name": app.name,
+        "hostname": app.hostname,
+        "keycloak_client": app.keycloak_client,
+        "application_unit": app.unit("app"),
+        "postgres_unit": app.unit("postgres"),
+        "raw_secrets": [app.secret(role) for role in ("db", "migrator", "app", "replicator")]
+                       + ([app.secret("keycloak-db"), app.secret("keycloak-admin")] if identity else []),
         "postgres_container": app.resource("postgres"),
         "postgres_service": app.service("postgres"),
         "application_service": app.service("app"),
@@ -104,3 +109,9 @@ def describe(app):
             "shared-proxy": ["shared-proxy.yaml", IDENTITY_DATABASE_APP.manifest("config")],
         },
     }
+
+
+def services(applications=None, *, databases=True):
+    selected = REPLICATED_APPS if applications is None else applications
+    return ['shared-proxy.service', *[app.service('app') for app in selected], 'keycloak.service'] + (
+        [app.service('postgres') for app in selected] if databases else [])

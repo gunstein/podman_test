@@ -38,28 +38,18 @@
   gather_facts: false
   any_errors_fatal: true
 
+  vars:
+    project_root: "{{ playbook_dir }}/../../.."
+
   tasks:
-    - name: Read the standby streaming state
-      ansible.builtin.command:
-        argv:
-          - podman
-          - exec
-          - todo-postgres
-          - psql
-          - --username
-          - todo
-          - --dbname
-          - postgres
-          - --tuples-only
-          - --no-align
-          - --command
-          - SELECT state FROM pg_stat_replication WHERE application_name = 'todo_standby';
-      register: primary_replication_state
-      changed_when: false
-      retries: 15
-      delay: 2
-      until: primary_replication_state.stdout | trim == 'streaming'
+    - name: Verify each independent replication stream and slot
+      ansible.builtin.include_tasks: ../tasks/replicate-workload.yml
+      loop: "{{ apps_to_replicate }}"
+      loop_control:
+        loop_var: todo_replication_app
+      vars:
+        todo_replication_operation: streaming
 
     - name: Report successful streaming replication
       ansible.builtin.debug:
-        msg: PostgreSQL standby is streaming asynchronously from primary.
+        msg: Every registered PostgreSQL standby is streaming through its own physical slot.

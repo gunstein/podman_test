@@ -1,0 +1,54 @@
+---
+- name: Require target Python templating dependency
+  ansible.builtin.command:
+    argv: [python3, -c, 'import jinja2']
+  changed_when: false
+
+- name: Create target installer staging directories
+  ansible.builtin.file:
+    path: "{{ todo_installer_target }}/{{ item }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - deploy/installer/todo_installer
+    - deploy/quadlet
+    - generated/kube-runtime
+
+- name: Detect target execution trust policy
+  ansible.builtin.command:
+    argv: [systemctl, is-active, fapolicyd]
+  register: todo_installer_fapolicyd
+  changed_when: false
+  failed_when: todo_installer_fapolicyd.rc not in [0, 3, 4]
+
+- name: Initialize exact installer file list
+  ansible.builtin.set_fact:
+    todo_installer_trust_files: []
+
+- name: Collect exact installer source and target paths
+  ansible.builtin.set_fact:
+    todo_installer_trust_files: >-
+      {{ todo_installer_trust_files + [{'source': item,
+         'dest': '/opt/todo/lib/todo_installer/' ~ (item | basename), 'mode': '0644'}] }}
+  loop: "{{ query('ansible.builtin.fileglob', project_root ~ '/deploy/installer/todo_installer/*.py') }}"
+  when: todo_installer_fapolicyd.rc == 0
+
+- name: Install and trust Python installer on hardened targets
+  ansible.builtin.include_role:
+    name: todo_fapolicyd
+  vars:
+    todo_fapolicyd_install_directory: /opt/todo/lib/todo_installer
+    todo_fapolicyd_files: "{{ todo_installer_trust_files }}"
+  when: todo_installer_fapolicyd.rc == 0
+
+- name: Stage shared Python installer on the target
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ todo_installer_target }}/deploy/installer/todo_installer/"
+    mode: "0600"
+  when: todo_installer_fapolicyd.rc != 0
+  loop: "{{ query('ansible.builtin.fileglob', project_root ~ '/deploy/installer/todo_installer/*.py') }}"
+
+- name: Record successful staging for this playbook run
+  ansible.builtin.set_fact:
+    todo_installer_completed_stage: "{{ [project_root, todo_installer_target, todo_installer_quadlet] }}"

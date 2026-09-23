@@ -41,6 +41,9 @@ class FakeRunner:
 
 class TodoDrTests(unittest.TestCase):
     def setUp(self):
+        registry = mock.patch.object(todo_dr.apps, 'REPLICATED_APPS', (todo_dr.apps.APPS[0],))
+        registry.start()
+        self.addCleanup(registry.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.journal = Path(self.temporary.name) / 'promotion.json'
@@ -151,10 +154,6 @@ class TodoDrTests(unittest.TestCase):
         tool = todo_dr.TodoDr(self.config(), runner=timeout_runner)
         with self.assertRaisesRegex(todo_dr.DrError, "timed out"):
             tool.service_status()
-
-if __name__ == "__main__":
-    unittest.main()
-
 
 class GroupPromotionTests(unittest.TestCase):
     def setUp(self):
@@ -281,3 +280,7 @@ class GroupPromotionTests(unittest.TestCase):
         with tool._promotion_lock(), self.assertRaisesRegex(todo_dr.DrError, 'holds the lock'):
             self.tool().promote('primary is fenced', 'standby')
         self.assertEqual(self.commands, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -30,9 +30,15 @@
   changed_when: false
   failed_when: m13_user_systemd.rc not in [0, 1]
 
-- name: Check the PostgreSQL data volume
+- name: Read the complete database group
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/read-replication-registry.yml"
+
+- name: Check every PostgreSQL data volume
   ansible.builtin.command:
-    argv: [podman, volume, exists, todo-postgres-data]
+    argv: [podman, volume, exists, "{{ item.data_volume }}"]
+  loop: "{{ todo_replication_metadata }}"
+  loop_control:
+    label: "{{ item.name }}"
   register: m13_postgres_volume
   changed_when: false
   failed_when: m13_postgres_volume.rc not in [0, 1]

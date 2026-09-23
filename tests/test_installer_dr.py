@@ -32,14 +32,18 @@ class DRInstallerTests(unittest.TestCase):
                 )
                 stub.chmod(0o755)
             tasks = []
-            for workload, fact in [('postgres', 'todo_postgres_kube_changed'),
-                                   ('application', 'todo_application_kube_changed'),
-                                   ('shared-proxy', 'todo_proxy_kube_changed')]:
+            for workload, fact, app in [
+                ('postgres', 'todo_postgres_kube_changed', 'todo'),
+                ('application', 'todo_application_kube_changed', 'todo'),
+                ('postgres', 'todo_postgres_kube_changed', 'notes'),
+                ('application', 'todo_application_kube_changed', 'notes'),
+                ('shared-proxy', 'todo_proxy_kube_changed', 'todo'),
+            ]:
                 for expected in ('true', 'false'):
                     tasks.extend([
                         {'name': 'Install ' + workload,
                          'ansible.builtin.include_tasks': str(ROOT / 'deploy/ansible/tasks/install-workload.yml'),
-                         'vars': {'todo_installer_workload': workload}},
+                         'vars': {'todo_installer_workload': workload, 'todo_installer_app': app}},
                         {'name': 'Check change result', 'ansible.builtin.assert': {
                             'that': [f'{fact} == {expected}']}},
                     ])
@@ -58,13 +62,10 @@ class DRInstallerTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             runtime = base / 'target/.config/containers/systemd/todo-kube-runtime'
             self.assertEqual({p.name for p in runtime.glob('*.kube')}, {
-                'todo-postgres.kube', 'keycloak.kube', 'todo-app.kube', 'shared-proxy.kube'})
+                'todo-postgres.kube', 'keycloak.kube', 'todo-app.kube', 'shared-proxy.kube',
+                'notes-postgres.kube', 'notes-app.kube'})
             for path in runtime.iterdir():
                 expected = (RUNTIME / path.name).read_bytes()
-                if path.name == 'shared-proxy.kube':
-                    expected = expected.replace(b'todo-app.service notes-app.service keycloak.service',
-                                                b'todo-app.service keycloak.service')
-                    self.assertNotIn(b'notes-app.service', path.read_bytes())
                 self.assertEqual(path.read_bytes(), expected)
 
 

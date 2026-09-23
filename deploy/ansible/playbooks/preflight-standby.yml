@@ -1,6 +1,8 @@
 ---
-- name: Inspect both initial database hosts without changing them
+- name: Inspect both initial database hosts before changing runtime state
   hosts: todo_cluster
+  # The shared trust role also updates exact controller file trust. Serialize it.
+  serial: 1
   gather_facts: false
   any_errors_fatal: true
 
@@ -38,15 +40,15 @@
     - name: Require existing primary database data
       ansible.builtin.assert:
         that:
-          - hostvars[primary_host].m13_postgres_volume.rc == 0
-        fail_msg: The primary todo-postgres-data volume does not exist.
+          - hostvars[primary_host].m13_postgres_volume.results | map(attribute='rc') | reject('equalto', 0) | list | length == 0
+        fail_msg: Every registered primary database must already have its data volume.
 
     - name: Require an empty standby before initial base backup
       ansible.builtin.assert:
         that:
-          - hostvars[standby_host].m13_postgres_volume.rc == 1
+          - hostvars[standby_host].m13_postgres_volume.results | map(attribute='rc') | reject('equalto', 1) | list | length == 0
         fail_msg: >-
-          Standby already has a todo-postgres-data volume. The preflight will
+          Standby already has a registered database data volume. The preflight will
           not overwrite it. Inspect or remove it explicitly before bootstrap.
       when: m13_require_empty_standby | bool
 
@@ -55,4 +57,4 @@
         msg: >-
           Standby preflight passed for {{ primary_host }}
           ({{ hostvars[primary_host].todo_node_address }}) and {{ standby_host }}
-          ({{ hostvars[standby_host].todo_node_address }}). No state was changed.
+          ({{ hostvars[standby_host].todo_node_address }}). No runtime or database state was changed; the exact registry implementation was staged.

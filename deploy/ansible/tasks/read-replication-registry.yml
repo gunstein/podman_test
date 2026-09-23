@@ -1,0 +1,27 @@
+---
+# Trust the exact packaged implementation before reading names. No runtime/data changes.
+- name: Stage and trust the registry implementation
+  ansible.builtin.include_tasks: stage-installer.yml
+  vars:
+    project_root: "{{ playbook_dir }}/../../.."
+
+- name: Read the complete replication registry
+  ansible.builtin.command:
+    argv: [python3, -m, todo_installer, replication-apps, --details]
+  environment:
+    PYTHONPATH: >-
+      {{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0
+         else todo_installer_target ~ '/deploy/installer' }}
+    PYTHONDONTWRITEBYTECODE: "1"
+  register: todo_replication_metadata_result
+  changed_when: false
+
+- name: Select the complete replication metadata
+  ansible.builtin.set_fact:
+    todo_replication_metadata: "{{ todo_replication_metadata_result.stdout | from_json }}"
+
+- name: Refuse a partial replication group override
+  ansible.builtin.assert:
+    that:
+      - apps_to_replicate | default(todo_replication_metadata | map(attribute='name') | list) == todo_replication_metadata | map(attribute='name') | list
+    fail_msg: All registered databases must pass the group gates together.

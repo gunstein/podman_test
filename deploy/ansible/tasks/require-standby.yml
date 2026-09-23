@@ -1,0 +1,12 @@
+---
+- name: Read standby database state
+  ansible.builtin.include_tasks: replicate-workload.yml
+  vars:
+    todo_replication_operation: status
+
+- name: Require read-only database recovery
+  ansible.builtin.assert:
+    that:
+      - (todo_replication_result.stdout | from_json).status.in_recovery
+      - (todo_replication_result.stdout | from_json).status.transaction_read_only
+    fail_msg: A member of the standby group is writable.

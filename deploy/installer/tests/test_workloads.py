@@ -92,12 +92,19 @@ class WorkloadsTests(unittest.TestCase):
         self.assertEqual(rendered.count('PublishPort='), 1)
         self.assertIn('PublishPort=127.0.0.1:5432:5432\n', rendered)
 
-    def test_notes_database_does_not_claim_todos_host_port_or_silently_enable_dr(self):
-        self.assertNotIn('PublishPort=', quadlet.render(ROOT, 'notes-postgres.kube', {}).decode())
+    def test_databases_publish_distinct_ports_from_the_registry(self):
+        for app in apps.REPLICATED_APPS:
+            rendered = quadlet.render(ROOT, app.unit('postgres'), {
+                'postgres_publish_port': app.replication_port,
+                'todo_postgres_publish_address': '192.0.2.50',
+            }).decode()
+            self.assertIn(f'PublishPort=127.0.0.1:{app.replication_port}:5432\n', rendered)
+            self.assertIn(f'PublishPort=192.0.2.50:{app.replication_port}:5432\n', rendered)
         with patch('subprocess.run') as run:
-            with self.assertRaisesRegex(ValueError, 'separate DR phase'):
+            with self.assertRaisesRegex(ValueError, 'verified DR group'):
                 workloads.install_postgres(ROOT, '/q', '/q/todo-kube-runtime', '/rendered',
-                                           publish_address='192.0.2.1', app=apps.APPS[1])
+                                           publish_address='192.0.2.1',
+                                           app=apps.App('third', 'third', 'third.test', 'third-frontend'))
             run.assert_not_called()
 
     def test_image_build_load_and_identity(self):

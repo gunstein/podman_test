@@ -11,7 +11,7 @@ from todo_installer.apps import APPS, App  # noqa: E402
 class AppRegistryTests(unittest.TestCase):
     def test_identities_are_unique_and_safe(self):
         self.assertTrue(APPS)
-        for field in ('name', 'hostname', 'keycloak_client'):
+        for field in ('name', 'hostname', 'keycloak_client', 'replication_port'):
             values = [getattr(app, field) for app in APPS]
             self.assertEqual(len(values), len(set(values)), field)
         for app in APPS:

@@ -41,8 +41,8 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
 
 def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                      publish_address="", db_password=None, *, app: apps.App = apps.APPS[0]):
-    if publish_address and app != apps.IDENTITY_DATABASE_APP:
-        raise ValueError("Replication publication for additional apps requires the separate DR phase.")
+    if publish_address and app not in apps.REPLICATED_APPS:
+        raise ValueError("Replication publication requires membership in the verified DR group.")
     legacy = app.resource("postgres") + ".container"
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
@@ -51,7 +51,8 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
         f"Unsupported {legacy} is installed. Stop and review the host "
         "separately; this operation does not migrate an existing PostgreSQL runtime.",
         "PostgreSQL", secrets.postgres_secret_mapping(app),
-        {"todo_postgres_publish_address": publish_address},
+        {"todo_postgres_publish_address": publish_address,
+         "postgres_publish_port": app.replication_port},
         {app.secret("db"): db_password} if db_password is not None else None,
     )
 
@@ -82,7 +83,7 @@ def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
 
 def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                          publish_address="127.0.0.1", service_port=8443, applications=None):
-    applications = (apps.IDENTITY_DATABASE_APP,) if applications is None else applications
+    applications = apps.REPLICATED_APPS if applications is None else applications
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         ("shared-proxy.yaml", "config.yaml"), ("shared-proxy.kube",),

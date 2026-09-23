@@ -90,3 +90,29 @@ processes; and failure after the first database is promoted. No database is
 promoted before the complete preflight passes. A failed/partial decision blocks
 blind retry. This is a fail-closed group gate, not a claim that PostgreSQL can
 atomically promote independent database instances or roll promotion back.
+
+## Checkpoint 4a: independent Todo and Notes bootstrap
+
+The registry now activates both databases for replication, after the Todo-only
+checkpoints above. Todo retains host TCP5432; Notes uses TCP5433, with internal
+PostgreSQL TCP5432 in both pods. Initial preflight checks every primary volume
+and refuses any existing standby data before the first base backup. Credential
+transfer and streaming/slot verification read names from the Python registry.
+
+A fresh pair of disposable overlays passed the real bootstrap playbook with
+SELinux enforcing, fapolicyd and firewalld active. Both unique database markers
+were readable on their corresponding read-only standbys. Each primary had its
+own active, usable physical slot and streaming connection. The expanded suite
+passed 161 tests; lint and both supported Ansible syntax checks passed.
+
+Two preflight integration failures were repaired before bootstrap: fapolicyd
+correctly refused reading untrusted package Python, and concurrent target
+preflights raced while updating exact controller trust. Preflight now uses the
+existing trust bridge and serializes hosts; it stages trusted code but does not
+alter runtime or database state. Staging is reused only within one playbook run
+for the same immutable package and target paths. No security service was disabled.
+
+Private evidence: `/tmp/notes-dr-vms/two-app-bootstrap-serialized.log`,
+`two-app-replication-evidence.log`, `bootstrap-backup-port-tests.log`; original
+failed preflight logs remain alongside these. This is an incremental repaired
+checkpoint, not the final unchanged-revision promotion/backup/rebuild acceptance.

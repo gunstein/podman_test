@@ -196,3 +196,40 @@ def promote(app, *, query=None, command=None):
     command = command or run
     command('podman', 'exec', app.resource('postgres'), 'pg_ctl', '-D', DATA, 'promote', '-w', '-t', '60')
     return require_primary(app, query)
+
+
+def streaming_status(app, *, rebuilt=False):
+    """Verify an independent sender and its usable physical slot."""
+    require_primary(app)
+    slot = identifier(app.replication_slot(rebuilt))
+    fields = sql(app, "SELECT application_name, client_addr, state, sync_state, "
+                 "pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)::bigint "
+                 f"FROM pg_stat_replication WHERE application_name = '{slot}';").split('|')
+    if len(fields) != 5 or fields[2] != 'streaming':
+        raise RuntimeError(f'{app.name}: standby connection is not streaming')
+    health = sql(app, "SELECT slot_name, active, wal_status, safe_wal_size, "
+                 "COALESCE(invalidation_reason, '') FROM pg_replication_slots "
+                 f"WHERE slot_name = '{slot}';").split('|')
+    if len(health) != 5 or health[1] != 't' or health[2] not in ('reserved', 'extended') or health[4]:
+        raise RuntimeError(f'{app.name}: physical slot is inactive, losing WAL or invalidated')
+    return {'connection': fields, 'slot': health}
+
+
+def require_promoted_group(journal_path):
+    """Never expose an incomplete group, including a failed final verification."""
+    names = [app.name for app in apps.REPLICATED_APPS]
+    try:
+        decision = json.loads(Path(journal_path).read_text())
+    except (OSError, ValueError) as error:
+        raise RuntimeError('A readable completed group promotion record is required') from error
+    if (decision.get('state') != 'complete' or decision.get('applications') != names
+            or decision.get('completed') != names):
+        raise RuntimeError('Promotion record does not confirm the complete database group')
+    for app in apps.REPLICATED_APPS:
+        if run('systemctl', '--user', 'is-active', app.service('postgres')).stdout.strip() != 'active':
+            raise RuntimeError(f'{app.name}: database service is not active')
+        if run('podman', 'inspect', '--format', '{{.State.Health.Status}}',
+               app.resource('postgres')).stdout.strip() != 'healthy':
+            raise RuntimeError(f'{app.name}: database is not healthy')
+        require_primary(app)
+    return False

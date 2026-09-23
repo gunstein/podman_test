@@ -90,10 +90,10 @@ class KubeRuntimeTests(unittest.TestCase):
 
         self.assertNotIn("kind: Secret", manifests)
         self.assertNotIn("stringData:", manifests)
-        self.assertIn("secretName: todo-kube-backend-secret", manifests)
-        self.assertIn("secretName: todo-kube-migrator-secret", manifests)
-        self.assertIn("name: keycloak-kube-admin-secret", manifests)
-        self.assertIn("secretName: keycloak-kube-postgres-secret", manifests)
+        self.assertIn("secretName: \"todo-kube-backend-secret\"", manifests)
+        self.assertIn("secretName: \"todo-kube-migrator-secret\"", manifests)
+        self.assertIn("name: \"keycloak-kube-admin-secret\"", manifests)
+        self.assertIn("secretName: \"keycloak-kube-postgres-secret\"", manifests)
 
     def test_proxy_reuses_the_accepted_tls_volume(self):
         app = read(RUNTIME / "app.yaml")
@@ -150,7 +150,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertNotIn("https://todo_frontend", config)
         self.assertNotIn("todo-nginx-data", read(RUNTIME / "app.yaml"))
         self.assertNotIn("ssl_certificate", read(ROOT / "todo-frontend/nginx.conf"))
-        self.assertIn("DATABASE_HOST: todo-postgres", read(RUNTIME / "config.yaml"))
+        self.assertIn("DATABASE_HOST: \"todo-postgres\"", read(RUNTIME / "config.yaml"))
 
     def test_quadlet_conditionals_render_real_lan_and_loopback_profiles(self):
         proxy = read(RUNTIME / "shared-proxy.kube")
@@ -207,24 +207,41 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("127.0.0.1:8080:8080", template)
         self.assertIn("todo_service_port }}:8443", template)
 
-    def test_helm_is_the_single_workload_template_source(self):
-        chart = ROOT / "deploy/charts" / "todo"
-        values = read(chart / "values.yaml")
-        rendered = "\n".join(
-            read(RUNTIME / filename) for filename in ("app.yaml", "keycloak.yaml", "postgres.yaml")
-        )
+    def test_jinja_manifests_are_the_single_workload_template_source(self):
+        manifests_dir = ROOT / "deploy/manifests"
+        self.assertEqual({path.name for path in manifests_dir.glob("*.yaml.j2")}, {
+            "postgres.yaml.j2", "postgres-config.yaml.j2", "app.yaml.j2", "app-config.yaml.j2",
+            "keycloak.yaml.j2", "shared-proxy.yaml.j2",
+        })
+        self.assertFalse((ROOT / "deploy/charts").exists())
 
-        for filename in ("app.yaml", "postgres.yaml", "config.yaml"):
-            self.assertTrue((chart / "templates" / filename).is_file())
-        self.assertFalse((chart / "templates/keycloak.yaml").exists())
-        self.assertTrue((ROOT / "deploy/charts/keycloak/templates/keycloak.yaml").is_file())
-        self.assertIn("# Source: keycloak/templates/keycloak.yaml", rendered)
-        app_template = read(chart / "templates" / "app.yaml")
-        self.assertIn("{{ .Values.backend.image | quote }}", app_template)
-        proxy_template = read(ROOT / "deploy/charts/shared-proxy/templates/shared-proxy.yaml")
-        self.assertIn("{{ .Values.proxy.memory | quote }}", proxy_template)
-        self.assertNotIn("password", values.lower())
-        self.assertIn("# Source: todo/templates/app.yaml", rendered)
+        # One postgres.yaml.j2 backs every database, and one app.yaml.j2 every application.
+        rendered = "\n".join(
+            read(RUNTIME / filename) for filename in
+            ("postgres.yaml", "notes-postgres.yaml", "keycloak-postgres.yaml", "app.yaml", "notes-app.yaml")
+        )
+        for pod_name in ("todo-postgres", "notes-postgres", "keycloak-postgres", "todo-app", "notes-app"):
+            self.assertIn(f'name: "{pod_name}"', rendered)
+
+        app_template = read(manifests_dir / "app.yaml.j2")
+        self.assertIn("{{ backend_image | tojson }}", app_template)
+        proxy_template = read(manifests_dir / "shared-proxy.yaml.j2")
+        self.assertIn("{{ image | tojson }}", proxy_template)
+
+        # Every rendered PASSWORD env var is either a secret file path or a secretKeyRef;
+        # no template ever carries a literal secret value (secrets.py owns names only).
+        for filename in ("postgres.yaml", "app.yaml", "keycloak.yaml"):
+            for doc in yaml.safe_load_all(read(RUNTIME / filename)):
+                if doc["kind"] != "Pod":
+                    continue
+                for container in doc["spec"].get("initContainers", []) + doc["spec"]["containers"]:
+                    for entry in container.get("env", []):
+                        if "PASSWORD" not in entry["name"]:
+                            continue
+                        if "value" in entry:
+                            self.assertTrue(entry["value"].endswith("/database-password"), entry)
+                        else:
+                            self.assertIn("secretKeyRef", entry["valueFrom"], entry)
 
     def test_clean_deploy_targets_kube_without_legacy_chain(self):
         from todo_installer import install
@@ -256,7 +273,7 @@ class KubeRuntimeTests(unittest.TestCase):
         offline = read(ROOT / "deploy/offline" / "build-bundle.sh")
         self.assertIn('deploy/scripts/render-kube-runtime.sh"', offline)
         self.assertIn("deploy/installer/todo_installer/", offline)
-        self.assertIn("deploy/charts/.", offline)
+        self.assertNotIn("deploy/charts", offline)
 
 
 if __name__ == "__main__":

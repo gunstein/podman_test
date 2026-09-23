@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ database.resource("postgres-config") | tojson }}
+data:
+  POSTGRES_DB: {{ database.name | tojson }}
+  POSTGRES_USER: {{ database.name | tojson }}

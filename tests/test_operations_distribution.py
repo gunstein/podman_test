@@ -227,7 +227,7 @@ class OperationsDistributionTests(unittest.TestCase):
                          if key not in ("ANSIBLE_ROLES_PATH", "ANSIBLE_CONFIG")},
                 )
 
-    def test_offline_archive_contains_both_charts_and_all_image_slots(self):
+    def test_offline_archive_contains_quadlet_templates_and_all_image_slots(self):
         # Exercise the real packager; only expensive image production is substituted.
         # Real OCI build/load validation remains a separate release gate.
         with tempfile.TemporaryDirectory() as directory:
@@ -252,11 +252,9 @@ class OperationsDistributionTests(unittest.TestCase):
                            check=True, capture_output=True,
                            env={**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"]})
             files = verify_package(self, archive, "todo-offline-m12")
-            for chart in ("todo", "notes", "keycloak", "shared-proxy"):
-                for source in (ROOT / "deploy/charts" / chart).rglob("*"):
-                    if source.is_file():
-                        name = str(source.relative_to(ROOT))
-                        self.assertEqual(files.get(name), source.read_bytes(), name)
+            for source in (ROOT / "deploy/quadlet").glob("*.kube.j2"):
+                name = str(source.relative_to(ROOT))
+                self.assertEqual(files.get(name), source.read_bytes(), name)
             for image in ("todo-backend-m12", "todo-frontend-m12", "todo-proxy-m12",
                           "keycloak-m12", "postgres-17.11", "notes-backend-m12", "notes-frontend-m12"):
                 self.assertIn(f"images/{image}.tar", files)

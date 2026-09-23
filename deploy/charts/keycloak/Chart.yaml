@@ -1,6 +1,0 @@
-apiVersion: v2
-name: keycloak
-description: Shared Keycloak Podman workload
-type: application
-version: 0.1.0
-appVersion: "m12"

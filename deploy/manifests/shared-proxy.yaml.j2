@@ -1,8 +1,3 @@
-{{- $apps := required "Render shared-proxy through render-kube-runtime.sh (apps registry required)" .Values.apps -}}
-{{- $hostnames := list -}}
-{{- range $apps -}}
-{{- $hostnames = append $hostnames (ternary $.Values.runtime.publicHostname .hostname .identity) -}}
-{{- end -}}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -16,8 +11,8 @@ kind: ConfigMap
 metadata:
   name: shared-nginx-env
 data:
-  TODO_TLS_HOSTNAME: {{ .Values.runtime.publicHostname | quote }}
-  APP_TLS_HOSTNAMES: {{ join " " $hostnames | quote }}
+  TODO_TLS_HOSTNAME: {{ hostname | tojson }}
+  APP_TLS_HOSTNAMES: {{ applications | map(attribute="hostname") | join(" ") | tojson }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -46,15 +41,15 @@ data:
 
         include /tmp/podman-resolver.conf;
         upstream shared_keycloak { zone shared_keycloak 64k; server keycloak:8080 resolve; }
-{{ range $apps }}
-        upstream {{ .name }}_frontend { zone {{ .name }}_frontend 64k; server {{ .frontend }} resolve; }
-        upstream {{ .name }}_backend { zone {{ .name }}_backend 64k; server {{ .backend }} resolve; }
-{{ end }}
-{{ range $apps }}
+{% for app in applications %}
+        upstream {{ app.name }}_frontend { zone {{ app.name }}_frontend 64k; server {{ app.frontend }} resolve; }
+        upstream {{ app.name }}_backend { zone {{ app.name }}_backend 64k; server {{ app.backend }} resolve; }
+{% endfor %}
+{% for app in applications %}
         server {
             listen 8080;
             listen 8443 ssl;
-            server_name {{ ternary $.Values.runtime.publicHostname .hostname .identity }};
+            server_name {{ app.hostname }};
             ssl_certificate /var/lib/todo-tls/server.crt;
             ssl_certificate_key /var/lib/todo-tls/server.key;
             ssl_protocols TLSv1.2 TLSv1.3;
@@ -68,23 +63,23 @@ data:
                 include /etc/nginx/todo-proxy-headers.conf;
             }
             location /api/ {
-                proxy_pass http://{{ .name }}_backend;
+                proxy_pass http://{{ app.name }}_backend;
                 include /etc/nginx/todo-proxy-headers.conf;
             }
             location = /health {
-                proxy_pass http://{{ .name }}_backend;
+                proxy_pass http://{{ app.name }}_backend;
                 include /etc/nginx/todo-proxy-headers.conf;
             }
             location = /ready {
-                proxy_pass http://{{ .name }}_backend;
+                proxy_pass http://{{ app.name }}_backend;
                 include /etc/nginx/todo-proxy-headers.conf;
             }
             location / {
-                proxy_pass http://{{ .name }}_frontend;
+                proxy_pass http://{{ app.name }}_frontend;
                 include /etc/nginx/todo-proxy-headers.conf;
             }
         }
-{{ end }}
+{% endfor %}
     }
 ---
 apiVersion: v1
@@ -100,7 +95,7 @@ spec:
   restartPolicy: Never
   containers:
     - name: nginx
-      image: {{ .Values.proxy.image | quote }}
+      image: {{ image | tojson }}
       imagePullPolicy: Never
       args: [nginx, -c, /etc/todo-nginx/nginx.conf, -g, "daemon off;"]
       ports:
@@ -127,7 +122,7 @@ spec:
         failureThreshold: 3
       resources:
         limits:
-          memory: {{ .Values.proxy.memory | quote }}
+          memory: "128Mi"
       securityContext:
         runAsUser: 101
         runAsGroup: 101

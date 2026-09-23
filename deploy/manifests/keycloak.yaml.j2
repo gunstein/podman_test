@@ -11,7 +11,7 @@ spec:
   restartPolicy: Never
   containers:
     - name: keycloak
-      image: {{ .Values.keycloak.image | quote }}
+      image: {{ image | tojson }}
       imagePullPolicy: Never
       args: [start, --import-realm]
       ports:
@@ -29,13 +29,13 @@ spec:
         - name: KCRAW_DB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: keycloak-kube-postgres-secret
+              name: {{ database.kube_secret("postgres") | tojson }}
               key: database-password
               optional: false
         - name: KCRAW_BOOTSTRAP_ADMIN_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: keycloak-kube-admin-secret
+              name: {{ admin_secret | tojson }}
               key: bootstrap-admin-password
               optional: false
       livenessProbe:
@@ -53,7 +53,7 @@ spec:
         failureThreshold: 6
       resources:
         limits:
-          memory: {{ .Values.keycloak.memory | quote }}
+          memory: "1Gi"
       securityContext:
         runAsUser: 1000
         runAsGroup: 0
@@ -69,13 +69,13 @@ metadata:
 data:
   KC_BOOTSTRAP_ADMIN_USERNAME: admin
   KC_DB: postgres
-  KC_DB_URL_HOST: keycloak-postgres
+  KC_DB_URL_HOST: {{ database.resource("postgres") | tojson }}
   KC_DB_URL_PORT: "5432"
-  KC_DB_URL_DATABASE: keycloak
-  KC_DB_USERNAME: keycloak
+  KC_DB_URL_DATABASE: {{ database.name | tojson }}
+  KC_DB_USERNAME: {{ database.name | tojson }}
   KC_HTTP_ENABLED: "true"
   KC_HTTP_RELATIVE_PATH: /auth
-  KC_HOSTNAME: {{ printf "https://%s:%v/auth" .Values.runtime.publicHostname .Values.runtime.publicPort | quote }}
+  KC_HOSTNAME: {{ ("https://" + hostname + ":" + port|string + "/auth") | tojson }}
   KC_PROXY_HEADERS: xforwarded
   KC_HEALTH_ENABLED: "true"
   KC_CACHE: ispn

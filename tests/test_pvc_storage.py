@@ -95,7 +95,7 @@ class PVCStorageTests(unittest.TestCase):
                         check(value)
             check(yaml.safe_load(path.read_text()))
 
-    def test_python_standby_consumes_the_actual_helm_data_claim(self):
+    def test_python_standby_consumes_the_actual_rendered_data_claim(self):
         # replicate-workload.yml is transport only; replication.py's data_claim
         # (used identically by bootstrap_standby and reseed_standby) owns playing
         # only the canonical PVC before pg_basebackup, covered directly by

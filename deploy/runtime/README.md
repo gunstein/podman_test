@@ -32,25 +32,29 @@ app-network
 The source definitions, relative to the repository root, are:
 
 ```text
-deploy/charts/{todo,notes}/templates/  per-app app, database and ConfigMap
-deploy/charts/keycloak/templates/      shared identity Pod and ConfigMap
-deploy/charts/shared-proxy/templates/  independent proxy and ConfigMaps
+deploy/manifests/postgres.yaml.j2       shared database Pod and PVCs (todo, notes, keycloak)
+deploy/manifests/postgres-config.yaml.j2 shared database ConfigMap
+deploy/manifests/app.yaml.j2            shared app Pod (todo, notes)
+deploy/manifests/app-config.yaml.j2     shared app backend ConfigMap
+deploy/manifests/keycloak.yaml.j2       shared identity Pod and ConfigMap
+deploy/manifests/shared-proxy.yaml.j2   independent proxy and ConfigMaps
 deploy/environments/{local,prod}/values.yaml  non-secret environment overrides
 deploy/quadlet/*.kube.j2               six shared systemd workload templates
 deploy/quadlet/app-network.network           shared rootless network
 ```
 
-Helm is a build-time renderer, not a runtime orchestrator. Production rendering
+Jinja2 is a build-time renderer, not a runtime orchestrator. Production rendering
 writes `app.yaml`, `keycloak.yaml`, `postgres.yaml`, `config.yaml` and
-`shared-proxy.yaml`, plus `notes-app.yaml`, `notes-postgres.yaml` and
-`notes-config.yaml` under `generated/kube-runtime/` by default. Development uses
+`shared-proxy.yaml`, plus `notes-app.yaml`, `notes-postgres.yaml`,
+`notes-config.yaml`, `keycloak-postgres.yaml` and `keycloak-config.yaml` under
+`generated/kube-runtime/` by default. Development uses
 `generated/dev/`; both output directories are ignored by Git. This directory
 contains documentation only.
 
 Packages contain freshly rendered YAML under `generated/kube-runtime/` and the
 same six source Quadlet templates under `deploy/quadlet/`. The Python installer renders the
 target-specific `.kube` files and installs them beside the workload YAML under
-`~/.config/containers/systemd/todo-kube-runtime/`. Targets do not need Helm.
+`~/.config/containers/systemd/todo-kube-runtime/`. Targets do not render Kube YAML at all.
 CI compares actual package contents against fresh rendering.
 
 All six `.kube` units use `--no-pod-prefix`, so the grouped containers keep
@@ -86,7 +90,7 @@ Raw credentials are separate for both apps. Shared identity retains the
 `todo-keycloak-*` secret names and Todo database schema; it is not a second
 identity installation. Notes uses `notes_migrator` and `notes_app` DB roles.
 
-Secret values are never stored in Helm values or rendered YAML. The shared
+Secret values are never stored in manifest templates or rendered YAML. The shared
 Python installer constructs these Kube-compatible objects in memory from
 the host-local raw Podman secrets.
 

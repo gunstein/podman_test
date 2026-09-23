@@ -102,7 +102,7 @@ This is a tested baseline, not a claim about the capability's minimum version.
 
 | Layer | Owns | Does not own |
 |---|---|---|
-| Helm | Build-time templates and non-secret environment values | Target-host runtime or orchestration |
+| Jinja2 manifest templates | Build-time templates and non-secret environment values | Target-host runtime or orchestration |
 | Kube YAML | Pod contents, init ordering, runtime settings and secret references | Infrastructure fencing or host policy |
 | .kube Quadlet | Binding a workload to user systemd, published ports and dependencies | Database failover decisions |
 | systemd | Service ordering, restart, shutdown and boot behavior | PostgreSQL replication correctness |
@@ -126,8 +126,8 @@ containers are replaced through the systemd lifecycle.
 ## 5. Build and deployment pipeline
 
 ```text
-Helm chart + values ──► rendered YAML ──┬──► offline bundle
-                                      └──► operations package
+Jinja2 manifest templates + values ──► rendered YAML ──┬──► offline bundle
+                                                      └──► operations package
 Containerfiles ──► OCI image archives ────► offline bundle only
 Deployment / recovery code and docs ──────► respective bundles
 
@@ -145,8 +145,8 @@ The operations package contains playbooks, roles, runtime definitions, Python
 and quarantine tools, and runbooks; it contains no OCI image archives.
 YAML is rendered into a temporary build directory and packaged. Source checkout
 `deploy/runtime/` contains guides; shared `deploy/quadlet/` templates produce target-specific
-Quadlets. Tests compare packaged YAML with independent Helm rendering.
-Helm runs on the build host, not the Oracle Linux target. Images and rendered
+Quadlets. Tests compare packaged YAML with independent Jinja2 rendering.
+Rendering runs on the build host, not the Oracle Linux target. Images and rendered
 definitions are delivered offline; target execution does not fetch from a
 registry. Both acceptance artifacts must identify the same clean revision.
 Checksums establish integrity against the supplied digest, not publisher
@@ -155,15 +155,16 @@ identity; organizational artifact signing is not implemented.
 The portable module lives in `deploy/installer/todo_installer/` and uses Jinja2
 plus the Python standard library. `apps.py` is the single registry of per-app
 names; image, secret, workload, lifecycle and cleanup code consume App objects.
-Rendering loops through those charts using one environment values file, then
-renders Keycloak and shared-proxy once. Adding an App entry activates an
-already-supplied app/chart/template set. Its shared workload functions install files
+Rendering calls the shared `deploy/manifests/*.yaml.j2` templates once per app
+using one environment values file, then renders Keycloak and shared-proxy once.
+Adding an App entry activates the already-shared template set with no new
+files. Its shared workload functions install files
 and reload systemd; callers retain responsibility for safe stop/start ordering.
 DR Ansible tasks stage controller-side templates/manifests on the target, call
 `install-workload`, and preserve the existing change facts. Hardened DR targets
 use the existing exact-file trust role for the Python sources.
 
-Development uses the same charts with development values and direct
+Development uses the same manifest templates with development values and direct
 `podman kube play/down`. Production uses user systemd. These are different
 lifecycle owners; development cleanup must not target a production user store.
 
@@ -234,7 +235,7 @@ An adapter seam is not evidence that Duende or another provider already works.
 | Base backups and WAL | todo-postgres-backup | Separate from live data; still on the same VM |
 | Runtime credentials | Host-local Podman secrets | Provisioned and transferred separately from YAML |
 
-Helm/Kube declares each persistent volume with a `PersistentVolumeClaim`.
+Kube YAML declares each persistent volume with a `PersistentVolumeClaim`.
 Podman maps `claimName` to the named volume; `volumeMount.mountPath` is the
 path inside the container. PostgreSQL data and backup claims specify creation
 UID/GID `999:999`; the nginx TLS claim specifies `101:101`. These are container
@@ -264,8 +265,8 @@ The single-host uninstaller continues to refuse DR/backup hosts.
 
 The bootstrap/admin, migrator, application, Keycloak and replication
 identities have different jobs. The Python installer constructs Kube-compatible secret
-objects from existing secrets in memory. Secret values do not belong in Helm
-values, rendered YAML, Git or transcripts. Sensitive transfer tasks use SSH
+objects from existing secrets in memory. Secret values do not belong in manifest
+templates, rendered YAML, Git or transcripts. Sensitive transfer tasks use SSH
 and suppress value-bearing output with no_log.
 
 Filesystem ownership, rootless UID mapping and SELinux labels are independent.

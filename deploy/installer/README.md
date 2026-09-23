@@ -1,9 +1,9 @@
 # Portable single-host installer
 
 Python 3.9+ and Jinja2 are the only runtime dependencies. Podman runs rootless;
-server mode also needs a working user systemd manager. Helm runs only in build
-mode through `deploy/scripts/render-kube-runtime.sh`. The script delegates chart
-selection to the App registry; targets in offline mode never run Helm.
+server mode also needs a working user systemd manager. Rendering only runs in
+build mode through `deploy/scripts/render-kube-runtime.sh`. The script delegates
+workload selection to the App registry; targets in offline mode never render.
 
 `apps.APPS` registers Todo and Notes. Each App owns its derived image, secret,
 manifest, service and volume names. Single-host installs run six pods; Keycloak
@@ -29,7 +29,7 @@ Server and dev are alternative lifecycle owners. Use separate Podman user stores
 do not run dev cleanup against a server deployment. `dev-up.sh` and `dev-down.sh`
 are compatibility wrappers around these commands.
 
-Offline installation consumes existing YAML and OCI archives without Helm or
+Offline installation consumes existing YAML and OCI archives without
 network access:
 
 ```bash
@@ -100,7 +100,7 @@ python3 -m unittest discover --start-directory tests
 ```
 
 Most tests mock only runtime commands and use scratch directories. Rendering
-parity tests require real Helm and Ansible and compare every Quadlet byte for
+parity tests require real Ansible and compare every Quadlet byte for
 external HTTPS, loopback with replication, and an unset PostgreSQL address.
 Project tests execute the actual Ansible staging bridge, verify repeat change
 facts, and build/examine both delivery archives. Real six-pod dev/server, offline loading, persistence, trusted browser SSO and
@@ -108,8 +108,9 @@ idempotency were additionally tested in a separate Fedora 44 VM with rootless
 Podman 5.8.1 and SELinux enforcing; see [results](../runtime/RESULTS.md).
 This does not replace Oracle Linux/fapolicyd or two-host DR acceptance.
 
-The replication mechanics in `replication.py` consume canonical PVC YAML and
-therefore additionally require PyYAML on DR targets (`python3-pyyaml` or the
-platform's equivalent package; connected installs can use `.[dr]`). Ordinary
-single-host installation still needs only Jinja2. The initial replication
+`render.py` parses values and validates every rendered manifest with PyYAML, and
+`replication.py` consumes canonical PVC YAML the same way, so PyYAML
+(`python3-pyyaml` or the platform's equivalent package) is now a base
+dependency everywhere build-mode rendering or DR runs; only a purely offline
+target install, which never renders, can do without it. The initial replication
 registry remains Todo-only until the phased live DR checks are complete.

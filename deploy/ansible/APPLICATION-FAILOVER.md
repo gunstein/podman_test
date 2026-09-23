@@ -14,7 +14,7 @@ https://todo.test:8443
 
 The same name must be used by nginx, Keycloak, the backend issuer check and the
 Keycloak frontend client. During this two-VM LAN drill, the client maps the name
-to the promoted host address. The production Helm render fixes this identity
+to the promoted host address. The production Jinja2 render fixes this identity
 at `todo.test:8443`; promotion changes only which host address serves it.
 
 ## Stage before an incident

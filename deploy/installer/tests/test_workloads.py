@@ -130,7 +130,7 @@ class WorkloadsTests(unittest.TestCase):
 
 
 class RenderingIntegrationTests(unittest.TestCase):
-    def test_real_ansible_template_and_helm_outputs_match(self):
+    def test_real_ansible_template_and_kube_runtime_outputs_match(self):
         executable = os.environ.get('ANSIBLE_PLAYBOOK_COMMAND', 'ansible-playbook')
         self.assertIsNotNone(shutil.which(executable), 'Ansible is required for parity verification')
         cases = [

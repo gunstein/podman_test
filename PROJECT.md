@@ -2,7 +2,7 @@
 
 ## Goal and architecture
 
-A pedagogical rootless Podman Todo demo: Helm renders Kube YAML; user systemd
+A pedagogical rootless Podman Todo demo: Jinja2 renders Kube YAML; user systemd
 manages three .kube workloads. See [Architecture](docs/ARCHITECTURE.md) and
 [Learning guide](docs/LEARNING-GUIDE.md).
 

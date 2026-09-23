@@ -13,7 +13,7 @@ For the authoritative system overview and design boundaries, read
 ## 1. Follow the definition to the running service
 
 ```text
-deploy/charts/todo + deploy/charts/shared-proxy + values             build host only
+deploy/manifests/*.yaml.j2 + apps.py/stack.py + values                build host only
         ↓ render
 generated/kube-runtime/*.yaml            reviewed, packaged workload definitions
         ↓ referenced by
@@ -24,10 +24,12 @@ systemd user services         ordering, restart, boot and stop
 rootless Podman                executes pods and containers
 ```
 
-Helm is a build-time template tool, not an installed target-host dependency.
+Jinja2 renders build-time YAML directly from `deploy/manifests/*.yaml.j2`;
+there is no template engine to install on the target host, only Python.
 CI compares packaged YAML with independent rendering. This is the Podman-supported
 subset of Kubernetes YAML: no Kubernetes cluster or portability promise.
-Read `deploy/charts/todo/templates/`, `deploy/environments/prod/values.yaml`,
+Read `deploy/manifests/postgres.yaml.j2`, `deploy/installer/todo_installer/stack.py`,
+`deploy/environments/prod/values.yaml`,
 `deploy/scripts/render-kube-runtime.sh` and `deploy/runtime/README.md`.
 To experiment, render into a temporary directory, never over deployed state:
 
@@ -37,8 +39,8 @@ deploy/scripts/render-kube-runtime.sh deploy/environments/prod/values.yaml "$ren
 cat "$render_dir/app.yaml" "$render_dir/shared-proxy.yaml"
 ```
 
-This experiment requires Helm on the build host. The remaining observation
-commands run as the service user on an installed guest unless stated otherwise.
+The remaining observation commands run as the service user on an installed
+guest unless stated otherwise.
 
 ## 2. Group by lifecycle, not by application name
 
@@ -86,7 +88,7 @@ See `deploy/runtime/RESULTS.md` for demonstrated behavior and revision-specific 
 
 Containerfiles provide immutable app content. PostgreSQL data, nginx TLS state
 and backup each use persistent volumes with different lifecycles.
-The storage chain is `Helm/Kube → PersistentVolumeClaim → Podman named volume
+The storage chain is `Kube YAML → PersistentVolumeClaim → Podman named volume
 → volumeMount.mountPath` (the container path). PVC creation annotations set
 PostgreSQL UID/GID `999:999` and nginx UID/GID `101:101`.
 Separately, `.kube → systemd user service → podman kube play/down` controls the
@@ -135,8 +137,8 @@ curl --fail https://todo.test:8443/auth/realms/todo/.well-known/openid-configura
 ```
 
 These HTTPS commands require client name resolution and CA trust.
-Read `frontend/nginx.conf` for static asset serving, the nginx ConfigMap in
-`deploy/charts/shared-proxy/templates/shared-proxy.yaml` for reverse-proxy routing,
+Read `todo-frontend/nginx.conf` for static asset serving, the nginx ConfigMap in
+`deploy/manifests/shared-proxy.yaml.j2` for reverse-proxy routing,
 [TLS](TLS.md) and the frontend adapter chain:
 
 ```text

@@ -121,7 +121,7 @@ names; this does not claim a minimum supported Podman version.
 
 Choose addresses before starting a clean drill. IPs printed here are lab
 examples. Keep the service name `todo.test`: moving it to another IP does not
-require changing the realm, frontend, certificate hostname or Helm manifests.
+require changing the realm, frontend, certificate hostname or manifest templates.
 
 | Setting | Where to change it | What to enter |
 |---|---|---|

@@ -21,17 +21,11 @@ From the repository root:
 git switch feature/podman-kube
 ```
 
-The build needs Helm to render the Kubernetes manifests before packaging;
-Helm is not needed on the target VM. Install it (matching the version pinned
-in CI, `.github/workflows/clean-install.yml`), then build:
+The build renders the Kubernetes manifests with Jinja2 before packaging; this
+needs only Python and the `jinja2`/`PyYAML` packages, already required by the
+installer itself, and nothing extra on the target VM:
 
 ```bash
-curl --fail --location --output /tmp/helm.tar.gz \
-  https://get.helm.sh/helm-v4.2.4-linux-amd64.tar.gz
-echo "c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3  /tmp/helm.tar.gz" | sha256sum -c
-tar -xzf /tmp/helm.tar.gz -C /tmp
-export PATH="/tmp/linux-amd64:$PATH"
-
 deploy/offline/build-bundle.sh
 ```
 

@@ -90,7 +90,7 @@ git rev-parse HEAD
 
 Build the application bundle (see
 [Offline install](02-OFFLINE-INSTALL.md#1-build-the-offline-bundle-on-the-laptop)
-for the Helm prerequisite):
+for the rendering prerequisites):
 
 ```bash
 deploy/offline/build-bundle.sh

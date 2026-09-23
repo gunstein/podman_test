@@ -1,38 +1,37 @@
-
 apiVersion: v1
 kind: Pod
 metadata:
-  name: todo-app
+  name: {{ app.resource("app") | tojson }}
   labels:
-    app.kubernetes.io/name: todo
+    app.kubernetes.io/name: {{ app.name | tojson }}
     app.kubernetes.io/component: application
   annotations:
-    io.podman.annotations.pids-limit/todo-migrate: "128"
-    io.podman.annotations.pids-limit/todo-backend: "128"
-    io.podman.annotations.pids-limit/todo-frontend: "128"
+    io.podman.annotations.pids-limit/{{ app.resource("migrate") }}: "128"
+    io.podman.annotations.pids-limit/{{ app.resource("backend") }}: "128"
+    io.podman.annotations.pids-limit/{{ app.resource("frontend") }}: "128"
 spec:
   restartPolicy: Never
   initContainers:
-    - name: todo-migrate
-      image: {{ .Values.backend.image | quote }}
+    - name: {{ app.resource("migrate") | tojson }}
+      image: {{ backend_image | tojson }}
       imagePullPolicy: Never
       args: [python, -m, backend.migrate, --connect-timeout, "120", up]
       envFrom:
         - configMapRef:
-            name: todo-backend-config
+            name: {{ app.resource("backend-config") | tojson }}
             optional: false
       env:
         - name: DATABASE_USER
-          value: todo_migrator
+          value: {{ app.database_role("migrator") | tojson }}
         - name: DATABASE_PASSWORD_FILE
-          value: /run/secrets/todo-migrator/database-password
+          value: {{ ("/run/secrets/" + app.resource("migrator") + "/database-password") | tojson }}
       volumeMounts:
         - name: migrator-secret
-          mountPath: /run/secrets/todo-migrator
+          mountPath: {{ ("/run/secrets/" + app.resource("migrator")) | tojson }}
           readOnly: true
       resources:
         limits:
-          memory: {{ .Values.backend.memory | quote }}
+          memory: "256Mi"
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
@@ -40,22 +39,22 @@ spec:
         capabilities:
           drop: [ALL]
   containers:
-    - name: todo-backend
-      image: {{ .Values.backend.image | quote }}
+    - name: {{ app.resource("backend") | tojson }}
+      image: {{ backend_image | tojson }}
       imagePullPolicy: Never
       ports:
         - name: backend-http
           containerPort: 8000
       envFrom:
         - configMapRef:
-            name: todo-backend-config
+            name: {{ app.resource("backend-config") | tojson }}
             optional: false
       env:
         - name: DATABASE_PASSWORD_FILE
-          value: /run/secrets/todo-backend/database-password
+          value: {{ ("/run/secrets/" + app.resource("backend") + "/database-password") | tojson }}
       volumeMounts:
         - name: backend-secret
-          mountPath: /run/secrets/todo-backend
+          mountPath: {{ ("/run/secrets/" + app.resource("backend")) | tojson }}
           readOnly: true
       livenessProbe:
         exec:
@@ -71,7 +70,7 @@ spec:
         failureThreshold: 3
       resources:
         limits:
-          memory: {{ .Values.backend.memory | quote }}
+          memory: "256Mi"
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
@@ -79,15 +78,15 @@ spec:
         capabilities:
           drop: [ALL]
 
-    - name: todo-frontend
-      image: {{ .Values.frontend.image | quote }}
+    - name: {{ app.resource("frontend") | tojson }}
+      image: {{ frontend_image | tojson }}
       imagePullPolicy: Never
       ports:
         - name: frontend-http
           containerPort: 8080
       resources:
         limits:
-          memory: {{ .Values.frontend.memory | quote }}
+          memory: "128Mi"
       securityContext:
         runAsUser: 101
         runAsGroup: 101
@@ -97,11 +96,11 @@ spec:
   volumes:
     - name: backend-secret
       secret:
-        secretName: todo-kube-backend-secret
+        secretName: {{ app.kube_secret("backend") | tojson }}
         optional: false
         defaultMode: 0444
     - name: migrator-secret
       secret:
-        secretName: todo-kube-migrator-secret
+        secretName: {{ app.kube_secret("migrator") | tojson }}
         optional: false
         defaultMode: 0444

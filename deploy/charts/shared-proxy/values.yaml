@@ -1,9 +1,0 @@
-proxy:
-  image: localhost/todo-proxy:m12
-  memory: 128Mi
-runtime:
-  publicHostname: todo.test
-  publicPort: 8443
-
-# Populated by todo_installer.apps through the canonical renderer.
-apps: []

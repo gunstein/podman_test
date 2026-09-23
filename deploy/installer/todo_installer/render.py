@@ -1,13 +1,19 @@
-"""Build-time Helm invocation driven by the same registry as installation."""
-import json
-import os
+"""Build-time manifest rendering driven by the same registry as installation."""
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-from . import apps
+import yaml
+
+from . import apps, manifests
+
+
+def _validate(name, content):
+    try:
+        list(yaml.safe_load_all(content))
+    except yaml.YAMLError as error:
+        raise RuntimeError(f'Rendered {name} is not valid YAML: {error}') from error
 
 
 def render(project_root, values_file, output_directory, application_names=()):
@@ -15,39 +21,40 @@ def render(project_root, values_file, output_directory, application_names=()):
     selected = [app for app in apps.APPS if not application_names or app.name in application_names]
     if not selected or set(application_names) - {app.name for app in apps.APPS}:
         raise ValueError('Unknown or empty application selection')
-    helm = os.environ.get('HELM', 'helm')
-    if not shutil.which(helm):
-        raise RuntimeError(f'Helm is required to render the Kube runtime: {helm}')
+    runtime = yaml.safe_load(Path(values_file).read_text())['runtime']
+    hostname, port, log_level = runtime['publicHostname'], runtime['publicPort'], runtime['logLevel']
+
+    files = {}
+    for app in selected:
+        files[app.manifest('postgres')] = manifests.render_postgres(root, app.database, app.image('postgres'))
+        files[app.manifest('config')] = (manifests.render_postgres_config(root, app.database) + b'---\n'
+                                          + manifests.render_app_config(root, app, hostname, port, log_level))
+        files[app.manifest('app')] = manifests.render_app(root, app, app.image('backend'), app.image('frontend'))
+
+    files['keycloak.yaml'] = manifests.render_keycloak(
+        root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_KUBE_ADMIN_SECRET, hostname, port, apps.KEYCLOAK_IMAGE)
+    files[apps.KEYCLOAK_DATABASE.manifest('postgres')] = manifests.render_postgres(
+        root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_DATABASE.image('postgres'))
+    files[apps.KEYCLOAK_DATABASE.manifest('config')] = manifests.render_postgres_config(root, apps.KEYCLOAK_DATABASE)
+    files['shared-proxy.yaml'] = manifests.render_shared_proxy(
+        root, selected, apps.IDENTITY_DATABASE_APP, hostname, apps.PROXY_IMAGE)
+
+    for name, content in files.items():
+        _validate(name, content)
+
+    # Render and validate everything above before replacing any previous rendered output.
     with tempfile.TemporaryDirectory() as temporary:
         directory = Path(temporary)
-        registry = directory / 'apps.json'
-        registry.write_text(json.dumps({'apps': [{
-            'name': app.name, 'hostname': app.hostname, 'keycloakClient': app.keycloak_client,
-            'frontend': app.resource('app') + ':8080', 'backend': app.resource('app') + ':8000',
-            'identity': app == apps.IDENTITY_DATABASE_APP,
-        } for app in selected]}))
-        manifests = [(app.name, app.chart, component, app.manifest(component))
-                     for app in selected for component in ('app', 'postgres', 'config')]
-        manifests += [('keycloak', 'keycloak', 'keycloak', 'keycloak.yaml'),
-                      ('keycloak', 'keycloak', 'postgres', apps.KEYCLOAK_DATABASE.manifest('postgres')),
-                      ('keycloak', 'keycloak', 'config', apps.KEYCLOAK_DATABASE.manifest('config')),
-                      ('shared-proxy', 'shared-proxy', 'shared-proxy', 'shared-proxy.yaml')]
-        for release, chart, component, filename in manifests:
-            result = subprocess.run([
-                helm, 'template', release, str(root / 'deploy/charts' / chart),
-                '--values', str(values_file), '--values', str(registry),
-                '--show-only', 'templates/' + component + '.yaml',
-            ], check=True, capture_output=True)
-            (directory / filename).write_bytes(result.stdout.rstrip(b'\n') + b'\n')
-        # Finish all Helm invocations before replacing any previous rendered output.
+        for name, content in files.items():
+            (directory / name).write_bytes(content)
         output.mkdir(parents=True, exist_ok=True)
-        for _, _, _, filename in manifests:
-            shutil.copyfile(directory / filename, output / filename)
+        for name in files:
+            shutil.copyfile(directory / name, output / name)
 
 
 if __name__ == '__main__':
     try:
         render(*sys.argv[1:4], application_names=sys.argv[4].split(',') if len(sys.argv) > 4 and sys.argv[4] else ())
-    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, RuntimeError) as error:
         print(f'Rendering failed: {error}', file=sys.stderr)
         sys.exit(1)

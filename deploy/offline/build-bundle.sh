@@ -8,7 +8,7 @@ bundle_directory="$work_directory/todo-offline-m12"
 trap 'rm -rf "$work_directory"' EXIT
 
 mkdir -p "$bundle_directory/images" "$bundle_directory/docs" \
-  "$bundle_directory/deploy/charts" "$bundle_directory/deploy/runtime" \
+  "$bundle_directory/deploy/runtime" \
   "$bundle_directory/deploy/quadlet" "$bundle_directory/deploy/offline" \
   "$bundle_directory/deploy/ansible/playbooks" "$bundle_directory/deploy/ansible/inventories/local"
 mkdir -p "$(dirname "$output")"
@@ -33,7 +33,6 @@ cp "$project_root/deploy/README.md" "$bundle_directory/deploy/"
 cp "$project_root/deploy/quadlet/README.md" "$bundle_directory/deploy/quadlet/"
 cp "$project_root/deploy/quadlet/app-network.network" "$project_root/deploy/quadlet/"*.kube.j2 \
   "$bundle_directory/deploy/quadlet/"
-cp -r "$project_root/deploy/charts/." "$bundle_directory/deploy/charts/"
 cp -r "$project_root/deploy/environments" "$bundle_directory/deploy/"
 cp "$project_root/deploy/runtime/README.md" "$project_root/deploy/runtime/RESULTS.md" "$bundle_directory/deploy/runtime/"
 mkdir -p "$bundle_directory/deploy/ansible/roles"

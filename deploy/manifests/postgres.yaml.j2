@@ -1,7 +1,8 @@
+{%- set pod = database.resource("postgres") -%}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: keycloak-postgres-data
+  name: {{ database.volume("data") | tojson }}
   annotations:
     volume.podman.io/uid: "999"
     volume.podman.io/gid: "999"
@@ -9,7 +10,7 @@ metadata:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: keycloak-postgres-backup
+  name: {{ database.volume("backup") | tojson }}
   annotations:
     volume.podman.io/uid: "999"
     volume.podman.io/gid: "999"
@@ -17,53 +18,53 @@ metadata:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: keycloak-postgres
+  name: {{ pod | tojson }}
   labels:
-    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/name: {{ database.name | tojson }}
     app.kubernetes.io/component: database
   annotations:
-    io.podman.annotations.pids-limit/keycloak-postgres: "256"
+    io.podman.annotations.pids-limit/{{ pod }}: "256"
 spec:
   restartPolicy: Never
   terminationGracePeriodSeconds: 60
   containers:
-    - name: keycloak-postgres
-      image: {{ .Values.postgres.image | quote }}
+    - name: {{ pod | tojson }}
+      image: {{ image | tojson }}
       imagePullPolicy: Never
       args:
         - postgres
         - -D
         - /var/lib/postgresql/data
         - -c
-        - {{ printf "max_slot_wal_keep_size=%s" .Values.postgres.maxSlotWalKeepSize | quote }}
+        - "max_slot_wal_keep_size=1GB"
       ports:
         - name: postgres
           containerPort: 5432
       envFrom:
         - configMapRef:
-            name: keycloak-postgres-config
+            name: {{ database.resource("postgres-config") | tojson }}
             optional: false
       env:
         - name: POSTGRES_PASSWORD_FILE
-          value: /run/secrets/keycloak-postgres/database-password
+          value: {{ ("/run/secrets/" + pod + "/database-password") | tojson }}
       volumeMounts:
         - name: postgres-data
           mountPath: /var/lib/postgresql/data
         - name: postgres-backup
           mountPath: /var/lib/postgresql/backup
         - name: postgres-secret
-          mountPath: /run/secrets/keycloak-postgres
+          mountPath: {{ ("/run/secrets/" + pod) | tojson }}
           readOnly: true
       livenessProbe:
         exec:
-          command: [pg_isready, --username, keycloak, --dbname, keycloak]
+          command: [pg_isready, --username, {{ database.name | tojson }}, --dbname, {{ database.name | tojson }}]
         initialDelaySeconds: 5
         periodSeconds: 10
         timeoutSeconds: 5
         failureThreshold: 5
       resources:
         limits:
-          memory: {{ .Values.postgres.memory | quote }}
+          memory: "512Mi"
       securityContext:
         runAsUser: 999
         runAsGroup: 999
@@ -73,12 +74,12 @@ spec:
   volumes:
     - name: postgres-data
       persistentVolumeClaim:
-        claimName: keycloak-postgres-data
+        claimName: {{ database.volume("data") | tojson }}
     - name: postgres-backup
       persistentVolumeClaim:
-        claimName: keycloak-postgres-backup
+        claimName: {{ database.volume("backup") | tojson }}
     - name: postgres-secret
       secret:
-        secretName: keycloak-kube-postgres-secret
+        secretName: {{ database.kube_secret("postgres") | tojson }}
         optional: false
         defaultMode: 0444

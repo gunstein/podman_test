@@ -1,6 +1,0 @@
-apiVersion: v2
-name: notes
-description: Podman-compatible Notes workload manifests
-type: application
-version: 0.1.0
-appVersion: "m12"

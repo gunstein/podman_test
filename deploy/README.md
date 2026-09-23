@@ -8,8 +8,8 @@ rebuild require a separate implementation and acceptance phase.
 
 | Path | Responsibility |
 |---|---|
-| `charts/{todo,notes,keycloak,shared-proxy}/` | Helm workload templates and chart defaults |
-| `environments/local/values.yaml`, `environments/prod/values.yaml` | Non-secret workload overrides, shared by all four charts |
+| `manifests/` | Jinja2 workload templates, one per workload type, shared by every app |
+| `environments/local/values.yaml`, `environments/prod/values.yaml` | Non-secret workload overrides, shared by every workload |
 | `quadlet/` | One source for the network and six systemd workload templates |
 | `ansible/inventories/` | Local installation and initial/recovery DR topologies |
 | `ansible/inventories/*/group_vars/` | Host/account/operations settings for those inventories |
@@ -36,10 +36,12 @@ deploy/scripts/dev-down.sh
 PYTHONPATH=deploy/installer python3 -m todo_installer install --mode server
 ```
 
-Workload settings belong in Helm values; host and operational settings belong
-in inventory/group_vars. Chart defaults stay inside each chart. Secrets stay
-outside YAML and Git. Python copies rendered YAML without templating it a
-second time; only the existing `.kube.j2` host-integration files use Jinja2.
+Workload settings that vary by environment belong in `environments/*/values.yaml`;
+host and operational settings belong in inventory/group_vars. Settings that never
+vary stay directly in the `.yaml.j2` template. Secrets stay
+outside YAML and Git. Jinja2 renders both the Kube YAML in `manifests/*.yaml.j2`
+and the `.kube.j2` host-integration files; installation only copies the
+already-rendered Kube YAML, without templating it a second time.
 The package needs Python 3.9+ and Jinja2. See [installer usage](installer/README.md).
 DR keeps Ansible for remote transport, fencing, replication and backup, calling
 the same Python workload functions on each target. Shared infrastructure uses

@@ -7,8 +7,9 @@ Current architecture and workflow:
 - docs/ARCHITECTURE.md describes the current design; docs/LEARNING-GUIDE.md
   teaches it. Use docs/ACCEPTANCE.md for
   acceptance; a NEW run must not depend on old chat or development history.
-- Helm renders workloads at build time. bundles contain canonical rendered YAML;
-  the Python installer renders target .kube units from deploy/quadlet templates; targets do not need Helm.
+- Jinja2 (deploy/manifests/*.yaml.j2) renders workloads at build time; bundles
+  contain canonical rendered YAML. The Python installer renders target .kube
+  units from deploy/quadlet templates; targets need only Python, never Helm.
 - todo-app and notes-app each group migration init, FastAPI and HTTP-only frontend.
   Each app has its own PostgreSQL pod. Shared nginx and Keycloak bring the
   single-host topology to six pods on rootless app-network. The App registry in

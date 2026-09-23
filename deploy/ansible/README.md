@@ -24,7 +24,7 @@ deploy/ansible/.venv/bin/python -m pip install -r deploy/ansible/requirements.tx
 ## Shared workload installer on targets
 
 Each target needs Python 3.9+ and Jinja2, provisioned before offline operation
-(for example, the OS `python3-jinja2` package). No target needs Helm or pip.
+(for example, the OS `python3-jinja2` package). No target needs pip.
 `tasks/install-workload.yml` stages the Python module, canonical Quadlet
 sources and each caller's already-rendered manifests. Controller source paths
 are preserved; remote commands receive target staging paths. The task sets
@@ -95,7 +95,7 @@ The package provides two inventory templates:
 Copy the relevant template to `hosts.ini` in the same directory and edit the
 addresses. The adjacent `group_vars/` contains account and operational defaults;
 review these when adapting an inventory to real hosts. These are Ansible group
-names, not Helm environment names.
+names, not the app's own deploy/environments values files.
 Hostnames identify machines; inventory groups identify their current database
 roles. Operational filenames describe actions and roles.
 
@@ -157,4 +157,5 @@ The replication bridge is `tasks/replicate-workload.yml`. It shares
 `app-info` supplies names/files from the Python App registry; YAML does not
 reconstruct them. `replication-apps` supplies the complete configured replication
 group, currently Todo-only during the staged generalization. Initial bootstrap
-still refuses existing data. DR targets additionally need the OS PyYAML package.
+still refuses existing data. DR targets need the OS PyYAML package, the same
+base dependency build-mode rendering already requires.

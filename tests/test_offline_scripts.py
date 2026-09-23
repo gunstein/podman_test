@@ -67,21 +67,20 @@ class OfflineScriptTests(unittest.TestCase):
     def test_render_failure_preserves_all_existing_manifests(self):
         output = self.directory / "output"
         output.mkdir()
-        names = ("app", "keycloak", "postgres", "config", "shared-proxy")
+        names = ("app.yaml", "keycloak.yaml", "postgres.yaml", "config.yaml", "shared-proxy.yaml",
+                 "notes-app.yaml", "notes-postgres.yaml", "notes-config.yaml",
+                 "keycloak-postgres.yaml", "keycloak-config.yaml")
         for name in names:
-            (output / f"{name}.yaml").write_text(f"original {name}\n")
-        failing_helm = self.executable(
-            "helm-fails-later",
-            'case "$*" in *templates/shared-proxy.yaml*) exit 1;; esac\nprintf "new content\\n"\n',
+            (output / name).write_text(f"original {name}\n")
+        project_root = self.directory / "project"
+        shutil.copytree(ROOT / "deploy/manifests", project_root / "deploy/manifests")
+        (project_root / "deploy/manifests/shared-proxy.yaml.j2").write_text("{% broken jinja syntax\n")
+        result = subprocess.run(
+            [sys.executable, "-m", "todo_installer.render", str(project_root),
+             str(ROOT / "deploy/environments/prod/values.yaml"), str(output)],
+            env={**self.env, "PYTHONPATH": str(ROOT / "deploy/installer")},
+            capture_output=True, text=True, check=False,
         )
-        for helm in (str(self.directory / "missing-helm"), failing_helm):
-            with self.subTest(helm=helm):
-                result = subprocess.run(
-                    ["bash", str(ROOT / "deploy/scripts/render-kube-runtime.sh"),
-                     str(ROOT / "deploy/environments/prod/values.yaml"), str(output)],
-                    env={**self.env, "HELM": helm}, capture_output=True, check=False,
-                )
-                self.assertNotEqual(result.returncode, 0)
-                for name in names:
-                    self.assertEqual((output / f"{name}.yaml").read_text(),
-                                     f"original {name}\n")
+        self.assertNotEqual(result.returncode, 0)
+        for name in names:
+            self.assertEqual((output / name).read_text(), f"original {name}\n")

@@ -18,7 +18,8 @@ The target machine must already provide:
 - Free host ports 5432, 8080 and 8443 on a clean target (8000 is internal to the app pod)
 
 The Kube runtime requires the tested Podman 5.8.2 platform, systemd 255 and
-Python/Jinja2. Ansible is required separately for DR operations. Helm is not an offline target dependency. The
+Python/Jinja2. Ansible is required separately for DR operations. Rendering is
+not an offline target dependency. The
 bundle must be built on a machine compatible with the target's CPU architecture.
 
 For a comfortable demo VM, provide at least 4 GiB memory and 10 GiB free disk.
@@ -33,8 +34,8 @@ From the project root:
 deploy/offline/build-bundle.sh
 ```
 
-The connected build machine must provide Helm. It renders the production
-values before packaging; the isolated Oracle Linux target receives plain YAML.
+The connected build machine renders the production
+values with Jinja2 before packaging; the isolated Oracle Linux target receives plain YAML.
 
 This builds the backend, frontend, shared proxy and Keycloak images, pulls PostgreSQL, and
 creates both the archive and its external checksum:
@@ -136,11 +137,10 @@ its credentials is intended. Backup data is never removed by this command.
 
 ## Source and runtime contract
 
-The bundle contains seven OCI archives, eight YAML files for six pods, all four
-complete Helm charts (`todo`, `notes`, `keycloak`, `shared-proxy`), and the portable Python
-installer with the canonical target Quadlet templates. Helm is used only on the build
-host. The source checkout's `deploy/runtime` contains guides; package YAML is fresh
-Helm output. Packaging tests compare it to independent rendering.
+The bundle contains seven OCI archives, ten YAML files for six pods, and the portable Python
+installer with the canonical target Quadlet templates. Rendering happens only on the build
+host, from the shared `deploy/manifests/*.yaml.j2` templates. The source checkout's `deploy/runtime`
+contains guides; package YAML is fresh Jinja2 output. Packaging tests compare it to independent rendering.
 
 The operations package contains complete DR/backup roles, task includes, the same Python
 installer, runtime manifests and shared resource Quadlets; it contains no OCI archives. Both packages record the full Git SHA

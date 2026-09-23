@@ -57,12 +57,12 @@ and is no longer part of the active tree.
 
 | Boundary | Files |
 |---|---|
-| Grouped application | `deploy/charts/todo/templates/app.yaml`; Python renders `todo-app.kube` |
-| Notes app and database | `deploy/charts/notes/`; `notes-app.kube`, `notes-postgres.kube` |
-| Shared identity | `deploy/charts/keycloak/templates/keycloak.yaml`; `keycloak.kube` |
-| Persistent database | `deploy/charts/todo/templates/postgres.yaml`; `todo-postgres.kube` |
-| Shared ingress | `deploy/charts/shared-proxy/`; `shared-proxy.kube`, container `nginx` |
-| Helm templates and values | [`deploy/charts/todo/`](deploy/charts/todo/) |
+| Grouped application | `deploy/manifests/app.yaml.j2`; Python renders `todo-app.kube` |
+| Notes app and database | `deploy/manifests/app.yaml.j2`, `postgres.yaml.j2`; `notes-app.kube`, `notes-postgres.kube` |
+| Shared identity | `deploy/manifests/keycloak.yaml.j2`; `keycloak.kube` |
+| Persistent database | `deploy/manifests/postgres.yaml.j2`; `todo-postgres.kube` |
+| Shared ingress | `deploy/manifests/shared-proxy.yaml.j2`; `shared-proxy.kube`, container `nginx` |
+| Jinja2 manifest templates | [`deploy/manifests/`](deploy/manifests/) |
 | Shared network | [`app-network.network`](deploy/quadlet/app-network.network) |
 
 Start with the [Kube runtime guide](deploy/runtime/README.md). DR tools support Todo and shared identity; retired PoCs and migration tooling remain in pre-retirement Git history.

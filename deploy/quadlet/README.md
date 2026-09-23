@@ -6,7 +6,7 @@ role-local copies. Ansible DR calls the same workload functions for Todo.
 Host-specific units live beside the rendered YAML in
 `~/.config/containers/systemd/todo-kube-runtime/`. See the [runtime guide](../runtime/README.md).
 
-Persistent storage is declared by Helm/Kube PVCs. No `.volume` Quadlets are
+Persistent storage is declared by Kube YAML PVCs. No `.volume` Quadlets are
 needed for the current workloads.
 
 The seven historical .container units were retired after full acceptance of

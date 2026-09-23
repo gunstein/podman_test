@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ app.resource("backend-config") | tojson }}
+data:
+  DATABASE_HOST: {{ app.resource("postgres") | tojson }}
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: {{ app.name | tojson }}
+  DATABASE_USER: {{ app.database_role("app") | tojson }}
+  LOG_LEVEL: {{ log_level | tojson }}
+  OIDC_ISSUER: {{ ("https://" + hostname + ":" + port|string + "/auth/realms/todo") | tojson }}
+  OIDC_JWKS_URL: http://keycloak:8080/auth/realms/todo/protocol/openid-connect/certs
+  OIDC_AUDIENCE: {{ app.keycloak_client | tojson }}

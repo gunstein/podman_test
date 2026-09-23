@@ -1,24 +1,21 @@
-"""Render app charts and enforce independent credentials and persistent storage."""
-import os
-import subprocess
+"""Render app manifests and enforce independent credentials and persistent storage."""
 import unittest
-from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
+from tests.runtime_fixture import RUNTIME
 
 
 class IndependentAppChartsTests(unittest.TestCase):
     def test_each_app_owns_its_database_pvcs_secrets_and_roles(self):
         all_claims = []
-        for name in ('todo', 'notes'):
-            result = subprocess.run([
-                os.environ.get('HELM', 'helm'), 'template', name,
-                str(ROOT / 'deploy/charts' / name), '--values',
-                str(ROOT / 'deploy/environments/prod/values.yaml'),
-            ], check=True, capture_output=True, text=True)
-            documents = list(yaml.safe_load_all(result.stdout))
+        for name, postgres_file, app_file, config_file in (
+            ('todo', 'postgres.yaml', 'app.yaml', 'config.yaml'),
+            ('notes', 'notes-postgres.yaml', 'notes-app.yaml', 'notes-config.yaml'),
+        ):
+            documents = (list(yaml.safe_load_all((RUNTIME / postgres_file).read_text()))
+                         + list(yaml.safe_load_all((RUNTIME / app_file).read_text()))
+                         + list(yaml.safe_load_all((RUNTIME / config_file).read_text())))
             pods = {d['metadata']['name']: d for d in documents if d['kind'] == 'Pod'}
             self.assertEqual(set(pods), {name + '-app', name + '-postgres'})
             claims = {d['metadata']['name']: d for d in documents
@@ -51,7 +48,6 @@ class IndependentAppChartsTests(unittest.TestCase):
         self.assertFalse(all_claims[0] & all_claims[1])
 
     def test_shared_proxy_routes_both_hostnames_and_uses_one_san_certificate(self):
-        from tests.runtime_fixture import RUNTIME
         documents = list(yaml.safe_load_all((RUNTIME / 'shared-proxy.yaml').read_text()))
         config = next(d['data']['nginx.conf'] for d in documents
                       if d['metadata']['name'] == 'shared-nginx-config')

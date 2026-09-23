@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class LearningPathTests(unittest.TestCase):
     def test_current_guide_teaches_kube_not_legacy_units(self):
         guide = (ROOT / "docs/LEARNING-GUIDE.md").read_text()
-        for phrase in ("deploy/charts/todo", "todo-app.service", "init container", "acceptance"):
+        for phrase in ("deploy/manifests/postgres.yaml.j2", "todo-app.service", "init container", "acceptance"):
             self.assertIn(phrase, guide)
         for phrase in ("todo-frontend.container", "todo-migrate.container",
                        "todo-frontend.service"):

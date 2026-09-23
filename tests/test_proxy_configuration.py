@@ -37,7 +37,7 @@ class ProxyConfigurationTests(unittest.TestCase):
         self.assertIn("proxy_set_header X-Forwarded-Port $server_port;", headers)
 
     def test_nginx_configuration_reads_from_readonly_system_volume(self):
-        nginx = read("deploy/charts/shared-proxy/templates/shared-proxy.yaml")
+        nginx = read("deploy/manifests/shared-proxy.yaml.j2")
         app = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
 
         self.assertIn("ssl_certificate /var/lib/todo-tls/server.crt;", nginx)

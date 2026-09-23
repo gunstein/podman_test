@@ -3,6 +3,7 @@ import subprocess
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).parents[1] / "deploy/scripts" / "todo_backup.py"
 SPEC = importlib.util.spec_from_file_location("todo_backup", SCRIPT)
@@ -137,6 +138,53 @@ class TodoBackupTests(unittest.TestCase):
 
         with self.assertRaisesRegex(todo_backup.BackupError, "timed out"):
             self.tool(timeout_runner).database_state()
+
+class ApplicationBackupTests(unittest.TestCase):
+    def test_each_backup_and_restore_stays_within_its_app(self):
+        for app in todo_backup.apps.REPLICATED_APPS:
+            runner = FakeRunner()
+            tool = todo_backup.TodoBackup(runner=runner, app=app)
+            tool.create_backup()
+            tool.restore('base-20260829T123456Z', 'before_delete', False)
+            commands = runner.commands
+            backup = next(command for command in commands if 'pg_basebackup' in command)
+            self.assertIn('--host=' + app.resource('postgres'), backup)
+            self.assertIn('--username=' + app.database_role('replicator'), backup)
+            self.assertIn(app.secret('replicator') + ',type=env,target=PGPASSWORD', backup)
+            self.assertIn(app.volume('backup') + ':/backup:z', backup)
+            for other in todo_backup.apps.REPLICATED_APPS:
+                if other == app:
+                    continue
+                self.assertFalse(any(other.resource('postgres') in argument
+                                     for command in commands for argument in command))
+            self.assertFalse(any(app.volume('data') in argument
+                                 for command in commands for argument in command))
+            self.assertTrue(any('--network' in command and 'none' in command for command in commands))
+            self.assertTrue(any('recovery_target_action=pause' in command for command in commands))
+
+    def test_cleanup_cannot_target_the_other_apps_restore(self):
+        for app in todo_backup.apps.REPLICATED_APPS:
+            runner = FakeRunner(containers={app.resource('postgres-restore')},
+                                volumes={app.volume('restore-data')})
+            tool = todo_backup.TodoBackup(runner=runner, app=app)
+            with self.assertRaises(todo_backup.BackupError):
+                tool.cleanup_restore('yes')
+            self.assertEqual(runner.commands, [])
+            tool.cleanup_restore(app.resource('postgres-restore'))
+            removals = [command for command in runner.commands if 'rm' in command]
+            self.assertEqual(removals, [
+                ['podman', 'rm', '--force', app.resource('postgres-restore')],
+                ['podman', 'volume', 'rm', app.volume('restore-data')]])
+
+    def test_group_backup_checks_last_app_before_first_base_backup(self):
+        instances = [mock.Mock(), mock.Mock()]
+        instances[0].archive_status.return_value = 'on|'
+        instances[1].require_writable_primary.side_effect = todo_backup.BackupError('notes is read-only')
+        with mock.patch.object(todo_backup, 'TodoBackup', side_effect=instances):
+            self.assertEqual(todo_backup.main(['create']), 1)
+        for tool in instances:
+            tool.create_backup.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

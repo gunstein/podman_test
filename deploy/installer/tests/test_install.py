@@ -271,6 +271,29 @@ class UninstallTests(unittest.TestCase):
                 self.assertIn(['podman', 'volume', 'rm', 'todo-nginx-data'], calls)
                 self.assertIn(['podman', 'volume', 'rm', 'todo-caddy-data'], calls)
 
+    def test_uninstall_removes_only_registered_pods_before_the_shared_network(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                patch('todo_installer.uninstall.exists',
+                      side_effect=lambda kind, name: kind == 'network'), \
+                patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
+            directory = Path(temp) / 'systemd'
+            directory.mkdir()
+            state = Path(temp) / 'todo-installer-dev.json'
+            state.write_text('{}')
+            unrelated = Path(temp) / 'unrelated.json'
+            unrelated.write_text('{}')
+            uninstall.uninstall(quadlet_dir=directory)
+            commands = [call.args[0] for call in run.call_args_list]
+            removals = [command for command in commands if command[:3] == ['podman', 'pod', 'rm']]
+            self.assertEqual([command[-1] for command in removals],
+                             ['shared-proxy', 'notes-app', 'todo-app', 'keycloak',
+                              'notes-postgres', 'todo-postgres'])
+            network = commands.index(['podman', 'network', 'rm', 'app-network'])
+            self.assertTrue(all(commands.index(command) < network for command in removals))
+            self.assertTrue(all('--volumes' not in command and '-v' not in command for command in removals))
+            self.assertFalse(state.exists())
+            self.assertTrue(unrelated.exists())
+
     def test_unexpected_stop_failure_preserves_files(self):
         with tempfile.TemporaryDirectory() as temp, \
                 patch('todo_installer.uninstall.exists', return_value=False), \

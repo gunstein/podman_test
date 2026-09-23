@@ -25,9 +25,7 @@ app-network
 | `todo-app` | `todo-app.service` | `todo-backend`, `todo-frontend` |
 | `notes-app` | `notes-app.service` | `notes-backend`, `notes-frontend` |
 | `notes-postgres` | `notes-postgres.service` | `notes-postgres` |
-| `keycloak` | `keycloak.service` | `notes-app` | `notes-app.service` | `notes-backend`, `notes-frontend` |
-| `notes-postgres` | `notes-postgres.service` | `notes-postgres` |
-| `keycloak` |
+| `keycloak` | `keycloak.service` | `keycloak` |
 | `todo-postgres` | `todo-postgres.service` | `todo-postgres` |
 | `shared-proxy` | `shared-proxy.service` | `nginx` |
 

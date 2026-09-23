@@ -23,6 +23,8 @@ SERVICES = (*(app.resource(component) for app in apps.APPS
 CONTAINERS = (*(app.resource(component) for app in apps.APPS
                 for component in ('frontend', 'backend', 'migrate', 'db-grants', 'db-setup', 'postgres')),
               'nginx', 'keycloak')
+PODS = ('shared-proxy', *(app.resource('app') for app in reversed(apps.APPS)),
+        'keycloak', *(app.resource('postgres') for app in reversed(apps.APPS)))
 MAPPINGS = {name: fields for app in apps.APPS
             for name, fields in {**secrets.postgres_secret_mapping(app),
                                  **secrets.application_secret_mapping(app)}.items()}
@@ -55,9 +57,14 @@ def uninstall(remove_data=False, quadlet_dir=None):
     elif runtime.exists():
         shutil.rmtree(runtime)
     systemctl('daemon-reload')
+    # Direct kube play has no systemd owner to remove its pods/infra containers.
+    # Pod removal does not request volume deletion; PVCs follow remove_data below.
+    for name in PODS:
+        run('podman', 'pod', 'rm', '--force', '--ignore', name)
     for name in CONTAINERS:
         run('podman', 'rm', '--force', '--ignore', name)
     remove('network', apps.NETWORK)
+    (directory.parent / 'todo-installer-dev.json').unlink(missing_ok=True)
     if remove_data:
         for app in apps.APPS:
             remove('volume', app.volume('data'))

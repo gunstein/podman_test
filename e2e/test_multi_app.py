@@ -105,6 +105,21 @@ class SharedIdentityBrowserTests(unittest.TestCase):
                 expect(page.locator('#user-status')).to_have_text('Reading publicly')
                 page.goto(todo)
                 expect(page.locator('#user-status')).to_have_text('Reading publicly')
+
+                # Start a fresh session from Notes and verify SSO in the other direction.
+                context.close()
+                context = browser.new_context(ignore_https_errors=False)
+                page = context.new_page()
+                page.goto(notes)
+                page.locator('#login').click()
+                page.locator('#username').fill(username)
+                page.locator('#password').fill(password)
+                page.locator('#kc-login').click()
+                expect(page.locator('#user-status')).to_have_text('Logged in as ' + username)
+                page.goto(todo)
+                expect(page.locator('#user-status')).to_have_text('Logged in as ' + username)
+                page.locator('#logout').click()
+                expect(page.locator('#user-status')).to_have_text('Reading publicly')
             finally:
                 browser.close()
 

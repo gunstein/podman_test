@@ -97,6 +97,7 @@ def describe(app):
         "application_service": app.service("app"),
         "data_volume": app.volume("data"),
         "backup_volume": app.volume("backup"),
+        "archive_check_prefix": app.database_role("m15_archive_check"),
         "replication_secret": app.secret("replicator"),
         "replication_role": app.database_role("replicator"),
         "replication_slot": app.replication_slot(),

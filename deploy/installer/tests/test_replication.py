@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -145,3 +146,27 @@ class ReplicationTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, 'complete database group'):
                         replication.require_promoted_group(journal)
                     run.assert_not_called()
+
+    def test_refresh_hba_replaces_inherited_subnet_only_for_the_selected_role(self):
+        with tempfile.TemporaryDirectory() as temp:
+            hba = Path(temp) / 'pg_hba.conf'
+            hba.write_text('host replication todo_replicator 10.88.0.0/24 scram-sha-256\n'
+                           'host replication notes_replicator 10.77.0.0/24 scram-sha-256\n'
+                           'host all all 127.0.0.1/32 scram-sha-256\n')
+
+            def command(*argv, **kwargs):
+                if argv[:3] == ('podman', 'network', 'inspect'):
+                    self.assertEqual(argv[3], apps.NETWORK)
+                    return subprocess.CompletedProcess(argv, 0, '[{"subnets":[{"subnet":"10.99.0.0/24"}]}]', '')
+                self.assertEqual(argv[:3], ('podman', 'exec', 'todo-postgres'))
+                return subprocess.run(argv[3:], check=True, text=True, capture_output=True,
+                                      env={**os.environ, 'PGDATA': temp})
+
+            with patch.object(replication, 'run', side_effect=command), patch.object(replication, 'sql') as sql:
+                self.assertTrue(replication.refresh_hba(apps.APPS[0]))
+                self.assertFalse(replication.refresh_hba(apps.APPS[0]))
+                sql.assert_called_with(apps.APPS[0], 'SELECT pg_reload_conf();')
+            self.assertEqual(hba.read_text().splitlines(), [
+                'host replication notes_replicator 10.77.0.0/24 scram-sha-256',
+                'host all all 127.0.0.1/32 scram-sha-256',
+                'host replication todo_replicator 10.99.0.0/24 scram-sha-256'])

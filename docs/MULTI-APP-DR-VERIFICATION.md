@@ -146,3 +146,28 @@ Python plus the already-installed browser test dependencies fixed the harness.
 The complete suite passed 161 tests after replacing the old Ansible secret-read
 source assertion with an executed Python secret-read/output-suppression test.
 This remains a repaired development checkpoint, not final full DR acceptance.
+
+## Checkpoint 4c: independent archives, backups and PITR
+
+`postgres_backup` now loops over registry metadata, using the shared replication
+bridge to refresh each database's inherited HBA entry against the local rootless
+subnet. The same existing archive/PVC/SourcePath/security gates apply separately
+to both databases. The backup CLI defaults status/create/mark to the full group;
+disposable restore operations require an explicit app selection.
+
+Live archive configuration passed on the promoted disposable host; its repeat
+reported `changed=0`. Separate verified base backups were created in
+`todo-postgres-backup` and `notes-postgres-backup`. For each database, a row was
+inserted before a named restore point, then deleted and replaced by an after-point
+row in the live database. Independent restores paused read-only at the named
+point: before=1/after=0 in each restore versus before=0/after=1 live. Both restore
+containers had `network=none` and no published ports. Exact-name cleanup removed
+only their disposable resources; live after-point rows and both backup volumes
+remained intact. Both archived WAL streams had no failures during this checkpoint.
+
+Evidence: `two-app-backup-configure.log`, `two-app-backup-repeat.log`,
+`two-app-base-backups.log`, `two-app-pitr-live.log` and `backup-role-final-tests.log`
+under `/tmp/notes-dr-vms`. The full suite passed 162 tests, including actual shell
+execution proving an inherited HBA subnet is replaced only for the selected
+replication role and actual Ansible checks rejecting the other app's backup PVC.
+Full fenced rebuild and unchanged-revision final acceptance remain pending.

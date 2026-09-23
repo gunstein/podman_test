@@ -146,25 +146,29 @@ class PVCStorageTests(unittest.TestCase):
         self.assertIn('todo_replication_operation: standby', role)
 
     def test_backup_rejects_missing_wrong_readonly_or_misplaced_mounts(self):
-        steps = tasks("postgres_backup")
+        from todo_installer import apps
+        steps = yaml.safe_load((ROOT / 'deploy/ansible/roles/postgres_backup/tasks/database.yml').read_text())
         gate = next(t for t in steps if t["name"] == "Require the PVC backup volume at the archive path")
         existence = next(i for i, t in enumerate(steps) if
                          t.get("ansible.builtin.command", {}).get("argv") ==
-                         ["podman", "volume", "exists", "todo-postgres-backup"])
-        helper = next(i for i, t in enumerate(steps) if "todo-postgres-backup:/backup:U,z"
+                         ["podman", "volume", "exists", "{{ m15_app.backup_volume }}"])
+        helper = next(i for i, t in enumerate(steps) if "{{ m15_app.backup_volume }}:/backup:U,z"
                       in t.get("ansible.builtin.command", {}).get("argv", []))
         self.assertLess(existence, steps.index(gate))
         self.assertLess(steps.index(gate), helper)
-        good = {"Type": "volume", "Name": "todo-postgres-backup",
-                "Destination": "/var/lib/postgresql/backup", "RW": True}
-        for mounts, accepted in [([good], True), ([], False),
-                                 ([{**good, "Name": "wrong"}], False),
-                                 ([{**good, "Destination": "/wrong"}], False),
-                                 ([{**good, "RW": False}], False)]:
-            with tempfile.TemporaryDirectory() as directory:
-                result = ansible_probe(Path(directory), [gate],
-                                       {"m15_postgres_mounts": {"stdout": json.dumps(mounts)}})
-                self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
+        for app in apps.REPLICATED_APPS:
+            good = {"Type": "volume", "Name": app.volume('backup'),
+                    "Destination": "/var/lib/postgresql/backup", "RW": True}
+            other = next(candidate for candidate in apps.REPLICATED_APPS if candidate != app)
+            for mounts, accepted in [([good], True), ([], False), ([good, good], False),
+                                     ([{**good, "Name": other.volume('backup')}], False),
+                                     ([{**good, "Destination": "/wrong"}], False),
+                                     ([{**good, "RW": False}], False)]:
+                with self.subTest(app=app.name, mounts=mounts), tempfile.TemporaryDirectory() as directory:
+                    result = ansible_probe(Path(directory), [gate], {
+                        "m15_app": apps.describe(app),
+                        "m15_postgres_mounts": {"stdout": json.dumps(mounts)}})
+                    self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
     def test_uninstall_preserves_database_by_default_and_never_removes_backup(self):
         from todo_installer import uninstall

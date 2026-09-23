@@ -43,7 +43,7 @@ def main(argv=None):
     registry.add_argument('--details', action='store_true')
     replicate = subcommands.add_parser('replicate-workload')
     paths(replicate)
-    replicate.add_argument('operation', choices=('primary', 'standby', 'status', 'authenticate', 'streaming'))
+    replicate.add_argument('operation', choices=('primary', 'standby', 'status', 'authenticate', 'streaming', 'hba'))
     replicate.add_argument('--app', choices=[app.name for app in apps.REPLICATED_APPS],
                            default=apps.IDENTITY_DATABASE_APP.name)
     replicate.add_argument('--node-address', default='')
@@ -87,6 +87,9 @@ def main(argv=None):
                     kube_runtime_dir=(args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve(),
                     rendered_manifest_dir=args.rendered_manifest_dir or args.project_root / 'generated/kube-runtime',
                     image_archive=args.image_archive, slot=args.slot)
+            elif args.operation == 'hba':
+                replication.require_primary(app)
+                result['changed'] = replication.refresh_hba(app)
             elif args.operation == 'streaming':
                 result['status'] = replication.streaming_status(app, rebuilt=args.rebuilt)
             elif args.operation == 'authenticate':

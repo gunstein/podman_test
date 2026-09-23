@@ -7,6 +7,9 @@
     project_root: "{{ playbook_dir }}/../../.."
     todo_quarantine_entrypoint_regex: /opt/todo/bin/todo-quarantine\.sh
   tasks:
+    - name: Stage the trusted application registry used by quarantine
+      ansible.builtin.include_tasks: ../tasks/stage-installer.yml
+
     - name: Enable Guest Agent execution only with explicit operator consent
       ansible.builtin.include_tasks: ../tasks/quarantine-guest-agent.yml
       when: todo_quarantine_enable_guest_exec | default(false) | bool

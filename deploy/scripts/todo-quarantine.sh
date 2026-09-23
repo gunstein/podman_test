@@ -18,7 +18,22 @@ test "$service_uid" -gt 0
 as_user() {
   runuser -u "$service_user" -- env XDG_RUNTIME_DIR="/run/user/$service_uid" "$@"
 }
-for unit in shared-proxy.service todo-app.service keycloak.service todo-postgres.service; do
+# One trusted registry owns the complete group; never leave another app running.
+units=$(PYTHONPATH=/opt/todo/lib PYTHONDONTWRITEBYTECODE=1 python3 -c \
+  'from todo_installer.apps import services; print("\n".join(services()))')
+set -f
+# Intentional splitting of the registry's newline-separated, validated unit names.
+# shellcheck disable=SC2086
+set -- $units
+test "$#" -ge 4 || { echo "Incomplete application service registry" >&2; exit 1; }
+for unit in "$@"; do
+  case "$unit" in
+    *[!a-zA-Z0-9_.@-]*|'') echo "Invalid service name" >&2; exit 1 ;;
+    *.service) ;;
+    *) echo "Invalid service suffix" >&2; exit 1 ;;
+  esac
+done
+for unit in "$@"; do
   test "$(as_user systemctl --user show "$unit" --property=LoadState --value)" = loaded
 done
 if [ "$action" = check ]; then
@@ -26,8 +41,8 @@ if [ "$action" = check ]; then
   printf 'READY: host=%s user=%s; no services changed\n' "$expected_host" "$service_user"
   exit 0
 fi
-as_user systemctl --user stop shared-proxy.service todo-app.service keycloak.service todo-postgres.service
-for unit in shared-proxy.service todo-app.service keycloak.service todo-postgres.service; do
+as_user systemctl --user stop "$@"
+for unit in "$@"; do
   state=$(as_user systemctl --user show "$unit" --property=ActiveState --value)
   case "$state" in
     inactive) ;;
@@ -47,5 +62,5 @@ test -z "$remaining_containers" || {
   echo "Containers still running; keep every VM network link disconnected" >&2
   exit 1
 }
-printf 'STOPPED: host=%s; Todo services stopped (inactive or failed), no service processes; no running user containers\n' "$expected_host"
+printf 'STOPPED: host=%s; Application services stopped (inactive or failed), no service processes; no running user containers\n' "$expected_host"
 echo 'Keep hypervisor quarantine in place. This does not authorize rebuild or promotion.'

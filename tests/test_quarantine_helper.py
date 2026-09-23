@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,7 +14,7 @@ class QuarantineHelperTests(unittest.TestCase):
             directory = Path(temporary)
             log = directory / "calls"
             fake = directory / "fake"
-            fake.write_text('''#!/usr/bin/env python3
+            fake.write_text(f'#!{sys.executable}\n' + '''
 import os
 import sys
 from pathlib import Path
@@ -25,6 +26,8 @@ if name == 'id':
     print(os.environ.get('ROOT_UID', '0') if len(args) == 1 else '1000')
 elif name == 'hostname':
     print('todo-primary')
+elif name == 'python3':
+    print(os.environ.get('REGISTRY_UNITS', 'shared-proxy.service\\ntodo-app.service\\nnotes-app.service\\nkeycloak.service\\ntodo-postgres.service\\nnotes-postgres.service'))
 elif name == 'runuser':
     assert args[:5] == ['-u', 'gunstein', '--', 'env', 'XDG_RUNTIME_DIR=/run/user/1000']
     command = args[5:]
@@ -34,7 +37,7 @@ elif name == 'runuser':
     elif '--property=LoadState' in command:
         print(os.environ.get('LOAD_STATE', 'loaded'))
     elif '--property=ActiveState' in command:
-        print(os.environ.get('ACTIVE_STATE', 'inactive'))
+        print(os.environ.get('BAD_ACTIVE_STATE', 'active') if command[3] == os.environ.get('BAD_UNIT') else os.environ.get('ACTIVE_STATE', 'inactive'))
         sys.exit(int(os.environ.get('SHOW_RC', '0')))
     elif '--property=MainPID' in command:
         print(os.environ.get('MAIN_PID', '0'))
@@ -48,7 +51,7 @@ else:
     sys.exit(99)
 ''')
             fake.chmod(0o755)
-            for name in ("id", "hostname", "runuser"):
+            for name in ("id", "hostname", "runuser", "python3"):
                 (directory / name).symlink_to(fake)
             result = subprocess.run(
                 ["sh", str(ROOT / "deploy/scripts/todo-quarantine.sh"), action, expected, "gunstein"],
@@ -74,7 +77,7 @@ else:
         result, calls = self.run_helper("stop")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("STOPPED:", result.stdout)
-        self.assertIn("--user stop shared-proxy.service todo-app.service keycloak.service todo-postgres.service", calls)
+        self.assertIn("--user stop shared-proxy.service todo-app.service notes-app.service keycloak.service todo-postgres.service notes-postgres.service", calls)
         for settings in ({"CONTAINERS": "todo-postgres\n"}, {"STOP_RC": "1"},
                          {"PODMAN_RC": "125"},
                          {"ACTIVE_STATE": "activating"}, {"LOAD_STATE": "not-found"}):
@@ -103,3 +106,11 @@ else:
             result, _ = self.run_helper("stop", ACTIVE_STATE=state)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Not stopped:", result.stderr)
+
+    def test_notes_service_and_incomplete_registry_cannot_escape_quarantine(self):
+        for settings in ({'BAD_UNIT': 'notes-postgres.service'},
+                         {'REGISTRY_UNITS': 'shared-proxy.service'},
+                         {'REGISTRY_UNITS': 'shared-proxy.service todo-app.service keycloak.service bad;command'}):
+            result, _ = self.run_helper('stop', **settings)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn('STOPPED:', result.stdout)

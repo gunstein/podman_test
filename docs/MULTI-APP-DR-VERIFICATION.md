@@ -171,3 +171,27 @@ under `/tmp/notes-dr-vms`. The full suite passed 162 tests, including actual she
 execution proving an inherited HBA subnet is replaced only for the selected
 replication role and actual Ansible checks rejecting the other app's backup PVC.
 Full fenced rebuild and unchanged-revision final acceptance remain pending.
+
+## Checkpoint 4d: complete-group quarantine through Guest Agent
+
+The quarantine helper now imports the service list from the trusted App registry.
+It retains exact host/user validation, loaded-unit checks, inactive-or-failed
+states, zero MainPID/ControlPID, no running user containers and preserved failure
+evidence. The install playbook stages the same exact-file-trusted registry before
+installing the helper. Unit tests include a failure isolated to Notes PostgreSQL.
+
+On the disposable promoted Fedora guest, the existing SELinux opt-in tasks
+installed the exact helper entrypoint label and persistent Guest Agent transition;
+fapolicyd remained active. Fedora already enabled guest-exec RPCs by default;
+this is distinct from the Oracle Linux allow-list opt-in covered by the policy
+tests. Both QEMU NIC links were disconnected before invoking `check` and `stop`
+through the real Guest Agent channel. Check observed the complete running stack;
+stop succeeded with all six services stopped, zero service processes and no
+running user containers. Both checkpoint VMs were then powered off, preserving
+their data/backup disks. Neither protected acceptance VM was accessed.
+
+Evidence: `quarantine-before-disconnect.log`, `quarantine-guest-agent-live.log`,
+`quarantine-group-install-live.log`, `quarantine-group-tests.log` under
+`/tmp/notes-dr-vms`. The full suite passed 163 tests; Ruff, ShellCheck, Ansible
+lint and both Ansible syntax checks passed. Fenced two-app reseed and the final
+unchanged-revision acceptance remain to be verified.

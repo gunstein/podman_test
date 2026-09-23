@@ -34,8 +34,9 @@ def sql(app, statement, *, database='postgres'):
                input=statement + '\n').stdout.strip()
 
 
-def status(app):
-    fields = sql(app, "SELECT pg_is_in_recovery(), current_setting('transaction_read_only'), "
+def status(app, query=None):
+    query = query or sql
+    fields = query(app, "SELECT pg_is_in_recovery(), current_setting('transaction_read_only'), "
                  "COALESCE(pg_last_wal_receive_lsn()::text, ''), "
                  "COALESCE(pg_last_wal_replay_lsn()::text, ''), "
                  "COALESCE(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), "
@@ -46,14 +47,15 @@ def status(app):
                 receive_lsn=fields[2], replay_lsn=fields[3], apply_lag_bytes=int(fields[4]))
 
 
-def require_primary(app):
-    state = status(app)
+def require_primary(app, query=None):
+    state = status(app, query)
     if state['in_recovery'] or state['transaction_read_only']:
         raise RuntimeError(f'{app.name}: expected a writable primary')
+    return state
 
 
-def require_standby(app):
-    state = status(app)
+def require_standby(app, query=None):
+    state = status(app, query)
     if not state['in_recovery'] or not state['transaction_read_only']:
         raise RuntimeError(f'{app.name}: expected a read-only standby')
     if not state['receive_lsn'] or not state['replay_lsn'] or state['apply_lag_bytes'] != 0:
@@ -188,9 +190,9 @@ def bootstrap_standby(app, primary_address, *, project_root, quadlet_dir,
     return True
 
 
-def promote(app):
+def promote(app, *, query=None, command=None):
     """Low-level promotion; only call after fencing and all-app preflight gates."""
-    require_standby(app)
-    run('podman', 'exec', app.resource('postgres'), 'pg_ctl', '-D', DATA, 'promote', '-w', '-t', '60')
-    require_primary(app)
-    return status(app)
+    require_standby(app, query)
+    command = command or run
+    command('podman', 'exec', app.resource('postgres'), 'pg_ctl', '-D', DATA, 'promote', '-w', '-t', '60')
+    return require_primary(app, query)

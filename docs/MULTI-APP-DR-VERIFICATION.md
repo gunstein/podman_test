@@ -68,3 +68,25 @@ repeats, and require existing-volume bootstrap refusal without a second base
 backup. Canonical Helm PVC comparison, isolated package execution, all-playbook
 syntax checks, Ruff and Ansible lint passed. Notes was still excluded from the
 replication registry throughout this checkpoint.
+
+## Checkpoint 3: group promotion with only Todo enabled
+
+The generalized operator tool was installed on the real standby through the
+unchanged exact-trust mechanism, with fapolicyd active. Its configuration
+explicitly selected `applications: [todo]`.
+
+A live negative test deliberately supplied fencing text while primary was still
+reachable. Preflight refused it, the database remained read-only, and no
+promotion decision record was created. Primary was then powered off and its
+QEMU process independently confirmed absent. The new all-app preflight and
+promotion passed for Todo; `todo-ansible-bridge-marker` survived and a write
+probe succeeded before rollback. The durable decision file contained
+`state=complete`, `applications=[todo]`, `completed=[todo]`, mode 0600.
+
+The full suite passed 156 tests. Added tests cover the last app having lag,
+missing LSNs, wrong role, inactive service or unhealthy container; a reachable
+second primary port; inability to persist the decision; competing promotion
+processes; and failure after the first database is promoted. No database is
+promoted before the complete preflight passes. A failed/partial decision blocks
+blind retry. This is a fail-closed group gate, not a claim that PostgreSQL can
+atomically promote independent database instances or roll promotion back.

@@ -1,4 +1,7 @@
 ---
+- name: Resolve and stage the complete replication group for the operator tool
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replication-apps.yml"
+
 - name: Create the Todo DR configuration directory
   ansible.builtin.file:
     path: "{{ m13_config_directory }}"
@@ -40,6 +43,7 @@
     stdin: >-
       {{
         {
+          'applications': apps_to_replicate,
           'primary_name':
             groups[todo_dr_primary_group | default('todo_primary')][0],
           'primary_address':

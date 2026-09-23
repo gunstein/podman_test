@@ -107,3 +107,9 @@ facts, and build/examine both delivery archives. Real six-pod dev/server, offlin
 idempotency were additionally tested in a separate Fedora 44 VM with rootless
 Podman 5.8.1 and SELinux enforcing; see [results](../runtime/RESULTS.md).
 This does not replace Oracle Linux/fapolicyd or two-host DR acceptance.
+
+The replication mechanics in `replication.py` consume canonical PVC YAML and
+therefore additionally require PyYAML on DR targets (`python3-pyyaml` or the
+platform's equivalent package; connected installs can use `.[dr]`). Ordinary
+single-host installation still needs only Jinja2. The initial replication
+registry remains Todo-only until the phased live DR checks are complete.

@@ -8,5 +8,8 @@ version = "0.1.0"
 requires-python = ">=3.9"
 dependencies = ["jinja2"]
 
+[project.optional-dependencies]
+dr = ["PyYAML>=6"]
+
 [tool.setuptools.packages.find]
 include = ["todo_installer*"]

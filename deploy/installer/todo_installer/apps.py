@@ -8,6 +8,7 @@ class App:
     chart: str
     hostname: str
     keycloak_client: str
+    replication_port: int = 5432
 
 
     def resource(self, component: str) -> str:
@@ -32,6 +33,12 @@ class App:
 
     def database_role(self, role: str) -> str:
         return f"{self.name}_{role}"
+
+    def replication_slot(self, rebuilt: bool = False) -> str:
+        return self.database_role("rebuilt_standby" if rebuilt else "standby")
+
+    def replication_passfile(self) -> str:
+        return "." + self.resource("replication") + ".pgpass"
 
     def volume(self, purpose: str) -> str:
         return self.resource("postgres-" + purpose)
@@ -65,3 +72,6 @@ KEYCLOAK_IMAGE = "localhost/keycloak:m12"
 KEYCLOAK_ARCHIVE = "keycloak-m12.tar"
 PROXY_IMAGE = IDENTITY_DATABASE_APP.image("proxy")
 PROXY_ARCHIVE = IDENTITY_DATABASE_APP.image_archive("proxy")
+
+# Expand only after the Todo-only replication bridge has passed live acceptance.
+REPLICATED_APPS = (IDENTITY_DATABASE_APP,)

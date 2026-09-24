@@ -12,7 +12,9 @@ data; use disposable lab hosts and explicit infrastructure fencing.
 state or authorization. A NEW run evaluates its own clean revision. Use
 [troubleshooting](ACCEPTANCE-TROUBLESHOOTING.md) only when a gate fails;
 [Proxmox quarantine](PROXMOX-QUARANTINE.md) supplies the specialized
-infrastructure procedure. Operation references describe contracts, not another
+infrastructure procedure. An autonomous agent run additionally follows
+[ACCEPTANCE-AGENT.md](ACCEPTANCE-AGENT.md) for Proxmox API, sudo, secret and
+evidence handling. Operation references describe contracts, not another
 acceptance sequence.
 
 ## Entry, approvals and evidence

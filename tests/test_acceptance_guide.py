@@ -88,8 +88,25 @@ class AcceptanceGuideTests(unittest.TestCase):
                    f'| `{database.replication_slot(rebuilt=True)}` |')
             self.assertIn(row, guide)
 
+    def test_agent_guide_commands_parse_and_stay_within_safety_rules(self):
+        guide = (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text()
+        blocks = re.findall(r'```bash\n(.*?)```', guide, re.S)
+        self.assertTrue(blocks)
+        for block in blocks:
+            result = subprocess.run(['bash', '-n'], input=block, text=True,
+                                    capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        commands = '\n'.join(blocks)
+        for unsafe in ('curl -k', '--insecure', 'StrictHostKeyChecking=no',
+                       'E2E_IGNORE_HTTPS_ERRORS=true', 'set -x', 'setenforce'):
+            self.assertNotIn(unsafe, commands)
+        actions = re.findall(r'pve_lab\.py (\w+)', guide)
+        self.assertTrue(actions)
+        self.assertLessEqual(set(actions), {'get', 'set', 'post', 'delete', 'task', 'exec', 'nic'})
+        self.assertIn('todo-quarantine.sh stop todo-primary gunstein', guide)
+
     def test_acceptance_reference_links_resolve_in_source(self):
-        for name in ('ACCEPTANCE.md', 'ACCEPTANCE-TROUBLESHOOTING.md'):
+        for name in ('ACCEPTANCE.md', 'ACCEPTANCE-TROUBLESHOOTING.md', 'ACCEPTANCE-AGENT.md'):
             path = ROOT / 'docs' / name
             for target in re.findall(r'\]\(([^)]+)\)', path.read_text()):
                 if '://' in target or target.startswith('#'):

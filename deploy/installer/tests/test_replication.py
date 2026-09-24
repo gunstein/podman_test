@@ -189,17 +189,86 @@ class ReplicationTests(unittest.TestCase):
                     replication.reseed_standby(app, '192.0.2.51', confirm_fenced='old is fenced', confirm_reseed='old')
                 run.assert_not_called()
 
-    def test_confirmed_reseed_removes_only_selected_data_and_uses_its_rebuild_slot(self):
+    def test_confirmed_reseed_orders_checks_before_cleanup_before_deletion(self):
         for app in apps.REPLICATED_APPS:
-            with patch.object(replication, 'reseed_check') as gate, \
-                    patch.object(replication, 'run') as run, \
+            order = []
+            with patch.object(replication, 'reseed_check',
+                              side_effect=lambda *a, **k: order.append('check')) as gate, \
+                    patch.object(replication, 'authenticate',
+                                side_effect=lambda *a: order.append('authenticate')) as auth, \
+                    patch.object(replication, 'remove_exited_containers_using',
+                                side_effect=lambda *a: order.append('cleanup')) as cleanup, \
+                    patch.object(replication, 'run',
+                                side_effect=lambda *a, **k: order.append('run')) as run, \
                     patch.object(replication, 'bootstrap_standby', return_value=True) as bootstrap:
                 self.assertTrue(replication.reseed_standby(app, '192.0.2.51',
                     confirm_fenced='old is fenced', confirm_reseed='old', project_root='/source'))
                 gate.assert_called_once()
+                auth.assert_called_once_with(app, '192.0.2.51')
+                cleanup.assert_called_once_with(app.volume('data'))
                 run.assert_called_once_with('podman', 'volume', 'rm', app.volume('data'))
                 bootstrap.assert_called_once_with(app, '192.0.2.51', project_root='/source',
                                                   slot=app.replication_slot(rebuilt=True))
+                self.assertEqual(order, ['check', 'authenticate', 'cleanup', 'run'])
+
+    def test_exited_containers_on_the_data_volume_are_removed_but_a_running_one_fails_closed(self):
+        volume = apps.APPS[0].volume('data')
+        with patch.object(replication, 'run') as run:
+            run.return_value.stdout = 'todo-postgres|exited\nold-helper|created'
+            self.assertTrue(replication.remove_exited_containers_using(volume))
+            run.assert_called_with('podman', 'rm', 'todo-postgres', 'old-helper')
+
+        with patch.object(replication, 'run') as run:
+            run.return_value.stdout = ''
+            self.assertFalse(replication.remove_exited_containers_using(volume))
+            run.assert_called_once()
+
+        with patch.object(replication, 'run') as run:
+            run.return_value.stdout = 'todo-postgres|running'
+            with self.assertRaisesRegex(RuntimeError, 'todo-postgres is still running; data was not removed'):
+                replication.remove_exited_containers_using(volume)
+            run.assert_called_once()
+
+    def test_reseed_check_never_contacts_the_primary(self):
+        # The rebuild preflight runs reseed_check before the primary has published
+        # its LAN endpoint (postgres_redundancy_primary runs later in the same
+        # rebuild). It must pass without any network replication probe.
+        for app in apps.REPLICATED_APPS:
+            with tempfile.TemporaryDirectory() as temp:
+                quadlet_dir = Path(temp) / 'q'
+                kube_runtime_dir = quadlet_dir / 'todo-kube-runtime'
+                kube_runtime_dir.mkdir(parents=True)
+                (kube_runtime_dir / app.manifest('config')).write_bytes(b'---\n')
+                (kube_runtime_dir / app.manifest('postgres')).write_text(json.dumps({
+                    'kind': 'PersistentVolumeClaim',
+                    'metadata': {'name': app.volume('data')},
+                }))
+                quadlet_root = Path(temp) / 'source'
+                (quadlet_root / 'deploy/quadlet').mkdir(parents=True)
+                (quadlet_root / 'deploy/quadlet/app-network.network').write_bytes(b'')
+                (quadlet_root / 'deploy/quadlet' / (app.unit('postgres') + '.j2')).write_text(
+                    '{{ todo_postgres_publish_address }}:{{ postgres_publish_port }}')
+
+                def command(*argv, **kwargs):
+                    self.assertNotIn('IDENTIFY_SYSTEM', ' '.join(str(a) for a in argv))
+                    if argv[:2] == ('podman', 'info'):
+                        return subprocess.CompletedProcess(argv, 0, 'true', '')
+                    if argv[:2] == ('podman', 'ps'):
+                        return subprocess.CompletedProcess(argv, 0, '', '')
+                    if argv[:3] == ('podman', 'kube', 'play'):
+                        return subprocess.CompletedProcess(argv, 0, '--no-pod-prefix', '')
+                    return subprocess.CompletedProcess(argv, 0, '', '')
+
+                with patch.object(replication, 'run', side_effect=command), \
+                        patch.object(replication, 'exists', return_value=True), \
+                        patch.object(replication, 'require_stopped_service'), \
+                        patch.object(replication, 'authenticate') as auth:
+                    replication.reseed_check(app, '192.0.2.51', project_root=str(quadlet_root),
+                        quadlet_dir=str(quadlet_dir), kube_runtime_dir=str(kube_runtime_dir),
+                        rendered_manifest_dir=str(kube_runtime_dir),
+                        confirm_fenced=replication.socket.gethostname() + ' is fenced',
+                        confirm_reseed=replication.socket.gethostname())
+                    auth.assert_not_called()
 
     def test_stopped_service_requires_zero_pids_and_preserves_failed_state(self):
         for state, main, control, accepted in [('inactive', '0', '0', True), ('failed', '0', '0', True),

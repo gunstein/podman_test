@@ -271,6 +271,13 @@ def rebuild_primary_check(app):
 
 def reseed_check(app, primary_address, *, project_root, quadlet_dir, kube_runtime_dir,
                  rendered_manifest_dir, confirm_fenced, confirm_reseed):
+    """Local-only checks; never contacts the primary.
+
+    A rebuild's read-only preflight runs this before the primary has
+    published its LAN replication endpoint (that happens later, in the
+    same rebuild run). Only ``reseed_standby`` authenticates, immediately
+    before it deletes the old volume.
+    """
     host = socket.gethostname()
     if confirm_fenced != host + ' is fenced' or confirm_reseed != host:
         raise RuntimeError('Exact local hostname and infrastructure-fencing confirmations are required')
@@ -298,14 +305,39 @@ def reseed_check(app, primary_address, *, project_root, quadlet_dir, kube_runtim
     (Path(project_root) / 'deploy/quadlet/app-network.network').read_bytes()
     quadlet.render(project_root, app.unit('postgres'), {
         'todo_postgres_publish_address': '', 'postgres_publish_port': app.replication_port})
-    authenticate(app, primary_address)
     return False
+
+
+def remove_exited_containers_using(volume):
+    """Clear only containers a hard host fence left stopped on this volume.
+
+    Podman refuses to remove a volume that any container still references,
+    even one that already exited; a bare hypervisor power-off (as fencing
+    requires) never runs `podman kube down`, so the old workload's exited
+    containers are exactly what is left. Never removes a running container;
+    that must fail closed instead, same as an in-use volume.
+    """
+    entries = [line.split('|', 1) for line in
+              run('podman', 'ps', '-a', '--filter', f'volume={volume}',
+                  '--format', '{{.Names}}|{{.State}}').stdout.splitlines() if line]
+    running = [name for name, state in entries if state == 'running']
+    if running:
+        raise RuntimeError(f'{volume}: container {running[0]} is still running; data was not removed')
+    names = [name for name, _ in entries]
+    if names:
+        run('podman', 'rm', *names)
+    return bool(names)
 
 
 def reseed_standby(app, primary_address, *, confirm_fenced, confirm_reseed, **paths):
     """One explicitly confirmed replacement, after the caller's all-app gates."""
     reseed_check(app, primary_address, confirm_fenced=confirm_fenced,
                  confirm_reseed=confirm_reseed, **paths)
+    # Authenticate against the primary's now-published LAN endpoint as the
+    # last check before the destructive step; reseed_check cannot do this
+    # (see its docstring).
+    authenticate(app, primary_address)
+    remove_exited_containers_using(app.volume('data'))
     # No force and no backup-volume removal. In-use data must fail closed.
     run('podman', 'volume', 'rm', app.volume('data'))
     return bootstrap_standby(app, primary_address, slot=app.replication_slot(rebuilt=True), **paths)

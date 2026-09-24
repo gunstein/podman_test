@@ -347,15 +347,15 @@ curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/auth/realms/todo/.well-kn
 ```
 
 Export only the public demo root, trust it on the client, verify HTTPS for both
-hostnames, run the Todo Playwright flows and the Todo/Notes SSO flow, and leave
-one persistent authenticated Todo marker and one persistent authenticated Notes
-marker.
+hostnames, run the Todo and Notes Playwright flows and the Todo/Notes SSO flow,
+and leave one persistent authenticated Todo marker and one persistent
+authenticated Notes marker.
 Use `curl` without `-k` and browser tests with
 `E2E_IGNORE_HTTPS_ERRORS=false`. Configure the actual Chromium trust database
 as described below. The development `run-e2e.sh` enables TLS
-exceptions and is not the acceptance command. Both real Keycloak browser flows
-must run, plus the multi-app SSO test; adapter tests with a test double do not
-replace them.
+exceptions and is not the acceptance command. All three real Keycloak browser
+flows (Todo, Notes and the multi-app SSO test) must run; adapter tests with a
+test double do not replace them.
 
 ### Client trust and real browser verification
 
@@ -430,7 +430,7 @@ it on the serving host only into a process environment with
 and never print or store it. Never enable direct password grants for the
 frontend clients.
 
-Run both browser flows from the client, entering the test password locally:
+Run all three browser flows from the client, entering the test password locally:
 
 ```bash
 (
@@ -439,12 +439,14 @@ Run both browser flows from the client, entering the test password locally:
   export E2E_PASSWORD E2E_USERNAME=testuser
   E2E_BASE_URL=https://todo.test:8443 E2E_IGNORE_HTTPS_ERRORS=false \
     todo-backend/.venv/bin/python -m pytest e2e/test_todo_flow.py --browser chromium -q
+  E2E_NOTES_URL=https://notes.test:8443 E2E_IGNORE_HTTPS_ERRORS=false \
+    todo-backend/.venv/bin/python -m pytest e2e/test_notes_flow.py --browser chromium -q
   E2E_MULTI_APP=1 E2E_CA_FILE=/tmp/todo-public-root.crt E2E_IGNORE_HTTPS_ERRORS=false \
     todo-backend/.venv/bin/python -m pytest e2e/test_multi_app.py -q
 )
 ```
 
-Require both Todo tests and the multi-app SSO test passed and zero skipped tests. Repeat this browser check after
+Require the Todo, Notes and multi-app SSO tests all passed and zero skipped tests. Repeat this browser check after
 application failover and final reboots, updating trust for a newly created CA.
 The tests delete their own rows; create one separate authenticated persistent
 marker in each app through the UI and record both IDs/titles for replication and
@@ -818,7 +820,7 @@ Use the sequential reboot evidence from phase 10; do not add another reboot.
 After those boots, require `NRestarts=0` for `todo-app.service`,
 `notes-app.service` and `shared-proxy.service`, no failed user
 units, readiness, stable issuer and trusted browser E2E, including the
-multi-app SSO test, with no skipped tests.
+Notes and multi-app SSO tests, with no skipped tests.
 CLEAN PASS requires every phase on the same clean revision, isolated PITR,
 sequential final reboots and new authenticated Todo and Notes markers read on
 rebuilt standby.

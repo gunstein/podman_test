@@ -72,10 +72,14 @@ class AcceptanceGuideTests(unittest.TestCase):
             if 'e2e/test_multi_app.py' in command:
                 self.assertIn('E2E_MULTI_APP=1', command)
                 self.assertIn('E2E_CA_FILE=', command)
+            elif 'e2e/test_notes_flow.py' in command:
+                self.assertIn('E2E_NOTES_URL=', command)
+                self.assertIn('--browser chromium', command)
             else:
                 self.assertIn('e2e/test_todo_flow.py', command)
                 self.assertIn('--browser chromium', command)
         self.assertTrue(any('e2e/test_todo_flow.py' in line for line in browser))
+        self.assertTrue(any('e2e/test_notes_flow.py' in line for line in browser))
         self.assertTrue(any('e2e/test_multi_app.py' in line for line in browser))
 
     def test_registered_group_table_matches_the_app_registry(self):

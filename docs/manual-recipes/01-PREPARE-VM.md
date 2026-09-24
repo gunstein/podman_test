@@ -20,6 +20,8 @@ sudo dnf install -y \
   podman \
   ansible-core \
   python3 \
+  python3-jinja2 \
+  python3-pyyaml \
   shadow-utils \
   fuse-overlayfs \
   slirp4netns \
@@ -38,6 +40,11 @@ sudo reboot
 adapts if it is absent), but it is part of the tested lab baseline and several
 DR/backup playbooks install exact-file trust through it. Installing and
 enabling it now avoids a behavior difference later.
+
+`python3-jinja2` renders the target's `.kube` units during installation;
+`python3-pyyaml` parses the canonical PVC YAML for DR bootstrap, promotion and
+rebuild. Both are required before running `preflight.sh` on this VM
+([offline bundle target prerequisites](../../deploy/offline/README.md)).
 
 After reboot, check versions:
 

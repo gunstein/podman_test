@@ -22,9 +22,11 @@ From the repository root:
 git switch feature/podman-kube
 ```
 
-The build renders the Kubernetes manifests with Jinja2 before packaging; this
-needs only Python and the `jinja2`/`PyYAML` packages, already required by the
-installer itself, and nothing extra on the target VM:
+The build renders the Kubernetes manifests with Jinja2 on the laptop before
+packaging; this needs Python and the `jinja2`/`PyYAML` packages there. The
+target VM's own installer also renders `.kube` units at install time and
+needs the same two packages — [Prepare an Oracle Linux 9 VM](01-PREPARE-VM.md)
+already installs them:
 
 ```bash
 deploy/offline/build-bundle.sh
@@ -91,13 +93,15 @@ address:
 sh ./install.sh --publish-address 192.168.1.50
 ```
 
-The first run asks for a PostgreSQL bootstrap password and a temporary
-Keycloak admin password. Other database passwords are generated automatically
-and stored as Podman secrets.
+Every password — PostgreSQL bootstrap, database-role and the Keycloak
+administrator credential — is generated automatically on first run; none are
+ever prompted for or printed. All values are stored as host-local Podman
+secrets.
 
-The installer verifies the bundle, loads container images and runs the
-Ansible deployment. It does not contact a container registry or the Python
-package index.
+The installer verifies the bundle, loads container images and installs the
+workload itself; it does not invoke Ansible (that is DR/multi-host only, see
+the [DR walkthrough](03-DR-TWO-VM.md)) or contact a container registry or the
+Python package index.
 
 ## 5. Check that the application is running
 
@@ -140,6 +144,14 @@ the fetch, fingerprint verification and trust-store update in one step.
 regular Todo user. Create a user in Keycloak afterward to be able to log in
 and change Todos.
 
+The Keycloak admin console is at `https://todo.test:8443/auth/admin/`. Its
+generated admin password is a Podman secret on the VM; read it only when
+needed, and never into a file or shell history you keep:
+
+```bash
+podman secret inspect --showsecret --format '{{.SecretData}}' keycloak-admin-password
+```
+
 The detailed source for this installation is the
 [offline bundle guide](../../deploy/offline/README.md). On a repeat installation you
 must use the same `--publish-address`, otherwise publication falls back to
@@ -147,12 +159,19 @@ localhost.
 
 ## 7. Try public reads and login
 
-From the laptop, verify `curl --fail https://todo.test:8443/ready` succeeds
-without `-k`. Open Todo: reads should work before login. In Keycloak's admin UI,
-create a lab user with email, first/last name, a non-temporary password and no
-required actions. Log in through Todo, create a uniquely named test Todo, edit
-it, reload the page and verify it remains. Delete only your own test item.
-Log out and verify writes require login again.
+From the laptop, verify `curl --fail https://todo.test:8443/ready` and
+`curl --fail https://notes.test:8443/ready` both succeed without `-k`. Open
+Todo: reads should work before login. In Keycloak's admin UI, create a lab
+user with email, first/last name, a non-temporary password and no required
+actions. Log in through Todo, create a uniquely named test Todo, edit it,
+reload the page and verify it remains. Delete only your own test item. Log
+out and verify writes require login again.
+
+Then open <https://notes.test:8443> in the same browser session: it should
+already show you logged in, without a second password prompt (Todo and Notes
+share one Keycloak login). Create, edit and delete a test note the same way.
+A Todo access token must not authorize a Notes write, or vice versa; the two
+frontends use separate token audiences even though the login is shared.
 
 If login loops or fails, inspect discovery at
 `https://todo.test:8443/auth/realms/todo/.well-known/openid-configuration`:

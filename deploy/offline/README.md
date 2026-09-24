@@ -1,8 +1,8 @@
 # Offline bundle
 
-The bundle installs the Todo application without contacting a container
-registry or Python package index. It does not install operating-system
-prerequisites.
+The bundle installs Todo and Notes (both applications, shared identity and
+shared proxy) without contacting a container registry or Python package
+index. It does not install operating-system prerequisites.
 
 ## Target prerequisites
 
@@ -13,9 +13,18 @@ The target machine must already provide:
   `/etc/subgid`
 - Podman's Quadlet systemd generator
 - A working `systemctl --user` session
-- OS-managed Python 3.9+ and Jinja2 (for example `python3-jinja2`)
+- OS-managed Python 3.9+ and Jinja2 (for example `python3-jinja2`) to render
+  `.kube` units at install time; a single-host install needs nothing more,
+  since the bundle already carries pre-rendered application/database YAML
 - `/bin/sh`, `tar` and `sha256sum`
 - Free host ports 5432, 5433, 5434, 8080 and 8443 on a clean target (8000 is internal to the app pod)
+
+A target that will also run DR through the operations package (either host in
+the [two-VM walkthrough](../../docs/manual-recipes/03-DR-TWO-VM.md)) needs
+`python3-pyyaml` too: Ansible's replication tasks parse the canonical PVC YAML
+for standby bootstrap, promotion and rebuild.
+[Prepare an Oracle Linux 9 VM](../../docs/manual-recipes/01-PREPARE-VM.md)
+installs both packages on every target so this does not need revisiting later.
 
 The Kube runtime requires the tested Podman 5.8.2 platform, systemd 255 and
 Python/Jinja2. Ansible is required separately for DR operations. Rendering is

@@ -2,8 +2,9 @@
 
 ## Goal and architecture
 
-A pedagogical rootless Podman Todo demo: Jinja2 renders Kube YAML; user systemd
-manages three .kube workloads. See [Architecture](docs/ARCHITECTURE.md) and
+A pedagogical rootless Podman Todo and Notes demo: Jinja2 renders Kube YAML;
+user systemd manages seven .kube workloads (two apps, shared Keycloak and nginx,
+three PostgreSQL databases replicated as one DR group). See [Architecture](docs/ARCHITECTURE.md) and
 [Learning guide](docs/LEARNING-GUIDE.md).
 
 ## Acceptance
@@ -11,12 +12,16 @@ manages three .kube workloads. See [Architecture](docs/ARCHITECTURE.md) and
 Full unchanged-revision Oracle Linux acceptance of the prior three-pod
 architecture passed on `688a0f6` and again on `12c3bef`; see
 [688a0f6](docs/ACCEPTANCE-688a0f6.md) and [12c3bef](docs/ACCEPTANCE-12c3bef.md)
-for evidence and deviations. The current four-pod shared-proxy architecture
+for evidence and deviations. The later four-pod shared-proxy architecture
 passed a process-level, evidence-light two-agent acceptance on `9e54cfb`; see
 [the run record](docs/ACCEPTANCE-9e54cfb.md). That run exercised a destructive
 standby rebuild again, so the topology recorded in the older runs is stale.
 No topology was captured for `9e54cfb`; this is not a substitute for fresh
 checks before operations.
+
+The current seven-pod, three-database topology has passed phased checkpoints on
+disposable VMs ([record](docs/MULTI-APP-DR-VERIFICATION.md)) but not yet a full
+two-VM acceptance with [ACCEPTANCE.md](docs/ACCEPTANCE.md).
 
 ## Current work and limitations
 

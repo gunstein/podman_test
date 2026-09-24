@@ -6,9 +6,9 @@ See [System architecture](docs/ARCHITECTURE.md) for the complete model and respo
 The repository demonstrates a complete lifecycle rather than only starting a
 few containers: offline installation, least-privilege database access, HTTPS,
 authentication, physical replication, controlled promotion, application
-failover, backup, point-in-time recovery and restoration of redundancy for Todo.
-Notes adds independent CRUD/storage and shared SSO on one host; full Notes DR
-is a separate follow-up phase.
+failover, backup, point-in-time recovery and restoration of redundancy for Todo,
+Notes and the shared Keycloak database as one DR group. Notes adds independent
+CRUD/storage and shared SSO.
 
 ## Architecture
 
@@ -17,13 +17,15 @@ browser
    |
    | HTTPS :8443
    v
-shared nginx proxy ----> shared Keycloak (todo realm)
-   |                         |
-   +--> todo-app ----------> todo-postgres ---> Todo-only DR
-   |    frontend + backend   (also Keycloak schema)
+shared nginx proxy ----> shared Keycloak (todo realm) ---> keycloak-postgres
+   |
+   +--> todo-app ----------> todo-postgres
+   |    frontend + backend
    |
    +--> notes-app ---------> notes-postgres
-        frontend + backend   (independent Notes data)
+        frontend + backend
+
+All three PostgreSQL databases replicate to the standby as one DR group.
 ```
 
 - Plain HTML, CSS and JavaScript frontend
@@ -60,16 +62,18 @@ and is no longer part of the active tree.
 | Grouped application | `deploy/manifests/app.yaml.j2`; Python renders `todo-app.kube` |
 | Notes app and database | `deploy/manifests/app.yaml.j2`, `postgres.yaml.j2`; `notes-app.kube`, `notes-postgres.kube` |
 | Shared identity | `deploy/manifests/keycloak.yaml.j2`; `keycloak.kube` |
-| Persistent database | `deploy/manifests/postgres.yaml.j2`; `todo-postgres.kube` |
+| Persistent databases | `deploy/manifests/postgres.yaml.j2`; `todo-postgres.kube`, `notes-postgres.kube`, `keycloak-postgres.kube` |
 | Shared ingress | `deploy/manifests/shared-proxy.yaml.j2`; `shared-proxy.kube`, container `nginx` |
 | Jinja2 manifest templates | [`deploy/manifests/`](deploy/manifests/) |
 | Shared network | [`app-network.network`](deploy/quadlet/app-network.network) |
 
-Start with the [Kube runtime guide](deploy/runtime/README.md). DR tools support Todo and shared identity; retired PoCs and migration tooling remain in pre-retirement Git history.
+Start with the [Kube runtime guide](deploy/runtime/README.md). DR tools support the Todo, Notes and Keycloak databases as one group; retired PoCs and migration tooling remain in pre-retirement Git history.
 Revision 688a0f6 passed full evidence-grade Oracle Linux acceptance of the
 prior three-pod runtime; see the [run record](docs/ACCEPTANCE-688a0f6.md). The
 historical four-pod shared-proxy runtime passed a lighter, process-level
 two-agent acceptance on 9e54cfb; see [that run record](docs/ACCEPTANCE-9e54cfb.md).
+The current seven-pod, three-database topology has not yet passed full two-VM
+acceptance; see [phased checkpoints](docs/MULTI-APP-DR-VERIFICATION.md).
 
 ## Requirements
 
@@ -216,22 +220,23 @@ Never commit passwords, private keys, local inventories or generated bundles.
 
 ## Tests
 
-Database-free migration startup retry tests live in `backend/unit_tests/`.
+Database-free migration startup retry tests live in `todo-backend/unit_tests/`
+and `notes-backend/unit_tests/`.
 Backend integration tests use an isolated database whose name must end in
 `_test`:
 
 ```bash
 podman exec todo-postgres createdb -U todo -O todo todo_test
-python3 -m venv backend/.venv
-backend/.venv/bin/python -m pip install -r backend/requirements-test.txt
+python3 -m venv todo-backend/.venv
+todo-backend/.venv/bin/python -m pip install -r todo-backend/requirements-test.txt
 read -rsp "Database password: " TODO_DB_PASSWORD
 echo
 export TEST_DATABASE_URL="host=127.0.0.1 port=5432 dbname=todo_test user=todo password=$TODO_DB_PASSWORD"
-backend/.venv/bin/python -m pytest backend/tests
+todo-backend/.venv/bin/python -m pytest todo-backend/tests
 unset TEST_DATABASE_URL TODO_DB_PASSWORD
 ```
 
-Browser tests use `backend/requirements-e2e.txt` and Playwright. The helper
+Browser tests use `todo-backend/requirements-e2e.txt` and Playwright. The helper
 creates or updates `testuser` without storing either password:
 
 ```bash

@@ -14,11 +14,12 @@ Configure the primary host firewall before bootstrap publishes PostgreSQL on
 the LAN interface. Allow only standby and reload firewalld:
 
 ```bash
-sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="<standby-address>/32" destination address="<primary-address>" port port="5432" protocol="tcp" accept'
+sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="<standby-address>/32" destination address="<primary-address>" port port="5432-5434" protocol="tcp" accept'
 sudo firewall-cmd --reload
 ```
 
-Do not add a general PostgreSQL service or open TCP 5432 to the entire LAN.
+The range covers the Todo (5432), Notes (5433) and Keycloak (5434) databases.
+Do not add a general PostgreSQL service or open these ports to the entire LAN.
 Rootless Podman port forwarding does not preserve the original client source
 address. The primary role therefore inspects `app-network` and grants the
 dedicated replication role access from that internal Podman subnet. In the
@@ -67,8 +68,9 @@ ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/initia
 See [the controlled promotion runbook](PROMOTION.md) before using it.
 
 The Kube-native standby stores a `0600` replication passfile and recovery
-settings inside the `0700` database volume. The canonical `postgres.yaml` and
-`todo-postgres.kube` are shared with primary; only data/recovery configuration
+settings inside each `0700` database volume. The canonical PostgreSQL YAML and
+`.kube` unit of each database (for example `postgres.yaml` and
+`todo-postgres.kube`) are shared with primary; only data/recovery configuration
 and the primary LAN port exposure differ by role.
 
 A physical slot retains WAL while standby is disconnected, capped at

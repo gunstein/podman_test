@@ -43,8 +43,8 @@ The shared nginx proxy selects the application by hostname: `todo.test` or
 `/auth/`. Reads are public; writes require a valid app-specific access token.
 Rows are shared rather than owned per user.
 Each app has independent PostgreSQL data, bootstrap, migration and runtime
-identities. Keycloak remains in the `keycloak` schema of Todo PostgreSQL;
-therefore shared login still depends on Todo's database.
+identities. Keycloak has its own PostgreSQL pod, `keycloak-postgres`; shared
+login therefore depends on that database, not on Todo's.
 
 Clients reach the profile's HTTPS hostname rather than a pod address.
 Both local and production profiles use `https://todo.test:8443` and
@@ -74,6 +74,8 @@ One service user's rootless Podman network: app-network
   │     └── notes-postgres
   ├── keycloak pod
   │     └── keycloak
+  ├── keycloak-postgres pod
+  │     └── keycloak-postgres
   └── todo-postgres pod
         └── todo-postgres
 ```
@@ -87,9 +89,11 @@ and Keycloak have independent lifecycles so app changes do not implicitly
 replace database or identity state. A rebuilt standby runs only PostgreSQL.
 
 The canonical definitions are under `generated/kube-runtime/`, rendered from
-`deploy/charts/{todo,notes,keycloak,shared-proxy}/`. Each pod has one `.kube` unit and generated user service:
-`todo-app.service`, `keycloak.service`, `todo-postgres.service`,
-`notes-app.service`, `notes-postgres.service`, `shared-proxy.service`. The proxy uses the operational container name `nginx`
+the Jinja2 templates in `deploy/manifests/*.yaml.j2`. Each of the seven pods has
+one `.kube` unit and generated user service:
+`shared-proxy.service`, `todo-app.service`, `notes-app.service`,
+`keycloak.service`, `todo-postgres.service`, `notes-postgres.service`,
+`keycloak-postgres.service`. `apps.services()` returns this list. The proxy uses the operational container name `nginx`
 and the persistent TLS volume `todo-nginx-data`. It reaches the frontend/backend
 at `<app>-app:8080`/`<app>-app:8000` and Keycloak at `keycloak:8080`.
 Loopback is shared only within a pod; it cannot connect the separate proxy to Todo.
@@ -115,7 +119,8 @@ Host network integration uses the shared `.network` Quadlet. Persistent storage
 is declared by Kube PVCs; no separate `.volume` Quadlets are needed here.
 User lingering enables services to run before interactive login.
 `shared-proxy.service` requires and starts after both apps and Keycloak;
-each app service depends on its own PostgreSQL and shared Keycloak; PostgreSQL also has
+each app service depends on its own PostgreSQL and shared Keycloak; Keycloak
+depends on `keycloak-postgres.service`; each PostgreSQL also has
 its own boot entrypoint to support a database-only host.
 
 Ordering is not readiness. Init-container success, health checks, systemd
@@ -185,9 +190,9 @@ not rerun administrative role bootstrap.
 | nginx → Keycloak | keycloak:8080 on rootless network | OIDC browser endpoints under /auth |
 | Backend → PostgreSQL | Its own app-postgres:5432 | Application queries with restricted DB role |
 | Migrator → PostgreSQL | Its own app-postgres:5432 | Schema changes with migration identity |
-| Keycloak → PostgreSQL | todo-postgres:5432 | Identity persistence with Keycloak identity |
+| Keycloak → PostgreSQL | keycloak-postgres:5432 | Identity persistence in its own database |
 | Backend → Keycloak | Internal configured JWKS endpoint | Signing-key retrieval for JWT validation |
-| Standby → current primary | Explicit host TCP5432 publication | Physical replication |
+| Standby → current primary | Explicit host TCP5432 (todo), 5433 (notes), 5434 (keycloak) publication | Physical replication, one stream per database |
 
 The network resource is declared in `app-network.network`; its runtime name is
 `app-network`. Loopback is shared only within a pod. Cross-pod communication
@@ -228,11 +233,11 @@ An adapter seam is not evidence that Duende or another provider already works.
 
 | State | Storage / identity | Lifecycle |
 |---|---|---|
-| App and identity database data | todo-postgres-data | Survives app replacement; explicitly replaced only during approved reseed |
-| Notes application data | notes-postgres-data | Independent database, preserved on normal uninstall |
-| Notes reserved backup storage | notes-postgres-backup | Volume only; Notes backup/DR not implemented |
+| Todo database data | todo-postgres-data | Survives app replacement; explicitly replaced only during approved reseed |
+| Notes database data | notes-postgres-data | Same lifecycle as Todo data, independent database |
+| Keycloak database data | keycloak-postgres-data | Same lifecycle; holds the shared realm |
 | nginx CA and leaf-key state | todo-nginx-data | Survives local app recreation; promotion may create a new demo CA |
-| Base backups and WAL | todo-postgres-backup | Separate from live data; still on the same VM |
+| Base backups and WAL | todo-postgres-backup, notes-postgres-backup, keycloak-postgres-backup | One per database; separate from live data; still on the same VM |
 | Runtime credentials | Host-local Podman secrets | Provisioned and transferred separately from YAML |
 
 Kube YAML declares each persistent volume with a `PersistentVolumeClaim`.
@@ -251,10 +256,10 @@ volumes needs one. See the Podman [PVC documentation](https://docs.podman.io/en/
 and [shutdown semantics](https://docs.podman.io/en/latest/markdown/podman-kube-down.1.html).
 
 Standby bootstrap and approved reseed play only the data PVC extracted from the
-canonical rendered `postgres.yaml` before `pg_basebackup`; they do not start
-PostgreSQL against an empty directory. Bootstrap still refuses existing data;
-reseed still requires all fencing and confirmation gates before deleting only
-`todo-postgres-data`. The existing helper ownership/SELinux handoff is preserved.
+canonical rendered PostgreSQL YAML of each database before `pg_basebackup`;
+they do not start PostgreSQL against an empty directory. Bootstrap still refuses
+existing data; reseed still requires all fencing and confirmation gates before
+deleting only the three `<database>-postgres-data` volumes. The existing helper ownership/SELinux handoff is preserved.
 Backup configuration requires the existing backup volume mounted read-write at
 `/var/lib/postgresql/backup` in active PostgreSQL; helpers still mount it at
 `/backup`. Runtime roles remove obsolete volume Quadlet files from earlier Kube
@@ -295,15 +300,18 @@ Do not disable SELinux or fapolicyd to repair application failures.
 
 ## 10. Availability and disaster recovery
 
-The following DR flow is **Todo-only**. It also protects Keycloak's schema in
-Todo PostgreSQL. Shared names were cleanly changed to `app-network` and
-`keycloak` in Ansible as well as the installer. Notes standby bootstrap,
-promotion, rebuild and backup are deferred to a dedicated follow-up phase;
-a Notes backup PVC alone does not provide those operations. Todo-only DR proxy
-dependencies omit Notes, and nginx continues serving Todo when Notes is absent.
+The DR flow covers one group of three databases: Todo, Notes and Keycloak
+(`apps.REPLICATED_DATABASES`). Bootstrap, promotion, backup, rebuild and status
+always act on the complete group; Ansible refuses a partial application
+override. Each database has its own replication port, slot, replication
+credential, WAL archive and backup volume. Promotion first checks every
+database and records a durable decision; a failure after the first database is
+promoted leaves a partial record that blocks blind retry. PostgreSQL cannot
+promote independent instances atomically, so this is a fail-closed gate, not
+an atomic group switch.
 
-Initially one host serves Todo and a second streams its PostgreSQL
-WAL asynchronously. Physical slots retain needed WAL within a configured bound;
+Initially one host serves both applications and a second streams each
+PostgreSQL database's WAL asynchronously. Physical slots retain needed WAL within a configured bound;
 lag and invalidated slots require monitoring. Async replication cannot guarantee
 that unsent commits survive abrupt loss.
 
@@ -342,19 +350,21 @@ retention, off-host copying, encryption and alerts remain production work.
 
 ## 11. Verification status and production limits
 
-Complete unchanged-revision Oracle Linux acceptance passed on 688a0f6,
-including promotion, application recovery, backup/PITR, rebuild, persistent
-markers, sequential reboots and real Keycloak browser verification.
-See the [run record](ACCEPTANCE-688a0f6.md) for observations and exact scope.
+Complete unchanged-revision Oracle Linux acceptance passed for earlier
+Todo-only topologies: 688a0f6 and 12c3bef (evidence-grade) and 9e54cfb
+(process-level). See the run records for observations and exact scope. The
+seven-pod, three-database group has passed phased checkpoints on disposable
+Fedora VMs ([multi-app DR verification](MULTI-APP-DR-VERIFICATION.md)) but has
+not yet passed a full unchanged-revision two-VM acceptance.
 See [runtime results](../deploy/runtime/RESULTS.md). Static tests or a green CI
 run do not replace the full two-VM test. The Python installer extraction has
 unit, real rendering, package and Ansible transport coverage; it still requires
-a new unchanged-revision Oracle Linux DR acceptance run. The six-pod
+a new unchanged-revision Oracle Linux DR acceptance run. The multi-app
 single-host implementation was separately exercised in a disposable Fedora 44
 VM, Podman 5.8.1, rootless and SELinux enforcing: dev/server, actual offline OCI
 loading without Helm, persistence, unchanged repeats, exact systemd SourcePaths,
 trusted SAN TLS and real browser SSO/CRUD/audience isolation. This test did not
-access the existing acceptance VMs and does not establish Notes DR support.
+access the existing acceptance VMs and is not a DR acceptance.
 
 This is a production-shaped educational demo, not a complete production
 platform: one standby, shared Todos, manual client routing and CA trust,

@@ -1,4 +1,4 @@
-"""Opt-in real browser acceptance against an installed six-pod stack.
+"""Opt-in real browser acceptance against an installed seven-pod stack.
 
 Set E2E_MULTI_APP=1, E2E_PASSWORD, E2E_CA_FILE and optionally E2E_CHROMIUM.
 The browser's trust store must already trust the same CA. TLS errors are fatal.

@@ -46,17 +46,20 @@ guest unless stated otherwise.
 
 | Workload / service | Contents | Why separate? |
 |---|---|---|
-| `todo-postgres.service` | PostgreSQL | Data, replication and recovery outlive app deploys |
+| `todo-postgres.service`, `notes-postgres.service` | PostgreSQL per app | Data, replication and recovery outlive app deploys |
+| `keycloak-postgres.service` | Keycloak's own PostgreSQL | Identity data has the same database lifecycle |
 | `keycloak.service` | Keycloak | Identity has its own startup and health lifecycle |
-| `todo-app.service` | Migration init container, backend, nginx frontend | Migration gates startup; backend and frontend share app lifecycle |
+| `todo-app.service`, `notes-app.service` | Migration init container, backend, nginx frontend | Migration gates startup; backend and frontend share app lifecycle |
 
 Read `generated/kube-runtime/app.yaml`, `keycloak.yaml`, `postgres.yaml` and their
-`.kube` units. A fourth unit, `shared-proxy.service`, owns container `nginx`
-and TLS volume `todo-nginx-data`. It routes over DNS to `todo-app:8080`
-(frontend), `todo-app:8000` (backend) and `keycloak:8080`.
+`.kube` units; Notes and Keycloak's database use the same templates with
+`notes-` and `keycloak-` prefixed files. A seventh unit, `shared-proxy.service`,
+owns container `nginx` and TLS volume `todo-nginx-data`. It routes over DNS to
+`todo-app:8080`/`notes-app:8080` (frontends), `todo-app:8000`/`notes-app:8000`
+(backends) and `keycloak:8080`.
 Frontend/backend share pod loopback, but frontend does not terminate TLS.
-Independent pods use `app-network` DNS names `todo-postgres` and
-`keycloak`. A shared pod is not a reason to put every dependency in it.
+Independent pods use `app-network` DNS names such as `todo-postgres`,
+`keycloak-postgres` and `keycloak`. A shared pod is not a reason to put every dependency in it.
 
 ```bash
 podman pod ps
@@ -69,7 +72,8 @@ podman network inspect app-network
 Development uses direct `podman kube play/down` through `deploy/scripts/dev-up.sh`
 and `deploy/scripts/dev-down.sh`; read their cleanup scope before running them.
 Production uses generated user services from `.kube` Quadlets.
-`todo-app.service` requires PostgreSQL and Keycloak; PostgreSQL is also a
+`todo-app.service` requires its PostgreSQL and Keycloak; Keycloak requires
+`keycloak-postgres.service`; each PostgreSQL is also a
 boot entrypoint so database-only standby can run independently.
 Do not manually enable generated services. Lingering allows boot before login.
 

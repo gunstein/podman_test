@@ -38,14 +38,16 @@ loopback. PostgreSQL and internal backend/Keycloak ports are not opened to clien
 The playbook fails before changing application state unless:
 
 - it runs on the declared host and address;
-- `todo-postgres.service` is active;
-- PostgreSQL reports `f|off`, meaning promoted and writable;
-- all four application runtime secrets exist;
+- the group promotion record is complete and every registered database
+  (todo, notes, keycloak) reports `f|off`, meaning promoted and writable;
+- the existing runtime credentials of every application exist;
 - every missing application image has its corresponding staged offline archive.
 
-It loads only missing images, installs the grouped `todo-app` and independent `keycloak` Kube
-workloads, starts them through `.kube` Quadlets, updates the existing Keycloak client to the stable
-origin, and checks health, readiness, discovery and public Todo reads.
+It loads only missing images, installs the grouped `todo-app` and `notes-app`,
+the independent `keycloak` and the `shared-proxy` Kube workloads, starts them
+through `.kube` Quadlets, updates each registered Keycloak client to the stable
+origin, and checks health, readiness, discovery and public reads for every
+application.
 
 ## Client name and certificate
 

@@ -4,13 +4,13 @@ Single-host installation and removal use the [Python installer](../installer/REA
 Ansible retains remote transport, fencing, replication, backup, promotion,
 standby rebuild, security integration and operational assertions.
 
-These operations currently protect **Todo only**, including the shared Keycloak
-database inside Todo PostgreSQL. Shared names are now `app-network` and
-`keycloak` everywhere. This rename does not implement Notes DR: independent
-Notes standby bootstrap, promotion, rebuild and backup are a dedicated follow-up
-phase. Do not use the Todo runbooks as evidence that Notes data is protected.
-The workload bridge defaults to Todo; shared-proxy dependencies in DR do not
-start Notes. Existing acceptance VMs must not be reused for multi-app experiments.
+These operations protect one group of three databases: Todo, Notes and the
+shared Keycloak database (`apps.REPLICATED_DATABASES`). Each has its own host
+replication port (5432, 5433, 5434), slot, credential, WAL archive and backup
+volume. Playbooks refuse a partial group. Promoted application recovery
+deploys both apps, Keycloak and the shared proxy. The group has passed phased
+disposable-VM checkpoints ([record](../../docs/MULTI-APP-DR-VERIFICATION.md)),
+not yet a full two-VM acceptance.
 
 Run playbooks from the repository or extracted operations-package root.
 `ansible.cfg` pins `/usr/bin/python3`, sets the role search path and enables
@@ -155,6 +155,6 @@ The replication bridge is `tasks/replicate-workload.yml`. It shares
 `stage-installer.yml` with workload installation, including exact file trust.
 `app-info` supplies names/files from the Python App registry; YAML does not
 reconstruct them. `replication-apps` supplies the complete configured replication
-group, currently Todo-only during the staged generalization. Initial bootstrap
+group: todo, notes and keycloak. Initial bootstrap
 still refuses existing data. DR targets need the OS PyYAML package, the same
 base dependency build-mode rendering already requires.

@@ -4,10 +4,14 @@ import json
 import re
 import shlex
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'deploy/installer'))
+
+from todo_installer import apps  # noqa: E402
 
 
 def shell_blocks():
@@ -28,10 +32,7 @@ class AcceptanceGuideTests(unittest.TestCase):
                   if "systemctl --user is-active" in line]
         self.assertTrue(checks)
         for command in checks:
-            self.assertEqual(set(command[3:]), {
-                "todo-app.service", "keycloak.service",
-                "todo-postgres.service", "shared-proxy.service",
-            })
+            self.assertEqual(set(command[3:]), set(apps.services()))
         for line in commands.splitlines():
             if "podman exec nginx nginx -t" in line:
                 self.assertIn("-c /etc/todo-nginx/nginx.conf", line)
@@ -67,9 +68,25 @@ class AcceptanceGuideTests(unittest.TestCase):
         self.assertTrue(browser)
         for command in browser:
             self.assertIn('E2E_IGNORE_HTTPS_ERRORS=false', command)
-            self.assertIn('e2e/test_todo_flow.py', command)
-            self.assertIn('--browser chromium', command)
             self.assertNotIn('test_auth_adapter.py', command)
+            if 'e2e/test_multi_app.py' in command:
+                self.assertIn('E2E_MULTI_APP=1', command)
+                self.assertIn('E2E_CA_FILE=', command)
+            else:
+                self.assertIn('e2e/test_todo_flow.py', command)
+                self.assertIn('--browser chromium', command)
+        self.assertTrue(any('e2e/test_todo_flow.py' in line for line in browser))
+        self.assertTrue(any('e2e/test_multi_app.py' in line for line in browser))
+
+    def test_registered_group_table_matches_the_app_registry(self):
+        guide = (ROOT / 'docs/ACCEPTANCE.md').read_text()
+        for service in apps.services():
+            self.assertIn(f'`{service}`', guide)
+        for database in apps.REPLICATED_DATABASES:
+            row = (f'| {database.name} | `{database.resource("postgres")}` | `{database.name}` '
+                   f'| {database.replication_port} | `{database.replication_slot()}` '
+                   f'| `{database.replication_slot(rebuilt=True)}` |')
+            self.assertIn(row, guide)
 
     def test_acceptance_reference_links_resolve_in_source(self):
         for name in ('ACCEPTANCE.md', 'ACCEPTANCE-TROUBLESHOOTING.md'):

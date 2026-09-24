@@ -6,9 +6,10 @@ build mode through `deploy/scripts/render-kube-runtime.sh`. The script delegates
 workload selection to the App registry; targets in offline mode never render.
 
 `apps.APPS` registers Todo and Notes. Each App owns its derived image, secret,
-manifest, service and volume names. Single-host installs run six pods; Keycloak
-and the proxy run once. Both apps share the `todo` realm but have independent
-clients and PostgreSQL instances. Full Notes DR is not implemented.
+manifest, service and volume names. Single-host installs run seven pods; Keycloak,
+its own `keycloak-postgres` database and the proxy run once. Both apps share the
+`todo` realm but have independent clients and PostgreSQL instances.
+`apps.REPLICATED_DATABASES` (todo, notes, keycloak) is the DR group.
 
 From a checkout or extracted package with OS-managed Jinja2:
 
@@ -102,7 +103,7 @@ Most tests mock only runtime commands and use scratch directories. Rendering
 parity tests require real Ansible and compare every Quadlet byte for
 external HTTPS, loopback with replication, and an unset PostgreSQL address.
 Project tests execute the actual Ansible staging bridge, verify repeat change
-facts, and build/examine both delivery archives. Real six-pod dev/server, offline loading, persistence, trusted browser SSO and
+facts, and build/examine both delivery archives. Real multi-app dev/server, offline loading, persistence, trusted browser SSO and
 idempotency were additionally tested in a separate Fedora 44 VM with rootless
 Podman 5.8.1 and SELinux enforcing; see [results](../runtime/RESULTS.md).
 This does not replace Oracle Linux/fapolicyd or two-host DR acceptance.
@@ -111,5 +112,6 @@ This does not replace Oracle Linux/fapolicyd or two-host DR acceptance.
 `replication.py` consumes canonical PVC YAML the same way, so PyYAML
 (`python3-pyyaml` or the platform's equivalent package) is now a base
 dependency everywhere build-mode rendering or DR runs; only a purely offline
-target install, which never renders, can do without it. The initial replication
-registry remains Todo-only until the phased live DR checks are complete.
+target install, which never renders, can do without it. The replication
+registry contains all three databases; see the
+[phased DR checkpoints](../../docs/MULTI-APP-DR-VERIFICATION.md).

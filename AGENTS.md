@@ -11,10 +11,12 @@ Current architecture and workflow:
   contain canonical rendered YAML. The Python installer renders target .kube
   units from deploy/quadlet templates; targets need only Python, never Helm.
 - todo-app and notes-app each group migration init, FastAPI and HTTP-only frontend.
-  Each app has its own PostgreSQL pod. Shared nginx and Keycloak bring the
-  single-host topology to six pods on rootless app-network. The App registry in
+  Each app has its own PostgreSQL pod. Shared nginx, Keycloak and Keycloak's
+  own keycloak-postgres pod bring the single-host topology to seven pods on
+  rootless app-network. The App registry in
   deploy/installer/todo_installer/apps.py owns per-app installer names.
-  DR/backup/rebuild remain Todo-only; Notes DR is a separate follow-up phase.
+  DR/backup/rebuild act on one group of three databases (todo, notes,
+  keycloak; apps.REPLICATED_DATABASES), never on a partial group.
   shared-proxy.service owns nginx and persistent TLS volume todo-nginx-data.
 - Four-pod shared-proxy architecture passed a two-agent acceptance pass on
   9e54cfb; see docs/ACCEPTANCE-9e54cfb.md (process-level, not evidence-grade:
@@ -22,7 +24,9 @@ Current architecture and workflow:
   three-pod architecture's evidence-grade acceptance remains
   docs/ACCEPTANCE-688a0f6.md and docs/ACCEPTANCE-12c3bef.md. Legacy
   runtime/transition files are retired from the active tree; Git history and
-  quadlet-reference-v1 preserve them.
+  quadlet-reference-v1 preserve them. The seven-pod, three-database group has
+  phased disposable-VM checkpoints (docs/MULTI-APP-DR-VERIFICATION.md) but no
+  full two-VM acceptance yet.
 
 Constraints:
 - Frontend: plain HTML, CSS and JavaScript. No Node.js framework.
@@ -42,7 +46,8 @@ Constraints:
 - Reverse proxy: nginx.
 - Offline delivery: rendered YAML and OCI images in the offline bundle;
   separate operations package contains tools/playbooks, not image archives.
-- Authentication: Keycloak is implemented behind frontend/auth.js and its
+- Authentication: Keycloak is implemented behind each app's auth.js
+  (todo-frontend/, notes-frontend/) and its
   provider adapter. Other IdPs require implementation and integration testing.
 - Keep Bash scripts small and simple.
 - Do not add Kubernetes orchestration, Docker Engine, Docker Compose,

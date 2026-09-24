@@ -73,7 +73,7 @@ The assistant uses SSH after the isolated guest's Todo services are stopped.
    |---|---|---|
    | IN | TCP 22 from ThinkPad's observed source `192.168.0.100/32` | Management, after services stopped |
    | IN | TCP 22 from promoted host `192.168.0.108/32` | Management, after services stopped |
-   | OUT | TCP 5432 to promoted host `192.168.0.108/32` | Only when preparing guarded rebuild |
+   | OUT | TCP 5432-5434 to promoted host `192.168.0.108/32` | Only when preparing guarded rebuild |
    | IN/OUT | Deny other application traffic, for both IPv4 and IPv6 | Throughout quarantine |
 
    Established SSH replies must work. Review DHCP/IPv6 control exceptions and
@@ -107,9 +107,11 @@ alone. The helper validates hostname, user and service states. It cannot prove
 hypervisor isolation and is not a substitute for fencing.
 
 An isolated DHCP boot can leave the configured publish address unavailable:
-`rootlessport ... bind: cannot assign requested address`. The PostgreSQL unit
-may then remain `failed` even after a successful stop. The helper accepts
-`inactive` or `failed` only after stopping all four units (`shared-proxy`, `todo-app`, `keycloak`, `todo-postgres`), requiring zero
+`rootlessport ... bind: cannot assign requested address`. The PostgreSQL
+units may then remain `failed` even after a successful stop. The helper accepts
+`inactive` or `failed` only after stopping every unit in the App registry
+(`shared-proxy`, `todo-app`, `notes-app`, `keycloak`, `todo-postgres`,
+`notes-postgres`, `keycloak-postgres`), requiring zero
 MainPID and ControlPID for each and no running user containers. It warns about
 failed units without clearing their failure state. Read the journal over
 quarantined SSH using `journalctl -b _SYSTEMD_USER_UNIT=todo-postgres.service`;

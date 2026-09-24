@@ -23,7 +23,8 @@ to serve clients or replicate as primary. Keep it fenced at the Proxmox layer.
 Powering it on is safe only with client/database traffic still blocked and for
 the purpose of stopping its services and rebuilding it.
 
-The rebuild playbook permanently deletes `todo-postgres-data` on the old primary.
+The rebuild playbook permanently deletes `todo-postgres-data`,
+`notes-postgres-data` and `keycloak-postgres-data` on the old primary.
 It requires both exact values:
 
 ```text

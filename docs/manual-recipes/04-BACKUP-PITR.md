@@ -143,13 +143,17 @@ lands in the backup volume.
 python3 /opt/todo/bin/todo_backup.py status
 ```
 
-Check the volume too:
+Without `--app`, `status`, `create` and `mark` act on all three databases
+(todo, notes, keycloak) and prefix each line with the database name. This
+recipe restores only Todo; the same commands with `--app notes` restore Notes.
+
+Check the volumes too:
 
 ```bash
-podman volume ls | grep todo-postgres
+podman volume ls | grep -- '-postgres-'
 ```
 
-You should see both:
+You should see a data and a backup volume per database, including:
 
 ```text
 todo-postgres-data
@@ -165,13 +169,13 @@ python3 /opt/todo/bin/todo_backup.py create
 The tool uses `pg_basebackup`, creates a SHA-256 manifest and runs
 `pg_verifybackup`.
 
-You get back a backup name, for example:
+You get back one backup name per database, for example:
 
 ```text
-base-20260907T081500Z
+todo: Verified base backup: base-20260907T081500Z
 ```
 
-Keep the name. You need it for the restore.
+Keep the `todo:` name. You need it for the restore.
 
 ## Now build a PITR test
 
@@ -250,7 +254,7 @@ After restore point
 Use the backup name from step 6:
 
 ```bash
-python3 /opt/todo/bin/todo_backup.py restore \
+python3 /opt/todo/bin/todo_backup.py --app todo restore \
   --backup base-20260907T081500Z \
   --target before_bad_change
 ```
@@ -272,7 +276,7 @@ production instance.
 First:
 
 ```bash
-python3 /opt/todo/bin/todo_backup.py restore-status
+python3 /opt/todo/bin/todo_backup.py --app todo restore-status
 ```
 
 Require `recovery|paused|read_only = t|t|on` and verify networking is disabled:
@@ -340,7 +344,7 @@ After inspecting the restore result and obtaining explicit approval to delete
 only the disposable restore container/volume:
 
 ```bash
-python3 /opt/todo/bin/todo_backup.py cleanup-restore \
+python3 /opt/todo/bin/todo_backup.py --app todo cleanup-restore \
   --confirm todo-postgres-restore
 ```
 

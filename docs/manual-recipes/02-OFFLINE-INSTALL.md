@@ -1,6 +1,7 @@
 # Offline install on one VM
 
-This demonstrates four pods delivered without target internet access, trusted
+This demonstrates seven pods (Todo, Notes, Keycloak, their three databases and
+the shared proxy) delivered without target internet access, trusted
 HTTPS, public reads and authenticated writes. Use a clean lab VM, enough disk,
 rootless Podman on the build laptop, verified SSH and the prepared service user.
 Building runs on the laptop; installation and service checks run inside the VM.
@@ -102,10 +103,13 @@ package index.
 
 ```bash
 systemctl --user is-active \
-  todo-postgres.service \
-  keycloak.service \
+  shared-proxy.service \
   todo-app.service \
-  shared-proxy.service
+  notes-app.service \
+  keycloak.service \
+  todo-postgres.service \
+  notes-postgres.service \
+  keycloak-postgres.service
 
 podman ps
 podman secret ls
@@ -113,15 +117,15 @@ podman secret ls
 curl --fail http://127.0.0.1:8080/ready
 ```
 
-All four services should be active, and the readiness check should succeed.
+All seven services should be active, and the readiness check should succeed.
 
 ## 6. Open Todo from the laptop
 
-This lab setup uses the hostname `todo.test`. Add the VM's IP to the laptop's
-`/etc/hosts`:
+This lab setup uses the hostnames `todo.test` and `notes.test`. Add the VM's IP
+to the laptop's `/etc/hosts`:
 
 ```text
-192.168.1.50 todo.test
+192.168.1.50 todo.test notes.test
 ```
 
 Then open <https://todo.test:8443>.

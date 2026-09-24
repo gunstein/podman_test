@@ -65,7 +65,8 @@ for normal execution. Promotion changes topology and is not a routine health tes
 
 `preflight` requires an exact fencing assertion, the configured local hostname,
 active service, healthy container, read-only recovery state, available receive
-and replay LSNs, zero local apply lag and an unreachable old-primary TCP5432.
+and replay LSNs, zero local apply lag and an unreachable old-primary replication
+port, for every registered database (TCP 5432 todo, 5433 notes, 5434 keycloak).
 An unreachable endpoint supports the operator's decision; it cannot prove
 infrastructure fencing. Power off the old primary, prevent automatic restart
 and verify that its service IP is not assigned elsewhere.

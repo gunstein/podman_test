@@ -1,11 +1,16 @@
 # Podman Kube runtime validation status
 
-The current single-host architecture has six pods: `todo-app`, `todo-postgres`,
-`notes-app`, `notes-postgres`, `keycloak` and `shared-proxy`. The apps have separate
-databases and audiences, sharing one realm, proxy, SAN certificate and network.
-DR, backup, promotion and rebuild remain Todo-only; Notes DR is a follow-up.
-The six-pod change requires its own full unchanged-revision VM acceptance
+The current single-host architecture has seven pods: `todo-app`, `todo-postgres`,
+`notes-app`, `notes-postgres`, `keycloak`, `keycloak-postgres` and
+`shared-proxy`. The apps have separate databases and audiences, sharing one
+realm, proxy, SAN certificate and network. DR, backup, promotion and rebuild act
+on the Todo, Notes and Keycloak databases as one group; see the
+[phased DR checkpoints](../../docs/MULTI-APP-DR-VERIFICATION.md).
+The seven-pod change requires its own full unchanged-revision VM acceptance
 before claiming the complete Oracle Linux operational baseline.
+
+The 22 September record below describes the six-pod topology of that date,
+before Keycloak moved to its own database and Helm was replaced by Jinja2.
 
 ## Disposable single-host validation, 22 September 2026
 
@@ -47,7 +52,7 @@ Historical unchanged-revision acceptance passed on 688a0f6; see its
 12c3bef received a full CLEAN PASS on 7 September 2026. The four-pod shared-proxy
 revision 9e54cfb received a lighter process-level acceptance; see its
 [record](../../docs/ACCEPTANCE-9e54cfb.md). These records retain their original
-scope and do not accept the six-pod topology or Notes DR.
+scope and do not accept the current seven-pod, three-database topology.
 
 Follow [Acceptance](../../docs/ACCEPTANCE.md) for a new full Oracle Linux DR run;
 use separate disposable targets for multi-app development experiments.

@@ -15,7 +15,7 @@ The target machine must already provide:
 - A working `systemctl --user` session
 - OS-managed Python 3.9+ and Jinja2 (for example `python3-jinja2`)
 - `/bin/sh`, `tar` and `sha256sum`
-- Free host ports 5432, 8080 and 8443 on a clean target (8000 is internal to the app pod)
+- Free host ports 5432, 5433, 5434, 8080 and 8443 on a clean target (8000 is internal to the app pod)
 
 The Kube runtime requires the tested Podman 5.8.2 platform, systemd 255 and
 Python/Jinja2. Ansible is required separately for DR operations. Rendering is
@@ -137,7 +137,7 @@ its credentials is intended. Backup data is never removed by this command.
 
 ## Source and runtime contract
 
-The bundle contains seven OCI archives, ten YAML files for six pods, and the portable Python
+The bundle contains seven OCI archives, ten YAML files for seven pods, and the portable Python
 installer with the canonical target Quadlet templates. Rendering happens only on the build
 host, from the shared `deploy/manifests/*.yaml.j2` templates. The source checkout's `deploy/runtime`
 contains guides; package YAML is fresh Jinja2 output. Packaging tests compare it to independent rendering.

@@ -26,25 +26,25 @@ are examples.
 Normal state:
 
 ```text
-todo.test
+todo.test, notes.test
     |
     v
 VM1  todo-primary
-     Shared proxy + App + Keycloak + PostgreSQL primary
+     Shared proxy + Todo + Notes + Keycloak + 3 PostgreSQL primaries
                        |
                        | async replication
                        v
-VM2  todo-standby      PostgreSQL standby
+VM2  todo-standby      3 PostgreSQL standbys (todo, notes, keycloak)
 ```
 
 After DR:
 
 ```text
-todo.test
+todo.test, notes.test
     |
     v
 VM2  todo-standby
-     Shared proxy + App + Keycloak + PostgreSQL primary
+     Shared proxy + Todo + Notes + Keycloak + 3 PostgreSQL primaries
 ```
 
 VM1 is then rebuilt as the new standby.
@@ -169,10 +169,13 @@ Check:
 
 ```bash
 systemctl --user is-active \
-  todo-postgres.service \
-  keycloak.service \
+  shared-proxy.service \
   todo-app.service \
-  shared-proxy.service
+  notes-app.service \
+  keycloak.service \
+  todo-postgres.service \
+  notes-postgres.service \
+  keycloak-postgres.service
 
 curl --fail http://127.0.0.1:8080/ready
 ```
@@ -308,13 +311,13 @@ On VM1:
 
 ```bash
 sudo firewall-cmd --permanent --zone=public \
-  --add-rich-rule='rule family="ipv4" source address="192.168.1.51/32" destination address="192.168.1.50" port port="5432" protocol="tcp" accept'
+  --add-rich-rule='rule family="ipv4" source address="192.168.1.51/32" destination address="192.168.1.50" port port="5432-5434" protocol="tcp" accept'
 
 sudo firewall-cmd --reload
 ```
 
 Do not open PostgreSQL generally to the LAN. Only VM2 should be able to reach
-VM1 on 5432.
+VM1 on 5432 (todo), 5433 (notes) and 5434 (keycloak).
 
 ## 9. Run standby preflight
 
@@ -517,10 +520,10 @@ python3 /opt/todo/bin/todo_dr.py preflight \
 It checks, among other things, that:
 
 ```text
-local PostgreSQL is standby
-local database is healthy
-apply lag = 0
-VM1:5432 is unreachable
+every local PostgreSQL (todo, notes, keycloak) is standby
+every local database is healthy
+apply lag = 0 for each
+VM1:5432, 5433 and 5434 are unreachable
 ```
 
 If preflight fails: do not promote.
@@ -634,28 +637,33 @@ Check:
 
 ```bash
 systemctl --user is-active \
-  todo-postgres.service \
-  keycloak.service \
+  shared-proxy.service \
   todo-app.service \
-  shared-proxy.service
+  notes-app.service \
+  keycloak.service \
+  todo-postgres.service \
+  notes-postgres.service \
+  keycloak-postgres.service
 
 curl --fail http://127.0.0.1:8080/health
 curl --fail http://127.0.0.1:8080/ready
-curl --fail http://127.0.0.1:8080/api/todos
+curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/api/todos
+curl --fail -H 'Host: notes.test' http://127.0.0.1:8080/api/notes
 ```
 
-## 19. Move todo.test to VM2
+## 19. Move todo.test and notes.test to VM2
 
-On the laptop, `todo.test` must now point to `192.168.1.51`.
+On the laptop, `todo.test` and `notes.test` must now point to `192.168.1.51`.
 
 If you use `/etc/hosts`:
 
 ```bash
 sudo sed -i \
-  '/[[:space:]]todo\.test\([[:space:]]\|$\)/d' \
+  -e '/[[:space:]]todo\.test\([[:space:]]\|$\)/d' \
+  -e '/[[:space:]]notes\.test\([[:space:]]\|$\)/d' \
   /etc/hosts
 
-echo '192.168.1.51 todo.test' | sudo tee -a /etc/hosts
+echo '192.168.1.51 todo.test notes.test' | sudo tee -a /etc/hosts
 ```
 
 VM2 creates its own demo CA the first time nginx starts, so you also need to
@@ -711,8 +719,8 @@ This permanently replaces VM1's old database. First complete and review
 approval. Keep VM1 fenced. Use the existing specialized procedure:
 
 - [Proxmox quarantine](../PROXMOX-QUARANTINE.md): rehearse it while the initial
-  pair is healthy; for recovery boot with every link disconnected, stop all four
-  services through Guest Agent, require completed `exitcode=0` and `STOPPED`,
+  pair is healthy; for recovery boot with every link disconnected, stop all seven
+  registered services through Guest Agent, require completed `exitcode=0` and `STOPPED`,
   inspect IPv4/IPv6 rules before reconnecting restricted SSH.
 - [Restore redundancy](../../deploy/ansible/RESTORE-REDUNDANCY.md) and
   [acceptance phase 9](../ACCEPTANCE.md#9-rebuild-old-primary-as-standby): verify
@@ -723,7 +731,7 @@ Substitute this recipe's actual addresses, VMIDs and service user in the linked
 procedures. Do not just start VM1 normally or interpret the stop helper as
 fencing. A failed or partial rebuild is a STOP condition; preserve evidence and
 never retry it blindly. Expected outcome: VM1 runs only read-only PostgreSQL,
-VM2 retains all four application workloads, and replication streams with zero lag.
+VM2 retains all seven workloads, and all three databases stream with zero lag.
 
 ## 26. Final check
 

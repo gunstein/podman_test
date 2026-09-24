@@ -10,12 +10,14 @@ streaming standby. PostgreSQL can also use an archive through standby
 `restore_command` to bridge WAL gaps, but that additional availability pattern
 is documented rather than implemented in this deliberately small demo.
 
-The live `todo-postgres` container and `todo-postgres-data` volume are never
-restore targets.
+Each of the three registered databases (todo, notes, keycloak) has its own WAL
+archive, backup volume and disposable restore resources. The live
+`<database>-postgres` containers and `<database>-postgres-data` volumes are
+never restore targets.
 
 ## Storage scope
 
-The demo uses a separate rootless Podman volume:
+The demo uses a separate rootless Podman volume per database, for example:
 
 ```text
 todo-postgres-backup
@@ -88,12 +90,13 @@ fapolicyd diagnostics and trust-entry cleanup.
 
 | Command | Contract |
 |---|---|
+| `--app NAME` (before the command) | Selects one database; `status`, `create` and `mark` default to all three, restore commands require it |
 | `status` | Reports live role and archive diagnostics |
 | `create` | Requires writable database and archive mode; streams a base backup and verifies its SHA-256 manifest with `pg_verifybackup` |
 | `mark --name NAME` | Creates a named restore point, switches WAL and waits for the exact segment in the archive |
 | `restore --backup NAME --target POINT` | Copies into fixed disposable resources and pauses recovery at the target; database networking is disabled and backup is mounted read-only |
 | `restore-status` | Reports recovery, pause and read-only state |
-| `cleanup-restore --confirm todo-postgres-restore` | Deletes only the fixed disposable restore container and volume |
+| `cleanup-restore --confirm <database>-postgres-restore` | Deletes only the selected database's fixed disposable restore container and volume |
 
 The live data volume is never a restore target. Existing disposable state causes
 restore to stop; inspect it before explicitly authorizing `--replace`, which can

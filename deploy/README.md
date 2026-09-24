@@ -1,16 +1,16 @@
 # Deployment sources
 
 This directory contains the build-time workload definitions and installation
-and operations tooling for the rootless Podman demo. The six single-host workloads are
-`todo-app`, `todo-postgres`, `notes-app`, `notes-postgres`, `keycloak` and
-`shared-proxy`. DR remains Todo-only; Notes replication, backup, promotion and
-rebuild require a separate implementation and acceptance phase.
+and operations tooling for the rootless Podman demo. The seven single-host workloads are
+`todo-app`, `todo-postgres`, `notes-app`, `notes-postgres`, `keycloak`,
+`keycloak-postgres` and `shared-proxy`. DR replicates, backs up, promotes and
+rebuilds the Todo, Notes and Keycloak databases as one group.
 
 | Path | Responsibility |
 |---|---|
 | `manifests/` | Jinja2 workload templates, one per workload type, shared by every app |
 | `environments/local/values.yaml`, `environments/prod/values.yaml` | Non-secret workload overrides, shared by every workload |
-| `quadlet/` | One source for the network and six systemd workload templates |
+| `quadlet/` | One source for the network and seven systemd workload templates |
 | `ansible/inventories/` | Local installation and initial/recovery DR topologies |
 | `ansible/inventories/*/group_vars/` | Host/account/operations settings for those inventories |
 | `installer/` | Single-host Python installer and shared workload functions |

@@ -53,7 +53,7 @@ optional later switchover, not an automatic part of disaster recovery.
 
 ```text
 Jinja2        renders workload YAML at build time; absent from target hosts
-Kube YAML     defines four workloads, init containers and runtime settings
+Kube YAML     defines seven workloads, init containers and runtime settings
 .kube Quadlet connects each workload to user systemd
 systemd       owns service lifecycle and boot behavior
 Ansible       provisions and verifies desired state

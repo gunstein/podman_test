@@ -98,23 +98,24 @@ the host-local raw Podman secrets.
 
 The core relationship is proxy, app, identity, database, network, persistence and
 external secrets. Replication, WAL archiving, backup, PITR, promotion and
-standby rebuild are a separate **Todo-only** operational layer built around
-that core. Notes DR is a dedicated follow-up phase. Its backup PVC reserves
-storage but does not implement a backup policy or protected recovery flow.
+standby rebuild are a separate operational layer built around that core. It
+acts on one group of three databases: Todo, Notes and Keycloak.
 
-The PostgreSQL workload deliberately carries two Todo-specific resilience
-details which are not required for a basic PostgreSQL Kube workload: the
-`todo-postgres-backup` claim/mount preserves the existing physical backup and
+Each PostgreSQL workload deliberately carries two resilience details which are
+not required for a basic PostgreSQL Kube workload: the
+`<database>-postgres-backup` claim/mount (for example `todo-postgres-backup`)
+preserves the physical backup and
 WAL archive, and `max_slot_wal_keep_size=1GB` bounds WAL retained for the
 physical replication slot. A minimal educational workload would keep only the
 data claim; this runtime keeps both details to preserve the validated backup and
 replication contracts.
 
-All six `.kube` units pass `--no-pod-prefix`. PostgreSQL therefore retains
-the exact `todo-postgres` container name used by DR and backup commands, while
+All seven `.kube` units pass `--no-pod-prefix`. PostgreSQL therefore retains
+the exact `todo-postgres`, `notes-postgres` and `keycloak-postgres` container
+names used by DR and backup commands, while
 the grouped app retains stable `todo-migrate`, `todo-backend` and
 `todo-frontend` names for verification. Export the public CA from `nginx` only. The
-Oracle Linux DR baseline is Podman 5.8.2; six-pod single-host tests also passed
+Oracle Linux DR baseline is Podman 5.8.2; multi-app single-host tests also passed
 on Fedora 44 with Podman 5.8.1. The installer requires `--no-pod-prefix`.
 
 Its `.kube` unit also applies `--health-on-failure=kill` after each creation.

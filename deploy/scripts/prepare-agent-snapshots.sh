@@ -51,9 +51,14 @@ for item in "$@"; do
   ssh -t "$vm_user@$ip" "echo '$vm_user ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/90-todo-acceptance >/dev/null && sudo chmod 0440 /etc/sudoers.d/90-todo-acceptance && sudo visudo -c -q"
   ssh -o BatchMode=yes "$vm_user@$ip" 'sudo -k; sudo -n true' || { echo "Passwordless sudo check failed on $ip" >&2; exit 1; }
 
+  echo "Installing python3-jinja2 and python3-pyyaml (target install prerequisites)"
+  ssh -o BatchMode=yes "$vm_user@$ip" 'sudo -n dnf install -y python3-jinja2 python3-pyyaml' >/dev/null
+  ssh -o BatchMode=yes "$vm_user@$ip" "python3 -c 'import jinja2, yaml'" ||
+    { echo "python3-jinja2/python3-pyyaml still missing on $ip" >&2; exit 1; }
+
   pve task "/nodes/{node}/qemu/$vmid/status/shutdown" >/dev/null
   pve task "/nodes/{node}/qemu/$vmid/snapshot" snapname="$new_snapshot" \
-    description="Clean baseline plus laptop SSH key and lab-only passwordless sudo" >/dev/null
+    description="Clean baseline plus laptop SSH key, lab-only passwordless sudo and python3-jinja2/pyyaml" >/dev/null
   pve task "/nodes/{node}/qemu/$vmid/status/start" >/dev/null
   wait_for_ssh "$ip"
   echo "VM $vmid ready: snapshot $new_snapshot taken, VM running."

@@ -136,7 +136,22 @@ def check_proxmox(report, args):
         report.check(not firewall.get('enable'), f'VM {vmid} VM firewall disabled',
                      'enabled; phase 1 will inspect its rules' if firewall.get('enable') else '', level='WARN')
         report.line('INFO', f'VM {vmid} status', f'{status.get("status")}, onboot={vm.get("onboot", "unset")}')
+        try:
+            rules = client.request('GET', f'/nodes/{{node}}/qemu/{vmid}/firewall/rules')
+        except (pve_lab.LabError, OSError) as error:
+            report.check(False, f'VM {vmid} firewall rules readable', str(error))
+        else:
+            stale = ', '.join(f'{r.get("pos")}:{r.get("comment", "no comment")}' for r in rules)
+            report.check(not rules, f'VM {vmid} has no leftover firewall rules',
+                         f'from an earlier run: {stale}; C9.6 step 4 clears todo-quarantine-* ones' if rules else '',
+                         level='WARN')
     try:
+        sdn_permissions = client.request('GET', '/access/permissions?path=/sdn').get('/sdn', {})
+        report.check(bool(sdn_permissions.get('SDN.Use')), 'Token has SDN.Use on /sdn (needed to change VM NICs)',
+                     'see ACCEPTANCE-AGENT.md A1 (pveum aclmod /sdn ... PVESDNUser)')
+        node_firewall = client.request('GET', '/nodes/{node}/firewall/options')
+        report.check(bool(node_firewall.get('enable')), "Node's own firewall enabled (needed for VM quarantine)",
+                     '' if node_firewall.get('enable') else 'disabled: see ACCEPTANCE-AGENT.md A1 (pve-firewall)')
         cluster = client.request('GET', '/cluster/firewall/options')
         report.check(bool(cluster.get('enable')), 'Datacenter firewall enabled (needed for VM quarantine)',
                      '' if cluster.get('enable') else 'disabled: the agent will ask you in phase 5')
@@ -155,8 +170,9 @@ for unit in sshd firewalld fapolicyd qemu-guest-agent; do echo "unit_$unit=$(sys
 echo "linger=$(loginctl show-user "$USER" -p Linger --value)"
 echo "rootless=$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)"
 echo "podman=$(podman --version 2>/dev/null)"
+echo "jinja2_yaml=$(python3 -c 'import jinja2, yaml' 2>/dev/null && echo ok || echo missing)"
 echo "sudo=$(sudo -n true 2>/dev/null && echo ok || echo password-required)"
-echo "sudoers_file=$(test -e /etc/sudoers.d/90-todo-acceptance && echo present || echo missing)"
+echo "sudoers_file=$(sudo -n test -e /etc/sudoers.d/90-todo-acceptance 2>/dev/null && echo present || echo missing)"
 echo "mem_mib=$(free -m | awk '/^Mem:/ {print $2}')"
 echo "home_free=$(df -h --output=avail "$HOME" | tail -1 | tr -d ' ')"
 echo "todo_state=$(podman ps -a --format '{{.Names}}' 2>/dev/null | grep -cE '^(todo|notes|keycloak|nginx)') containers"
@@ -182,10 +198,14 @@ def check_guest(report, args, address, hostname):
         report.check(facts.get('unit_' + unit) == 'active', f'{unit} active', facts.get('unit_' + unit, ''))
     report.check(facts.get('linger') == 'yes', 'User lingering', facts.get('linger', ''))
     report.check(facts.get('rootless') == 'true', 'Rootless Podman', facts.get('podman', ''))
+    report.check(facts.get('jinja2_yaml') == 'ok', 'Python Jinja2 and PyYAML installed',
+                 'run deploy/scripts/prepare-agent-snapshots.sh, or dnf install -y python3-jinja2 python3-pyyaml')
     report.check(facts.get('sudo') == 'ok', 'Passwordless sudo in the running VM', facts.get('sudo', ''), level='WARN')
     report.line('INFO', 'Lab sudoers file', facts.get('sudoers_file', '') +
                 ' (what matters is that the clean snapshot contains it)')
-    report.check(int(facts.get('mem_mib', '0') or 0) >= 3500, 'Memory', facts.get('mem_mib', '') + ' MiB', level='WARN')
+    # A 4 GiB VM typically reports ~3450-3500 MiB to the guest OS (firmware/EFI
+    # reservation); this only warns well below that, not on the documented lab spec.
+    report.check(int(facts.get('mem_mib', '0') or 0) >= 3200, 'Memory', facts.get('mem_mib', '') + ' MiB', level='WARN')
     report.line('INFO', 'Free space in home', facts.get('home_free', ''))
     report.line('INFO', 'Current Todo/Notes/Keycloak state', facts.get('todo_state', '') +
                 ' (the agent rolls back to the clean snapshot first)')

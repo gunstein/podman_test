@@ -48,13 +48,34 @@ pveum user add acceptance@pve --comment "Todo acceptance agent (lab only)"
 pveum aclmod /vms/107 --users acceptance@pve --roles TodoAcceptance
 pveum aclmod /vms/108 --users acceptance@pve --roles TodoAcceptance
 pveum aclmod / --users acceptance@pve --roles PVEAuditor
+pveum aclmod /sdn --users acceptance@pve --roles PVESDNUser
 pveum user token add acceptance@pve agent --privsep 0
 cat /etc/pve/pve-root-ca.pem
 ```
 
+`PVESDNUser` on `/sdn` grants `SDN.Use`. On Proxmox VE 8/9, even a plain Linux
+bridge NIC is modeled as an SDN zone (`localnetwork` by default), and any
+`VM.Config.Network` change (the agent's `nic` action, used for quarantine
+link-down/up and firewall flags) fails with `Permission check failed
+(/sdn/zones/<zone>/<bridge>, SDN.Use)` without it. If `pveum` reports
+`PVESDNUser` does not exist, create it: `pveum role add PVESDNUser --privs SDN.Use`.
+
 The token command prints the secret **once**. Guest Agent execution through
 this token is effectively root inside those two VMs; that is intended for this
 disposable lab. Revoke later with `pveum user token remove acceptance@pve agent`.
+
+VM-level firewall rules only take effect while the **node's own** firewall is
+enabled — a separate switch from the datacenter-wide one the agent checks in
+C9.6, and from each VM's own `enable` flag. Turn it on now, once, so the
+agent's quarantine rehearsal does not stall on it:
+
+```bash
+pvesh set /nodes/<node>/firewall/options -enable 1
+systemctl enable --now pve-firewall
+```
+
+The agent's tooling only reads Proxmox settings (`C2` Rule 6: it never enables
+the datacenter or node firewall itself), so this must be done here, ahead of time.
 
 ### A2. Token file on the client/build host (the agent's machine)
 
@@ -209,9 +230,11 @@ end you write a verdict. Being careful is more important than being fast.
 ### C4. When to ask the operator (the only cases)
 
 - A STOP condition (C3).
-- `pve_lab.py` returns HTTP 401/403, or the datacenter firewall is disabled
-  (`get /cluster/firewall/options` shows `enable: 0` or no `enable`): VM
-  firewall rules would have no effect. Ask; do not enable it yourself.
+- `pve_lab.py` returns HTTP 401/403, or either the datacenter firewall
+  (`get /cluster/firewall/options`) or the node's own firewall
+  (`get /nodes/{node}/firewall/options`) shows `enable: 0` or no `enable`: VM
+  firewall rules would have no effect either way. Ask; do not enable either
+  yourself (A1 should have enabled the node firewall ahead of time).
 - `CLIENT_SUDO: no` and client `/etc/hosts` or CA trust must change (phase 3
   and phase 7). Give the operator exactly the two commands in C9.4 and wait for
   "done". Then verify the result yourself.
@@ -388,8 +411,12 @@ use the lab defaults (`.102` = VM 107 = `todo-primary`, `.108` = VM 108 =
    `sudo -n true && echo SUDO-OK` and `nmcli -g IP4.ADDRESS,IP4.GATEWAY device show`
    (record whether the address comes from DHCP). Save to logs.
 5. PASS only if identities differ and match the kickoff, security services are
-   active, SELinux is Enforcing, Podman is rootless, and there is no Todo,
-   Notes or Keycloak state. If state exists after rollback: STOP (wrong snapshot).
+   active, SELinux is Enforcing, Podman is rootless, `python3 -c 'import jinja2, yaml'`
+   succeeds on both VMs, and there is no Todo, Notes or Keycloak state. If Jinja2
+   or PyYAML is missing, `sudo -n dnf install -y python3-jinja2 python3-pyyaml`
+   is a documented target prerequisite (`deploy/offline/README.md`), not a source
+   change; install it and record the deviation. If Todo/Notes/Keycloak state
+   exists after rollback: STOP (wrong snapshot).
 
 #### C9.2 Phase 2 — Build and stage
 
@@ -505,6 +532,17 @@ through the API and re-check.
    must exit 0 and print `READY`.
 4. Prepare the quarantine profile on VM 107 **while it is still disabled**:
    - `get /cluster/firewall/options`: datacenter firewall must be enabled (else C4).
+   - `get /nodes/{node}/firewall/options`: the node's own firewall must also be
+     enabled (else C4; this is separate from the datacenter switch above and from
+     VM 107's own `enable` flag, and A1 should have turned it on ahead of time).
+   - `get /nodes/{node}/qemu/107/firewall/rules`: if any rule remains from an
+     incomplete earlier run (its Proxmox firewall config is not part of the VM
+     snapshot, so phase 1's rollback does not clear it), and every one of them
+     has a `todo-quarantine-*` comment, delete each by its `pos` with
+     `delete /nodes/{node}/qemu/107/firewall/rules/<pos>` (highest `pos` first)
+     and record why. Any rule without that comment prefix: STOP.
+   - `nic 107 firewall 1` needs `SDN.Use` on the token (A1); a `403` naming
+     `/sdn/zones/.../SDN.Use` means A1 was not completed — ask the operator (C4).
    - Every `netN` of VM 107 needs `firewall=1`: `nic 107 firewall 1`.
    - Create exactly these rules, each with its comment:
 

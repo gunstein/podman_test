@@ -205,6 +205,7 @@ getenforce
 systemctl is-active sshd firewalld fapolicyd qemu-guest-agent
 loginctl show-user "$USER" -p Linger
 podman info --format 'Rootless={{.Host.Security.Rootless}} GraphRoot={{.Store.GraphRoot}}'
+python3 -c 'import jinja2, yaml; print("jinja2/pyyaml ok")'
 ansible-playbook --version | head -1
 df -h "$HOME"
 free -m
@@ -241,7 +242,8 @@ without any Todo-state symptom above. If found, clear or disable it explicitly
 record why it was present before continuing.
 
 Pass when identities differ, security services are active, SELinux is enforcing,
-Podman is rootless, user systemd is available and no Todo state exists. A VM
+Podman is rootless, Jinja2 and PyYAML import successfully, user systemd is
+available and no Todo state exists. A VM
 snapshot is a lab convenience, not part of the application recovery model.
 Container creation times close to VM boot do not prove a clean restore: any
 Todo container, volume or secret means the selected snapshot is not this

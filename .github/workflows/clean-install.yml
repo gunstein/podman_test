@@ -204,12 +204,27 @@ jobs:
         run: deploy/scripts/smoke-proxy.sh
 
 
+  postgres-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: version
+        # Read the pinned version from todo_installer/settings.py instead of
+        # duplicating it as a literal in the service containers below.
+        run: |
+          echo "version=$(PYTHONPATH=deploy/installer python3 -c \
+            'from todo_installer import settings; print(settings.POSTGRES_VERSION)')" >> "$GITHUB_OUTPUT"
+
   backend:
+    needs: postgres-version
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:17.11
+        image: postgres:${{ needs.postgres-version.outputs.version }}
         env:
           POSTGRES_DB: todo_test
           POSTGRES_USER: todo
@@ -223,7 +238,7 @@ jobs:
           --health-retries 20
 
       notes-postgres:
-        image: postgres:17.11
+        image: postgres:${{ needs.postgres-version.outputs.version }}
         env:
           POSTGRES_DB: notes_test
           POSTGRES_USER: notes

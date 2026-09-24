@@ -53,6 +53,8 @@ Historical unchanged-revision acceptance passed on 688a0f6; see its
 revision 9e54cfb received a lighter process-level acceptance; see its
 [record](../../docs/ACCEPTANCE-9e54cfb.md). These records retain their original
 scope and do not accept the current seven-pod, three-database topology.
+Revision 3fb897f ran the full two-VM sequence for that topology and received a
+REPAIRED FUNCTIONAL PASS; see its [record](../../docs/ACCEPTANCE-3fb897f.md).
 
 Follow [Acceptance](../../docs/ACCEPTANCE.md) for a new full Oracle Linux DR run;
 use separate disposable targets for multi-app development experiments.

@@ -24,9 +24,10 @@ Current architecture and workflow:
   three-pod architecture's evidence-grade acceptance remains
   docs/ACCEPTANCE-688a0f6.md and docs/ACCEPTANCE-12c3bef.md. Legacy
   runtime/transition files are retired from the active tree; Git history and
-  quadlet-reference-v1 preserve them. The seven-pod, three-database group has
-  phased disposable-VM checkpoints (docs/MULTI-APP-DR-VERIFICATION.md) but no
-  full two-VM acceptance yet.
+  quadlet-reference-v1 preserve them. The seven-pod, three-database group
+  reached a REPAIRED FUNCTIONAL PASS on 3fb897f (docs/ACCEPTANCE-3fb897f.md):
+  full two-VM run, but two standby-rebuild source defects were worked around
+  procedurally. A CLEAN PASS needs those fixes and a new run.
 
 Constraints:
 - Frontend: plain HTML, CSS and JavaScript. No Node.js framework.

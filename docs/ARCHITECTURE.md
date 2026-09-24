@@ -354,8 +354,10 @@ Complete unchanged-revision Oracle Linux acceptance passed for earlier
 Todo-only topologies: 688a0f6 and 12c3bef (evidence-grade) and 9e54cfb
 (process-level). See the run records for observations and exact scope. The
 seven-pod, three-database group has passed phased checkpoints on disposable
-Fedora VMs ([multi-app DR verification](MULTI-APP-DR-VERIFICATION.md)) but has
-not yet passed a full unchanged-revision two-VM acceptance.
+Fedora VMs ([multi-app DR verification](MULTI-APP-DR-VERIFICATION.md)) and a
+full two-VM Oracle Linux run on 3fb897f with a REPAIRED FUNCTIONAL PASS
+([record](ACCEPTANCE-3fb897f.md)): two standby-rebuild defects were worked
+around, so an unchanged-revision clean pass is still pending.
 See [runtime results](../deploy/runtime/RESULTS.md). Static tests or a green CI
 run do not replace the full two-VM test. The Python installer extraction has
 unit, real rendering, package and Ansible transport coverage; it still requires

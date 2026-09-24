@@ -19,9 +19,13 @@ standby rebuild again, so the topology recorded in the older runs is stale.
 No topology was captured for `9e54cfb`; this is not a substitute for fresh
 checks before operations.
 
-The current seven-pod, three-database topology has passed phased checkpoints on
-disposable VMs ([record](docs/MULTI-APP-DR-VERIFICATION.md)) but not yet a full
-two-VM acceptance with [ACCEPTANCE.md](docs/ACCEPTANCE.md).
+The current seven-pod, three-database topology reached a REPAIRED FUNCTIONAL
+PASS on `3fb897f` in a full two-VM agent run
+([record](docs/ACCEPTANCE-3fb897f.md)). It found two standby-rebuild source
+defects that were worked around procedurally; a CLEAN PASS with
+[ACCEPTANCE.md](docs/ACCEPTANCE.md) requires fixing them and a new run. The
+final topology of that run is VM 108 primary and VM 107 database-only standby;
+verify roles freshly before any operation.
 
 ## Current work and limitations
 

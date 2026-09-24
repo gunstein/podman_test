@@ -72,8 +72,9 @@ Revision 688a0f6 passed full evidence-grade Oracle Linux acceptance of the
 prior three-pod runtime; see the [run record](docs/ACCEPTANCE-688a0f6.md). The
 historical four-pod shared-proxy runtime passed a lighter, process-level
 two-agent acceptance on 9e54cfb; see [that run record](docs/ACCEPTANCE-9e54cfb.md).
-The current seven-pod, three-database topology has not yet passed full two-VM
-acceptance; see [phased checkpoints](docs/MULTI-APP-DR-VERIFICATION.md).
+The current seven-pod, three-database topology reached a REPAIRED FUNCTIONAL
+PASS on 3fb897f; two standby-rebuild defects were worked around during the
+run, so a clean pass is still pending. See [that run record](docs/ACCEPTANCE-3fb897f.md).
 
 ## Requirements
 

@@ -54,3 +54,4 @@
   retries: 30
   delay: 1
   until: m16_primary_readiness.status == 200 and m16_primary_readiness.json.status == 'ready'
+  when: m16_app.hostname is defined

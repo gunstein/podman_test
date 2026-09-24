@@ -23,6 +23,7 @@ def render(project_root, values_file, output_directory, application_names=()):
         raise ValueError('Unknown or empty application selection')
     runtime = yaml.safe_load(Path(values_file).read_text())['runtime']
     hostname, port, log_level = runtime['publicHostname'], runtime['publicPort'], runtime['logLevel']
+    manifests.validate_hostname(hostname)
 
     files = {}
     for app in selected:

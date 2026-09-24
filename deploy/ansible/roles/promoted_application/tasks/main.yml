@@ -62,6 +62,7 @@
   loop_control:
     loop_var: m14_app
     label: "{{ m14_app.name }}"
+  when: m14_app.application_unit is defined
 
 - name: Install the shared Kube proxy on the promoted host
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
@@ -100,6 +101,7 @@
   loop_control:
     loop_var: m14_app
     label: "{{ m14_app.name }}"
+  when: m14_app.hostname is defined
 
 - name: Wait for the canonical shared Keycloak issuer
   ansible.builtin.uri:

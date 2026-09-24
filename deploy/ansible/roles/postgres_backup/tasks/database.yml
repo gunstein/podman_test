@@ -226,6 +226,7 @@
   until: m15_readiness.status == 200 and m15_readiness.json.status == "ready"
   retries: 30
   delay: 1
+  when: m15_app.hostname is defined
 
 - name: Wait for Keycloak discovery
   ansible.builtin.uri:

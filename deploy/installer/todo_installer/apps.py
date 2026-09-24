@@ -84,7 +84,10 @@ REPLICATED_APPS = APPS
 KEYCLOAK_DATABASE = stack.Database(name="keycloak", chart="keycloak", replication_port=5434)
 KEYCLOAK_KUBE_ADMIN_SECRET = "keycloak-kube-admin-secret"
 KEYCLOAK_ADMIN_SECRET = "keycloak-admin-password"
-REPLICATED_DATABASES = tuple(app.database for app in REPLICATED_APPS) + (KEYCLOAK_DATABASE,)
+# Keep todo/notes as Apps here, not Databases: describe() dispatches on
+# isinstance(workload, stack.Database), and App already forwards every
+# Database-shaped method a database-only consumer needs.
+REPLICATED_DATABASES = REPLICATED_APPS + (KEYCLOAK_DATABASE,)
 
 
 def describe(workload):
@@ -95,10 +98,15 @@ def describe(workload):
 
 
 def _describe_database(database):
+    raw_secrets = [database.secret(role) for role in ("db", "replicator")]
+    if database == KEYCLOAK_DATABASE:
+        # Keycloak's own admin credential has no App/frontend to carry it;
+        # sync it here so the promoted host can still install_keycloak.
+        raw_secrets.append(KEYCLOAK_ADMIN_SECRET)
     return {
         "name": database.name,
         "postgres_unit": database.unit("postgres"),
-        "raw_secrets": [database.secret(role) for role in ("db", "replicator")],
+        "raw_secrets": raw_secrets,
         "postgres_container": database.resource("postgres"),
         "postgres_service": database.service("postgres"),
         # The database-only entry's co-located workload is the shared identity pod.

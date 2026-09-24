@@ -6,9 +6,23 @@ ever provided. Ownership stays split the same way as the Quadlet templates:
 stack.py/apps.py own topology and naming, values.yaml owns per-environment
 settings, and only truly static structure lives in the .j2 files themselves.
 """
+import re
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
+
+# shared-proxy.yaml.j2 interpolates hostnames raw into the nginx.conf literal
+# block scalar (plain text, not a YAML value, so | tojson does not apply
+# there). Validate every hostname that reaches it - both the operator-supplied
+# runtime.publicHostname and each App's own registry hostname - so neither can
+# inject an nginx directive or break the surrounding YAML with a stray ';',
+# '#' or newline.
+HOSTNAME_PATTERN = re.compile(r'^[a-z0-9.-]+$')
+
+
+def validate_hostname(hostname):
+    if not HOSTNAME_PATTERN.match(hostname):
+        raise ValueError(f'Not a safe hostname: {hostname!r}')
 
 
 def _environment(project_root):
@@ -53,4 +67,6 @@ def render_shared_proxy(project_root, applications, identity_app, hostname, imag
         "frontend": app.resource("app") + ":8080",
         "backend": app.resource("app") + ":8000",
     } for app in applications]
+    for entry in context:
+        validate_hostname(entry["hostname"])
     return _render(project_root, "shared-proxy.yaml.j2", applications=context, hostname=hostname, image=image)

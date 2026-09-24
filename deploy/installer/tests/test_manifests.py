@@ -74,15 +74,7 @@ class ManifestFunctionTests(unittest.TestCase):
 
 
 class TemplateSafetyTests(unittest.TestCase):
-    """The obligatory tojson property: no value can break the surrounding YAML.
-
-    Deliberately excludes embedded newlines: shared-proxy.yaml.j2 interpolates
-    hostnames raw (not tojson'd) inside the nginx.conf literal block scalar, same
-    as the Helm template it replaced, relying on the app registry's hostname regex
-    rather than template-level escaping. A literal newline there can break the
-    surrounding YAML - a known, narrow gap (operator-authored values.yaml, not
-    attacker input), out of scope for what tojson was asked to guarantee.
-    """
+    """The obligatory tojson property: no value can break the surrounding YAML."""
 
     ADVERSARIAL = [
         "evil.test: injected",
@@ -91,6 +83,8 @@ class TemplateSafetyTests(unittest.TestCase):
         "[not, a, list]",
         "{not: a, map: here}",
         "quote's and \"quotes\"",
+        "multi\nline",
+        "evil.test; return 200 pwned",
     ]
 
     def test_adversarial_hostnames_survive_app_config_as_literal_strings(self):
@@ -100,20 +94,30 @@ class TemplateSafetyTests(unittest.TestCase):
                 self.assertEqual(len(docs), 1)
                 self.assertIn(value, docs[0]["data"]["OIDC_ISSUER"])
 
-    def test_adversarial_hostnames_survive_shared_proxy_env_as_literal_strings(self):
-        app = _app()
-        for value in self.ADVERSARIAL:
-            with self.subTest(value=value):
-                docs = list(yaml.safe_load_all(manifests.render_shared_proxy(
-                    ROOT, [app], app, value, "localhost/todo-proxy:m12")))
-                env = next(d["data"] for d in docs if d["metadata"]["name"] == "shared-nginx-env")
-                self.assertEqual(env["TODO_TLS_HOSTNAME"], value)
-
     def test_adversarial_image_references_survive_postgres_as_literal_strings(self):
         for value in self.ADVERSARIAL:
             with self.subTest(value=value):
                 docs = list(yaml.safe_load_all(manifests.render_postgres(ROOT, _database(), value)))
                 self.assertEqual(docs[2]["spec"]["containers"][0]["image"], value)
+
+    def test_shared_proxy_rejects_hostnames_unsafe_for_raw_nginx_conf_text(self):
+        # shared-proxy.yaml.j2 interpolates hostnames raw into nginx.conf (plain
+        # text, not a YAML value), so | tojson can't protect it: unlike the two
+        # tests above, an adversarial value here must be rejected outright, not
+        # safely encoded. This is what stops a runtime.publicHostname like
+        # "evil.test; return 200 pwned" from injecting an nginx directive.
+        app = _app()
+        for value in self.ADVERSARIAL:
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    manifests.render_shared_proxy(ROOT, [app], app, value, "localhost/todo-proxy:m12")
+
+    def test_shared_proxy_rejects_an_unsafe_non_identity_app_hostname_too(self):
+        identity, other = _app("identity"), apps.App(
+            "other", "other", "evil.test; return 200 pwned", "other-frontend")
+        with self.assertRaises(ValueError):
+            manifests.render_shared_proxy(ROOT, [identity, other], identity, "identity.test",
+                                          "localhost/todo-proxy:m12")
 
 
 class StrictUndefinedTests(unittest.TestCase):
@@ -156,4 +160,14 @@ class RenderErrorTests(unittest.TestCase):
             output = Path(directory) / "output"
             with self.assertRaisesRegex(RuntimeError, "is not valid YAML"):
                 render.render(project_root, VALUES, output)
+            self.assertFalse(output.exists())
+
+    def test_malicious_public_hostname_is_rejected_before_any_rendering(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = Path(directory) / "values.yaml"
+            values.write_text(yaml.safe_dump({"runtime": {
+                "publicHostname": "evil.test; return 200 pwned", "publicPort": 8443, "logLevel": "info"}}))
+            output = Path(directory) / "output"
+            with self.assertRaisesRegex(ValueError, "safe hostname"):
+                render.render(ROOT, values, output)
             self.assertFalse(output.exists())

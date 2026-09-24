@@ -5,7 +5,14 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from todo_installer.apps import APPS, KEYCLOAK_DATABASE, REPLICATED_DATABASES, App  # noqa: E402
+from todo_installer.apps import (  # noqa: E402
+    APPS,
+    KEYCLOAK_ADMIN_SECRET,
+    KEYCLOAK_DATABASE,
+    REPLICATED_DATABASES,
+    App,
+    describe,
+)
 
 
 class AppRegistryTests(unittest.TestCase):
@@ -43,6 +50,26 @@ class AppRegistryTests(unittest.TestCase):
         self.assertEqual([d.name for d in REPLICATED_DATABASES], ["todo", "notes", "keycloak"])
         self.assertIs(REPLICATED_DATABASES[-1], KEYCLOAK_DATABASE)
         self.assertEqual(KEYCLOAK_DATABASE.replication_port, 5434)
+
+    def test_describe_shape_matches_what_ansible_reads_per_entry(self):
+        # replication-apps --details feeds deploy/ansible/tasks/read-replication-registry.yml;
+        # every loop there depends on todo/notes describing as applications (hostname,
+        # application_unit, manifests.application) and keycloak describing as a bare
+        # database (none of those keys), never the other way around.
+        for database in REPLICATED_DATABASES:
+            entry = describe(database)
+            with self.subTest(name=database.name):
+                if database.name == "keycloak":
+                    for key in ("hostname", "api_path", "application_unit", "keycloak_client"):
+                        self.assertNotIn(key, entry)
+                    self.assertNotIn("application", entry["manifests"])
+                    self.assertEqual(entry["application_service"], "keycloak.service")
+                    self.assertIn(KEYCLOAK_ADMIN_SECRET, entry["raw_secrets"])
+                else:
+                    for key in ("hostname", "api_path", "application_unit", "keycloak_client"):
+                        self.assertIn(key, entry)
+                    self.assertIn("application", entry["manifests"])
+                    self.assertEqual(entry["application_service"], database.name + "-app.service")
 
     def test_images_come_from_the_app(self):
         from todo_installer.images import image_list, shared_images

@@ -160,7 +160,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install pinned script tooling
-        run: python -m pip install "ruff==0.16.5" "shellcheck-py==0.11.0.1" "PyYAML==6.0.3"
+        run: python -m pip install "ruff==0.16.5" "shellcheck-py==0.11.0.1" "PyYAML==6.0.3" jinja2
 
       - name: Lint Python
         run: ruff check todo-backend notes-backend e2e deploy/scripts deploy/installer tests

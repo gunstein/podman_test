@@ -105,10 +105,12 @@ Deploy the complete single-host application:
 deploy/installer/.venv/bin/python -m todo_installer install --mode server --project-root "$PWD"
 ```
 
-The first run asks for each app’s PostgreSQL bootstrap password and a temporary
-Keycloak administrator password. Other database-role passwords are generated
-independently. All values are stored as host-local Podman secrets and are not
-written to the repository. A normal repeat deployment preserves installed
+Every password - PostgreSQL bootstrap, database-role and the Keycloak
+administrator credential - is generated automatically on first run; none are
+ever prompted for or printed. All values are stored as host-local Podman
+secrets and are not written to the repository. Retrieve one later with
+`podman secret inspect --showsecret <name>` (for example
+`keycloak-admin-password`) when you actually need it. A normal repeat deployment preserves installed
 definitions and credentials and does not restart unchanged workloads.
 Use `--refresh-images` to rebuild/pull images. Direct development uses
 `--mode dev` and `python -m todo_installer down`; the existing dev shell scripts
@@ -229,8 +231,7 @@ Backend integration tests use an isolated database whose name must end in
 podman exec todo-postgres createdb -U todo -O todo todo_test
 python3 -m venv todo-backend/.venv
 todo-backend/.venv/bin/python -m pip install -r todo-backend/requirements-test.txt
-read -rsp "Database password: " TODO_DB_PASSWORD
-echo
+TODO_DB_PASSWORD=$(podman secret inspect --showsecret --format '{{.SecretData}}' todo-db-password)
 export TEST_DATABASE_URL="host=127.0.0.1 port=5432 dbname=todo_test user=todo password=$TODO_DB_PASSWORD"
 todo-backend/.venv/bin/python -m pytest todo-backend/tests
 unset TEST_DATABASE_URL TODO_DB_PASSWORD

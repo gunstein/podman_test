@@ -7,9 +7,9 @@ from urllib.error import URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
-from . import apps
+from . import apps, settings
 
-BASE = 'http://127.0.0.1:8080'
+BASE = f'http://127.0.0.1:{settings.LOCAL_HTTP_PORT}'
 
 
 def request(path, method='GET', data=None, token=None, form=False, hostname=None):

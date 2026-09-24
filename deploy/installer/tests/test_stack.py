@@ -9,7 +9,7 @@ from todo_installer.stack import Database  # noqa: E402
 class DatabaseTests(unittest.TestCase):
     def test_owns_every_derived_name_like_the_app_it_will_back(self):
         for name in ("todo", "notes", "third"):
-            database = Database(name, name)
+            database = Database(name)
             self.assertEqual(database.resource("postgres"), name + "-postgres")
             self.assertEqual(database.unit("postgres"), name + "-postgres.kube")
             self.assertEqual(database.service("postgres"), name + "-postgres.service")
@@ -29,12 +29,12 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(database.image_archive("postgres"), "postgres-17.11.tar")
 
     def test_replication_port_defaults_and_is_overridable(self):
-        self.assertEqual(Database("todo", "todo").replication_port, 5432)
-        self.assertEqual(Database("notes", "notes", 5433).replication_port, 5433)
+        self.assertEqual(Database("todo").replication_port, 5432)
+        self.assertEqual(Database("notes", 5433).replication_port, 5433)
 
     def test_frozen(self):
         import dataclasses
-        database = Database("todo", "todo")
+        database = Database("todo")
         with self.assertRaises(dataclasses.FrozenInstanceError):
             database.name = "changed"
 

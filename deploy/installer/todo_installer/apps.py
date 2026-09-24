@@ -1,13 +1,12 @@
 """Application registry: per-application identity for the shared installer."""
 from dataclasses import dataclass
 
-from . import stack
+from . import settings, stack
 
 
 @dataclass(frozen=True)
 class App:
     name: str
-    chart: str
     hostname: str
     keycloak_client: str
     replication_port: int = 5432
@@ -15,7 +14,7 @@ class App:
 
     @property
     def database(self) -> stack.Database:
-        return stack.Database(self.name, self.chart, self.replication_port)
+        return stack.Database(self.name, self.replication_port)
 
     def api_path(self) -> str:
         return "/api/" + (self.api_collection or self.name)
@@ -64,15 +63,17 @@ class App:
 
 
 APPS = (
-    App(name="todo", chart="todo", hostname="todo.test", keycloak_client="todo-frontend", api_collection="todos"),
-    App(name="notes", chart="notes", hostname="notes.test", keycloak_client="notes-frontend", replication_port=5433),
+    App(name="todo", hostname="todo.test", keycloak_client="todo-frontend", api_collection="todos"),
+    App(name="notes", hostname="notes.test", keycloak_client="notes-frontend", replication_port=5433),
 )
 
 # The existing Todo database hosts the shared realm; preserve its stored credentials.
 IDENTITY_DATABASE_APP = APPS[0]
 NETWORK = "app-network"
-KEYCLOAK_IMAGE = "localhost/keycloak:m12"
-KEYCLOAK_ARCHIVE = "keycloak-m12.tar"
+# Keycloak itself is the identity server, not a per-app/per-database resource,
+# so it does not go through Database.image()'s "<name>-<component>" naming.
+KEYCLOAK_IMAGE = f"localhost/keycloak:{settings.IMAGE_TAG}"
+KEYCLOAK_ARCHIVE = f"keycloak-{settings.IMAGE_TAG}.tar"
 PROXY_IMAGE = IDENTITY_DATABASE_APP.image("proxy")
 PROXY_ARCHIVE = IDENTITY_DATABASE_APP.image_archive("proxy")
 
@@ -81,7 +82,7 @@ REPLICATED_APPS = APPS
 
 # Keycloak has its own dedicated database (no frontend/backend/OAuth client of
 # its own), replicated for DR parity alongside every registered Application.
-KEYCLOAK_DATABASE = stack.Database(name="keycloak", chart="keycloak", replication_port=5434)
+KEYCLOAK_DATABASE = stack.Database(name="keycloak", replication_port=5434)
 KEYCLOAK_KUBE_ADMIN_SECRET = "keycloak-kube-admin-secret"
 KEYCLOAK_ADMIN_SECRET = "keycloak-admin-password"
 # Keep todo/notes as Apps here, not Databases: describe() dispatches on

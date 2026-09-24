@@ -2,12 +2,14 @@
 import shutil
 from pathlib import Path
 
-from . import apps, secrets
+from . import apps, secrets, settings
 from .commands import exists, run
 from .install import LEGACY
 from .quadlet import systemctl
 
 IDENTITY = apps.IDENTITY_DATABASE_APP
+# caddy-data is a retired Caddy-based proxy's volume name; kept here so a host
+# still carrying it from before the nginx migration gets it cleaned up too.
 TLS_VOLUMES = (IDENTITY.resource('nginx-data'), IDENTITY.resource('caddy-data'))
 QUADLET_FILES = (apps.NETWORK + '.network',
                  *(app.volume(purpose) + '.volume' for app in apps.APPS
@@ -43,7 +45,7 @@ def remove(kind, name):
 
 
 def uninstall(remove_data=False, quadlet_dir=None):
-    directory = Path(quadlet_dir or Path.home() / '.config/containers/systemd')
+    directory = Path(quadlet_dir or settings.QUADLET_DIR)
     markers = (Path.home() / '.config/todo/todo-standby-entrypoint.sh',
                Path('/opt/todo/bin/todo_dr.py'), Path('/opt/todo/bin/todo_backup.py'))
     if any(exists('secret', d.secret('replicator')) for d in apps.REPLICATED_DATABASES) or any(

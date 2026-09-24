@@ -23,7 +23,6 @@ class AppRegistryTests(unittest.TestCase):
             self.assertEqual(len(values), len(set(values)), field)
         for app in APPS:
             self.assertRegex(app.name, r'^[a-z][a-z0-9-]*$')
-            self.assertRegex(app.chart, r'^[a-z][a-z0-9-]*$')
             self.assertRegex(app.hostname, r'^[a-z0-9.-]+$')
             self.assertTrue(re.fullmatch(r'[a-z0-9-]+', app.keycloak_client))
             with self.assertRaises(dataclasses.FrozenInstanceError):
@@ -31,7 +30,7 @@ class AppRegistryTests(unittest.TestCase):
 
     def test_app_owns_every_derived_name(self):
         for name in ("todo", "notes", "third"):
-            app = App(name, name, name + ".test", name + "-frontend")
+            app = App(name, name + ".test", name + "-frontend")
             self.assertEqual(app.resource("postgres"), name + "-postgres")
             self.assertEqual(app.unit("app"), name + "-app.kube")
             self.assertEqual(app.service("app"), name + "-app.service")
@@ -86,7 +85,7 @@ class AppRegistryTests(unittest.TestCase):
         from todo_installer.secrets import application_secret_mapping, postgres_secret_mapping
         mappings = []
         for name in ("todo", "notes"):
-            app = App(name, name, name + ".test", name + "-frontend")
+            app = App(name, name + ".test", name + "-frontend")
             mapping = {**postgres_secret_mapping(app), **application_secret_mapping(app)}
             self.assertEqual(mapping, {
                 name + "-kube-postgres-secret": {"database-password": name + "-db-password"},

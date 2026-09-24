@@ -6,13 +6,12 @@ from pathlib import Path
 
 from jinja2 import TemplateError
 
-from . import apps, install, kube_play, uninstall, workloads
+from . import apps, install, kube_play, settings, uninstall, workloads
 
 
 def paths(parser):
     parser.add_argument('--project-root', type=Path, default=Path(__file__).resolve().parents[3])
-    parser.add_argument('--quadlet-dir', type=Path,
-                        default=Path.home() / '.config/containers/systemd')
+    parser.add_argument('--quadlet-dir', type=Path, default=settings.QUADLET_DIR)
     parser.add_argument('--kube-runtime-dir', type=Path)
 
 
@@ -26,7 +25,7 @@ def main(argv=None):
     deploy.add_argument('--bundle-dir', default='')
     deploy.add_argument('--refresh-images', action='store_true')
     deploy.add_argument('--publish-address', default='127.0.0.1')
-    deploy.add_argument('--service-port', type=int, default=8443)
+    deploy.add_argument('--service-port', type=int, default=settings.HTTPS_PORT)
     workload = subcommands.add_parser('install-workload')
     paths(workload)
     workload.add_argument('workload', choices=('postgres', 'application', 'keycloak', 'shared-proxy'))
@@ -35,7 +34,7 @@ def main(argv=None):
     workload.add_argument('--rendered-manifest-dir', type=Path)
     workload.add_argument('--publish-address', default='127.0.0.1')
     workload.add_argument('--postgres-publish-address', default='')
-    workload.add_argument('--service-port', type=int, default=8443)
+    workload.add_argument('--service-port', type=int, default=settings.HTTPS_PORT)
     info = subcommands.add_parser('app-info')
     info.add_argument('--app', choices=[app.name for app in apps.APPS] + [apps.KEYCLOAK_DATABASE.name],
                       default=apps.IDENTITY_DATABASE_APP.name)

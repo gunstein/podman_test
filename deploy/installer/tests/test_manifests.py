@@ -21,11 +21,11 @@ VALUES = ROOT / "deploy/environments/local/values.yaml"
 
 
 def _database(name="widget"):
-    return stack.Database(name=name, chart=name, replication_port=5432)
+    return stack.Database(name=name, replication_port=5432)
 
 
 def _app(name="widget"):
-    return apps.App(name=name, chart=name, hostname=name + ".test", keycloak_client=name + "-frontend")
+    return apps.App(name=name, hostname=name + ".test", keycloak_client=name + "-frontend")
 
 
 class ManifestFunctionTests(unittest.TestCase):
@@ -114,7 +114,7 @@ class TemplateSafetyTests(unittest.TestCase):
 
     def test_shared_proxy_rejects_an_unsafe_non_identity_app_hostname_too(self):
         identity, other = _app("identity"), apps.App(
-            "other", "other", "evil.test; return 200 pwned", "other-frontend")
+            "other", "evil.test; return 200 pwned", "other-frontend")
         with self.assertRaises(ValueError):
             manifests.render_shared_proxy(ROOT, [identity, other], identity, "identity.test",
                                           "localhost/todo-proxy:m12")

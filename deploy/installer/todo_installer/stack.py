@@ -8,11 +8,12 @@ apps.App's unrelated Application-only fields.
 """
 from dataclasses import dataclass
 
+from . import settings
+
 
 @dataclass(frozen=True)
 class Database:
     name: str
-    chart: str
     replication_port: int = 5432
 
     def resource(self, component: str) -> str:
@@ -25,7 +26,10 @@ class Database:
         return self.resource(component) + ".service"
 
     def manifest(self, component: str) -> str:
-        # Preserve the canonical Todo bundle filenames used by existing DR callers.
+        # Todo was the only application before Notes/Keycloak's own database
+        # existed, so its manifests are still the bare component name
+        # ("postgres.yaml", not "todo-postgres.yaml"); existing DR callers and
+        # packaged bundles depend on that exact filename, so it stays fixed.
         stem = component if self.name == "todo" else self.resource(component)
         return stem + ".yaml"
 
@@ -52,10 +56,10 @@ class Database:
 
     def image(self, component: str) -> str:
         if component == "postgres":
-            return "docker.io/library/postgres:17.11"
-        return "localhost/" + self.resource(component) + ":m12"
+            return settings.POSTGRES_IMAGE
+        return f"localhost/{self.resource(component)}:{settings.IMAGE_TAG}"
 
     def image_archive(self, component: str) -> str:
         if component == "postgres":
-            return "postgres-17.11.tar"
-        return self.resource(component) + "-m12.tar"
+            return f"postgres-{settings.POSTGRES_VERSION}.tar"
+        return f"{self.resource(component)}-{settings.IMAGE_TAG}.tar"

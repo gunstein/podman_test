@@ -3,7 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from . import apps
+from . import apps, settings
 from .commands import exists, run
 from .install import setup_roles
 
@@ -54,7 +54,8 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
     for app in applications:
         play(app.manifest('app'), app.manifest('config'))
     play('shared-proxy.yaml', ports=(
-        '--publish', '127.0.0.1:8080:8080', '--publish', '127.0.0.1:8443:8443'))
+        '--publish', f'127.0.0.1:{settings.LOCAL_HTTP_PORT}:{settings.LOCAL_HTTP_PORT}',
+        '--publish', f'127.0.0.1:{settings.HTTPS_PORT}:{settings.HTTPS_PORT}'))
     for app in applications:
         setup_roles(app)
     teardown = ['shared-proxy.yaml', *(app.manifest('app') for app in reversed(applications)),

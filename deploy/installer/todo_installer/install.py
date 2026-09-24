@@ -1,7 +1,7 @@
 """Single-host orchestration; shared workload functions also serve Ansible DR."""
 from pathlib import Path
 
-from . import apps, images, keycloak, quadlet, secrets, workloads
+from . import apps, images, keycloak, quadlet, secrets, settings, workloads
 from .commands import run
 
 LEGACY = tuple(app.resource(component) for app in apps.APPS
@@ -40,7 +40,7 @@ def setup_roles(app: apps.App = apps.APPS[0]):
 
 
 def install(project_root, mode='server', deployment_mode='build', bundle_directory='',
-            refresh_images=False, publish_address='127.0.0.1', service_port=8443,
+            refresh_images=False, publish_address='127.0.0.1', service_port=settings.HTTPS_PORT,
             quadlet_dir=None, kube_runtime_dir=None, applications=None):
     applications = apps.APPS if applications is None else tuple(applications)
     if apps.IDENTITY_DATABASE_APP not in applications:
@@ -52,7 +52,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     ):
         raise ValueError('Offline deployment requires bundle_directory and forbids refresh_images.')
     root = Path(project_root).resolve()
-    directory = Path(quadlet_dir or Path.home() / '.config/containers/systemd').resolve()
+    directory = Path(quadlet_dir or settings.QUADLET_DIR).resolve()
     runtime = Path(kube_runtime_dir or directory / 'todo-kube-runtime').resolve()
     if mode == 'server' and runtime != directory / 'todo-kube-runtime':
         raise ValueError('kube_runtime_dir must be quadlet_dir/todo-kube-runtime')

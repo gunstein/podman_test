@@ -6,7 +6,7 @@ creation or removal of obsolete files). DR uses it to decide when to restart.
 import ipaddress
 from pathlib import Path
 
-from . import apps, quadlet, secrets
+from . import apps, quadlet, secrets, settings
 from .commands import run
 
 
@@ -59,7 +59,7 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
 
 
 def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-                        publish_address="127.0.0.1", service_port=8443, *,
+                        publish_address="127.0.0.1", service_port=settings.HTTPS_PORT, *,
                         app: apps.App = apps.APPS[0]):
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
@@ -83,11 +83,12 @@ def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
 
 
 def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-                         publish_address="127.0.0.1", service_port=8443, applications=None):
-    # The rendered unit always keeps a fixed 127.0.0.1:8080/8443 binding
-    # alongside the requested one (deploy/quadlet/shared-proxy.kube.j2); a
-    # wildcard address here would bind 8443 twice and podman would refuse to
-    # start the service.
+                         publish_address="127.0.0.1", service_port=settings.HTTPS_PORT,
+                         applications=None):
+    # The rendered unit always keeps a fixed 127.0.0.1 binding on
+    # settings.LOCAL_HTTP_PORT/HTTPS_PORT alongside the requested one
+    # (deploy/quadlet/shared-proxy.kube.j2); a wildcard address here would
+    # bind the HTTPS port twice and podman would refuse to start the service.
     if publish_address != "127.0.0.1" and ipaddress.ip_address(publish_address).is_unspecified:
         raise ValueError(
             f"publish_address must not be a wildcard address ({publish_address!r}); "

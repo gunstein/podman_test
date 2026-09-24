@@ -56,7 +56,12 @@ explicit cleanup before the installer takes ownership.
 
 `--refresh-images` rebuilds application images and pulls PostgreSQL in build
 mode; offline mode rejects it. `--service-port` selects the external proxy port;
-loopback bindings remain 8080 and 8443, matching the canonical template.
+loopback bindings remain 8080 and 8443, matching the canonical template. It has
+no effect without a non-default `--publish-address`: with the default loopback
+address there is nothing external to bind it to. `--publish-address` must be
+the host's own address, never a wildcard (`0.0.0.0` or `::`): the template
+always keeps the fixed loopback binding alongside it, and a wildcard would try
+to bind the same port twice.
 
 Uninstall preserves database/backup volumes and credentials by default, removes
 TLS state, and refuses hosts with replication secrets or DR/backup markers.

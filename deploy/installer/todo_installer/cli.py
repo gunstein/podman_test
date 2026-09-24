@@ -140,7 +140,9 @@ def main(argv=None):
                 print(f'Database volumes {volumes} and database and Keycloak secrets were '
                       'preserved. Use --remove-data to delete them permanently.')
         elif args.command == 'down':
-            kube_play.down(args.rendered_manifest_dir)
+            if not kube_play.down(args.rendered_manifest_dir):
+                print('No installed development manifests were found under '
+                      f'{args.rendered_manifest_dir}; nothing was torn down.', file=sys.stderr)
         else:
             directory = args.quadlet_dir.resolve()
             runtime = (args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve()

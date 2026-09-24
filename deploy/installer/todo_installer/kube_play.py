@@ -66,13 +66,29 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
     return True
 
 
-def down(rendered_manifest_dir, applications=None):
-    applications = apps.APPS if applications is None else tuple(applications)
+def down(rendered_manifest_dir, applications=None, state_file=None):
+    """Tear down a dev install; True if anything was actually playing.
+
+    Prefers the exact manifests `up` recorded it played, so a caller that
+    passes a different `rendered_manifest_dir` than the one used to install
+    (offline installs use the bundle's own `generated/kube-runtime`, not the
+    source tree's `generated/dev`) still finds and removes the right pods,
+    instead of silently matching nothing.
+    """
     directory = Path(rendered_manifest_dir)
-    manifests = ('shared-proxy.yaml', *(app.manifest('app') for app in reversed(applications)),
-                 'keycloak.yaml', apps.KEYCLOAK_DATABASE.manifest('postgres'),
-                 *(app.manifest('postgres') for app in reversed(applications)))
-    for name in manifests:
-        manifest = directory / name
+    state_file = Path(state_file or directory.parent / '.todo-installer-dev.json')
+    if state_file.is_file():
+        manifests = [Path(name) for name in json.loads(state_file.read_text())['manifests']]
+    else:
+        applications = apps.APPS if applications is None else tuple(applications)
+        manifests = [directory / name for name in (
+            'shared-proxy.yaml', *(app.manifest('app') for app in reversed(applications)),
+            'keycloak.yaml', apps.KEYCLOAK_DATABASE.manifest('postgres'),
+            *(app.manifest('postgres') for app in reversed(applications)))]
+    torn_down = False
+    for manifest in manifests:
         if manifest.is_file():
             run('podman', 'kube', 'play', '--down', manifest)
+            torn_down = True
+    state_file.unlink(missing_ok=True)
+    return torn_down

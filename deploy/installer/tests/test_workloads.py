@@ -87,6 +87,22 @@ class WorkloadsTests(unittest.TestCase):
                 workloads.install_postgres(ROOT, '/tmp/q', '/tmp/elsewhere', '/tmp/rendered')
             run.assert_not_called()
 
+    def test_shared_proxy_refuses_a_wildcard_publish_address(self):
+        # deploy/quadlet/shared-proxy.kube.j2 always keeps a fixed 127.0.0.1
+        # binding alongside the requested one; a wildcard address would try
+        # to bind the same port twice and podman would refuse to start.
+        for wildcard in ('0.0.0.0', '::'):
+            with patch('subprocess.run') as run:
+                with self.assertRaisesRegex(ValueError, 'wildcard address'):
+                    workloads.install_shared_proxy(ROOT, '/tmp/q', '/tmp/q/todo-kube-runtime',
+                                                   '/tmp/rendered', publish_address=wildcard)
+                run.assert_not_called()
+        with patch('subprocess.run') as run:
+            with self.assertRaises(ValueError):
+                workloads.install_shared_proxy(ROOT, '/tmp/q', '/tmp/q/todo-kube-runtime',
+                                               '/tmp/rendered', publish_address='not-an-address')
+            run.assert_not_called()
+
     def test_default_postgres_address_is_optional_in_plain_jinja(self):
         rendered = quadlet.render(ROOT, 'todo-postgres.kube', {}).decode()
         self.assertEqual(rendered.count('PublishPort='), 1)

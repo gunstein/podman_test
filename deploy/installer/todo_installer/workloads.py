@@ -3,6 +3,7 @@
 As in the original shared roles, changed reports definition changes (not secret
 creation or removal of obsolete files). DR uses it to decide when to restart.
 """
+import ipaddress
 from pathlib import Path
 
 from . import apps, quadlet, secrets
@@ -83,6 +84,15 @@ def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
 
 def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                          publish_address="127.0.0.1", service_port=8443, applications=None):
+    # The rendered unit always keeps a fixed 127.0.0.1:8080/8443 binding
+    # alongside the requested one (deploy/quadlet/shared-proxy.kube.j2); a
+    # wildcard address here would bind 8443 twice and podman would refuse to
+    # start the service.
+    if publish_address != "127.0.0.1" and ipaddress.ip_address(publish_address).is_unspecified:
+        raise ValueError(
+            f"publish_address must not be a wildcard address ({publish_address!r}); "
+            "it would collide with the fixed 127.0.0.1 binding. Use the host's own address."
+        )
     applications = apps.REPLICATED_APPS if applications is None else applications
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,

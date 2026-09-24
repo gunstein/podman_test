@@ -1,4 +1,5 @@
 import io
+import json
 import subprocess
 import sys
 import tempfile
@@ -167,10 +168,35 @@ class InstallTests(unittest.TestCase):
             root = Path(temp)
             for name in ('shared-proxy', 'app', 'postgres'):
                 (root / (name + '.yaml')).touch()
-            kube_play.down(root)
+            state = root / '.state.json'
+            self.assertTrue(kube_play.down(root, state_file=state))
             self.assertEqual([c.args for c in run.call_args_list], [
                 ('podman', 'kube', 'play', '--down', root / (name + '.yaml'))
                 for name in ('shared-proxy', 'app', 'postgres')])
+            self.assertFalse(state.exists())
+
+    def test_down_prefers_the_exact_manifests_up_recorded(self):
+        # An offline install plays from the bundle's own generated/kube-runtime,
+        # not the source tree's generated/dev; down must still find those exact
+        # pods rather than silently matching nothing in the wrong directory.
+        with tempfile.TemporaryDirectory() as temp, patch('todo_installer.kube_play.run') as run:
+            root = Path(temp)
+            recorded = root / 'elsewhere' / 'shared-proxy.yaml'
+            recorded.parent.mkdir()
+            recorded.touch()
+            state = root / '.state.json'
+            state.write_text(json.dumps({'fingerprint': 'x', 'manifests': [str(recorded)]}))
+            wrong_directory = root / 'generated-dev'
+            wrong_directory.mkdir()
+            self.assertTrue(kube_play.down(wrong_directory, state_file=state))
+            run.assert_called_once_with('podman', 'kube', 'play', '--down', recorded)
+            self.assertFalse(state.exists())
+
+    def test_down_reports_when_nothing_was_installed(self):
+        with tempfile.TemporaryDirectory() as temp, patch('todo_installer.kube_play.run') as run:
+            root = Path(temp)
+            self.assertFalse(kube_play.down(root, state_file=root / '.state.json'))
+            run.assert_not_called()
 
     def test_every_secret_is_generated_without_a_terminal(self):
         # No secret should ever require an interactive prompt: provision() must

@@ -62,8 +62,9 @@ class DeployLayoutTests(unittest.TestCase):
                 else:
                     self.assertEqual(hosts[primary]["todo_bundle_directory"],
                                      "/home/gunstein/todo-offline-m12")
-                    self.assertEqual(hosts["todo-primary"]["todo_rebuild_replication_slot"],
-                                     "todo_rebuilt_standby")
+                    self.assertEqual(hosts["todo-primary"]["todo_user_home"], "/home/gunstein")
+                    # Rebuilt slot names come from the App registry, not inventory.
+                    self.assertNotIn("todo_rebuild_replication_slot", hosts["todo-primary"])
 
     def test_manual_recipes_customize_effective_inventory_accounts_and_paths(self):
         executable = os.environ.get("ANSIBLE_INVENTORY_COMMAND", "ansible-inventory")

@@ -1,105 +1,20 @@
 ---
+# Read-only status for every registered database, not only Todo.
 - name: Read restored replication from current primary
   hosts: todo_current_primary
   gather_facts: false
   any_errors_fatal: true
 
   tasks:
-    - name: Query rebuilt standby connection and physical slot
-      ansible.builtin.command:
-        argv:
-          - podman
-          - exec
-          - todo-postgres
-          - psql
-          - --username
-          - todo
-          - --dbname
-          - postgres
-          - --tuples-only
-          - --no-align
-          - --field-separator=|
-          - --command
-          - >-
-            SELECT r.application_name, r.state, r.sync_state,
-            pg_wal_lsn_diff(pg_current_wal_lsn(), r.replay_lsn)::bigint,
-            s.active, s.wal_status, COALESCE(s.safe_wal_size, -1),
-            COALESCE(s.invalidation_reason, '')
-            FROM pg_stat_replication r
-            JOIN pg_replication_slots s ON s.slot_name = r.application_name
-            WHERE r.application_name = '{{ todo_rebuild_replication_slot }}';
-      register: m16_status_primary
-      changed_when: false
+    - name: Read the registered database group
+      ansible.builtin.include_tasks: ../tasks/cluster-status-registry.yml
 
-    - name: Require healthy asynchronous rebuilt standby
-      ansible.builtin.assert:
-        that:
-          - (m16_status_primary.stdout | trim).split('|') | length == 8
-          - (m16_status_primary.stdout | trim).split('|')[1] == 'streaming'
-          - (m16_status_primary.stdout | trim).split('|')[2] == 'async'
-          - (m16_status_primary.stdout | trim).split('|')[4] == 't'
-          - (m16_status_primary.stdout | trim).split('|')[5] in ['reserved', 'extended']
-          - (m16_status_primary.stdout | trim).split('|')[7] == ''
-        fail_msg: Rebuilt standby connection or physical slot is not healthy.
-
-    - name: Show current primary replication state
-      ansible.builtin.debug:
-        msg: >-
-          current primary: application|state|sync|lag_bytes|slot_active|
-          wal_status|safe_wal_bytes|invalidation =
-          {{ m16_status_primary.stdout | trim }}
-
-    - name: Query current primary and WAL archive health
-      ansible.builtin.command:
-        argv:
-          - podman
-          - exec
-          - todo-postgres
-          - psql
-          - --username
-          - todo
-          - --dbname
-          - postgres
-          - --tuples-only
-          - --no-align
-          - --field-separator=|
-          - --command
-          - >-
-            SELECT pg_is_in_recovery(),
-            current_setting('transaction_read_only'),
-            current_setting('archive_mode'),
-            COALESCE(last_archived_wal, ''),
-            failed_count,
-            CASE
-              WHEN last_failed_time IS NULL OR
-                (last_archived_time IS NOT NULL AND
-                 last_archived_time >= last_failed_time)
-              THEN 'healthy'
-              ELSE 'failed'
-            END
-            FROM pg_stat_archiver;
-      register: m16_status_archive
-      changed_when: false
-
-    - name: Require writable current primary and healthy WAL archiving
-      ansible.builtin.assert:
-        that:
-          - (m16_status_archive.stdout | trim).split('|') | length == 6
-          - (m16_status_archive.stdout | trim).split('|')[0] == 'f'
-          - (m16_status_archive.stdout | trim).split('|')[1] == 'off'
-          - (m16_status_archive.stdout | trim).split('|')[2] == 'on'
-          - (m16_status_archive.stdout | trim).split('|')[3] != ''
-          - (m16_status_archive.stdout | trim).split('|')[5] == 'healthy'
-        fail_msg: >-
-          Current primary is not writable, or WAL archiving has not recovered
-          from its most recent failure.
-
-    - name: Show current primary and archive state
-      ansible.builtin.debug:
-        msg: >-
-          current primary: recovery|read_only|archive_mode|last_archived_wal|
-          historical_failures|current_archive_health =
-          {{ m16_status_archive.stdout | trim }}
+    - name: Check rebuilt-standby streaming and WAL archiving for each database
+      ansible.builtin.include_tasks: ../tasks/cluster-status-primary.yml
+      loop: "{{ todo_status_databases }}"
+      loop_control:
+        loop_var: todo_status_db
+        label: "{{ todo_status_db.name }}"
 
 - name: Read recovery state from rebuilt standby
   hosts: todo_current_standby
@@ -107,40 +22,12 @@
   any_errors_fatal: true
 
   tasks:
-    - name: Query rebuilt standby recovery state
-      ansible.builtin.command:
-        argv:
-          - podman
-          - exec
-          - todo-postgres
-          - psql
-          - --username
-          - todo
-          - --dbname
-          - postgres
-          - --tuples-only
-          - --no-align
-          - --field-separator=|
-          - --command
-          - >-
-            SELECT pg_is_in_recovery(),
-            current_setting('transaction_read_only'),
-            COALESCE(pg_last_wal_receive_lsn()::text, ''),
-            COALESCE(pg_last_wal_replay_lsn()::text, '');
-      register: m16_status_standby
-      changed_when: false
+    - name: Read the registered database group
+      ansible.builtin.include_tasks: ../tasks/cluster-status-registry.yml
 
-    - name: Require read-only rebuilt standby
-      ansible.builtin.assert:
-        that:
-          - (m16_status_standby.stdout | trim).split('|') | length == 4
-          - (m16_status_standby.stdout | trim).split('|')[0] == 't'
-          - (m16_status_standby.stdout | trim).split('|')[1] == 'on'
-          - (m16_status_standby.stdout | trim).split('|')[2] != ''
-          - (m16_status_standby.stdout | trim).split('|')[3] != ''
-
-    - name: Show rebuilt standby recovery state
-      ansible.builtin.debug:
-        msg: >-
-          rebuilt standby: recovery|read_only|receive_lsn|replay_lsn =
-          {{ m16_status_standby.stdout | trim }}
+    - name: Check read-only recovery for each database
+      ansible.builtin.include_tasks: ../tasks/cluster-status-standby.yml
+      loop: "{{ todo_status_databases }}"
+      loop_control:
+        loop_var: todo_status_db
+        label: "{{ todo_status_db.name }}"

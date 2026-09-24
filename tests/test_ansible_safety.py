@@ -89,11 +89,26 @@ class AnsibleSafetyTests(unittest.TestCase):
         # configuration and verifies the current subnet, scope and unchanged repeat.
 
     def test_cluster_status_preserves_backup_health(self):
-        status = read("deploy/ansible/playbooks/cluster-status.yml")
+        status = read("deploy/ansible/tasks/cluster-status-primary.yml")
 
         self.assertIn("current_setting('archive_mode')", status)
         self.assertIn("last_archived_wal", status)
         self.assertIn("last_archived_time >= last_failed_time", status)
+
+    def test_cluster_status_checks_every_registered_database(self):
+        playbook = yaml.safe_load(read("deploy/ansible/playbooks/cluster-status.yml"))
+        for play in playbook:
+            loops = [task for task in play["tasks"] if "loop" in task]
+            self.assertEqual(len(loops), 1, play["name"])
+            self.assertEqual(loops[0]["loop"], "{{ todo_status_databases }}")
+        registry = read("deploy/ansible/tasks/cluster-status-registry.yml")
+        self.assertIn("replication-apps, --details", registry)
+        self.assertNotIn("become", registry)
+        for name in ("cluster-status-primary.yml", "cluster-status-standby.yml"):
+            tasks = read("deploy/ansible/tasks/" + name)
+            self.assertNotIn("todo-postgres", tasks)
+            self.assertIn("todo_status_db.postgres_container", tasks)
+        self.assertIn("todo_status_db.rebuild_slot", read("deploy/ansible/tasks/cluster-status-primary.yml"))
 
     def test_vault_provisioning_is_outside_demo_scope(self):
         for removed_path in (

@@ -1,0 +1,97 @@
+---
+# One registered database on the current primary. Names come from the registry.
+- name: Query rebuilt standby connection and physical slot for {{ todo_status_db.name }}
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - "{{ todo_status_db.postgres_container }}"
+      - psql
+      - --username
+      - "{{ todo_status_db.name }}"
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - >-
+        SELECT r.application_name, r.state, r.sync_state,
+        pg_wal_lsn_diff(pg_current_wal_lsn(), r.replay_lsn)::bigint,
+        s.active, s.wal_status, COALESCE(s.safe_wal_size, -1),
+        COALESCE(s.invalidation_reason, '')
+        FROM pg_stat_replication r
+        JOIN pg_replication_slots s ON s.slot_name = r.application_name
+        WHERE r.application_name = '{{ todo_status_db.rebuild_slot }}';
+  register: m16_status_primary
+  changed_when: false
+
+- name: Require healthy asynchronous rebuilt standby for {{ todo_status_db.name }}
+  ansible.builtin.assert:
+    that:
+      - (m16_status_primary.stdout | trim).split('|') | length == 8
+      - (m16_status_primary.stdout | trim).split('|')[1] == 'streaming'
+      - (m16_status_primary.stdout | trim).split('|')[2] == 'async'
+      - (m16_status_primary.stdout | trim).split('|')[4] == 't'
+      - (m16_status_primary.stdout | trim).split('|')[5] in ['reserved', 'extended']
+      - (m16_status_primary.stdout | trim).split('|')[7] == ''
+    fail_msg: "{{ todo_status_db.name }}: rebuilt standby connection or physical slot is not healthy."
+
+- name: Show current primary replication state for {{ todo_status_db.name }}
+  ansible.builtin.debug:
+    msg: >-
+      {{ todo_status_db.name }} current primary: application|state|sync|lag_bytes|slot_active|
+      wal_status|safe_wal_bytes|invalidation =
+      {{ m16_status_primary.stdout | trim }}
+
+- name: Query current primary and WAL archive health for {{ todo_status_db.name }}
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - "{{ todo_status_db.postgres_container }}"
+      - psql
+      - --username
+      - "{{ todo_status_db.name }}"
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - >-
+        SELECT pg_is_in_recovery(),
+        current_setting('transaction_read_only'),
+        current_setting('archive_mode'),
+        COALESCE(last_archived_wal, ''),
+        failed_count,
+        CASE
+          WHEN last_failed_time IS NULL OR
+            (last_archived_time IS NOT NULL AND
+             last_archived_time >= last_failed_time)
+          THEN 'healthy'
+          ELSE 'failed'
+        END
+        FROM pg_stat_archiver;
+  register: m16_status_archive
+  changed_when: false
+
+- name: Require writable current primary and healthy WAL archiving for {{ todo_status_db.name }}
+  ansible.builtin.assert:
+    that:
+      - (m16_status_archive.stdout | trim).split('|') | length == 6
+      - (m16_status_archive.stdout | trim).split('|')[0] == 'f'
+      - (m16_status_archive.stdout | trim).split('|')[1] == 'off'
+      - (m16_status_archive.stdout | trim).split('|')[2] == 'on'
+      - (m16_status_archive.stdout | trim).split('|')[3] != ''
+      - (m16_status_archive.stdout | trim).split('|')[5] == 'healthy'
+    fail_msg: >-
+      {{ todo_status_db.name }}: current primary is not writable, or WAL
+      archiving has not recovered from its most recent failure.
+
+- name: Show current primary and archive state for {{ todo_status_db.name }}
+  ansible.builtin.debug:
+    msg: >-
+      {{ todo_status_db.name }} current primary: recovery|read_only|archive_mode|last_archived_wal|
+      historical_failures|current_archive_health =
+      {{ m16_status_archive.stdout | trim }}

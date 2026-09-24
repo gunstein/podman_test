@@ -1,0 +1,40 @@
+---
+# One registered database on the rebuilt standby. Names come from the registry.
+- name: Query rebuilt standby recovery state for {{ todo_status_db.name }}
+  ansible.builtin.command:
+    argv:
+      - podman
+      - exec
+      - "{{ todo_status_db.postgres_container }}"
+      - psql
+      - --username
+      - "{{ todo_status_db.name }}"
+      - --dbname
+      - postgres
+      - --tuples-only
+      - --no-align
+      - --field-separator=|
+      - --command
+      - >-
+        SELECT pg_is_in_recovery(),
+        current_setting('transaction_read_only'),
+        COALESCE(pg_last_wal_receive_lsn()::text, ''),
+        COALESCE(pg_last_wal_replay_lsn()::text, '');
+  register: m16_status_standby
+  changed_when: false
+
+- name: Require read-only rebuilt standby for {{ todo_status_db.name }}
+  ansible.builtin.assert:
+    that:
+      - (m16_status_standby.stdout | trim).split('|') | length == 4
+      - (m16_status_standby.stdout | trim).split('|')[0] == 't'
+      - (m16_status_standby.stdout | trim).split('|')[1] == 'on'
+      - (m16_status_standby.stdout | trim).split('|')[2] != ''
+      - (m16_status_standby.stdout | trim).split('|')[3] != ''
+    fail_msg: "{{ todo_status_db.name }}: rebuilt standby is not a read-only recovering database."
+
+- name: Show rebuilt standby recovery state for {{ todo_status_db.name }}
+  ansible.builtin.debug:
+    msg: >-
+      {{ todo_status_db.name }} rebuilt standby: recovery|read_only|receive_lsn|replay_lsn =
+      {{ m16_status_standby.stdout | trim }}

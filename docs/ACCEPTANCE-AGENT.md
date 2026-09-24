@@ -106,6 +106,20 @@ Decide whether the agent may use `sudo` on the client for `/etc/hosts` and CA
 trust (`CLIENT_SUDO`). If not, the agent will ask you to run exactly one
 prepared command at two moments (initial deployment and failover).
 
+### A5. Readiness check on the client
+
+From the repository root on the client/build host, run the read-only check.
+It changes nothing: local checks, Proxmox API GET requests and read-only SSH
+commands. Pass the kickoff values if they differ from the lab defaults:
+
+```bash
+python3 deploy/scripts/acceptance_preflight.py --snapshot clean-agent --revision "$(git rev-parse HEAD)"
+```
+
+Fix every `FAIL` before starting the agent. `WARN` lines need a look but may be
+acceptable; for example, the running VMs may still hold state from an earlier
+run, because the agent resets them to the clean snapshots first.
+
 ---
 
 ## Part B — Kickoff message (fill in and paste to the agent)

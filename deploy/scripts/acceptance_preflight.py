@@ -127,18 +127,19 @@ def check_proxmox(report, args):
                      ' or '.join(GUEST_EXEC_PRIVILEGES))
         report.check(str(vm.get('agent', '')).split(',')[0] in ('1', 'enabled=1'), f'VM {vmid} QEMU Guest Agent enabled',
                      str(vm.get('agent', 'not set')))
-        report.check(args.snapshot in snapshots, f'VM {vmid} snapshot {args.snapshot!r}', ', '.join(snapshots))
+        report.check(args.snapshot in snapshots, f'VM {vmid} snapshot {args.snapshot!r}',
+                     'found: ' + ', '.join(name for name in snapshots if name != 'current'))
         nics = {key: value for key, value in vm.items() if key.startswith('net') and key[3:].isdigit()}
         report.check(bool(nics), f'VM {vmid} network devices', '; '.join(f'{k}={v}' for k, v in sorted(nics.items())))
         down = [key for key, value in nics.items() if 'link_down=1' in value.split(',')]
         report.check(not down, f'VM {vmid} links connected', ', '.join(down), level='WARN')
         report.check(not firewall.get('enable'), f'VM {vmid} VM firewall disabled',
-                     'enabled; phase 1 will inspect its rules', level='WARN')
+                     'enabled; phase 1 will inspect its rules' if firewall.get('enable') else '', level='WARN')
         report.line('INFO', f'VM {vmid} status', f'{status.get("status")}, onboot={vm.get("onboot", "unset")}')
     try:
         cluster = client.request('GET', '/cluster/firewall/options')
         report.check(bool(cluster.get('enable')), 'Datacenter firewall enabled (needed for VM quarantine)',
-                     'disabled: the agent will ask you in phase 5')
+                     '' if cluster.get('enable') else 'disabled: the agent will ask you in phase 5')
         resources = [item.get('sid') for item in client.request('GET', '/cluster/ha/resources')]
         for vmid in (args.primary_vmid, args.standby_vmid):
             report.check(f'vm:{vmid}' not in resources, f'VM {vmid} not an HA resource', level='WARN')
@@ -166,7 +167,11 @@ def check_guest(report, args, address, hostname):
     print(f'== {hostname} ({address}) over SSH, read-only')
     code, out, error = _ssh(args, address)
     if not report.check(code == 0, 'Key-based SSH with verified host key', error.splitlines()[-1] if error else ''):
-        report.line('INFO', 'VM may be powered off; the agent resets it from the snapshot anyway')
+        if 'Permission denied' in error:
+            report.line('INFO', 'Your SSH key is not authorized for this user; see ACCEPTANCE-AGENT.md A3 '
+                        '(ssh-copy-id before taking the clean snapshot)')
+        else:
+            report.line('INFO', 'VM may be powered off or unreachable')
         return
     facts = dict(line.split('=', 1) for line in out.splitlines() if '=' in line)
     report.check(facts.get('hostname') == hostname, 'Hostname', facts.get('hostname', ''))

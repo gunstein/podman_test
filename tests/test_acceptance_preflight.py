@@ -77,6 +77,8 @@ class AcceptancePreflightTests(unittest.TestCase):
         report, output = self.check(acceptance_preflight.REQUIRED_PRIVILEGES + ("VM.Monitor",))
         self.assertEqual(report.failed, 0, output)
         self.assertIn("snapshot 'clean-agent'", output)
+        self.assertNotIn("disabled: the agent will ask", output)
+        self.assertNotIn("enabled; phase 1", output)
 
     def test_missing_privileges_and_readable_token_file_fail(self):
         report, output = self.check(("VM.Audit",), env_mode=0o644)

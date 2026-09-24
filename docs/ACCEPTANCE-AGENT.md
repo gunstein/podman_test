@@ -77,6 +77,11 @@ chmod 600 ~/.config/todo-acceptance/pve.env
 
 ### A3. Passwordless sudo for the service user, inside the clean snapshots
 
+Shortcut: after A1 and A2, `deploy/scripts/prepare-agent-snapshots.sh` does
+this whole step for both VMs through the token (rollback to the existing clean
+snapshots, `ssh-copy-id`, the sudoers file, shutdown, snapshot `clean-agent`,
+start). It asks for your VM password and sudo password. The manual steps are:
+
 The agent cannot type a sudo password. On **both** lab VMs, starting from the
 current clean pre-install snapshots, add a lab-only sudoers rule, then take new
 clean snapshots so every reset keeps it:

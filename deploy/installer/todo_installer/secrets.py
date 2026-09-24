@@ -44,26 +44,15 @@ def create_kube(mapping, values=None):
 
 
 def provision(applications=None):
-    """Keep existing credentials; prompt for administrators, generate role passwords."""
-    import getpass
+    """Keep existing credentials; generate every missing password."""
     import secrets as random
     import string
-    import sys
 
     applications = apps.APPS if applications is None else applications
-    generated = {app.secret(role) for app in applications for role in ("migrator", "app")}
-    generated.add(apps.KEYCLOAK_DATABASE.secret("db"))
     names = [app.secret(role) for app in applications for role in ("db", "migrator", "app")]
     names.extend((apps.KEYCLOAK_DATABASE.secret("db"), apps.KEYCLOAK_ADMIN_SECRET))
     for name in names:
         if exists('secret', name):
             continue
-        if name in generated:
-            value = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(32))
-        else:
-            if not sys.stdin.isatty():
-                raise RuntimeError(f'Missing {name}: an interactive terminal is required to enter '
-                                   'the password. Provision the Podman secret before retrying.')
-            prompt = f'{name}: '
-            value = getpass.getpass(prompt)
+        value = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(32))
         run('podman', 'secret', 'create', name, '-', input=value)

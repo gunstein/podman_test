@@ -172,19 +172,30 @@ class InstallTests(unittest.TestCase):
                 ('podman', 'kube', 'play', '--down', root / (name + '.yaml'))
                 for name in ('shared-proxy', 'app', 'postgres')])
 
-    def test_missing_admin_secret_requires_tty(self):
+    def test_every_secret_is_generated_without_a_terminal(self):
+        # No secret should ever require an interactive prompt: provision() must
+        # work unattended (CI, scripted installs) for every one of them, not
+        # just the migrator/app role passwords.
         with patch('todo_installer.secrets.exists', return_value=False), \
-                patch('sys.stdin.isatty', return_value=False), patch('getpass.getpass') as prompt:
-            with self.assertRaisesRegex(RuntimeError, 'interactive terminal'):
-                secrets.provision()
-            prompt.assert_not_called()
+                patch('sys.stdin.isatty', return_value=False), \
+                patch('todo_installer.secrets.run') as run:
+            secrets.provision()
+        names = {call.args[3] for call in run.call_args_list}
+        self.assertEqual(names, {
+            'todo-db-password', 'todo-migrator-password', 'todo-app-password',
+            'notes-db-password', 'notes-migrator-password', 'notes-app-password',
+            'keycloak-db-password', 'keycloak-admin-password',
+        })
+        for call in run.call_args_list:
+            self.assertRegex(call.kwargs['input'], r'^[a-zA-Z0-9]{32}$')
 
     def test_generated_secrets_are_alphanumeric_and_existing_secrets_preserved(self):
-        missing = {'todo-migrator-password', 'todo-app-password', 'keycloak-db-password'}
+        missing = {'todo-db-password', 'todo-migrator-password', 'todo-app-password',
+                  'keycloak-db-password', 'keycloak-admin-password'}
         with patch('todo_installer.secrets.exists', side_effect=lambda _, name: name not in missing), \
                 patch('todo_installer.secrets.run') as run:
             secrets.provision()
-            self.assertEqual(run.call_count, 3)
+            self.assertEqual(run.call_count, len(missing))
             for call in run.call_args_list:
                 self.assertRegex(call.kwargs['input'], r'^[a-zA-Z0-9]{32}$')
 

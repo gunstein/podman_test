@@ -43,10 +43,9 @@ directory. A connected development environment can use `pip install -e deploy/in
 On hardened/offline targets use OS-managed Python/Jinja2 and verified exact-file
 trust as described in [FAPOLICYD.md](../offline/FAPOLICYD.md).
 
-The installer prompts only for missing database/bootstrap and Keycloak admin
-secrets, with terminal echo disabled. Non-interactive calls fail if these are
-missing; provision raw Podman secrets first. It generates 32-character
-alphanumeric runtime-role passwords only when missing. Existing raw and
+The installer generates every missing raw secret - database/bootstrap and
+Keycloak admin included - as a 32-character alphanumeric password; none are
+ever prompted, printed or require an interactive terminal. Existing raw and
 Kube-compatible secrets are never rotated. No secret payload is written to disk.
 
 Dev keeps a manifest fingerprint beside the Quadlet directory. An unchanged

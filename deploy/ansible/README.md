@@ -55,10 +55,9 @@ conservatively report the command as changed. Their old variables are forwarded,
 including deployment mode, bundle path, image refresh, publish address/port,
 Quadlet directory and `remove_data`.
 
-Use the Python CLI directly for the first interactive installation. Ansible
-commands do not provide a TTY: missing bootstrap or Keycloak administrator
-secrets fail clearly instead of silently accepting empty input. Automated
-wrapper calls require those raw Podman secrets to exist already.
+Every raw secret, bootstrap and Keycloak administrator credentials included,
+is generated automatically when missing, so these wrappers work unattended
+under Ansible with no TTY and no pre-provisioned Podman secrets required.
 
 ```bash
 PYTHONPATH=deploy/installer python3 -m todo_installer install --mode server

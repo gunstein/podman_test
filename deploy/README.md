@@ -28,7 +28,7 @@ layout and include the same configuration; run playbooks from the package root.
 deploy/scripts/render-kube-runtime.sh
 
 # Development uses local values and direct podman kube play/down.
-# Missing administrator secrets require an interactive terminal.
+# Every missing secret is generated; none require an interactive terminal.
 deploy/scripts/dev-up.sh
 deploy/scripts/dev-down.sh
 

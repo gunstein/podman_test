@@ -139,9 +139,9 @@ realm, separate clients, and a single SAN certificate.
 
 The shell entry points are thin wrappers around `python3 -m todo_installer`.
 The installer invokes the existing renderer with local values, prepares images
-and external secrets, then performs ordered `podman kube play` calls. Missing
-bootstrap/admin passwords require an interactive terminal; runtime-role
-passwords are generated only when missing. It provisions database roles before
+and external secrets, then performs ordered `podman kube play` calls. Every
+missing password, bootstrap/admin included, is generated in code and never
+prompted or printed. It provisions database roles before
 Keycloak/app startup and reapplies grants after proxy startup. Stop the workloads in reverse order with:
 
 ```bash

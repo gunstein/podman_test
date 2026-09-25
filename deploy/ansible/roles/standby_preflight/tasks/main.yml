@@ -2,33 +2,33 @@
 - name: Read the static hostname
   ansible.builtin.command:
     argv: [hostname]
-  register: m13_hostname
+  register: preflight_hostname
   changed_when: false
 
 - name: Read the systemd machine ID
   ansible.builtin.command:
     argv: [cat, /etc/machine-id]
-  register: m13_machine_id
+  register: preflight_machine_id
   changed_when: false
 
 - name: Read global IPv4 addresses
   ansible.builtin.command:
     argv: [ip, -4, -o, address, show, scope, global]
-  register: m13_ipv4_addresses
+  register: preflight_ipv4_addresses
   changed_when: false
 
 - name: Check Podman
   ansible.builtin.command:
     argv: [podman, --version]
-  register: m13_podman_version
+  register: preflight_podman_version
   changed_when: false
 
 - name: Check the user systemd manager
   ansible.builtin.command:
     argv: [systemctl, --user, is-system-running]
-  register: m13_user_systemd
+  register: preflight_user_systemd
   changed_when: false
-  failed_when: m13_user_systemd.rc not in [0, 1]
+  failed_when: preflight_user_systemd.rc not in [0, 1]
 
 - name: Read the complete database group
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/read-replication-registry.yml"
@@ -39,17 +39,17 @@
   loop: "{{ todo_replication_metadata }}"
   loop_control:
     label: "{{ item.name }}"
-  register: m13_postgres_volume
+  register: preflight_postgres_volume
   changed_when: false
-  failed_when: m13_postgres_volume.rc not in [0, 1]
+  failed_when: preflight_postgres_volume.rc not in [0, 1]
 
 - name: Validate this host's declared identity
   ansible.builtin.assert:
     that:
       - todo_node_role in ['primary', 'standby']
-      - m13_hostname.stdout == inventory_hostname
-      - (" " ~ todo_node_address ~ "/") in m13_ipv4_addresses.stdout
-      - m13_machine_id.stdout | length == 32
+      - preflight_hostname.stdout == inventory_hostname
+      - (" " ~ todo_node_address ~ "/") in preflight_ipv4_addresses.stdout
+      - preflight_machine_id.stdout | length == 32
     fail_msg: >-
       Host identity does not match the initial-topology inventory. Check hostname,
       todo_node_address and /etc/machine-id before continuing.
@@ -62,34 +62,34 @@
   when: todo_node_role == 'primary'
   become: true
   vars:
-    m13_standby_address: "{{ hostvars[groups['todo_standby'][0]].todo_node_address }}"
-    m13_replication_ports: "{{ todo_replication_metadata | map(attribute='replication_port') | list }}"
-    m13_port_range: "{{ m13_replication_ports | min }}-{{ m13_replication_ports | max }}"
-    m13_rich_rule: >-
-      rule family="ipv4" source address="{{ m13_standby_address }}/32"
-      destination address="{{ todo_node_address }}" port port="{{ m13_port_range }}"
+    preflight_standby_address: "{{ hostvars[groups['todo_standby'][0]].todo_node_address }}"
+    preflight_replication_ports: "{{ todo_replication_metadata | map(attribute='replication_port') | list }}"
+    preflight_port_range: "{{ preflight_replication_ports | min }}-{{ preflight_replication_ports | max }}"
+    preflight_rich_rule: >-
+      rule family="ipv4" source address="{{ preflight_standby_address }}/32"
+      destination address="{{ todo_node_address }}" port port="{{ preflight_port_range }}"
       protocol="tcp" accept
   block:
     - name: Require active firewalld on the primary
       ansible.builtin.command:
         argv: [firewall-cmd, --state]
-      register: m13_firewalld_state
+      register: preflight_firewalld_state
       changed_when: false
-      failed_when: m13_firewalld_state.rc != 0
+      failed_when: preflight_firewalld_state.rc != 0
 
     - name: Check for the documented rich rule permitting the standby's replication traffic
       ansible.builtin.command:
-        argv: [firewall-cmd, --permanent, --zone=public, "--query-rich-rule={{ m13_rich_rule }}"]
-      register: m13_firewalld_rich_rule
+        argv: [firewall-cmd, --permanent, --zone=public, "--query-rich-rule={{ preflight_rich_rule }}"]
+      register: preflight_firewalld_rich_rule
       changed_when: false
-      failed_when: m13_firewalld_rich_rule.rc not in [0, 1]
+      failed_when: preflight_firewalld_rich_rule.rc not in [0, 1]
 
     - name: Require the rich rule to be present
       ansible.builtin.assert:
-        that: m13_firewalld_rich_rule.rc == 0
+        that: preflight_firewalld_rich_rule.rc == 0
         fail_msg: >-
-          No firewalld rich rule on this primary permits {{ m13_standby_address }} to
+          No firewalld rich rule on this primary permits {{ preflight_standby_address }} to
           reach the PostgreSQL replication ports. Add it before bootstrap publishes
           them on the LAN interface, then reload:
-          sudo firewall-cmd --permanent --zone=public --add-rich-rule='{{ m13_rich_rule }}'
+          sudo firewall-cmd --permanent --zone=public --add-rich-rule='{{ preflight_rich_rule }}'
           && sudo firewall-cmd --reload

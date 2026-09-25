@@ -10,4 +10,4 @@
   vars:
     todo_replication_operation: standby
     todo_replication_primary_address: "{{ hostvars[groups['todo_primary'][0]].todo_node_address }}"
-    todo_replication_image_archive: "{{ m13_postgres_image_archive }}"
+    todo_replication_image_archive: "{{ standby_postgres_image_archive }}"

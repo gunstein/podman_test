@@ -23,18 +23,18 @@
         FROM pg_stat_replication r
         JOIN pg_replication_slots s ON s.slot_name = r.application_name
         WHERE r.application_name = '{{ todo_status_db.rebuild_slot }}';
-  register: m16_status_primary
+  register: cluster_status_primary
   changed_when: false
 
 - name: Require healthy asynchronous rebuilt standby for {{ todo_status_db.name }}
   ansible.builtin.assert:
     that:
-      - (m16_status_primary.stdout | trim).split('|') | length == 8
-      - (m16_status_primary.stdout | trim).split('|')[1] == 'streaming'
-      - (m16_status_primary.stdout | trim).split('|')[2] == 'async'
-      - (m16_status_primary.stdout | trim).split('|')[4] == 't'
-      - (m16_status_primary.stdout | trim).split('|')[5] in ['reserved', 'extended']
-      - (m16_status_primary.stdout | trim).split('|')[7] == ''
+      - (cluster_status_primary.stdout | trim).split('|') | length == 8
+      - (cluster_status_primary.stdout | trim).split('|')[1] == 'streaming'
+      - (cluster_status_primary.stdout | trim).split('|')[2] == 'async'
+      - (cluster_status_primary.stdout | trim).split('|')[4] == 't'
+      - (cluster_status_primary.stdout | trim).split('|')[5] in ['reserved', 'extended']
+      - (cluster_status_primary.stdout | trim).split('|')[7] == ''
     fail_msg: "{{ todo_status_db.name }}: rebuilt standby connection or physical slot is not healthy."
 
 - name: Show current primary replication state for {{ todo_status_db.name }}
@@ -42,7 +42,7 @@
     msg: >-
       {{ todo_status_db.name }} current primary: application|state|sync|lag_bytes|slot_active|
       wal_status|safe_wal_bytes|invalidation =
-      {{ m16_status_primary.stdout | trim }}
+      {{ cluster_status_primary.stdout | trim }}
 
 - name: Query current primary and WAL archive health for {{ todo_status_db.name }}
   ansible.builtin.command:
@@ -73,18 +73,18 @@
           ELSE 'failed'
         END
         FROM pg_stat_archiver;
-  register: m16_status_archive
+  register: cluster_status_archive
   changed_when: false
 
 - name: Require writable current primary and healthy WAL archiving for {{ todo_status_db.name }}
   ansible.builtin.assert:
     that:
-      - (m16_status_archive.stdout | trim).split('|') | length == 6
-      - (m16_status_archive.stdout | trim).split('|')[0] == 'f'
-      - (m16_status_archive.stdout | trim).split('|')[1] == 'off'
-      - (m16_status_archive.stdout | trim).split('|')[2] == 'on'
-      - (m16_status_archive.stdout | trim).split('|')[3] != ''
-      - (m16_status_archive.stdout | trim).split('|')[5] == 'healthy'
+      - (cluster_status_archive.stdout | trim).split('|') | length == 6
+      - (cluster_status_archive.stdout | trim).split('|')[0] == 'f'
+      - (cluster_status_archive.stdout | trim).split('|')[1] == 'off'
+      - (cluster_status_archive.stdout | trim).split('|')[2] == 'on'
+      - (cluster_status_archive.stdout | trim).split('|')[3] != ''
+      - (cluster_status_archive.stdout | trim).split('|')[5] == 'healthy'
     fail_msg: >-
       {{ todo_status_db.name }}: current primary is not writable, or WAL
       archiving has not recovered from its most recent failure.
@@ -94,4 +94,4 @@
     msg: >-
       {{ todo_status_db.name }} current primary: recovery|read_only|archive_mode|last_archived_wal|
       historical_failures|current_archive_health =
-      {{ m16_status_archive.stdout | trim }}
+      {{ cluster_status_archive.stdout | trim }}

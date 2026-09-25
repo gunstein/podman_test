@@ -6,8 +6,8 @@
 
   vars:
     project_root: "{{ playbook_dir }}/../../.."
-    m13_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
-    m13_config_directory: "{{ m13_user_home }}/.config/todo"
+    dr_tool_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
+    todo_dr_config_directory: "{{ dr_tool_user_home }}/.config/todo"
 
   roles:
     - role: todo_dr

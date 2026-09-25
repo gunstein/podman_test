@@ -86,8 +86,8 @@ class AnsibleSafetyTests(unittest.TestCase):
         playbook = read("deploy/ansible/playbooks/configure-backup.yml")
         tasks = read("deploy/ansible/roles/postgres_backup/tasks/database.yml")
 
-        self.assertIn("m15_archive_timeout: 1h", playbook)
-        self.assertIn("m15_archive_timeout", tasks)
+        self.assertIn("backup_archive_timeout: 1h", playbook)
+        self.assertIn("backup_archive_timeout", tasks)
         self.assertNotIn("archive_timeout = '60s'", tasks)
 
     def test_backup_refreshes_local_replication_access_before_base_backup(self):
@@ -97,7 +97,7 @@ class AnsibleSafetyTests(unittest.TestCase):
         backup = next(i for i, task in enumerate(tasks)
                       if task["name"] == "Require the backup volume created by the PostgreSQL PVC")
         self.assertLess(hba, backup)
-        self.assertEqual(tasks[hba]["vars"]["todo_replication_app"], "{{ m15_app.name }}")
+        self.assertEqual(tasks[hba]["vars"]["todo_replication_app"], "{{ backup_app.name }}")
         self.assertIn("replicate-workload.yml", tasks[hba]["ansible.builtin.include_tasks"])
         # test_replication executes refresh_hba's actual shell against an inherited
         # configuration and verifies the current subnet, scope and unchanged repeat.

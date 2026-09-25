@@ -2,23 +2,23 @@
 - name: Refresh replication authentication for the current rootless subnet
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
   vars:
-    todo_replication_app: "{{ m16_app.name }}"
+    todo_replication_app: "{{ redundancy_app.name }}"
     todo_replication_operation: hba
 
 - name: Install replication-capable PostgreSQL Kube runtime
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
   vars:
     todo_installer_workload: postgres
-    todo_installer_app: "{{ m16_app.name }}"
+    todo_installer_app: "{{ redundancy_app.name }}"
     todo_postgres_publish_address: "{{ todo_node_address }}"
 
 - name: Stop application tier before current primary restart
   ansible.builtin.command:
     argv: [systemctl, --user, stop, "{{ item }}"]
-  loop: "{{ m16_application_services }}"
-  register: m16_primary_services_stopped
+  loop: "{{ redundancy_application_services }}"
+  register: redundancy_primary_services_stopped
   changed_when: false
-  failed_when: m16_primary_services_stopped.rc not in [0, 5]
+  failed_when: redundancy_primary_services_stopped.rc not in [0, 5]
   when: todo_postgres_kube_changed
 
 - name: Reload current primary user systemd
@@ -28,14 +28,14 @@
 
 - name: Restart current primary with its LAN replication endpoint
   ansible.builtin.systemd_service:
-    name: "{{ m16_app.postgres_service }}"
+    name: "{{ redundancy_app.postgres_service }}"
     scope: user
     state: restarted
   when: todo_postgres_kube_changed
 
 - name: Wait for healthy current primary
   ansible.builtin.command:
-    argv: [podman, wait, --condition=healthy, "{{ m16_app.postgres_container }}"]
+    argv: [podman, wait, --condition=healthy, "{{ redundancy_app.postgres_container }}"]
   changed_when: false
 
 - name: Restore application tier after current primary restart
@@ -48,10 +48,10 @@
   ansible.builtin.uri:
     url: http://127.0.0.1:8080/ready
     headers:
-      Host: "{{ m16_app.hostname }}"
+      Host: "{{ redundancy_app.hostname }}"
     return_content: true
-  register: m16_primary_readiness
+  register: redundancy_primary_readiness
   retries: 30
   delay: 1
-  until: m16_primary_readiness.status == 200 and m16_primary_readiness.json.status == 'ready'
-  when: m16_app.hostname is defined
+  until: redundancy_primary_readiness.status == 200 and redundancy_primary_readiness.json.status == 'ready'
+  when: redundancy_app.hostname is defined

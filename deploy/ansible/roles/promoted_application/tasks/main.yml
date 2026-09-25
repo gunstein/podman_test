@@ -2,25 +2,25 @@
 - name: Read the promoted host identity
   ansible.builtin.command:
     argv: [hostname]
-  register: m14_hostname
+  register: promoted_hostname
   changed_when: false
 
 - name: Read the promoted host IPv4 addresses
   ansible.builtin.command:
     argv: [ip, -4, -o, address, show, scope, global]
-  register: m14_addresses
+  register: promoted_addresses
   changed_when: false
 
 - name: Require the intended promoted host
   ansible.builtin.assert:
     that:
-      - m14_hostname.stdout | trim == inventory_hostname
-      - (" " ~ m14_node_address ~ "/") in m14_addresses.stdout
-      - m14_service_hostname | length > 0
-      - m14_service_hostname is match('^[A-Za-z0-9.-]+$')
-      - "'..' not in m14_service_hostname"
-      - m14_service_port | int >= 1024
-      - m14_service_port | int <= 65535
+      - promoted_hostname.stdout | trim == inventory_hostname
+      - (" " ~ promoted_node_address ~ "/") in promoted_addresses.stdout
+      - promoted_service_hostname | length > 0
+      - promoted_service_hostname is match('^[A-Za-z0-9.-]+$')
+      - "'..' not in promoted_service_hostname"
+      - promoted_service_port | int >= 1024
+      - promoted_service_port | int <= 65535
     fail_msg: Check the recovery inventory hostname, address, service name and port.
 
 - name: Resolve all applications from the trusted registry
@@ -28,7 +28,7 @@
 
 - name: Require completed promotion and healthy writable databases for the entire group
   ansible.builtin.command:
-    argv: [python3, -m, todo_installer, require-promoted-group, --journal, "{{ m14_config_directory }}/promotion.json"]
+    argv: [python3, -m, todo_installer, require-promoted-group, --journal, "{{ promoted_config_directory }}/promotion.json"]
   environment:
     PYTHONPATH: "{{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0 else todo_installer_target ~ '/deploy/installer' }}"
     PYTHONDONTWRITEBYTECODE: "1"
@@ -42,17 +42,17 @@
 
 - name: Load missing application images and verify the nginx image identity
   ansible.builtin.command:
-    argv: [python3, -m, todo_installer, prepare-promoted-images, --bundle-dir, "{{ m14_bundle_directory }}"]
+    argv: [python3, -m, todo_installer, prepare-promoted-images, --bundle-dir, "{{ promoted_bundle_directory }}"]
   environment:
     PYTHONPATH: "{{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0 else todo_installer_target ~ '/deploy/installer' }}"
     PYTHONDONTWRITEBYTECODE: "1"
-  register: m14_images_loaded
-  changed_when: (m14_images_loaded.stdout | from_json).changed
+  register: promoted_images_loaded
+  changed_when: (promoted_images_loaded.stdout | from_json).changed
 
 - name: Initialize group application changes
   ansible.builtin.set_fact:
-    m14_apps_changed: false
-    m14_application_services: >-
+    promoted_apps_changed: false
+    promoted_application_services: >-
       {{ ['shared-proxy.service'] + (todo_replication_metadata | map(attribute='application_service') | list)
          + ['keycloak.service'] }}
 
@@ -60,25 +60,25 @@
   ansible.builtin.include_tasks: application.yml
   loop: "{{ todo_replication_metadata }}"
   loop_control:
-    loop_var: m14_app
-    label: "{{ m14_app.name }}"
-  when: m14_app.application_unit is defined
+    loop_var: promoted_app
+    label: "{{ promoted_app.name }}"
+  when: promoted_app.application_unit is defined
 
 - name: Install the shared Kube proxy on the promoted host
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
   vars:
     todo_installer_workload: shared-proxy
-    todo_rendered_manifest_directory: "{{ m14_bundle_directory }}/generated/kube-runtime"
-    todo_publish_address: "{{ m14_node_address }}"
-    todo_service_port: "{{ m14_service_port }}"
+    todo_rendered_manifest_directory: "{{ promoted_bundle_directory }}/generated/kube-runtime"
+    todo_publish_address: "{{ promoted_node_address }}"
+    todo_service_port: "{{ promoted_service_port }}"
 
 - name: Stop changed application workloads as a group
   ansible.builtin.command:
-    argv: "{{ ['systemctl', '--user', 'stop'] + m14_application_services }}"
+    argv: "{{ ['systemctl', '--user', 'stop'] + promoted_application_services }}"
   changed_when: false
-  register: m14_service_stopped
-  failed_when: m14_service_stopped.rc not in [0, 5]
-  when: m14_apps_changed or todo_proxy_kube_changed or m14_images_loaded.changed
+  register: promoted_service_stopped
+  failed_when: promoted_service_stopped.rc not in [0, 5]
+  when: promoted_apps_changed or todo_proxy_kube_changed or promoted_images_loaded.changed
 
 - name: Start each promoted grouped application
   ansible.builtin.systemd_service:
@@ -99,18 +99,18 @@
   ansible.builtin.include_tasks: readiness.yml
   loop: "{{ todo_replication_metadata }}"
   loop_control:
-    loop_var: m14_app
-    label: "{{ m14_app.name }}"
-  when: m14_app.hostname is defined
+    loop_var: promoted_app
+    label: "{{ promoted_app.name }}"
+  when: promoted_app.hostname is defined
 
 - name: Wait for the canonical shared Keycloak issuer
   ansible.builtin.uri:
     url: http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
     return_content: true
-  register: m14_discovery
+  register: promoted_discovery
   until:
-    - m14_discovery.status == 200
-    - m14_discovery.json.issuer == m14_service_origin ~ "/auth/realms/todo"
+    - promoted_discovery.status == 200
+    - promoted_discovery.json.issuer == promoted_service_origin ~ "/auth/realms/todo"
   retries: 90
   delay: 2
 
@@ -120,8 +120,8 @@
   environment:
     PYTHONPATH: "{{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0 else todo_installer_target ~ '/deploy/installer' }}"
     PYTHONDONTWRITEBYTECODE: "1"
-  register: m14_clients
-  changed_when: (m14_clients.stdout | from_json).changed
+  register: promoted_clients
+  changed_when: (promoted_clients.stdout | from_json).changed
 
 - name: Read the promoted nginx public root certificate
   ansible.builtin.command:
@@ -131,13 +131,13 @@
       - nginx
       - cat
       - /var/lib/todo-tls/ca.crt
-  register: m14_nginx_root_certificate
+  register: promoted_nginx_root_certificate
   changed_when: false
 
 - name: Export the promoted nginx public root certificate
   ansible.builtin.copy:
-    content: "{{ m14_nginx_root_certificate.stdout | trim }}\n"
-    dest: "{{ m14_config_directory }}/todo-nginx-root.crt"
+    content: "{{ promoted_nginx_root_certificate.stdout | trim }}\n"
+    dest: "{{ promoted_config_directory }}/todo-nginx-root.crt"
     mode: "0644"
 
 - name: Report successful promoted application deployment

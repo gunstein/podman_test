@@ -3,11 +3,11 @@
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
   vars:
     todo_installer_workload: application
-    todo_installer_app: "{{ m14_app.name }}"
-    todo_rendered_manifest_directory: "{{ m14_bundle_directory }}/generated/kube-runtime"
-    todo_publish_address: "{{ m14_node_address }}"
-    todo_service_port: "{{ m14_service_port }}"
+    todo_installer_app: "{{ promoted_app.name }}"
+    todo_rendered_manifest_directory: "{{ promoted_bundle_directory }}/generated/kube-runtime"
+    todo_publish_address: "{{ promoted_node_address }}"
+    todo_service_port: "{{ promoted_service_port }}"
 
 - name: Accumulate application definition changes
   ansible.builtin.set_fact:
-    m14_apps_changed: "{{ m14_apps_changed or todo_application_kube_changed }}"
+    promoted_apps_changed: "{{ promoted_apps_changed or todo_application_kube_changed }}"

@@ -72,10 +72,10 @@ class ProxyConfigurationTests(unittest.TestCase):
         config = (RUNTIME / "config.yaml").read_text(encoding="utf-8")
         proxy_config = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
 
-        self.assertIn('m14_service_hostname: todo.test', ansible)
-        self.assertIn('m14_service_port: 8443', ansible)
+        self.assertIn('promoted_service_hostname: todo.test', ansible)
+        self.assertIn('promoted_service_port: 8443', ansible)
         self.assertIn(
-            'todo_service_port: "{{ m14_service_port }}"',
+            'todo_service_port: "{{ promoted_service_port }}"',
             read("deploy/ansible/roles/promoted_application/tasks/main.yml"),
         )
         self.assertIn(

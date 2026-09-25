@@ -4,16 +4,16 @@
 
 - name: Select every infrastructure service for the destructive reseed quarantine
   ansible.builtin.set_fact:
-    m16_reseed_services: >-
+    reseed_services: >-
       {{ ['shared-proxy.service'] + (todo_replication_metadata | map(attribute='application_service') | list)
          + ['keycloak.service'] + (todo_replication_metadata | map(attribute='postgres_service') | list) }}
 
 - name: Stop all infrastructure services before reseed
   ansible.builtin.command:
-    argv: "{{ ['systemctl', '--user', 'stop'] + m16_reseed_services }}"
-  register: m16_reseed_stopped
+    argv: "{{ ['systemctl', '--user', 'stop'] + reseed_services }}"
+  register: reseed_stopped
   changed_when: false
-  failed_when: m16_reseed_stopped.rc not in [0, 5]
+  failed_when: reseed_stopped.rc not in [0, 5]
 
 - name: Require the complete infrastructure quarantine before any destructive reseed
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
@@ -23,7 +23,7 @@
 
 - name: Remove the shared Kube units from the rebuilt standby
   ansible.builtin.file:
-    path: "{{ m16_quadlet_directory }}/todo-kube-runtime/{{ item }}"
+    path: "{{ rebuild_quadlet_directory }}/todo-kube-runtime/{{ item }}"
     state: absent
   loop:
     - keycloak.kube
@@ -33,7 +33,7 @@
 
 - name: Remove each registered application's Kube unit from the rebuilt standby
   ansible.builtin.file:
-    path: "{{ m16_quadlet_directory }}/todo-kube-runtime/{{ item.application_unit }}"
+    path: "{{ rebuild_quadlet_directory }}/todo-kube-runtime/{{ item.application_unit }}"
     state: absent
   loop: "{{ todo_replication_metadata }}"
   loop_control:
@@ -42,7 +42,7 @@
 
 - name: Remove each registered application's rendered manifest from the rebuilt standby
   ansible.builtin.file:
-    path: "{{ m16_quadlet_directory }}/todo-kube-runtime/{{ item.manifests.application[0] }}"
+    path: "{{ rebuild_quadlet_directory }}/todo-kube-runtime/{{ item.manifests.application[0] }}"
     state: absent
   loop: "{{ todo_replication_metadata }}"
   loop_control:

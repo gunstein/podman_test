@@ -4,7 +4,7 @@
 
 - name: Require completed promotion for the entire writable group
   ansible.builtin.command:
-    argv: [python3, -m, todo_installer, require-promoted-group, --journal, "{{ m15_config_directory }}/promotion.json"]
+    argv: [python3, -m, todo_installer, require-promoted-group, --journal, "{{ backup_config_directory }}/promotion.json"]
   environment:
     PYTHONPATH: "{{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0 else todo_installer_target ~ '/deploy/installer' }}"
     PYTHONDONTWRITEBYTECODE: "1"
@@ -12,7 +12,7 @@
 
 - name: Select the shared application tier for database restarts
   ansible.builtin.set_fact:
-    m15_application_services: >-
+    backup_application_services: >-
       {{ ['shared-proxy.service'] + (todo_replication_metadata | map(attribute='application_service') | list)
          + ['keycloak.service'] }}
 
@@ -20,8 +20,8 @@
   ansible.builtin.include_tasks: database.yml
   loop: "{{ todo_replication_metadata }}"
   loop_control:
-    loop_var: m15_app
-    label: "{{ m15_app.name }}"
+    loop_var: backup_app
+    label: "{{ backup_app.name }}"
 
 - name: Install and trust the backup and PITR tool
   ansible.builtin.include_role:

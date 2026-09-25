@@ -117,8 +117,8 @@ class PVCStorageTests(unittest.TestCase):
         gate = next(t for t in steps if t["name"] == "Require the PVC backup volume at the archive path")
         existence = next(i for i, t in enumerate(steps) if
                          t.get("ansible.builtin.command", {}).get("argv") ==
-                         ["podman", "volume", "exists", "{{ m15_app.backup_volume }}"])
-        helper = next(i for i, t in enumerate(steps) if "{{ m15_app.backup_volume }}:/backup:U,z"
+                         ["podman", "volume", "exists", "{{ backup_app.backup_volume }}"])
+        helper = next(i for i, t in enumerate(steps) if "{{ backup_app.backup_volume }}:/backup:U,z"
                       in t.get("ansible.builtin.command", {}).get("argv", []))
         self.assertLess(existence, steps.index(gate))
         self.assertLess(steps.index(gate), helper)
@@ -132,8 +132,8 @@ class PVCStorageTests(unittest.TestCase):
                                      ([{**good, "RW": False}], False)]:
                 with self.subTest(app=app.name, mounts=mounts), tempfile.TemporaryDirectory() as directory:
                     result = ansible_probe(Path(directory), [gate], {
-                        "m15_app": apps.describe(app),
-                        "m15_postgres_mounts": {"stdout": json.dumps(mounts)}})
+                        "backup_app": apps.describe(app),
+                        "backup_postgres_mounts": {"stdout": json.dumps(mounts)}})
                     self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
     def test_uninstall_preserves_database_and_tls_data_by_default_and_never_removes_backup(self):

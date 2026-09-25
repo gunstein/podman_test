@@ -6,11 +6,11 @@
 
   vars:
     project_root: "{{ playbook_dir }}/../../.."
-    m15_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
-    m15_config_directory: "{{ m15_user_home }}/.config/todo"
-    m15_quadlet_directory: "{{ m15_user_home }}/.config/containers/systemd"
-    m15_archive_timeout: 1h
-    m15_archive_command: >-
+    backup_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
+    backup_config_directory: "{{ backup_user_home }}/.config/todo"
+    backup_quadlet_directory: "{{ backup_user_home }}/.config/containers/systemd"
+    backup_archive_timeout: 1h
+    backup_archive_command: >-
       test ! -f /var/lib/postgresql/backup/wal/%f &&
       cp %p /var/lib/postgresql/backup/wal/%f ||
       test "$(sha256sum < %p)" =

@@ -4,7 +4,7 @@
 
 - name: Create the Todo DR configuration directory
   ansible.builtin.file:
-    path: "{{ m13_config_directory }}"
+    path: "{{ todo_dr_config_directory }}"
     state: directory
     mode: "0700"
 
@@ -39,7 +39,7 @@
         trap - EXIT HUP INT TERM
         printf "%s\n" changed
       - todo-install
-      - "{{ m13_config_directory }}/todo-dr.json"
+      - "{{ todo_dr_config_directory }}/todo-dr.json"
     stdin: >-
       {{
         {

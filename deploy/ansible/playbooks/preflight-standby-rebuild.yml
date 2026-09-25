@@ -10,19 +10,19 @@
   tasks:
     - name: Read current primary hostname
       ansible.builtin.command: hostname
-      register: m16_current_hostname
+      register: rebuild_current_hostname
       changed_when: false
 
     - name: Read current primary IPv4 addresses
       ansible.builtin.command: {argv: [ip, -o, -4, address, show, scope, global]}
-      register: m16_current_addresses
+      register: rebuild_current_addresses
       changed_when: false
 
     - name: Validate current primary host identity
       ansible.builtin.assert:
         that:
-          - m16_current_hostname.stdout | trim == inventory_hostname
-          - todo_node_address in (m16_current_addresses.stdout | regex_findall('inet ([0-9.]+)/'))
+          - rebuild_current_hostname.stdout | trim == inventory_hostname
+          - todo_node_address in (rebuild_current_addresses.stdout | regex_findall('inet ([0-9.]+)/'))
         fail_msg: Current primary host identity or address does not match the inventory.
 
     - name: Resolve the complete registered replication group
@@ -49,19 +49,19 @@
   tasks:
     - name: Read rebuild host hostname
       ansible.builtin.command: hostname
-      register: m16_rebuild_hostname
+      register: rebuild_target_hostname
       changed_when: false
 
     - name: Read rebuild host IPv4 addresses
       ansible.builtin.command: {argv: [ip, -o, -4, address, show, scope, global]}
-      register: m16_rebuild_addresses
+      register: rebuild_target_addresses
       changed_when: false
 
     - name: Validate fenced rebuild host topology and confirmations
       ansible.builtin.assert:
         that:
-          - m16_rebuild_hostname.stdout | trim == inventory_hostname
-          - todo_node_address in (m16_rebuild_addresses.stdout | regex_findall('inet ([0-9.]+)/'))
+          - rebuild_target_hostname.stdout | trim == inventory_hostname
+          - todo_node_address in (rebuild_target_addresses.stdout | regex_findall('inet ([0-9.]+)/'))
           - groups['todo_current_primary'] | length == 1
           - groups['todo_rebuild_standby'] | length == 1
           - hostvars[groups['todo_current_primary'][0]].todo_node_address != todo_node_address

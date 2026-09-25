@@ -17,7 +17,7 @@
   vars:
     primary_host: "{{ groups['todo_primary'][0] }}"
     standby_host: "{{ groups['todo_standby'][0] }}"
-    m13_require_empty_standby: true
+    preflight_require_empty_standby: true
 
   tasks:
     - name: Require exactly one primary and one standby
@@ -33,24 +33,24 @@
           - primary_host != standby_host
           - hostvars[primary_host].todo_node_role == 'primary'
           - hostvars[standby_host].todo_node_role == 'standby'
-          - hostvars[primary_host].m13_machine_id.stdout != hostvars[standby_host].m13_machine_id.stdout
+          - hostvars[primary_host].preflight_machine_id.stdout != hostvars[standby_host].preflight_machine_id.stdout
           - hostvars[primary_host].todo_node_address != hostvars[standby_host].todo_node_address
         fail_msg: Primary and standby must have unique identities and addresses.
 
     - name: Require existing primary database data
       ansible.builtin.assert:
         that:
-          - hostvars[primary_host].m13_postgres_volume.results | map(attribute='rc') | reject('equalto', 0) | list | length == 0
+          - hostvars[primary_host].preflight_postgres_volume.results | map(attribute='rc') | reject('equalto', 0) | list | length == 0
         fail_msg: Every registered primary database must already have its data volume.
 
     - name: Require an empty standby before initial base backup
       ansible.builtin.assert:
         that:
-          - hostvars[standby_host].m13_postgres_volume.results | map(attribute='rc') | reject('equalto', 1) | list | length == 0
+          - hostvars[standby_host].preflight_postgres_volume.results | map(attribute='rc') | reject('equalto', 1) | list | length == 0
         fail_msg: >-
           Standby already has a registered database data volume. The preflight will
           not overwrite it. Inspect or remove it explicitly before bootstrap.
-      when: m13_require_empty_standby | bool
+      when: preflight_require_empty_standby | bool
 
     - name: Report successful standby preflight
       ansible.builtin.debug:

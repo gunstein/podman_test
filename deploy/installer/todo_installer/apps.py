@@ -49,17 +49,11 @@ class App:
     def volume(self, purpose: str) -> str:
         return self.database.volume(purpose)
 
-    def legacy_volume_service(self, purpose: str) -> str:
-        return self.database.legacy_volume_service(purpose)
-
     def image(self, component: str) -> str:
         return self.database.image(component)
 
     def image_archive(self, component: str) -> str:
         return self.database.image_archive(component)
-
-    def source_directory(self, component: str) -> str:
-        return self.resource(component)
 
 
 APPS = (
@@ -80,9 +74,6 @@ KEYCLOAK_ARCHIVE = f"keycloak-{settings.IMAGE_TAG}.tar"
 PROXY_IMAGE = IDENTITY_DATABASE_APP.image("proxy")
 PROXY_ARCHIVE = IDENTITY_DATABASE_APP.image_archive("proxy")
 
-# Todo-only bridge and guarded promotion passed live two-host checkpoints first.
-REPLICATED_APPS = APPS
-
 # Keycloak has its own dedicated database (no frontend/backend/OAuth client of
 # its own), replicated for DR parity alongside every registered Application.
 KEYCLOAK_DATABASE = stack.Database(name="keycloak", replication_port=5434)
@@ -91,7 +82,7 @@ KEYCLOAK_ADMIN_SECRET = "keycloak-admin-password"
 # Keep todo/notes as Apps here, not Databases: describe() dispatches on
 # isinstance(workload, stack.Database), and App already forwards every
 # Database-shaped method a database-only consumer needs.
-REPLICATED_DATABASES = REPLICATED_APPS + (KEYCLOAK_DATABASE,)
+REPLICATED_DATABASES = APPS + (KEYCLOAK_DATABASE,)
 
 
 def describe(workload):
@@ -167,7 +158,7 @@ def _describe_application(app):
 
 
 def services(applications=None, *, databases=True):
-    selected = REPLICATED_APPS if applications is None else applications
+    selected = APPS if applications is None else applications
     return ['shared-proxy.service', *[app.service('app') for app in selected], 'keycloak.service'] + (
         [app.service('postgres') for app in selected] + [KEYCLOAK_DATABASE.service('postgres')]
         if databases else [])

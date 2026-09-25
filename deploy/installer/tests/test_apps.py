@@ -40,10 +40,8 @@ class AppRegistryTests(unittest.TestCase):
             self.assertEqual(app.kube_secret("postgres"), name + "-kube-postgres-secret")
             self.assertEqual(app.database_role("app"), name + "_app")
             self.assertEqual(app.volume("data"), name + "-postgres-data")
-            self.assertEqual(app.legacy_volume_service("data"), name + "-postgres-data-volume")
             self.assertEqual(app.image("backend"), "localhost/" + name + "-backend:m12")
             self.assertEqual(app.image_archive("backend"), name + "-backend-m12.tar")
-            self.assertEqual(app.source_directory("backend"), name + "-backend")
 
     def test_replicated_databases_append_keycloak_last(self):
         self.assertEqual([d.name for d in REPLICATED_DATABASES], ["todo", "notes", "keycloak"])

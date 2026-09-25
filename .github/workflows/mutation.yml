@@ -1,0 +1,38 @@
+name: Mutation testing
+
+# Slow and report-only, so not on every push. See docs/MUTATION-TESTING.md.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  replication-checks:
+    name: Replication checks (report only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install mutation tooling
+        run: python -m pip install "mutmut==3.8.0" "pytest==9.1.1" "PyYAML==6.0.3" jinja2
+
+      - name: Mutate the checks that guard promotion and data deletion
+        shell: bash
+        run: |
+          deploy/scripts/run-mutation-tests.sh | tee mutation-report.txt
+          {
+            echo '## Surviving mutants'
+            echo
+            echo 'Compare with the accepted categories in docs/MUTATION-TESTING.md.'
+            echo
+            echo '```diff'
+            cat mutation-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

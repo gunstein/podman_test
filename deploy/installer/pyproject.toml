@@ -10,3 +10,10 @@ dependencies = ["jinja2", "PyYAML>=6"]
 
 [tool.setuptools.packages.find]
 include = ["app_installer*"]
+
+# Mutation testing (a CI-only tool; see docs/MUTATION-TESTING.md).
+[tool.mutmut]
+source_paths = ["app_installer"]
+only_mutate = ["app_installer/replication.py"]
+pytest_add_cli_args_test_selection = ["tests/test_replication.py", "tests/test_destructive_gates.py",
+                                      "tests/test_replication_checks.py"]

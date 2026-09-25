@@ -64,7 +64,7 @@ class ReseedHost:
         """Run the real reseed_standby: reseed_check, then authentication, then deletion."""
         with patch.object(replication, 'run', side_effect=self.run), \
                 patch.object(replication, 'exists', side_effect=self.exists), \
-                patch.object(replication, 'require_stopped_service'), \
+                patch.object(replication, 'require_stopped_service') as stopped, \
                 patch.object(replication, 'authenticate') as authenticate, \
                 patch.object(replication, 'bootstrap_standby') as bootstrap:
             try:
@@ -72,6 +72,14 @@ class ReseedHost:
             finally:
                 self.authenticated = authenticate.called
                 self.bootstrapped = bootstrap.called
+                self.stopped_checks = [call.args for call in stopped.call_args_list]
+
+    def check(self):
+        """Run the real reseed_check alone."""
+        with patch.object(replication, 'run', side_effect=self.run), \
+                patch.object(replication, 'exists', side_effect=self.exists), \
+                patch.object(replication, 'require_stopped_service'):
+            return replication.reseed_check(APP, '192.0.2.10', **CONFIRMED, **self.paths())
 
 
 class ReseedCheckTests(unittest.TestCase):
@@ -92,8 +100,17 @@ class ReseedCheckTests(unittest.TestCase):
     def test_the_healthy_host_reseeds_in_order(self):
         self.host.reseed()
         self.assertTrue(self.host.authenticated)
-        self.assertIn(('podman', 'volume', 'rm', APP.volume('data')), self.host.commands)
+        self.assertEqual(self.host.commands, [
+            ('podman', 'info', '--format', '{{.Host.Security.Rootless}}'),
+            ('podman', 'ps', '--filter', f"name=^{APP.resource('postgres')}$", '--format', '{{.Names}}'),
+            ('podman', 'kube', 'play', '--help'),
+            ('podman', 'ps', '-a', '--filter', f"volume={APP.volume('data')}", '--format', '{{.Names}}|{{.State}}'),
+            ('podman', 'volume', 'rm', APP.volume('data'))])
         self.assertTrue(self.host.bootstrapped)
+        self.assertEqual(self.host.stopped_checks, [(APP.service('postgres'),)])
+
+    def test_the_check_itself_changes_nothing(self):
+        self.assertIs(self.host.check(), False)
 
     def test_wrong_confirmations(self):
         for confirmations in (dict(confirm_fenced=HOST, confirm_reseed=HOST),

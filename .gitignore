@@ -19,3 +19,6 @@ lab-dr.*.local.toml
 # Keep pre-refactor local inventories private as well.
 ansible/inventory-initial.ini
 ansible/inventory-recovery.ini
+
+# Mutation testing working copy (deploy/scripts/run-mutation-tests.sh).
+mutants/

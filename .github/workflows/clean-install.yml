@@ -188,7 +188,8 @@ jobs:
             deploy/scripts/app-quarantine.sh \
             deploy/scripts/trust-files.sh \
             deploy/scripts/trust-serving-ca.sh \
-            deploy/scripts/bootstrap-ssh-key.sh
+            deploy/scripts/bootstrap-ssh-key.sh \
+            deploy/scripts/run-mutation-tests.sh
 
       - name: Prepare rootless Podman for smoke test
         shell: bash

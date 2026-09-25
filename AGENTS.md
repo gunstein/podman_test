@@ -18,16 +18,10 @@ Current architecture and workflow:
   DR/backup/rebuild act on one group of three databases (todo, notes,
   keycloak; apps.REPLICATED_DATABASES), never on a partial group.
   shared-proxy.service owns nginx and persistent TLS volume todo-nginx-data.
-- Four-pod shared-proxy architecture passed a two-agent acceptance pass on
-  9e54cfb; see docs/history/ACCEPTANCE-9e54cfb.md (process-level, not evidence-grade:
-  no phase-by-phase counts, markers or topology were captured). The prior
-  three-pod architecture's evidence-grade acceptance remains
-  docs/history/ACCEPTANCE-688a0f6.md and docs/history/ACCEPTANCE-12c3bef.md. Legacy
-  runtime/transition files are retired from the active tree; Git history and
-  quadlet-reference-v1 preserve them. The seven-pod, three-database group
-  reached a REPAIRED FUNCTIONAL PASS on 3fb897f (docs/ACCEPTANCE-3fb897f.md):
-  full two-VM run, but two standby-rebuild source defects were worked around
-  procedurally. A CLEAN PASS needs those fixes and a new run.
+- Legacy runtime/transition files are retired from the active tree; Git
+  history and quadlet-reference-v1 preserve them. See PROJECT.md#acceptance
+  for the current acceptance verdict, its scope and every historical run
+  record; do not restate it here, to avoid this file drifting from that one.
 
 Constraints:
 - Frontend: plain HTML, CSS and JavaScript. No Node.js framework.

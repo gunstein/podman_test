@@ -350,23 +350,17 @@ retention, off-host copying, encryption and alerts remain production work.
 
 ## 11. Verification status and production limits
 
-Complete unchanged-revision Oracle Linux acceptance passed for earlier
-Todo-only topologies: 688a0f6 and 12c3bef (evidence-grade) and 9e54cfb
-(process-level). See the run records for observations and exact scope. The
-seven-pod, three-database group has passed phased checkpoints on disposable
-Fedora VMs ([multi-app DR verification](MULTI-APP-DR-VERIFICATION.md)) and a
-full two-VM Oracle Linux run on 3fb897f with a REPAIRED FUNCTIONAL PASS
-([record](ACCEPTANCE-3fb897f.md)): two standby-rebuild defects were worked
-around, so an unchanged-revision clean pass is still pending.
-See [runtime results](history/RESULTS.md). Static tests or a green CI
-run do not replace the full two-VM test. The Python installer extraction has
-unit, real rendering, package and Ansible transport coverage; it still requires
-a new unchanged-revision Oracle Linux DR acceptance run. The multi-app
-single-host implementation was separately exercised in a disposable Fedora 44
-VM, Podman 5.8.1, rootless and SELinux enforcing: dev/server, actual offline OCI
-loading without Helm, persistence, unchanged repeats, exact systemd SourcePaths,
-trusted SAN TLS and real browser SSO/CRUD/audience isolation. This test did not
-access the existing acceptance VMs and is not a DR acceptance.
+See [Project status](../PROJECT.md#acceptance) for the current acceptance
+verdict, its scope and every run record. Static tests or a green CI run do not
+replace the full two-VM test. The Python installer extraction has unit, real
+rendering, package and Ansible transport coverage; it still requires a new
+unchanged-revision Oracle Linux DR acceptance run. The multi-app single-host
+implementation was separately exercised in a disposable Fedora 44 VM, Podman
+5.8.1, rootless and SELinux enforcing: dev/server, actual offline OCI loading
+without Helm, persistence, unchanged repeats, exact systemd SourcePaths,
+trusted SAN TLS and real browser SSO/CRUD/audience isolation
+([runtime results](history/RESULTS.md)). This test did not access the existing
+acceptance VMs and is not a DR acceptance.
 
 This is a production-shaped educational demo, not a complete production
 platform: one standby, shared Todos, manual client routing and CA trust,

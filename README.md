@@ -68,13 +68,8 @@ and is no longer part of the active tree.
 | Shared network | [`app-network.network`](deploy/quadlet/app-network.network) |
 
 Start with the [Kube runtime guide](deploy/runtime/README.md). DR tools support the Todo, Notes and Keycloak databases as one group; retired PoCs and migration tooling remain in pre-retirement Git history.
-Revision 688a0f6 passed full evidence-grade Oracle Linux acceptance of the
-prior three-pod runtime; see the [run record](docs/history/ACCEPTANCE-688a0f6.md). The
-historical four-pod shared-proxy runtime passed a lighter, process-level
-two-agent acceptance on 9e54cfb; see [that run record](docs/history/ACCEPTANCE-9e54cfb.md).
-The current seven-pod, three-database topology reached a REPAIRED FUNCTIONAL
-PASS on 3fb897f; two standby-rebuild defects were worked around during the
-run, so a clean pass is still pending. See [that run record](docs/ACCEPTANCE-3fb897f.md).
+See [Project status](PROJECT.md#acceptance) for the current acceptance verdict
+and links to every historical run record.
 
 ## Requirements
 

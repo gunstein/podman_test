@@ -8,9 +8,10 @@ These operations protect one group of three databases: Todo, Notes and the
 shared Keycloak database (`apps.REPLICATED_DATABASES`). Each has its own host
 replication port (5432, 5433, 5434), slot, credential, WAL archive and backup
 volume. Playbooks refuse a partial group. Promoted application recovery
-deploys both apps, Keycloak and the shared proxy. The group has passed phased
-disposable-VM checkpoints ([record](../../docs/MULTI-APP-DR-VERIFICATION.md)),
-not yet a full two-VM acceptance.
+deploys both apps, Keycloak and the shared proxy. See
+[Project status](../../PROJECT.md#acceptance) for the current acceptance
+verdict and its phased disposable-VM checkpoints
+([record](../../docs/MULTI-APP-DR-VERIFICATION.md)).
 
 Run playbooks from the repository or extracted operations-package root.
 `ansible.cfg` pins `/usr/bin/python3`, sets the role search path and enables

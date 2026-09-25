@@ -4,11 +4,8 @@ This guide teaches the current rootless Podman Kube implementation, not the
 historical per-container model. The implementation is preserved by
 `quadlet-reference-v1`; the former learning guide is available at
 `c377161:docs/legacy/LEARNING-GUIDE.md`, not in the active tree or bundles.
-The current seven-pod, three-database architecture reached a REPAIRED
-FUNCTIONAL PASS on 3fb897f; see the [run record](ACCEPTANCE-3fb897f.md) and
-[procedure](ACCEPTANCE.md). The three-pod predecessor this guide does not
-teach passed full unchanged-revision acceptance on 688a0f6; see
-[that record](history/ACCEPTANCE-688a0f6.md).
+See [Project status](../PROJECT.md#acceptance) for the current acceptance
+verdict, and [Acceptance](ACCEPTANCE.md) for the procedure itself.
 
 For the authoritative system overview and design boundaries, read
 [System architecture](ARCHITECTURE.md). This guide focuses on learning exercises.

@@ -14,6 +14,36 @@ in the kickoff message. Remove an item when its change is merged.
    itself instead of calling `replication.require_standby`. Make it call the
    shared check, so the rule that decides whether promotion is safe exists once.
 
+## fapolicyd
+
+First check `grep -E '^\s*integrity' /etc/fapolicyd/fapolicyd.conf` on both
+VMs (read-only). With the default `integrity = none`, fapolicyd trusts a path
+whatever its current contents, which makes F2 and F4 real weaknesses.
+
+- **F1. Correct the docs.** FAPOLICYD.md says trust is tied to path, size and
+  hash. That only holds when `integrity` is `size`, `sha256` or `ima`; waiting
+  for the exact `--dump-db` lines checks the database, not enforcement. Say
+  what holds with and without an integrity check.
+- **F2. Never trust user-writable files.** The controller runs app_ops and
+  app_installer from `~/todo-operations`, `install_trusted` trusts those
+  sources on the controller, and the offline install trusts the extracted
+  bundle's Python in `$HOME`. Run all trusted Python from root-owned copies
+  (install to `/opt/todo/lib` first, then run from there) on the controller
+  and in the offline install too, so no trust entry points into a home
+  directory.
+- **F3. A root-owned trust helper.** `trust-files.sh` runs as text passed to
+  `sh -c` from the user's operations package, so fapolicyd never checks it.
+  Install it once as a root-owned file with its own trust, and run that.
+- **F4. Remove stale trust.** Replacing, renaming or deleting a file leaves its
+  trust entry behind (for example the old `todo_*` tools and old bundle
+  extractions); cleanup is manual today. Remove entries when files are
+  replaced or retired.
+- **F5. One trust file.** The code and docs use `todo`, `app-installer` and
+  `todo-component`. Use one name, so it is clear what the project trusts.
+- **F6. State the lab limit.** With `NOPASSWD: ALL` the service user can do
+  anything as root, so acceptance does not test fapolicyd as a barrier against
+  that user. Say so in the acceptance docs.
+
 ## After a CLEAN PASS with app-ops: retire Ansible
 
 3. Delete `deploy/ansible` and `ansible.cfg`, and take them out of the

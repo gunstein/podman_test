@@ -42,6 +42,14 @@ SECRETS = tuple(dict.fromkeys([*MAPPINGS, *(source for fields in MAPPINGS.values
 def remove(kind, name):
     if exists(kind, name):
         run('podman', kind, 'rm', name)
+        return True
+    return False
+
+
+def unlink(path):
+    existed = path.exists() or path.is_symlink()
+    path.unlink(missing_ok=True)
+    return existed
 
 
 def uninstall(remove_data=False, quadlet_dir=None):
@@ -54,33 +62,41 @@ def uninstall(remove_data=False, quadlet_dir=None):
             'uninstall.yml only supports a single-host deployment. This host contains '
             'clustered replication, promotion or backup state. Preserve it and '
             'review the recovery inventory and operational runbooks separately.')
-    run('systemctl', '--user', 'stop', *(name + '.service' for name in SERVICES), allowed=(0, 5))
-    for name in QUADLET_FILES:
-        (directory / name).unlink(missing_ok=True)
+    stopped = run('systemctl', '--user', 'stop', *(name + '.service' for name in SERVICES),
+                  allowed=(0, 5)).returncode == 0
+    changed = any([unlink(directory / name) for name in QUADLET_FILES]) or stopped
     runtime = directory / 'todo-kube-runtime'
     if runtime.is_symlink():
         runtime.unlink()
+        changed = True
     elif runtime.exists():
         shutil.rmtree(runtime)
+        changed = True
     systemctl('daemon-reload')
     # Direct kube play has no systemd owner to remove its pods/infra containers.
     # Pod removal does not request volume deletion; PVCs follow remove_data below.
     for name in PODS:
+        changed = exists('pod', name) or changed
         run('podman', 'pod', 'rm', '--force', '--ignore', name)
     for name in CONTAINERS:
+        changed = exists('container', name) or changed
         run('podman', 'rm', '--force', '--ignore', name)
-    remove('network', apps.NETWORK)
-    (directory.parent / 'todo-installer-dev.json').unlink(missing_ok=True)
+    changed = remove('network', apps.NETWORK) or changed
+    changed = unlink(settings.DEV_STATE_FILE) or changed
     if remove_data:
         for app in apps.APPS:
-            remove('volume', app.volume('data'))
-        remove('volume', apps.KEYCLOAK_DATABASE.volume('data'))
+            changed = remove('volume', app.volume('data')) or changed
+        changed = remove('volume', apps.KEYCLOAK_DATABASE.volume('data')) or changed
         for name in SECRETS:
-            remove('secret', name)
+            changed = remove('secret', name) or changed
+        # todo-nginx-data holds the demo CA and leaf-key state; docs/ARCHITECTURE.md
+        # lists it with the database volumes as surviving local app recreation, so
+        # it is only removed alongside them, not on a plain uninstall.
+        for name in TLS_VOLUMES:
+            changed = remove('volume', name) or changed
     for app in apps.APPS:
         for component in ('backend', 'frontend'):
-            remove('image', app.image(component))
+            changed = remove('image', app.image(component)) or changed
     for reference in (apps.PROXY_IMAGE, apps.KEYCLOAK_IMAGE):
-        remove('image', reference)
-    for name in TLS_VOLUMES:
-        remove('volume', name)
+        changed = remove('image', reference) or changed
+    return changed

@@ -22,3 +22,8 @@ HTTPS_PORT = 8443
 
 # Default Quadlet directory for a single-host install; DR passes its own.
 QUADLET_DIR = Path.home() / ".config/containers/systemd"
+
+# Dev mode (direct `podman kube play`/`down`, no Quadlet units) records what it
+# played here so `down` can find and remove it, independent of whatever
+# --rendered-manifest-dir or --quadlet-dir a later `down` call happens to pass.
+DEV_STATE_FILE = Path.home() / ".config/containers/todo-installer-dev.json"

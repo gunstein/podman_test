@@ -11,7 +11,7 @@ from .install import setup_roles
 def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False):
     applications = apps.APPS if applications is None else tuple(applications)
     directory = Path(rendered_manifest_dir)
-    state_file = Path(state_file or directory.parent / '.todo-installer-dev.json')
+    state_file = Path(state_file or settings.DEV_STATE_FILE)
     manifests = [app.manifest(component) for app in applications
                  for component in ('postgres', 'config', 'app')] + [
         apps.KEYCLOAK_DATABASE.manifest('postgres'), apps.KEYCLOAK_DATABASE.manifest('config'),
@@ -77,7 +77,7 @@ def down(rendered_manifest_dir, applications=None, state_file=None):
     instead of silently matching nothing.
     """
     directory = Path(rendered_manifest_dir)
-    state_file = Path(state_file or directory.parent / '.todo-installer-dev.json')
+    state_file = Path(state_file or settings.DEV_STATE_FILE)
     if state_file.is_file():
         manifests = [Path(name) for name in json.loads(state_file.read_text())['manifests']]
     else:

@@ -9,7 +9,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from todo_installer import apps, install, keycloak, kube_play, secrets, uninstall  # noqa: E402
+from todo_installer import (  # noqa: E402
+    apps,
+    install,
+    keycloak,
+    kube_play,
+    secrets,
+    settings,
+    uninstall,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -46,7 +54,8 @@ class InstallTests(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, rc, stdout, '')
 
             with patch('subprocess.run', side_effect=command), \
-                    patch.object(keycloak, 'configure') as configure:
+                    patch.object(keycloak, 'configure') as configure, \
+                    patch.object(settings, 'DEV_STATE_FILE', root / 'todo-installer-dev.json'):
                 install.install(ROOT, mode=mode, deployment_mode='offline',
                                 bundle_directory=root, quadlet_dir=directory,
                                 applications=applications)
@@ -198,6 +207,31 @@ class InstallTests(unittest.TestCase):
             self.assertFalse(kube_play.down(root, state_file=root / '.state.json'))
             run.assert_not_called()
 
+    def test_down_finds_the_default_state_file_up_actually_wrote(self):
+        # up() and down() must agree on the state file's location without a
+        # caller passing state_file explicitly, the way the CLI's plain
+        # `install --mode dev` and `down` commands actually call them.
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(settings, 'DEV_STATE_FILE', Path(temp) / 'todo-installer-dev.json'), \
+                patch('todo_installer.kube_play.exists', return_value=False), \
+                patch('todo_installer.kube_play.setup_roles'), \
+                patch('todo_installer.kube_play.run',
+                      return_value=subprocess.CompletedProcess([], 0, 'Running', '')):
+            directory = Path(temp) / 'rendered'
+            directory.mkdir()
+            for name in ('postgres', 'config', 'app', 'keycloak-postgres', 'keycloak-config',
+                        'keycloak', 'shared-proxy'):
+                (directory / (name + '.yaml')).write_text('fixture: ' + name)
+            self.assertTrue(kube_play.up(directory, (apps.APPS[0],)))
+            self.assertTrue(settings.DEV_STATE_FILE.is_file())
+
+            with patch('todo_installer.kube_play.run') as run:
+                # A different directory argument: down must still find the
+                # pods through the recorded state file, not through this one.
+                self.assertTrue(kube_play.down(Path(temp) / 'unrelated'))
+                run.assert_called()
+            self.assertFalse(settings.DEV_STATE_FILE.is_file())
+
     def test_every_secret_is_generated_without_a_terminal(self):
         # No secret should ever require an interactive prompt: provision() must
         # work unattended (CI, scripted installs) for every one of them, not
@@ -296,26 +330,42 @@ class UninstallTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp, \
                     patch('todo_installer.uninstall.exists',
                           side_effect=lambda kind, name: not name.endswith('-replicator-password')), \
-                    patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
+                    patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run, \
+                    patch.object(settings, 'DEV_STATE_FILE', Path(temp) / '_unused' / 'dev.json'):
                 directory = Path(temp)
                 (directory / 'todo-kube-runtime').mkdir()
                 for name in uninstall.QUADLET_FILES:
                     (directory / name).touch()
-                uninstall.uninstall(remove_data, directory)
+                self.assertTrue(uninstall.uninstall(remove_data, directory))
                 self.assertFalse(list(directory.iterdir()))
                 calls = [c.args[0] for c in run.call_args_list]
                 self.assertEqual(['podman', 'volume', 'rm', 'todo-postgres-data'] in calls, remove_data)
                 self.assertEqual(['podman', 'secret', 'rm', 'todo-db-password'] in calls, remove_data)
                 self.assertNotIn(['podman', 'volume', 'rm', 'todo-postgres-backup'], calls)
                 self.assertIn('app-network-network.service', calls[0])
-                self.assertIn(['podman', 'volume', 'rm', 'todo-nginx-data'], calls)
-                self.assertIn(['podman', 'volume', 'rm', 'todo-caddy-data'], calls)
+                # todo-nginx-data holds the demo CA; it is persistent like the
+                # database volumes and only goes away with --remove-data.
+                self.assertEqual(['podman', 'volume', 'rm', 'todo-nginx-data'] in calls, remove_data)
+                self.assertEqual(['podman', 'volume', 'rm', 'todo-caddy-data'] in calls, remove_data)
+
+    def test_noop_uninstall_on_an_untouched_host_reports_no_change(self):
+        def command(argv, **kwargs):
+            rc = 5 if argv[:3] == ['systemctl', '--user', 'stop'] else 0
+            return subprocess.CompletedProcess(argv, rc, '', '')
+
+        with tempfile.TemporaryDirectory() as temp, \
+                patch('todo_installer.uninstall.exists', return_value=False), \
+                patch('subprocess.run', side_effect=command), \
+                patch.object(settings, 'DEV_STATE_FILE', Path(temp) / '_unused' / 'dev.json'):
+            directory = Path(temp)
+            self.assertFalse(uninstall.uninstall(quadlet_dir=directory))
 
     def test_uninstall_removes_only_registered_pods_before_the_shared_network(self):
         with tempfile.TemporaryDirectory() as temp, \
                 patch('todo_installer.uninstall.exists',
                       side_effect=lambda kind, name: kind == 'network'), \
-                patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
+                patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run, \
+                patch.object(settings, 'DEV_STATE_FILE', Path(temp) / 'todo-installer-dev.json'):
             directory = Path(temp) / 'systemd'
             directory.mkdir()
             state = Path(temp) / 'todo-installer-dev.json'

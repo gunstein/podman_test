@@ -129,15 +129,19 @@ def main(argv=None):
         elif args.command == 'services':
             print(json.dumps(apps.services(databases=not args.application_tier)))
         elif args.command == 'install':
-            install.install(args.project_root, args.mode, args.deployment_mode, args.bundle_dir,
-                            args.refresh_images, args.publish_address, args.service_port,
-                            args.quadlet_dir, args.kube_runtime_dir)
+            changed = install.install(args.project_root, args.mode, args.deployment_mode, args.bundle_dir,
+                                      args.refresh_images, args.publish_address, args.service_port,
+                                      args.quadlet_dir, args.kube_runtime_dir)
+            print(json.dumps({'changed': changed}))
         elif args.command == 'uninstall':
-            uninstall.uninstall(args.remove_data, args.quadlet_dir)
+            changed = uninstall.uninstall(args.remove_data, args.quadlet_dir)
             if not args.remove_data:
                 volumes = ', '.join(d.volume('data') for d in apps.REPLICATED_DATABASES)
-                print(f'Database volumes {volumes} and database and Keycloak secrets were '
-                      'preserved. Use --remove-data to delete them permanently.')
+                tls_volumes = ', '.join(uninstall.TLS_VOLUMES)
+                print(f'Database volumes {volumes}, TLS volumes {tls_volumes} and database and '
+                      'Keycloak secrets were preserved. Use --remove-data to delete them permanently.',
+                      file=sys.stderr)
+            print(json.dumps({'changed': changed}))
         elif args.command == 'down':
             if not kube_play.down(args.rendered_manifest_dir):
                 print('No installed development manifests were found under '

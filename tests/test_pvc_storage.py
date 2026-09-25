@@ -136,7 +136,7 @@ class PVCStorageTests(unittest.TestCase):
                         "m15_postgres_mounts": {"stdout": json.dumps(mounts)}})
                     self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
-    def test_uninstall_preserves_database_by_default_and_never_removes_backup(self):
+    def test_uninstall_preserves_database_and_tls_data_by_default_and_never_removes_backup(self):
         from todo_installer import uninstall
         for remove_data in (False, True):
             with tempfile.TemporaryDirectory() as directory, \
@@ -146,9 +146,11 @@ class PVCStorageTests(unittest.TestCase):
                 uninstall.uninstall(remove_data=remove_data, quadlet_dir=directory)
                 commands = [call.args[0] for call in run.call_args_list]
                 volumes = [argv[-1] for argv in commands if argv[:3] == ["podman", "volume", "rm"]]
-                self.assertEqual(set(volumes), {"todo-nginx-data", "todo-caddy-data"} |
-                                 ({"todo-postgres-data", "notes-postgres-data", "keycloak-postgres-data"}
-                                  if remove_data else set()))
+                # todo-nginx-data holds the demo CA and is documented as persistent
+                # like the database volumes, so it only goes with --remove-data too.
+                self.assertEqual(set(volumes),
+                                 ({"todo-postgres-data", "notes-postgres-data", "keycloak-postgres-data",
+                                   "todo-nginx-data", "todo-caddy-data"} if remove_data else set()))
                 for backup in ("todo-postgres-backup", "notes-postgres-backup", "keycloak-postgres-backup"):
                     self.assertNotIn(backup, volumes)
                 secrets = [argv[-1] for argv in commands if argv[:3] == ["podman", "secret", "rm"]]

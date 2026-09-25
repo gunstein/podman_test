@@ -16,4 +16,5 @@
       environment:
         PYTHONPATH: "{{ project_root }}/deploy/installer"
         PYTHONDONTWRITEBYTECODE: "1"
-      changed_when: true
+      register: todo_uninstall_result
+      changed_when: (todo_uninstall_result.stdout | from_json).changed

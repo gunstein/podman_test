@@ -80,7 +80,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
             secrets.create_kube(secrets.application_secret_mapping(app))
         secrets.create_kube(secrets.postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
         secrets.create_kube(secrets.keycloak_secret_mapping())
-        changed = up(rendered, applications, directory.parent / 'todo-installer-dev.json', images_changed)
+        changed = up(rendered, applications, settings.DEV_STATE_FILE, images_changed)
         configured = keycloak.configure(
             secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
             [(app.keycloak_client, app.hostname) for app in applications])

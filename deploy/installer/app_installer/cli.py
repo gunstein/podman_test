@@ -61,6 +61,13 @@ def main(argv=None):
     recovered_images = subcommands.add_parser('prepare-promoted-images')
     recovered_images.add_argument('--bundle-dir', type=Path, required=True)
     subcommands.add_parser('configure-clients')
+    node = subcommands.add_parser('node-facts')
+    node.add_argument('--inventory-hostname', required=True)
+    node.add_argument('--role', required=True)
+    node.add_argument('--address', required=True)
+    pair = subcommands.add_parser('check-standby-pair')
+    pair.add_argument('primary', type=json.loads, help='node-facts output from primary')
+    pair.add_argument('standby', type=json.loads, help='node-facts output from standby')
     subcommands.add_parser('export-replication-secrets')
     subcommands.add_parser('import-replication-secrets')
     service_list = subcommands.add_parser('services')
@@ -129,6 +136,13 @@ def main(argv=None):
             changed = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
                                          [(app.keycloak_client, app.hostname) for app in apps.APPS])
             print(json.dumps({'changed': changed}))
+        elif args.command == 'node-facts':
+            from . import preflight
+            print(json.dumps(preflight.node_facts(args.inventory_hostname, args.role, args.address)))
+        elif args.command == 'check-standby-pair':
+            from . import preflight
+            preflight.check_pair(args.primary, args.standby)
+            print(json.dumps({'changed': False}))
         elif args.command == 'export-replication-secrets':
             from . import secrets
             # Value-bearing stdout: callers must pipe it, never log or store it. Base64

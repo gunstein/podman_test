@@ -23,6 +23,8 @@ if Path(sys.argv[0]).name == 'systemctl':
         finish(code=3)
     if args[:2] in (['--user', 'daemon-reload'], ['--user', 'start']):
         finish()
+    if args == ['--user', 'is-system-running']:
+        finish('running')
     finish(code=99)
 if args == ['kube', 'play', '--help']:
     finish('--no-pod-prefix')

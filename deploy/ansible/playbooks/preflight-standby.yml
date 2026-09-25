@@ -17,7 +17,6 @@
   vars:
     primary_host: "{{ groups['todo_primary'][0] }}"
     standby_host: "{{ groups['todo_standby'][0] }}"
-    preflight_require_empty_standby: true
 
   tasks:
     - name: Require exactly one primary and one standby
@@ -27,30 +26,21 @@
           - groups['todo_standby'] | length == 1
         fail_msg: This standby demo requires exactly one primary and one standby.
 
-    - name: Require unique hostnames, machine IDs and addresses
-      ansible.builtin.assert:
-        that:
-          - primary_host != standby_host
-          - hostvars[primary_host].todo_node_role == 'primary'
-          - hostvars[standby_host].todo_node_role == 'standby'
-          - hostvars[primary_host].preflight_machine_id.stdout != hostvars[standby_host].preflight_machine_id.stdout
-          - hostvars[primary_host].todo_node_address != hostvars[standby_host].todo_node_address
-        fail_msg: Primary and standby must have unique identities and addresses.
-
-    - name: Require existing primary database data
-      ansible.builtin.assert:
-        that:
-          - hostvars[primary_host].preflight_postgres_volume.results | map(attribute='rc') | reject('equalto', 0) | list | length == 0
-        fail_msg: Every registered primary database must already have its data volume.
-
-    - name: Require an empty standby before initial base backup
-      ansible.builtin.assert:
-        that:
-          - hostvars[standby_host].preflight_postgres_volume.results | map(attribute='rc') | reject('equalto', 1) | list | length == 0
-        fail_msg: >-
-          Standby already has a registered database data volume. The preflight will
-          not overwrite it. Inspect or remove it explicitly before bootstrap.
-      when: preflight_require_empty_standby | bool
+    # app_installer.preflight owns every cross-host rule: roles, unique names,
+    # machine IDs and addresses, existing primary data and an empty standby.
+    # One list expression keeps each JSON document a string argument.
+    - name: Validate the primary and standby relationship
+      ansible.builtin.command:
+        argv: >-
+          {{ ['python3', '-m', 'app_installer', 'check-standby-pair',
+              hostvars[primary_host].preflight_node_facts.stdout,
+              hostvars[standby_host].preflight_node_facts.stdout] }}
+      environment:
+        PYTHONPATH: >-
+          {{ '/opt/todo/lib' if app_installer_fapolicyd.rc == 0
+             else app_installer_target ~ '/deploy/installer' }}
+        PYTHONDONTWRITEBYTECODE: "1"
+      changed_when: false
 
     - name: Report successful standby preflight
       ansible.builtin.debug:

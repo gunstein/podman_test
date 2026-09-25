@@ -23,6 +23,13 @@ the offline bundle already staged on standby, by default under
 `/home/<ansible_user>/todo-offline-m12` (set `todo_user_home` in the inventory
 for another remote home directory).
 
+Before that, each host reports itself with `app_installer node-facts` and
+stops if its hostname, address or machine ID does not match the inventory.
+`app_installer check-standby-pair` then compares both reports before anything
+changes: roles, distinct names, machine IDs and addresses, every primary data
+volume present and no standby data volume present. It reports every problem
+at once.
+
 The demo authenticates replication with SCRAM-SHA-256 but does not configure or
 require encrypted PostgreSQL transport. It is intended for this isolated,
 trusted demo LAN. A networked deployment should add PostgreSQL TLS with

@@ -1,58 +1,29 @@
 ---
-- name: Read the static hostname
-  ansible.builtin.command:
-    argv: [hostname]
-  register: preflight_hostname
-  changed_when: false
-
-- name: Read the systemd machine ID
-  ansible.builtin.command:
-    argv: [cat, /etc/machine-id]
-  register: preflight_machine_id
-  changed_when: false
-
-- name: Read global IPv4 addresses
-  ansible.builtin.command:
-    argv: [ip, -4, -o, address, show, scope, global]
-  register: preflight_ipv4_addresses
-  changed_when: false
-
-- name: Check Podman
-  ansible.builtin.command:
-    argv: [podman, --version]
-  register: preflight_podman_version
-  changed_when: false
-
-- name: Check the user systemd manager
-  ansible.builtin.command:
-    argv: [systemctl, --user, is-system-running]
-  register: preflight_user_systemd
-  changed_when: false
-  failed_when: preflight_user_systemd.rc not in [0, 1]
-
+# Transport only: app_installer.preflight gathers this host's identity and
+# database volumes and refuses an inventory the host does not match.
 - name: Read the complete database group
   ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/read-replication-registry.yml"
 
-- name: Check every PostgreSQL data volume
+- name: Read and validate this host's identity and database volumes
   ansible.builtin.command:
-    argv: [podman, volume, exists, "{{ item.data_volume }}"]
-  loop: "{{ todo_replication_metadata }}"
-  loop_control:
-    label: "{{ item.name }}"
-  register: preflight_postgres_volume
+    argv:
+      - python3
+      - -m
+      - app_installer
+      - node-facts
+      - --inventory-hostname
+      - "{{ inventory_hostname }}"
+      - --role
+      - "{{ todo_node_role }}"
+      - --address
+      - "{{ todo_node_address }}"
+  environment:
+    PYTHONPATH: >-
+      {{ '/opt/todo/lib' if app_installer_fapolicyd.rc == 0
+         else app_installer_target ~ '/deploy/installer' }}
+    PYTHONDONTWRITEBYTECODE: "1"
+  register: preflight_node_facts
   changed_when: false
-  failed_when: preflight_postgres_volume.rc not in [0, 1]
-
-- name: Validate this host's declared identity
-  ansible.builtin.assert:
-    that:
-      - todo_node_role in ['primary', 'standby']
-      - preflight_hostname.stdout == inventory_hostname
-      - (" " ~ todo_node_address ~ "/") in preflight_ipv4_addresses.stdout
-      - preflight_machine_id.stdout | length == 32
-    fail_msg: >-
-      Host identity does not match the initial-topology inventory. Check hostname,
-      todo_node_address and /etc/machine-id before continuing.
 
 # Only the primary publishes PostgreSQL on the LAN interface during bootstrap
 # (postgres_primary/tasks/primary.yml); the standby installs loopback-only.

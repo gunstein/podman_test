@@ -67,7 +67,10 @@ APPS = (
     App(name="notes", hostname="notes.test", keycloak_client="notes-frontend", replication_port=5433),
 )
 
-# The existing Todo database hosts the shared realm; preserve its stored credentials.
+# Keycloak now has its own dedicated database (KEYCLOAK_DATABASE below), not
+# this app's. The name still backs every resource shared across the whole
+# stack instead of being owned by any one app: the proxy image, the shared
+# config.yaml, the nginx-data TLS volume and the default Keycloak client trust.
 IDENTITY_DATABASE_APP = APPS[0]
 NETWORK = "app-network"
 # Keycloak itself is the identity server, not a per-app/per-database resource,

@@ -4,8 +4,11 @@ This guide teaches the current rootless Podman Kube implementation, not the
 historical per-container model. The implementation is preserved by
 `quadlet-reference-v1`; the former learning guide is available at
 `c377161:docs/legacy/LEARNING-GUIDE.md`, not in the active tree or bundles.
-Unchanged-revision Oracle Linux acceptance passed on 688a0f6.
-See the [run record](history/ACCEPTANCE-688a0f6.md) and [procedure](ACCEPTANCE.md).
+The current seven-pod, three-database architecture reached a REPAIRED
+FUNCTIONAL PASS on 3fb897f; see the [run record](ACCEPTANCE-3fb897f.md) and
+[procedure](ACCEPTANCE.md). The three-pod predecessor this guide does not
+teach passed full unchanged-revision acceptance on 688a0f6; see
+[that record](history/ACCEPTANCE-688a0f6.md).
 
 For the authoritative system overview and design boundaries, read
 [System architecture](ARCHITECTURE.md). This guide focuses on learning exercises.
@@ -17,7 +20,7 @@ deploy/manifests/*.yaml.j2 + apps.py/stack.py + values                build host
         ↓ render
 generated/kube-runtime/*.yaml            reviewed, packaged workload definitions
         ↓ referenced by
-Ansible templates → *.kube     target Quadlet lifecycle and host integration
+Python installer renders deploy/quadlet/*.kube.j2 → *.kube     target-only, needs no Ansible
         ↓ generator
 systemd user services         ordering, restart, boot and stop
         ↓

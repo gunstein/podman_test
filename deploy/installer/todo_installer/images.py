@@ -19,7 +19,7 @@ class Image:
 
 def image_list(app: apps.App) -> tuple[Image, ...]:
     return tuple(Image(component, app.image(component), app.image_archive(component),
-                       None if component == "postgres" else app.source_directory(component))
+                       None if component == "postgres" else app.resource(component))
                  for component in ("backend", "frontend", "postgres"))
 
 

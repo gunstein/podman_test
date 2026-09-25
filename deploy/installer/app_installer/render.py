@@ -10,6 +10,7 @@ from . import apps, manifests
 
 
 def _validate(name, content):
+    """Raise if the rendered file is not valid YAML."""
     try:
         list(yaml.safe_load_all(content))
     except yaml.YAMLError as error:
@@ -17,6 +18,13 @@ def _validate(name, content):
 
 
 def render(project_root, values_file, output_directory, application_names=()):
+    """Render every Kube YAML file for the selected apps into output_directory.
+
+    Runs at build time. Values come from the environment's values.yaml
+    (public hostname, port and log level); names come from the app
+    registry. Every file is rendered and checked before any old output is
+    replaced, so a failed render never leaves a half-updated directory.
+    """
     root, output = Path(project_root), Path(output_directory)
     selected = [app for app in apps.APPS if not application_names or app.name in application_names]
     if not selected or set(application_names) - {app.name for app in apps.APPS}:

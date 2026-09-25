@@ -11,12 +11,22 @@ from . import apps, install, kube_play, settings, uninstall, workloads
 
 
 def paths(parser):
+    """Add the options every installing command shares: project root, Quadlet and Kube runtime directories."""
     parser.add_argument('--project-root', type=Path, default=Path(__file__).resolve().parents[3])
     parser.add_argument('--quadlet-dir', type=Path, default=settings.QUADLET_DIR)
     parser.add_argument('--kube-runtime-dir', type=Path)
 
 
 def main(argv=None):
+    """Parse one subcommand, run it, and return the exit code.
+
+    install, uninstall and down serve a single host. The other commands are
+    the building blocks the DR tools (app_ops and the Ansible roles) run on
+    each host: install-workload, replicate-workload, publish-primaries,
+    reseed-group, deploy-promoted and the status commands. Each prints one
+    JSON result on stdout. Errors print one "app-installer: ..." line on
+    stderr and return 1.
+    """
     parser = argparse.ArgumentParser(description='Rootless Podman Todo installer')
     subcommands = parser.add_subparsers(dest='command', required=True)
     deploy = subcommands.add_parser('install')

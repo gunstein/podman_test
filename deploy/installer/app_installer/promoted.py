@@ -10,6 +10,7 @@ DISCOVERY = '/auth/realms/todo/.well-known/openid-configuration'
 
 
 def require_identity(inventory_hostname, node_address, service_port):
+    """Raise unless this host has the inventory hostname and address, and the port is usable."""
     hostname = run('hostname').stdout.strip()
     addresses = preflight.ipv4_addresses(run('ip', '-4', '-o', 'address', 'show', 'scope', 'global').stdout)
     problems = []
@@ -24,6 +25,7 @@ def require_identity(inventory_hostname, node_address, service_port):
 
 
 def install_workloads(project_root, quadlet_dir, rendered, node_address, service_port):
+    """Install every app, Keycloak and the proxy, published on this host's own address."""
     install.preflight(quadlet_dir)
     runtime = quadlet_dir / 'todo-kube-runtime'
     arguments = (project_root, quadlet_dir, runtime, rendered)
@@ -43,6 +45,7 @@ def require_application(app):
 
 
 def require_issuer(issuer, attempts=90, delay=2):
+    """Wait until Keycloak reports exactly the expected issuer URL, or raise."""
     seen = None
     for attempt in range(attempts):
         try:

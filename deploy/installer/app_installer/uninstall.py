@@ -35,6 +35,7 @@ SECRETS = tuple(dict.fromkeys([*MAPPINGS, *(source for fields in MAPPINGS.values
 
 
 def remove(kind, name):
+    """Remove the Podman object if it exists; True if it did."""
     if exists(kind, name):
         run('podman', kind, 'rm', name)
         return True
@@ -42,12 +43,20 @@ def remove(kind, name):
 
 
 def unlink(path):
+    """Remove the file or symlink if it exists; True if it did."""
     existed = path.exists() or path.is_symlink()
     path.unlink(missing_ok=True)
     return existed
 
 
 def uninstall(remove_data=False, quadlet_dir=None):
+    """Remove a single-host install: units, pods, containers, network and app images.
+
+    Refuses on a host with replication, promotion or backup state: that is
+    a DR node and needs a person to decide. Database volumes, TLS volumes and
+    secrets are kept unless remove_data is True, so reinstalling keeps the
+    data and passwords. Returns True if anything was removed.
+    """
     directory = Path(quadlet_dir or settings.QUADLET_DIR)
     markers = (Path.home() / '.config/todo/todo-standby-entrypoint.sh',
                Path('/opt/todo/bin/app_dr.py'), Path('/opt/todo/bin/app_backup.py'),

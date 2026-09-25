@@ -28,20 +28,24 @@ GUEST_EXEC_PRIVILEGES = ('VM.Monitor', 'VM.GuestAgent.Unrestricted')
 
 
 class Report:
+    """Prints one PASS/WARN/FAIL/INFO line per check and counts the FAILs."""
     def __init__(self):
         self.failed = 0
 
     def line(self, level, name, detail=''):
+        """Print one result line; a FAIL is counted."""
         if level == 'FAIL':
             self.failed += 1
         print(f'{level:4}  {name}' + (f': {detail}' if detail else ''))
 
     def check(self, condition, name, detail='', level='FAIL'):
+        """PASS if condition holds, otherwise level (FAIL or WARN); returns condition."""
         self.line('PASS' if condition else level, name, detail)
         return condition
 
 
 def run(argv, timeout=20):
+    """Run a local command; return (exit code, stdout, stderr), with exit 1 if it could not run."""
     try:
         result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired) as error:
@@ -50,6 +54,7 @@ def run(argv, timeout=20):
 
 
 def check_local(report, args):
+    """The client/build host: clean checkout at the kickoff revision, and the tools the run needs."""
     print('== Client/build host')
     code, head, _ = run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'])
     report.check(code == 0, 'Git checkout', head)
@@ -91,6 +96,10 @@ def check_local(report, args):
 
 
 def check_proxmox(report, args):
+    """The token, its privileges, both VMs and their snapshots, and the Proxmox firewalls.
+
+    Only GET requests: nothing in Proxmox changes.
+    """
     print('== Proxmox API (GET only)')
     env = Path(os.environ.get('PVE_ENV', Path.home() / '.config/todo-acceptance/pve.env'))
     if not report.check(env.is_file(), 'Token file', str(env)):
@@ -180,6 +189,7 @@ echo "todo_state=$(podman ps -a --format '{{.Names}}' 2>/dev/null | grep -cE '^(
 
 
 def check_guest(report, args, address, hostname):
+    """One VM over SSH: identity, security services, rootless Podman, sudo and leftover state."""
     print(f'== {hostname} ({address}) over SSH, read-only')
     code, out, error = _ssh(args, address)
     if not report.check(code == 0, 'Key-based SSH with verified host key', error.splitlines()[-1] if error else ''):
@@ -212,6 +222,7 @@ def check_guest(report, args, address, hostname):
 
 
 def _ssh(args, address):
+    """Run SSH_CHECKS on the VM with host-key checking on; return (exit code, stdout, stderr)."""
     try:
         result = subprocess.run(
             ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10',
@@ -223,6 +234,7 @@ def _ssh(args, address):
 
 
 def main(argv=None):
+    """Run every check and print READY or NOT READY; exit code 1 if anything FAILed."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--primary', default='192.168.0.102')
     parser.add_argument('--standby', default='192.168.0.108')

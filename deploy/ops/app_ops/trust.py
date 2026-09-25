@@ -7,10 +7,12 @@ LIBRARY = Path('/opt/todo/lib')
 
 
 def script(project_root):
+    """The text of trust-files.sh, passed to /bin/sh as an argument rather than run as a file."""
     return (Path(project_root) / 'deploy/scripts/trust-files.sh').read_text()
 
 
 def fapolicyd_active(host):
+    """True if fapolicyd runs on host; then only trusted files may run as code."""
     result = host.run(['systemctl', 'is-active', 'fapolicyd'], allowed=(0, 3, 4))
     return result.stdout.strip() == 'active'
 

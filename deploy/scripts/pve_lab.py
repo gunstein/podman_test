@@ -34,10 +34,12 @@ REQUIRED = ('PVE_HOST', 'PVE_NODE', 'PVE_TOKEN_ID', 'PVE_TOKEN_SECRET', 'PVE_CA'
 
 
 class LabError(Exception):
+    """A Proxmox API or usage error, printed as "ERROR: ..." without the token."""
     pass
 
 
 def load_config(environ=os.environ):
+    """Read the KEY=VALUE token file; raise LabError naming any missing key."""
     path = Path(environ.get('PVE_ENV', Path.home() / '.config/todo-acceptance/pve.env'))
     values = {}
     for line in path.read_text().splitlines():
@@ -52,6 +54,7 @@ def load_config(environ=os.environ):
 
 
 class Client:
+    """Proxmox API calls with the token, over TLS verified against PVE_CA."""
     def __init__(self, config, opener=None, sleep=time.sleep):
         self.config = config
         self.base = f'https://{config["PVE_HOST"]}:8006/api2/json'
@@ -63,11 +66,13 @@ class Client:
         self.open = opener
 
     def path(self, path):
+        """Check that path starts with / and fill in {node}."""
         if not path.startswith('/'):
             raise LabError('API path must start with /')
         return path.replace('{node}', self.config['PVE_NODE'])
 
     def request(self, method, path, form=None, body=None):
+        """Send one API request and return its "data" member; an HTTP error raises LabError."""
         headers = {'Authorization': 'PVEAPIToken={}={}'.format(
             self.config['PVE_TOKEN_ID'], self.config['PVE_TOKEN_SECRET'])}
         data = None
@@ -87,6 +92,7 @@ class Client:
             raise LabError(f'{method} {path}: HTTP {error.code}: {detail}') from None
 
     def wait_task(self, upid, timeout=900):
+        """Poll a Proxmox task until it stops; raise unless it ended OK or if it runs past timeout."""
         quoted = urllib.parse.quote(upid, safe='')
         deadline = time.monotonic() + timeout
         while True:
@@ -100,6 +106,11 @@ class Client:
             self.sleep(2)
 
     def guest_exec(self, vmid, command, timeout=180):
+        """Run a command in the VM through the Guest Agent and wait for it to finish.
+
+        Returns the exec-status result. If it is still running after timeout, the
+        result has exited=0 so the caller can report that instead of guessing.
+        """
         started = self.request('POST', f'/nodes/{{node}}/qemu/{vmid}/agent/exec',
                                body={'command': list(command)})
         pid = started['pid']
@@ -113,6 +124,11 @@ class Client:
             self.sleep(1)
 
     def set_nic_flag(self, vmid, flag, value):
+        """Set flag=value on every network device of the VM, keeping all other options.
+
+        Used for link_down (fencing) and firewall. Reads the config back and
+        raises unless every device reports the new value.
+        """
         if not re.fullmatch(r'[a-z_]+', flag) or not re.fullmatch(r'[0-9]+', value):
             raise LabError('nic FLAG must be a lowercase name and VALUE a number')
         config = self.request('GET', f'/nodes/{{node}}/qemu/{vmid}/config')
@@ -132,6 +148,7 @@ class Client:
 
 
 def pairs(arguments):
+    """Turn key=value arguments into a form dict."""
     form = {}
     for argument in arguments:
         key, separator, value = argument.partition('=')
@@ -142,6 +159,7 @@ def pairs(arguments):
 
 
 def main(argv=None, client=None):
+    """Run one action from the module docstring; exit code 0, 1 (error), 2 (usage) or the guest command's."""
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ('-h', '--help'):
         print(__doc__)

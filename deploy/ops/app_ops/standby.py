@@ -5,6 +5,7 @@ from . import steps, trust
 
 
 def firewall_rule(primary, standby):
+    """The firewalld rich rule that lets only the standby reach the primary's replication ports."""
     ports = [entry['replication_port'] for entry in steps.GROUP]
     return (f'rule family="ipv4" source address="{standby.spec.address}/32" '
             f'destination address="{primary.spec.address}" port port="{min(ports)}-{max(ports)}" '
@@ -25,6 +26,12 @@ def require_firewall(primary, standby):
 
 
 def preflight(project_root, controller, primary, standby):
+    """Read-only checks of both hosts before a standby is bootstrapped.
+
+    Each host must match the inventory (hostname, address, machine ID); the
+    primary needs the firewall rule; then the pair is checked together: the
+    primary has every database, and the standby has none yet.
+    """
     facts = {}
     for role, host in (('primary', primary), ('standby', standby)):
         pythonpath = trust.stage_installer(project_root, controller, host)
@@ -38,6 +45,11 @@ def preflight(project_root, controller, primary, standby):
 
 
 def sync_secrets(project_root, controller, primary, standby):
+    """Copy the replication group's credentials from the primary to the standby.
+
+    The export goes straight from one command's stdout to the other's stdin,
+    in memory. An existing secret with a different value stops the import.
+    """
     primary_path = trust.stage_installer(project_root, controller, primary)
     transfer = steps.app_installer(primary, primary_path, 'export-replication-secrets').stdout
     standby_path = trust.stage_installer(project_root, controller, standby)
@@ -45,6 +57,7 @@ def sync_secrets(project_root, controller, primary, standby):
 
 
 def streaming(primary, pythonpath, *, rebuilt=False):
+    """Wait until every database streams to its standby: 15 tries, 2 seconds apart."""
     for entry in steps.GROUP:
         steps.retry(lambda entry=entry: steps.app_installer(
             primary, pythonpath, 'replicate-workload', 'streaming', '--app', entry['name'],
@@ -52,6 +65,12 @@ def streaming(primary, pythonpath, *, rebuilt=False):
 
 
 def bootstrap(project_root, controller, primary, standby):
+    """Build the standby: preflight, publish the primaries, copy secrets, then base backups.
+
+    The primary's databases are published on the LAN and get their
+    replicator role first. The standby then gets a base backup of each
+    database, and the run ends when all of them stream.
+    """
     preflight(project_root, controller, primary, standby)
     primary_path = steps.stage_postgres_group(project_root, controller, primary)
     changed = steps.changed(steps.app_installer(primary, primary_path, 'publish-primaries', 'bootstrap',
@@ -69,6 +88,7 @@ def bootstrap(project_root, controller, primary, standby):
 
 
 def replication_status(project_root, controller, primary, standby):
+    """Raise unless every database streams and every standby database is read-only."""
     primary_path = trust.stage_installer(project_root, controller, primary)
     streaming(primary, primary_path)
     standby_path = trust.stage_installer(project_root, controller, standby)
@@ -81,6 +101,7 @@ def replication_status(project_root, controller, primary, standby):
 
 
 def install_dr_tool(project_root, controller, standby, primary_spec):
+    """Install app_dr.py on the standby with exact-file trust, then write its DR settings."""
     trust.stage_installer(project_root, controller, standby)
     changed = trust.install_trusted(project_root, controller, standby,
                                     [(f'{project_root}/deploy/scripts/app_dr.py', '/opt/todo/bin/app_dr.py', '0644')],

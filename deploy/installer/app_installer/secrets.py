@@ -7,10 +7,12 @@ from .commands import exists, run
 
 
 def postgres_secret_mapping(app: apps.App):
+    """Kube secret name -> {key: raw Podman secret} for the PostgreSQL pod."""
     return {app.kube_secret("postgres"): {"database-password": app.secret("db")}}
 
 
 def application_secret_mapping(app: apps.App):
+    """The same for the app pod: the migrator's and the backend's passwords."""
     return {
         app.kube_secret("migrator"): {"database-password": app.secret("migrator")},
         app.kube_secret("backend"): {"database-password": app.secret("app")},
@@ -18,16 +20,25 @@ def application_secret_mapping(app: apps.App):
 
 
 def keycloak_secret_mapping():
+    """The same for Keycloak's bootstrap admin password."""
     return {apps.KEYCLOAK_KUBE_ADMIN_SECRET: {"bootstrap-admin-password": apps.KEYCLOAK_ADMIN_SECRET}}
 
 
 def read(name):
+    """The value of a raw Podman secret. Only for passing on to another secret, never for printing."""
     # Ansible command.stdout strips trailing newlines, but preserves other whitespace.
     return run("podman", "secret", "inspect", "--showsecret", "--format",
                "{{.SecretData}}", name).stdout.rstrip("\r\n")
 
 
 def create_kube(mapping, values=None):
+    """Create each missing Kube secret from the raw Podman secrets it maps to.
+
+    podman kube play reads these secrets; the values are base64-encoded as
+    Kubernetes expects, and exist only in memory and in Podman's secret
+    store, never in a file. values can supply raw values directly.
+    An existing Kube secret is kept as it is. Returns True if one was created.
+    """
     changed = False
     values = values or {}
     for name, fields in mapping.items():
@@ -54,6 +65,7 @@ def replicated_names():
 
 
 def export_replicated():
+    """Every credential the standby needs, as {name: value}; sent over stdin only."""
     return {name: read(name) for name in replicated_names()}
 
 

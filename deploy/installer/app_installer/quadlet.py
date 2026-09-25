@@ -10,6 +10,7 @@ from .commands import run
 
 
 def render(project_root, name, variables):
+    """Render deploy/quadlet/<name>.j2 and return the bytes; undefined variables are an error."""
     environment = Environment(
         loader=FileSystemLoader(Path(project_root) / "deploy/quadlet"),
         undefined=StrictUndefined, trim_blocks=True, keep_trailing_newline=True,
@@ -41,4 +42,5 @@ def write(path, content, mode):
 
 
 def systemctl(*args):
+    """Run systemctl --user with the given arguments."""
     return run("systemctl", "--user", *args)

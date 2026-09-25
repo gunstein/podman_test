@@ -13,6 +13,12 @@ BASE = f'http://127.0.0.1:{settings.LOCAL_HTTP_PORT}'
 
 
 def request(path, method='GET', data=None, token=None, form=False, hostname=None):
+    """Send one HTTP request to the local nginx on 127.0.0.1 and return the JSON reply.
+
+    hostname sets the Host header, which picks the app's virtual host.
+    Raises unless the status is the one Keycloak's admin API returns on
+    success: 204 for PUT, 201 for creating a client, else 200.
+    """
     headers = {'Host': hostname} if hostname else {}
     body = None
     if data is not None:
@@ -31,6 +37,11 @@ def request(path, method='GET', data=None, token=None, form=False, hostname=None
 
 
 def wait(path, attempts, delay, status=None, hostname=None):
+    """Poll path until it answers, and until its "status" equals status if given.
+
+    Tries attempts times, delay seconds apart, then raises. Used while
+    services start, when refused connections are expected.
+    """
     for attempt in range(attempts):
         try:
             data = request(path, hostname=hostname) if hostname else request(path)
@@ -44,6 +55,15 @@ def wait(path, attempts, delay, status=None, hostname=None):
 
 
 def configure(admin_password, clients=None):
+    """Make sure every app has a Keycloak client whose redirect and origin match its URL.
+
+    Waits for nginx, the apps and Keycloak, checks that the issuer is HTTPS
+    with the todo realm, then logs in as the Keycloak admin. The first app's
+    client comes with the realm import and serves as the template: another
+    app's missing client is copied from it, with its own client ID,
+    redirect URL and token audience. An existing client only gets its URLs
+    corrected. Returns True if anything changed.
+    """
     wait('/health', 30, 1, 'ok')
     wait('/ready', 30, 1, 'ready')
     discovery = wait('/auth/realms/todo/.well-known/openid-configuration', 90, 2)

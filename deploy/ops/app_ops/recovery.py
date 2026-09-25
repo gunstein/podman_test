@@ -6,6 +6,7 @@ from .steps import app_installer
 
 
 def require_identity(host):
+    """Raise unless the host reports the inventory hostname and owns the inventory address."""
     hostname = host.run(['hostname']).stdout.strip()
     addresses = steps.preflight_addresses(host.run(['ip', '-4', '-o', 'address', 'show', 'scope', 'global']).stdout)
     if hostname != host.name or host.spec.address not in addresses:
@@ -13,6 +14,10 @@ def require_identity(host):
 
 
 def deploy_promoted(project_root, controller, current):
+    """Start the apps, Keycloak and nginx on the promoted host, which must be this machine.
+
+    Uses the images and rendered YAML from the offline bundle on that host.
+    """
     if not current.spec.local:
         raise RuntimeError('deploy-promoted-application runs on the promoted host itself: mark it local: true')
     pythonpath = trust.stage_installer(project_root, controller, current)
@@ -24,6 +29,10 @@ def deploy_promoted(project_root, controller, current):
 
 
 def configure_backup(project_root, controller, current):
+    """Install app_backup.py on the current primary and turn on WAL archiving.
+
+    Refuses unless the promotion record shows the whole group was promoted.
+    """
     pythonpath = trust.stage_installer(project_root, controller, current)
     journal = steps.paths(current)['config'] + '/promotion.json'
     app_installer(current, pythonpath, 'require-promoted-group', '--journal', journal)
@@ -55,6 +64,14 @@ def preflight_rebuild(project_root, controller, current, rebuild, confirm_fenced
 
 
 def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, confirm_reseed):
+    """Rebuild the old primary as a standby of the current one. Deletes its database data.
+
+    Order: check passwordless sudo on both hosts, run every preflight gate,
+    publish the current primary's databases for the rebuilt standby, reseed
+    every database on the rebuild host, install app_dr.py there, and wait
+    until all of them stream. A failure stops the run where it is and is
+    never retried automatically.
+    """
     for host in (controller, rebuild_host):
         host.run(['true'], sudo=True)
     rebuild_path = preflight_rebuild(project_root, controller, current, rebuild_host, confirm_fenced, confirm_reseed)
@@ -70,6 +87,7 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
 
 
 def cluster_status(current, standby_host):
+    """Read-only report of both hosts: the primary must stream and archive, the standby must replay."""
     report = {'changed': False}
     for role, host in (('primary', current), ('standby', standby_host)):
         report[role] = json.loads(app_installer(host, steps.installed_pythonpath(host),

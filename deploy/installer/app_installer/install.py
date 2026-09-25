@@ -10,6 +10,7 @@ LEGACY = tuple(app.resource(component) for app in apps.APPS
 
 
 def services(applications):
+    """Pod and service base names for the selected apps, including the shared ones."""
     return (*(app.resource('app') for app in applications), 'keycloak',
             *(app.resource('postgres') for app in applications), 'keycloak-postgres', 'shared-proxy')
 
@@ -18,6 +19,12 @@ SERVICES = services(apps.APPS)
 
 
 def preflight(quadlet_dir):
+    """Refuse a host this installer does not support, before anything changes.
+
+    Requires podman kube play --no-pod-prefix, which keeps container names
+    stable, and refuses hosts that still run the old per-container Quadlet
+    setup: that needs a person to review it, not an automatic migration.
+    """
     if '--no-pod-prefix' not in run('podman', 'kube', 'play', '--help').stdout:
         raise RuntimeError('The final runtime requires the tested Podman --no-pod-prefix option.')
     if any((Path(quadlet_dir) / (name + '.container')).exists() for name in LEGACY):
@@ -28,6 +35,11 @@ def preflight(quadlet_dir):
 
 
 def setup_roles(app: apps.App = apps.APPS[0]):
+    """Run the app's setup_roles.py once, in a throwaway container on app-network.
+
+    It logs in as the database owner and creates the migrator and app roles
+    with only the rights they need; see the backend's setup_roles.py.
+    """
     argv = ['podman', 'run', '--rm', '--network', apps.NETWORK]
     roles = ['db', 'migrator', 'app']
     for role in roles:
@@ -42,6 +54,20 @@ def setup_roles(app: apps.App = apps.APPS[0]):
 def install(project_root, mode='server', deployment_mode='build', bundle_directory='',
             refresh_images=False, publish_address='127.0.0.1', service_port=settings.HTTPS_PORT,
             quadlet_dir=None, kube_runtime_dir=None, applications=None):
+    """Install or update the whole single-host stack. Safe to run again.
+
+    Steps: check the host, render the Kube YAML (build mode) or use the
+    bundle's (offline mode), create missing passwords, build or load
+    images, and write the Quadlet units. In server mode, only services
+    whose definition or image changed are restarted, then everything is
+    started in dependency order. Roles are set up once the database is
+    healthy, and again after the app starts, so the tables its migrations
+    created get their grants. Finally Keycloak is configured and every unit
+    is checked to run from the expected Kube file. mode='dev' runs the same
+    YAML with podman kube play directly, without systemd.
+
+    Returns True if anything changed.
+    """
     applications = apps.APPS if applications is None else tuple(applications)
     if apps.SHARED_RESOURCE_OWNER not in applications:
         raise ValueError('The application that owns the shared resources must be included.')

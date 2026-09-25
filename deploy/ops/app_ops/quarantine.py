@@ -30,6 +30,13 @@ def helper_contexts(semanage_output):
 
 
 def enable_guest_exec(host):
+    """Allow Proxmox to run commands in this VM through the QEMU Guest Agent.
+
+    Adds guest-exec and guest-exec-status to the agent's explicit allow
+    list, keeping a timestamped backup, and restarts the agent. This lets
+    anyone with Guest Agent access in Proxmox run commands as root in the
+    VM, so it is an explicit opt-in.
+    """
     current = host.run(['cat', GA_POLICY], sudo=True).stdout
     wanted = guest_agent_policy(current)
     changed = wanted != current
@@ -45,6 +52,12 @@ def enable_guest_exec(host):
 
 
 def enable_selinux_entrypoint(host):
+    """Label the stop helper so the Guest Agent may run it under SELinux enforcing.
+
+    Adds a persistent file context for the helper path and turns on the
+    virt_qemu_ga_run_unconfined boolean. Refuses if SELinux is not
+    enforcing, or if another context already claims the path.
+    """
     if host.run(['getenforce']).stdout.strip() != 'Enforcing':
         raise RuntimeError(f'{host.name}: SELinux must be Enforcing')
     changed = False
@@ -62,6 +75,12 @@ def enable_selinux_entrypoint(host):
 
 
 def install(project_root, controller, primary, *, guest_exec=False, selinux_entrypoint=False):
+    """Put the quarantine stop helper on the primary, with exact-file trust.
+
+    The helper stops every service during a quarantine, when only the Guest
+    Agent can reach the VM. Guest Agent execution and the SELinux entry
+    point are separate opt-ins. Returns True if anything changed.
+    """
     changed = False
     trust.stage_installer(project_root, controller, primary)
     if guest_exec:

@@ -20,6 +20,7 @@ COMMANDS = {
 
 
 def parser():
+    """Command-line arguments: --inventory, then one command and its options."""
     result = argparse.ArgumentParser(prog='app-ops', description=__doc__)
     result.add_argument('--inventory', type=Path, required=True)
     commands = result.add_subparsers(dest='command', required=True)
@@ -35,6 +36,7 @@ def parser():
 
 
 def dispatch(args, controller, hosts):
+    """Run the chosen command with its hosts; return its result (a changed flag or a report)."""
     root = PROJECT_ROOT
     if args.command == 'install-quarantine-tool':
         return quarantine.install(root, controller, hosts['primary'], guest_exec=args.enable_guest_exec,
@@ -59,6 +61,10 @@ def dispatch(args, controller, hosts):
 
 
 def main(argv=None):
+    """Load the inventory for the command's roles, run it, and print one JSON result.
+
+    Errors print one "app-ops: ..." line on stderr and return 1.
+    """
     args = parser().parse_args(argv)
     try:
         specs = inventory.load(args.inventory, COMMANDS[args.command])

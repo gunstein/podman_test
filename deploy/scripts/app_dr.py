@@ -145,6 +145,7 @@ class TodoDr:
         self.journal_path = Path(journal_path)
 
     def _run(self, arguments, description):
+        """Run a command through runner with a 120-second limit; return stdout or raise DrError."""
         try:
             result = self.runner(arguments, 120)
         except subprocess.TimeoutExpired as error:
@@ -167,6 +168,7 @@ class TodoDr:
                           app.resource('postgres')], f'{app.name}: PostgreSQL container health check')
 
     def _query(self, app, statement):
+        """Run one SQL statement with psql in the app's database container."""
         return self._run(['podman', 'exec', app.resource('postgres'), 'psql', '--username', app.name,
                          '--dbname', 'postgres', '--tuples-only', '--no-align', '--field-separator=|',
                          '--command', statement], f'{app.name}: PostgreSQL recovery query')

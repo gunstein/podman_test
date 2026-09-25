@@ -11,6 +11,7 @@ from .commands import exists, run
 
 @dataclass(frozen=True)
 class Image:
+    """One container image: its reference, offline archive name, and build directory (None: pulled)."""
     component: str
     reference: str
     archive: str
@@ -18,17 +19,25 @@ class Image:
 
 
 def image_list(app: apps.App) -> tuple[Image, ...]:
+    """The backend, frontend and PostgreSQL images of one app."""
     return tuple(Image(component, app.image(component), app.image_archive(component),
                        None if component == "postgres" else app.resource(component))
                  for component in ("backend", "frontend", "postgres"))
 
 
 def shared_images() -> tuple[Image, ...]:
+    """The images every app shares: the nginx proxy and Keycloak."""
     return (Image("proxy", apps.PROXY_IMAGE, apps.PROXY_ARCHIVE, "proxy"),
             Image("keycloak", apps.KEYCLOAK_IMAGE, apps.KEYCLOAK_ARCHIVE, "keycloak"))
 
 
 def _prepare(project_root, deployment_mode, bundle_directory, refresh_images, specifications):
+    """Make each image present locally; return {component: True if it was built, pulled or loaded}.
+
+    build mode builds from each Containerfile (PostgreSQL is pulled);
+    offline mode only loads archives from the verified bundle and never
+    reaches the network. An existing image is kept unless refresh_images.
+    """
     if deployment_mode not in ("build", "offline"):
         raise ValueError("deployment_mode must be build or offline")
     if deployment_mode == "offline" and (not bundle_directory or refresh_images):
@@ -59,6 +68,7 @@ def _prepare(project_root, deployment_mode, bundle_directory, refresh_images, sp
 
 def prepare(project_root, deployment_mode, bundle_directory="", refresh_images=False,
             app: apps.App = apps.APPS[0], include_shared=True):
+    """Prepare one app's images, plus the shared ones unless include_shared is False."""
     specifications = image_list(app)
     if include_shared:
         specifications = specifications[:2] + shared_images() + specifications[2:]
@@ -66,6 +76,7 @@ def prepare(project_root, deployment_mode, bundle_directory="", refresh_images=F
 
 
 def prepare_shared(project_root, deployment_mode, bundle_directory="", refresh_images=False):
+    """Prepare only the shared proxy and Keycloak images."""
     return _prepare(project_root, deployment_mode, bundle_directory, refresh_images, shared_images())
 
 

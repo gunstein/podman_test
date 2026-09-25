@@ -11,6 +11,7 @@ NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9.-]{0,62}')
 
 @dataclass(frozen=True)
 class HostSpec:
+    """One inventory host: name, role, address, login user, home, and whether it is this machine."""
     name: str
     role: str
     address: str
@@ -22,6 +23,7 @@ class HostSpec:
 
     @property
     def destination(self):
+        """user@address (or ssh_host) for ssh."""
         return f'{self.user}@{self.ssh_host or self.address}'
 
 

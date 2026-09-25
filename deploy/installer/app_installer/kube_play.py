@@ -9,6 +9,14 @@ from .install import setup_roles
 
 
 def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False):
+    """Start the development stack with podman kube play, without systemd.
+
+    A fingerprint of the rendered YAML is stored in state_file. If nothing
+    changed and every pod runs, this does nothing and returns False.
+    Otherwise it takes down what it started last time, then starts
+    everything in dependency order and records what to tear down. Pods that
+    exist without a state file are refused rather than guessed at.
+    """
     applications = apps.APPS if applications is None else tuple(applications)
     directory = Path(rendered_manifest_dir)
     state_file = Path(state_file or settings.DEV_STATE_FILE)
@@ -40,6 +48,7 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
         run('podman', 'network', 'create', apps.NETWORK)
 
     def play(manifest, config=None, ports=()):
+        """podman kube play one manifest on app-network, with an optional ConfigMap and published ports."""
         arguments = ['--configmap', directory / config] if config else []
         run('podman', 'kube', 'play', '--no-pod-prefix', '--network', apps.NETWORK,
             *arguments, *ports, directory / manifest)

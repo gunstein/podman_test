@@ -21,11 +21,13 @@ HOSTNAME_PATTERN = re.compile(r'^[a-z0-9.-]+$')
 
 
 def validate_hostname(hostname):
+    """Raise unless hostname is only lowercase letters, digits, dots and hyphens."""
     if not HOSTNAME_PATTERN.match(hostname):
         raise ValueError(f'Not a safe hostname: {hostname!r}')
 
 
 def _environment(project_root):
+    """A Jinja2 environment for deploy/manifests; undefined variables are an error."""
     return Environment(
         loader=FileSystemLoader(Path(project_root) / "deploy/manifests"),
         undefined=StrictUndefined, trim_blocks=True, keep_trailing_newline=True,
@@ -34,33 +36,45 @@ def _environment(project_root):
 
 
 def _render(project_root, name, **variables):
+    """Render one template and return the bytes."""
     return _environment(project_root).get_template(name).render(**variables).encode()
 
 
 def render_postgres(project_root, database, image):
+    """The PostgreSQL pod, its data and backup volume claims, for one database."""
     return _render(project_root, "postgres.yaml.j2", database=database, image=image)
 
 
 def render_postgres_config(project_root, database):
+    """The ConfigMap that PostgreSQL's pod reads its settings from."""
     return _render(project_root, "postgres-config.yaml.j2", database=database)
 
 
 def render_app(project_root, app, backend_image, frontend_image):
+    """One app's pod: the migration init container, the backend and the frontend."""
     return _render(project_root, "app.yaml.j2", app=app,
                    backend_image=backend_image, frontend_image=frontend_image)
 
 
 def render_app_config(project_root, app, hostname, port, log_level):
+    """The ConfigMap the app's backend and frontend read (hostname, port, OIDC settings)."""
     return _render(project_root, "app-config.yaml.j2", app=app,
                    hostname=hostname, port=port, log_level=log_level)
 
 
 def render_keycloak(project_root, database, admin_secret, hostname, port, image):
+    """The Keycloak pod, using its own database and the admin secret."""
     return _render(project_root, "keycloak.yaml.j2", database=database, admin_secret=admin_secret,
                    hostname=hostname, port=port, image=image)
 
 
 def render_shared_proxy(project_root, applications, identity_app, hostname, image):
+    """The nginx pod that terminates TLS and routes each hostname to its app.
+
+    The app that owns shared resources is served on the public hostname from
+    values.yaml; the others on their registry hostname. Every hostname is
+    checked before it is written into nginx.conf.
+    """
     context = [{
         "name": app.name,
         "hostname": hostname if app is identity_app else app.hostname,

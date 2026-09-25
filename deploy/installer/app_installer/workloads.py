@@ -12,6 +12,14 @@ from .commands import run
 
 def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir, *,
              manifests, units, obsolete, capability, mapping, variables, values=None):
+    """Write one workload's Kube YAML and Quadlet unit, and reload user systemd.
+
+    Every file is read and rendered before the first write, so a missing
+    file stops the install with nothing changed. Kube secrets are created
+    from the raw Podman secrets; YAML is written 0600, units 0644. Returns
+    True if a definition changed. It never starts or stops a service: the
+    caller decides that.
+    """
     root, directory, runtime, rendered = map(Path, (
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir))
     if runtime != directory / "todo-kube-runtime" or runtime.is_symlink():
@@ -42,6 +50,12 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
 
 def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                      publish_address="", db_password=None, *, app: apps.App = apps.APPS[0]):
+    """Install one database's PostgreSQL workload.
+
+    publish_address publishes the replication port on the LAN; only
+    databases in the DR group may do that. db_password supplies the owner
+    password directly instead of reading it from Podman.
+    """
     if publish_address and app.name not in {d.name for d in apps.REPLICATED_DATABASES}:
         raise ValueError("Replication publication requires membership in the verified DR group.")
     return _install(
@@ -58,6 +72,7 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
 def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                         publish_address="127.0.0.1", service_port=settings.HTTPS_PORT, *,
                         app: apps.App = apps.APPS[0]):
+    """Install one app's pod (migration, backend and frontend)."""
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         manifests=(app.manifest("app"), app.manifest("config")), units=(app.unit("app"),), obsolete=(),
@@ -67,6 +82,7 @@ def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_ma
 
 
 def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir):
+    """Install the shared Keycloak workload."""
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         manifests=("keycloak.yaml",), units=("keycloak.kube",), obsolete=(),
@@ -77,6 +93,11 @@ def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
 def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                          publish_address="127.0.0.1", service_port=settings.HTTPS_PORT,
                          applications=None):
+    """Install the shared nginx proxy, published on publish_address:service_port.
+
+    It always also listens on 127.0.0.1, so a wildcard address such as
+    0.0.0.0 is refused: it would bind the same port twice.
+    """
     # The rendered unit always keeps a fixed 127.0.0.1 binding on
     # settings.LOCAL_HTTP_PORT/HTTPS_PORT alongside the requested one
     # (deploy/quadlet/shared-proxy.kube.j2); a wildcard address here would

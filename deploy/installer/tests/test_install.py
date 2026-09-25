@@ -115,6 +115,48 @@ class InstallTests(unittest.TestCase):
     def test_server_repeat_does_not_restart_unchanged_workloads(self):
         self.exercise_install('server', repeat=True)
 
+    def test_server_repeat_only_restarts_the_apps_whose_manifests_changed(self):
+        applications = apps.APPS
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            directory = root / 'quadlet'
+            rendered = root / 'generated/kube-runtime'
+            rendered.mkdir(parents=True)
+            filenames = [app.manifest(component) for app in applications
+                         for component in ('postgres', 'app', 'config')] + [
+                apps.KEYCLOAK_DATABASE.manifest('postgres'), apps.KEYCLOAK_DATABASE.manifest('config'),
+                'keycloak.yaml', 'shared-proxy.yaml']
+            for filename in filenames:
+                (rendered / filename).write_text('fixture: true\n')
+            calls = []
+
+            def command(argv, **kwargs):
+                calls.append(argv)
+                stdout = ''
+                if argv == ['podman', 'kube', 'play', '--help']:
+                    stdout = '--no-pod-prefix'
+                elif argv[:3] == ['podman', 'image', 'inspect']:
+                    stdout = '[{"Labels":{"io.todo.proxy":"nginx"}}]'
+                elif argv[:3] == ['podman', 'secret', 'inspect']:
+                    stdout = 'fixture-password\n'
+                elif argv[:3] == ['systemctl', '--user', 'show']:
+                    stdout = str(directory / 'todo-kube-runtime'
+                                / argv[3].replace('.service', '.kube')) + '\n'
+                rc = 1 if argv[:3] == ['podman', 'pod', 'exists'] else 0
+                return subprocess.CompletedProcess(argv, rc, stdout, '')
+
+            with patch('subprocess.run', side_effect=command), \
+                    patch.object(keycloak, 'configure'), \
+                    patch.object(settings, 'DEV_STATE_FILE', root / 'todo-installer-dev.json'):
+                install.install(ROOT, mode='server', deployment_mode='offline',
+                                bundle_directory=root, quadlet_dir=directory, applications=applications)
+                (rendered / apps.APPS[0].manifest('app')).write_text('fixture: changed\n')
+                calls.clear()
+                install.install(ROOT, mode='server', deployment_mode='offline',
+                                bundle_directory=root, quadlet_dir=directory, applications=applications)
+            stopped = {a[3] for a in calls if a[:3] == ['systemctl', '--user', 'stop']}
+            self.assertEqual(stopped, {'todo-app.service'})
+
     def test_source_path_must_be_the_expected_workload_unit(self):
         for source in ('/tmp/todo-app.container', '/tmp/todo-app.kube',
                        '/tmp/todo-kube-runtime/unrelated.kube'):

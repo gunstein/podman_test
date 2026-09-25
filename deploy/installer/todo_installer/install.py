@@ -87,17 +87,38 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         return changed or configured
     arguments = (root, directory, runtime, rendered)
     changed = False
+    # postgres is the one image shared by every database (settings.POSTGRES_IMAGE), so a
+    # postgres image change restarts every postgres service; backend/frontend images are
+    # per-app and only ever restart that app's own service. This keeps an unrelated app's
+    # (or component's) update from taking down the whole stack.
+    postgres_image_changed = any(image_changes[app.name]['postgres'] for app in applications)
+    restart = set()
     for app in applications:
-        changed = workloads.install_postgres(*arguments, app=app) or changed
-        changed = workloads.install_application(
-            *arguments, publish_address, service_port, app=app) or changed
-    changed = workloads.install_postgres(*arguments, app=apps.KEYCLOAK_DATABASE) or changed
-    changed = workloads.install_keycloak(*arguments) or changed
-    changed = workloads.install_shared_proxy(
-        *arguments, publish_address, service_port, applications=applications) or changed
+        postgres_changed = workloads.install_postgres(*arguments, app=app)
+        changed = postgres_changed or changed
+        if postgres_changed or postgres_image_changed:
+            restart.add(app.resource('postgres'))
+        application_changed = workloads.install_application(
+            *arguments, publish_address, service_port, app=app)
+        changed = application_changed or changed
+        if application_changed or image_changes[app.name]['backend'] or image_changes[app.name]['frontend']:
+            restart.add(app.resource('app'))
+    keycloak_database_changed = workloads.install_postgres(*arguments, app=apps.KEYCLOAK_DATABASE)
+    changed = keycloak_database_changed or changed
+    if keycloak_database_changed or postgres_image_changed:
+        restart.add(apps.KEYCLOAK_DATABASE.resource('postgres'))
+    keycloak_changed = workloads.install_keycloak(*arguments)
+    changed = keycloak_changed or changed
+    if keycloak_changed or shared_images['keycloak']:
+        restart.add('keycloak')
+    proxy_changed = workloads.install_shared_proxy(
+        *arguments, publish_address, service_port, applications=applications)
+    changed = proxy_changed or changed
+    if proxy_changed or shared_images['proxy']:
+        restart.add('shared-proxy')
     selected_services = services(applications)
-    if changed or images_changed:
-        for service in selected_services:
+    for service in selected_services:
+        if service in restart:
             quadlet.systemctl('stop', service + '.service')
     for app in applications:
         quadlet.systemctl('start', app.service('postgres'))

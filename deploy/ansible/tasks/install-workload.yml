@@ -43,7 +43,7 @@
       - --publish-address
       - "{{ todo_publish_address | default('127.0.0.1') }}"
       - --postgres-publish-address
-      - "{{ todo_postgres_publish_address | default('') }}"
+      - "{{ postgres_publish_address | default('') }}"
       - --service-port
       - "{{ todo_service_port | default(8443) | string }}"
   environment:

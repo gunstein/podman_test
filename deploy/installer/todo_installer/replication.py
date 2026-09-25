@@ -304,7 +304,7 @@ def reseed_check(app, primary_address, *, project_root, quadlet_dir, kube_runtim
     (Path(rendered_manifest_dir) / app.manifest('config')).read_bytes()
     (Path(project_root) / 'deploy/quadlet/app-network.network').read_bytes()
     quadlet.render(project_root, app.unit('postgres'), {
-        'todo_postgres_publish_address': '', 'postgres_publish_port': app.replication_port})
+        'postgres_publish_address': '', 'postgres_publish_port': app.replication_port})
     return False
 
 

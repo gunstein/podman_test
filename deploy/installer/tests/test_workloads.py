@@ -112,7 +112,7 @@ class WorkloadsTests(unittest.TestCase):
         for app in apps.APPS:
             rendered = quadlet.render(ROOT, app.unit('postgres'), {
                 'postgres_publish_port': app.replication_port,
-                'todo_postgres_publish_address': '192.0.2.50',
+                'postgres_publish_address': '192.0.2.50',
             }).decode()
             self.assertIn(f'PublishPort=127.0.0.1:{app.replication_port}:5432\n', rendered)
             self.assertIn(f'PublishPort=192.0.2.50:{app.replication_port}:5432\n', rendered)
@@ -152,7 +152,7 @@ class RenderingIntegrationTests(unittest.TestCase):
         cases = [
             {'todo_publish_address': '192.0.2.50', 'todo_service_port': 9443},
             {'todo_publish_address': '127.0.0.1', 'todo_service_port': 8443,
-             'todo_postgres_publish_address': '192.0.2.50'},
+             'postgres_publish_address': '192.0.2.50'},
             {'todo_publish_address': '127.0.0.1', 'todo_service_port': 8443},
         ]
         for variables in cases:

@@ -9,7 +9,7 @@
   vars:
     todo_installer_workload: postgres
     todo_installer_app: "{{ todo_replication_app }}"
-    todo_postgres_publish_address: "{{ todo_node_address }}"
+    postgres_publish_address: "{{ todo_node_address }}"
 
 - name: Restart PostgreSQL with the LAN replication port
   ansible.builtin.systemd_service:

@@ -10,7 +10,7 @@
   vars:
     todo_installer_workload: postgres
     todo_installer_app: "{{ redundancy_app.name }}"
-    todo_postgres_publish_address: "{{ todo_node_address }}"
+    postgres_publish_address: "{{ todo_node_address }}"
 
 - name: Stop application tier before current primary restart
   ansible.builtin.command:

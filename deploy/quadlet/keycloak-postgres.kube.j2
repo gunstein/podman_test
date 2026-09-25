@@ -6,8 +6,8 @@ Yaml=keycloak-postgres.yaml
 ConfigMap=keycloak-config.yaml
 Network=app-network.network
 PublishPort=127.0.0.1:{{ postgres_publish_port | default(5434) }}:5432
-{% if todo_postgres_publish_address | default('') | length > 0 %}
-PublishPort={{ todo_postgres_publish_address }}:{{ postgres_publish_port | default(5434) }}:5432
+{% if postgres_publish_address | default('') | length > 0 %}
+PublishPort={{ postgres_publish_address }}:{{ postgres_publish_port | default(5434) }}:5432
 {% endif %}
 PodmanArgs=--no-pod-prefix
 ExitCodePropagation=any

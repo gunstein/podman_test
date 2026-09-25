@@ -26,7 +26,7 @@ def render_units(destination, publish_address, postgres_address=""):
         (destination / (unit + ".kube")).write_bytes(render(ROOT, unit + ".kube", {
             "todo_publish_address": publish_address,
             "todo_service_port": 8443,
-            "todo_postgres_publish_address": postgres_address,
+            "postgres_publish_address": postgres_address,
             "app_services": ["todo-app.service", "notes-app.service"],
         }))
 

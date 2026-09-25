@@ -49,7 +49,7 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
         manifests=(app.manifest("postgres"), app.manifest("config")), units=(app.unit("postgres"),),
         obsolete=(app.volume("data"), app.volume("backup")),
         capability="PostgreSQL", mapping=secrets.postgres_secret_mapping(app),
-        variables={"todo_postgres_publish_address": publish_address,
+        variables={"postgres_publish_address": publish_address,
                   "postgres_publish_port": app.replication_port},
         values={app.secret("db"): db_password} if db_password is not None else None,
     )

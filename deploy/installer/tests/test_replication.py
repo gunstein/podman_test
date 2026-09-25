@@ -247,7 +247,7 @@ class ReplicationTests(unittest.TestCase):
                 (quadlet_root / 'deploy/quadlet').mkdir(parents=True)
                 (quadlet_root / 'deploy/quadlet/app-network.network').write_bytes(b'')
                 (quadlet_root / 'deploy/quadlet' / (app.unit('postgres') + '.j2')).write_text(
-                    '{{ todo_postgres_publish_address }}:{{ postgres_publish_port }}')
+                    '{{ postgres_publish_address }}:{{ postgres_publish_port }}')
 
                 def command(*argv, **kwargs):
                     self.assertNotIn('IDENTIFY_SYSTEM', ' '.join(str(a) for a in argv))

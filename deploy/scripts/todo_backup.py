@@ -17,9 +17,6 @@ for location in ('installer', 'lib'):
         break
 from todo_installer import apps  # noqa: E402
 
-# Retain the original Python API defaults, derived from the registry.
-RESTORE_VOLUME = apps.IDENTITY_DATABASE_APP.volume('restore-data')
-RESTORE_CONTAINER = apps.IDENTITY_DATABASE_APP.resource('postgres-restore')
 DATA_DIRECTORY = "/var/lib/postgresql/data"
 BACKUP_NAME = re.compile(r"base-[0-9]{8}T[0-9]{6}Z")
 RESTORE_POINT = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,62}")

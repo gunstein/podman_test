@@ -98,7 +98,8 @@ class TodoBackupTests(unittest.TestCase):
         self.tool(runner).create_restore_point("after_old_failure")
 
     def test_restore_rejects_existing_disposable_state_without_replace(self):
-        runner = FakeRunner(containers={todo_backup.RESTORE_CONTAINER})
+        restore_container = todo_backup.apps.IDENTITY_DATABASE_APP.resource("postgres-restore")
+        runner = FakeRunner(containers={restore_container})
         with self.assertRaisesRegex(todo_backup.BackupError, "--replace"):
             self.tool(runner).restore(
                 "base-20260829T123456Z", "before_delete", replace=False
@@ -106,12 +107,11 @@ class TodoBackupTests(unittest.TestCase):
 
     def test_restore_uses_only_fixed_disposable_targets(self):
         runner = FakeRunner()
-        self.tool(runner).restore(
-            "base-20260829T123456Z", "before_delete", replace=False
-        )
+        tool = self.tool(runner)
+        tool.restore("base-20260829T123456Z", "before_delete", replace=False)
         flattened = [item for command in runner.commands for item in command]
-        self.assertIn(todo_backup.RESTORE_CONTAINER, flattened)
-        self.assertIn(todo_backup.RESTORE_VOLUME, flattened)
+        self.assertIn(tool.restore_container, flattened)
+        self.assertIn(tool.restore_volume, flattened)
         self.assertNotIn("todo-postgres-data", flattened)
 
     def test_cleanup_requires_exact_confirmation(self):

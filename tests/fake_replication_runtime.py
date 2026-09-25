@@ -51,11 +51,11 @@ if args == ['kube', 'play', '-']:
     finish()
 if args and args[0] == 'exec':
     container = next(a for a in args if a.endswith('-postgres'))
-    if 'replication-hba' in args:
+    statement = sys.stdin.read()
+    if 'pg_hba.conf' in statement:
         changed = container not in state['hba']
         state['hba'].append(container)
         finish('changed' if changed else '')
-    statement = sys.stdin.read()
     if 'pg_is_in_recovery()' in statement:
         finish('t|on|0/20|0/20|0' if container in state['standbys'] else 'f|off|||0')
     if 'SELECT rolcanlogin' in statement:

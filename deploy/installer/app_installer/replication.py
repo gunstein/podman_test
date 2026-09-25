@@ -47,22 +47,45 @@ def sql(app, statement, *, database='postgres'):
                input=statement + '\n').stdout.strip()
 
 
+def lsn(value):
+    """A WAL position such as '0/3000060' as a byte number: two hex halves, high/low 32 bits."""
+    match = re.fullmatch(r'([0-9A-Fa-f]{1,8})/([0-9A-Fa-f]{1,8})', value)
+    if not match:
+        raise ValueError(f'Invalid WAL position: {value!r}')
+    return int(match[1], 16) << 32 | int(match[2], 16)
+
+
+def unreplayed_bytes(receive_lsn, replay_lsn):
+    """WAL received but not replayed yet, in bytes; 0 when either position is unknown.
+
+    After a walreceiver restart PostgreSQL reports the receive position as the
+    start of the current WAL segment, so it can be *behind* the replay
+    position until new WAL arrives. Nothing is left to replay then, so the
+    result is 0, never negative.
+    """
+    if not receive_lsn or not replay_lsn:
+        return 0
+    return max(0, lsn(receive_lsn) - lsn(replay_lsn))
+
+
 def status(app, query=None):
     """Report whether the database is a standby, and how far it has replayed WAL.
 
     Returns in_recovery, transaction_read_only, the received and replayed LSNs
-    and the bytes still to apply. query replaces sql() in tests.
+    and the bytes still to apply (unreplayed_bytes). query replaces sql() in tests.
     """
     query = query or sql
     fields = query(app, "SELECT pg_is_in_recovery(), current_setting('transaction_read_only'), "
                  "COALESCE(pg_last_wal_receive_lsn()::text, ''), "
-                 "COALESCE(pg_last_wal_replay_lsn()::text, ''), "
-                 "COALESCE(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), "
-                 "pg_last_wal_replay_lsn())::bigint, 0);").split('|')
-    if len(fields) != 5 or fields[0] not in ('t', 'f') or fields[1] not in ('on', 'off'):
+                 "COALESCE(pg_last_wal_replay_lsn()::text, '');").split('|')
+    if len(fields) != 4 or fields[0] not in ('t', 'f') or fields[1] not in ('on', 'off'):
         raise RuntimeError(f'{app.name}: invalid database status')
+    try:
+        lag = unreplayed_bytes(fields[2], fields[3])
+    except ValueError as error:
+        raise RuntimeError(f'{app.name}: invalid database status: {error}') from error
     return dict(in_recovery=fields[0] == 't', transaction_read_only=fields[1] == 'on',
-                receive_lsn=fields[2], replay_lsn=fields[3], apply_lag_bytes=int(fields[4]))
+                receive_lsn=fields[2], replay_lsn=fields[3], apply_lag_bytes=lag)
 
 
 def require_primary(app, query=None):
@@ -77,7 +100,8 @@ def require_standby(app, query=None):
     """Return status() if the database is a read-only standby with all received WAL replayed.
 
     Promotion calls this first: a standby that has not replayed everything it
-    received would lose those transactions.
+    received would lose those transactions. A receive position behind the
+    replay position is fine (see unreplayed_bytes); a missing one is not.
     """
     state = status(app, query)
     if not state['in_recovery'] or not state['transaction_read_only']:

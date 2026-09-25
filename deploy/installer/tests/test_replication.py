@@ -28,7 +28,7 @@ class ReplicationTests(unittest.TestCase):
             if argv[:3] == ('podman', 'secret', 'create'):
                 state['secret'] = True
             elif 'pg_is_in_recovery()' in statement:
-                output = 'f|off|||0'
+                output = 'f|off||'
             elif argv[:3] == ('podman', 'network', 'inspect'):
                 output = json.dumps([{'subnets': [{'subnet': '10.89.0.0/24'}]}])
             elif kwargs.get('input') == replication.REFRESH_HBA_SCRIPT:
@@ -519,7 +519,7 @@ class ClusterStatusTests(unittest.TestCase):
                 if table in statement:
                     return value.format(slot=app.replication_slot(rebuilt=True))
             if 'pg_is_in_recovery' in statement:
-                return overrides.get(app.name, {}).get('status', 'f|off||0/1|0')
+                return overrides.get(app.name, {}).get('status', 'f|off||0/1')
             raise AssertionError(statement)
         return sql
 
@@ -551,9 +551,9 @@ class ClusterStatusTests(unittest.TestCase):
                 self.status('primary', **{apps.REPLICATED_DATABASES[0].name: {'pg_stat_archiver': archiver}})
 
     def test_standby_must_be_read_only_and_receiving_for_every_database(self):
-        healthy = {d.name: {'status': 't|on|0/5000000|0/5000000|0'} for d in apps.REPLICATED_DATABASES}
+        healthy = {d.name: {'status': 't|on|0/5000000|0/5000000'} for d in apps.REPLICATED_DATABASES}
         self.assertEqual(set(self.status('standby', **healthy)), {d.name for d in apps.REPLICATED_DATABASES})
         notes = apps.REPLICATED_DATABASES[1].name
-        for state in ('f|off|0/5000000|0/5000000|0', 't|on||0/5000000|0'):
+        for state in ('f|off|0/5000000|0/5000000', 't|on||0/5000000'):
             with self.subTest(state=state), self.assertRaisesRegex(RuntimeError, f'{notes}: rebuilt standby'):
                 self.status('standby', **{**healthy, notes: {'status': state}})

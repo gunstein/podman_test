@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../installer"
 checks='reseed_check rebuild_primary_check require_promoted_group require_standby
 require_primary status streaming_status archive_health require_stopped_service
-require_quarantined_group require_reseed_confirmations identifier address'
+require_quarantined_group require_reseed_confirmations identifier address lsn unreplayed_bytes'
 
 patterns=()
 for check in $checks; do

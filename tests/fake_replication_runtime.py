@@ -61,7 +61,7 @@ if args and args[0] == 'exec':
         state['hba'].append(container)
         finish('changed' if changed else '')
     if 'pg_is_in_recovery()' in statement:
-        finish('t|on|0/20|0/20|0' if container in state['standbys'] else 'f|off|||0')
+        finish('t|on|0/20|0/20' if container in state['standbys'] else 'f|off||')
     if 'SELECT rolcanlogin' in statement:
         finish('t|t|f|f|f|f' if container in state['roles'] else '')
     if 'ALTER ROLE' in statement:

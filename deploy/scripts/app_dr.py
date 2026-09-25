@@ -198,13 +198,21 @@ class TodoDr:
                       f"Writable: {'no' if database.transaction_read_only else 'yes'}",
                       f'Receive LSN: {database.receive_lsn or "not available"}',
                       f'Replay LSN: {database.replay_lsn or "not available"}',
-                      f'Local apply lag: {database.apply_lag_bytes} bytes',
+                      f'Local apply lag: {database.apply_lag_bytes} bytes' + self._receive_note(database),
                       f'Primary endpoint {self.config.primary_address}:{app.replication_port}: {primary}']
         lines.append('Configured RPO target (informational): at most '
                      f'{self.config.rpo_target_seconds} seconds')
         if self.journal_path.exists():
             lines.append(f'Promotion decision record: {self.journal_path}')
         return lines
+
+    @staticmethod
+    def _receive_note(database):
+        """Explain the one case where receive is behind replay: it is expected, not lag."""
+        if database.receive_lsn and database.replay_lsn and (
+                replication.lsn(database.receive_lsn) < replication.lsn(database.replay_lsn)):
+            return ' (receive restarted at the WAL segment start after a walreceiver restart; nothing to replay)'
+        return ''
 
     def preflight(self, fencing_confirmation):
         """Read-only check that promotion is safe now; returns each database's state.

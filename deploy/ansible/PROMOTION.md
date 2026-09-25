@@ -56,6 +56,9 @@ python3 /opt/todo/bin/app_dr.py status
 Expected output includes `Database role: standby`, `Writable: no`, zero local
 apply lag and `Primary endpoint ...: reachable`. Local apply lag only compares
 WAL already received by standby; it is not the possible data loss on primary.
+It is never negative: after a standby restart the receive LSN can be behind the
+replay LSN (the walreceiver restarts at the WAL segment start), which means
+nothing is left to replay, and counts as zero.
 
 Do not expect `preflight` to pass during normal operation. It deliberately
 rejects a reachable primary.

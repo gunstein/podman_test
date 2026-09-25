@@ -72,7 +72,7 @@ class TodoDrTests(unittest.TestCase):
             self.assertEqual(app_dr.load_config(path).rpo_target_seconds, 30)
 
     def test_status_reports_normal_standby(self):
-        tool, _runner = self.tool(["t|on|0/10|0/10|0"], reachable=True)
+        tool, _runner = self.tool(["t|on|0/10|0/10"], reachable=True)
         output = "\n".join(tool.status_lines())
         self.assertIn("Database role: standby", output)
         self.assertIn("Writable: no", output)
@@ -80,27 +80,49 @@ class TodoDrTests(unittest.TestCase):
 
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
     def test_preflight_accepts_fenced_caught_up_standby(self, _hostname):
-        tool, _runner = self.tool(["t|on|0/10|0/10|0"])
+        tool, _runner = self.tool(["t|on|0/10|0/10"])
         status = tool.preflight("todo-primary is fenced")
         self.assertTrue(status["todo"].in_recovery)
 
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
     def test_preflight_rejects_reachable_primary(self, _hostname):
-        tool, _runner = self.tool(["t|on|0/10|0/10|0"], reachable=True)
+        tool, _runner = self.tool(["t|on|0/10|0/10"], reachable=True)
         with self.assertRaisesRegex(app_dr.DrError, "still answers"):
             tool.preflight("todo-primary is fenced")
 
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
     def test_preflight_rejects_missing_lsn(self, _hostname):
-        tool, _runner = self.tool(["t|on|||0"])
+        tool, _runner = self.tool(["t|on||"])
         with self.assertRaisesRegex(app_dr.DrError, "LSN is unavailable"):
             tool.preflight("todo-primary is fenced")
 
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
     def test_preflight_rejects_local_apply_lag(self, _hostname):
-        tool, _runner = self.tool(["t|on|0/20|0/10|16"])
+        tool, _runner = self.tool(["t|on|0/20|0/10"])
         with self.assertRaisesRegex(app_dr.DrError, "unreplayed local WAL"):
             tool.preflight("todo-primary is fenced")
+
+    @mock.patch.object(socket, "gethostname", return_value="todo-standby")
+    def test_preflight_after_a_walreceiver_restart(self, _hostname):
+        # Receive behind replay (the exact values from an acceptance run) means
+        # nothing is left to replay; equal passes; one byte ahead still refuses.
+        for receive, replay, lag in (("0/3000000", "0/3000060", 0), ("0/3000060", "0/3000060", 0),
+                                     ("0/3000061", "0/3000060", 1)):
+            with self.subTest(receive=receive, replay=replay):
+                tool, _runner = self.tool([f"t|on|{receive}|{replay}"])
+                if lag:
+                    with self.assertRaisesRegex(app_dr.DrError, "unreplayed local WAL: 1 bytes"):
+                        tool.preflight("todo-primary is fenced")
+                else:
+                    self.assertEqual(tool.preflight("todo-primary is fenced")["todo"].apply_lag_bytes, 0)
+
+    def test_status_never_reports_a_negative_lag(self):
+        tool, _runner = self.tool(["t|on|0/3000000|0/3000060"])
+        output = "\n".join(tool.status_lines())
+        self.assertIn("Local apply lag: 0 bytes (receive restarted at the WAL segment start", output)
+        self.assertNotIn("-96", output)
+        tool, _runner = self.tool(["t|on|0/10|0/10"])
+        self.assertIn("Local apply lag: 0 bytes\n", "\n".join(tool.status_lines()))
 
     @mock.patch.object(socket, "gethostname", return_value="wrong-host")
     def test_preflight_rejects_wrong_host(self, _hostname):
@@ -116,7 +138,7 @@ class TodoDrTests(unittest.TestCase):
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
     def test_promote_rechecks_and_verifies_writable_database(self, _hostname):
         tool, runner = self.tool(
-            ["t|on|0/10|0/10|0", "f|off|||0"], reachable=False
+            ["t|on|0/10|0/10", "f|off||"], reachable=False
         )
         status = tool.promote("todo-primary is fenced", "todo-standby")
         self.assertFalse(status["todo"].in_recovery)
@@ -126,7 +148,7 @@ class TodoDrTests(unittest.TestCase):
 
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
     def test_promote_requires_exact_standby_confirmation(self, _hostname):
-        tool, runner = self.tool(["t|on|0/10|0/10|0"])
+        tool, runner = self.tool(["t|on|0/10|0/10"])
         with self.assertRaisesRegex(app_dr.DrError, "standby hostname"):
             tool.promote("todo-primary is fenced", "wrong-host")
         flattened = [item for command in runner.commands for item in command]
@@ -143,7 +165,7 @@ class TodoDrTests(unittest.TestCase):
             self.assertEqual(app_dr.load_config(path).rpo_target_seconds, 45)
 
     def test_status_labels_rpo_target_as_informational(self):
-        tool, _runner = self.tool(["t|on|0/10|0/10|0"], reachable=True)
+        tool, _runner = self.tool(["t|on|0/10|0/10"], reachable=True)
         output = "\n".join(tool.status_lines())
         self.assertIn("Configured RPO target (informational)", output)
 
@@ -168,7 +190,7 @@ class GroupPromotionTests(unittest.TestCase):
         self.hostname = mock.patch.object(socket, 'gethostname', return_value='standby')
         self.hostname.start()
         self.addCleanup(self.hostname.stop)
-        self.states = {app.resource('postgres'): 't|on|0/10|0/10|0' for app in self.apps}
+        self.states = {app.resource('postgres'): 't|on|0/10|0/10' for app in self.apps}
         self.commands = []
         self.endpoints = []
         self.failed_promotion = None
@@ -188,7 +210,7 @@ class GroupPromotionTests(unittest.TestCase):
             self.assertEqual(decision['state'], 'promoting')
             if arguments[2] == self.failed_promotion:
                 return completed(stderr='injected promotion failure', returncode=1)
-            self.states[arguments[2]] = 'f|off|||0'
+            self.states[arguments[2]] = 'f|off||'
             return completed()
         raise AssertionError(arguments)
 
@@ -200,14 +222,14 @@ class GroupPromotionTests(unittest.TestCase):
                               runner=self.runner, connector=connect, journal_path=self.journal)
 
     def test_last_app_lag_prevents_every_promotion(self):
-        self.states['notes-postgres'] = 't|on|0/20|0/10|16'
+        self.states['notes-postgres'] = 't|on|0/20|0/10'
         with self.assertRaisesRegex(app_dr.DrError, 'notes.*unreplayed'):
             self.tool().promote('primary is fenced', 'standby')
         self.assertFalse(any('pg_ctl' in command for command in self.commands))
         self.assertFalse(self.journal.exists())
 
     def test_last_app_missing_lsn_or_wrong_role_prevents_every_promotion(self):
-        for state in ('t|on|||0', 'f|off|||0', 't|off|0/10|0/10|0'):
+        for state in ('t|on||', 'f|off||', 't|off|0/10|0/10'):
             self.states['notes-postgres'] = state
             with self.assertRaises(app_dr.DrError):
                 self.tool().promote('primary is fenced', 'standby')

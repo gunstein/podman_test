@@ -549,6 +549,11 @@ standby, read-only database, reachable primary and zero local apply lag:
 python3 /opt/todo/bin/app_dr.py status
 ```
 
+Zero local apply lag means nothing received is left to replay. Right after a
+standby restart the receive LSN can be *behind* the replay LSN, because
+PostgreSQL restarts the walreceiver at the start of the current WAL segment;
+`app_dr.py status` then reports 0 bytes with a note. That is expected.
+
 Rerun the installer and require no file or trust changes.
 Prepare and rehearse [Proxmox quarantine](PROXMOX-QUARANTINE.md) now, while
 initial primary is still the authorized writable node. Verify restored normal

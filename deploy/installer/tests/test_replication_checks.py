@@ -14,7 +14,7 @@ from unittest.mock import patch
 from app_installer import apps, replication
 
 APP = apps.APPS[1]
-HEALTHY_STANDBY = 't|on|0/3000060|0/3000060|0'
+HEALTHY_STANDBY = 't|on|0/3000060|0/3000060'
 
 
 def done(stdout=''):
@@ -26,15 +26,16 @@ class StatusTests(unittest.TestCase):
         return replication.status(APP, query=lambda app, statement: output)
 
     def test_every_field_is_parsed(self):
-        self.assertEqual(self.status('t|on|0/3000060|0/3000050|16'), {
+        self.assertEqual(self.status('t|on|0/3000060|0/3000050'), {
             'in_recovery': True, 'transaction_read_only': True, 'receive_lsn': '0/3000060',
             'replay_lsn': '0/3000050', 'apply_lag_bytes': 16})
-        self.assertEqual(self.status('f|off|||0'), {
+        self.assertEqual(self.status('f|off||'), {
             'in_recovery': False, 'transaction_read_only': False, 'receive_lsn': '',
             'replay_lsn': '', 'apply_lag_bytes': 0})
 
     def test_malformed_output_is_refused(self):
-        for output in ('t|on|0/1|0/1', 't|on|0/1|0/1|0|extra', 'x|on|0/1|0/1|0', 't|yes|0/1|0/1|0', ''):
+        for output in ('t|on|0/1', 't|on|0/1|0/1|0', 'x|on|0/1|0/1', 't|yes|0/1|0/1', '',
+                       't|on|3000060|0/1', 't|on|0/1|0/xyz', 't|on|0/123456789|0/1'):
             with self.subTest(output=output), self.assertRaisesRegex(RuntimeError, 'invalid database status'):
                 self.status(output)
 
@@ -44,8 +45,33 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(seen, [APP])
 
     def test_require_primary_and_standby_use_the_given_query(self):
-        replication.require_primary(APP, query=lambda app, statement: 'f|off|||0')
+        replication.require_primary(APP, query=lambda app, statement: 'f|off||')
         replication.require_standby(APP, query=lambda app, statement: HEALTHY_STANDBY)
+
+
+class UnreplayedBytesTests(unittest.TestCase):
+    """Bytes received but not replayed yet; never negative."""
+
+    def test_lsn_is_a_64_bit_position(self):
+        self.assertEqual(replication.lsn('0/3000060'), 0x3000060)
+        self.assertEqual(replication.lsn('1/0'), 1 << 32)
+        self.assertEqual(replication.lsn('A/ff'), (10 << 32) + 255)
+        self.assertEqual(replication.lsn('1f/0'), 31 << 32)
+        for invalid in ('3000060', '0/3000060/1', '0/', '/1', '0/123456789', 'g/0'):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, 'Invalid WAL position'):
+                replication.lsn(invalid)
+
+    def test_the_three_cases(self):
+        self.assertEqual(replication.unreplayed_bytes('0/3000060', '0/3000000'), 96)
+        self.assertEqual(replication.unreplayed_bytes('0/3000060', '0/3000060'), 0)
+        # After a walreceiver restart: receive restarts at the segment start (seen in acceptance).
+        self.assertEqual(replication.unreplayed_bytes('0/3000000', '0/3000060'), 0)
+        self.assertEqual(replication.unreplayed_bytes('0/3000061', '0/3000060'), 1)
+        self.assertEqual(replication.unreplayed_bytes('1/0', '0/FFFFFFFF'), 1)
+
+    def test_an_unknown_position_counts_as_nothing(self):
+        for receive, replay in (('', '0/1'), ('0/1', ''), ('', '')):
+            self.assertEqual(replication.unreplayed_bytes(receive, replay), 0)
 
 
 class RequireStandbyTests(unittest.TestCase):
@@ -56,18 +82,22 @@ class RequireStandbyTests(unittest.TestCase):
 
     def test_a_caught_up_standby_passes(self):
         self.assertEqual(self.check(HEALTHY_STANDBY)['apply_lag_bytes'], 0)
+        # Receive behind replay after a walreceiver restart: nothing left to replay.
+        restarted = self.check('t|on|0/3000000|0/3000060')
+        self.assertEqual((restarted['receive_lsn'], restarted['apply_lag_bytes']), ('0/3000000', 0))
         asked = []
         replication.require_standby(APP, query=lambda app, statement: asked.append(app) or HEALTHY_STANDBY)
         self.assertEqual(asked, [APP])
 
     def test_each_unsafe_state_is_refused(self):
-        cases = [('f|on|0/1|0/1|0', 'expected a read-only standby'),
-                 ('t|off|0/1|0/1|0', 'expected a read-only standby'),
-                 ('f|off|0/1|0/1|0', 'expected a read-only standby'),
-                 ('t|on||0/1|0', 'not fully replayed'),
-                 ('t|on|0/1||0', 'not fully replayed'),
-                 ('t|on|||0', 'not fully replayed'),
-                 ('t|on|0/2|0/1|1', 'not fully replayed')]
+        cases = [('f|on|0/1|0/1', 'expected a read-only standby'),
+                 ('t|off|0/1|0/1', 'expected a read-only standby'),
+                 ('f|off|0/1|0/1', 'expected a read-only standby'),
+                 ('t|on||0/1', 'not fully replayed'),
+                 ('t|on|0/1|', 'not fully replayed'),
+                 ('t|on||', 'not fully replayed'),
+                 ('t|on|0/2|0/1', 'not fully replayed'),
+                 ('t|on|0/3000060|0/3000000', 'not fully replayed')]
         for output, message in cases:
             with self.subTest(output=output), self.assertRaisesRegex(RuntimeError, message):
                 self.check(output)

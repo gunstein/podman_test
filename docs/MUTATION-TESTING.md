@@ -22,6 +22,8 @@ deletion of database data:
 - `status`, `require_primary`, `require_standby`, `streaming_status` and
   `archive_health`, which read the database role, replay position and WAL
   archiving;
+- `lsn` and `unreplayed_bytes`, which turn two WAL positions into the bytes
+  still to replay (never negative);
 - `identifier` and `address`, which validate names and addresses.
 
 A mistake in these checks can delete data or promote a database that is behind,
@@ -52,13 +54,13 @@ list is in the job summary, and survivors never fail the run.
 
 After the first round and the tests it added
 (`deploy/installer/tests/test_replication_checks.py`, and exact command lists
-in `test_destructive_gates.py`), 599 of 658 mutants are killed. The 59 that
+in `test_destructive_gates.py`), 642 of 696 mutants are killed. The 54 that
 survive are all in these groups:
 
 | Group | Count | Why it is accepted |
 |---|---|---|
 | Error message wording | 18 | Tests match a key phrase of each message, not its exact capitalisation or wording. A person still gets a clear message. |
-| SQL text | 37 | The tests answer SQL with fixed strings, so a broken query cannot be seen there. SQL keywords are also case-insensitive, so the upper- and lower-case mutants are equivalent. A real PostgreSQL checks these queries: the two-VM acceptance run and the backend CI jobs. |
+| SQL text | 32 | The tests answer SQL with fixed strings, so a broken query cannot be seen there. SQL keywords are also case-insensitive, so the upper- and lower-case mutants are equivalent. A real PostgreSQL checks these queries: the two-VM acceptance run and the backend CI jobs. |
 | `split('=', 1)` variants in `require_stopped_service` | 3 | `systemctl show` values for these four properties never contain `=`, so the variants behave the same. |
 | Publish address in `reseed_check`'s template render | 1 | The render only checks that the template renders; its output is discarded. |
 

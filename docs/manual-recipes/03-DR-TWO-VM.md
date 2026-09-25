@@ -523,7 +523,8 @@ It checks, among other things, that:
 ```text
 every local PostgreSQL (todo, notes, keycloak) is standby
 every local database is healthy
-apply lag = 0 for each
+apply lag = 0 for each (nothing received is left to replay; a receive LSN
+  behind the replay LSN after a standby restart also counts as 0)
 VM1:5432, 5433 and 5434 are unreachable
 ```
 

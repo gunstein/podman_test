@@ -64,16 +64,24 @@ def require_standby(app, query=None):
     return state
 
 
+REFRESH_HBA_SCRIPT = """
+set -eu
+current=$(grep "^host replication $1 " "$PGDATA/pg_hba.conf" || true)
+if [ "$current" != "$2" ]; then
+    sed -i "/^host replication $1 /d" "$PGDATA/pg_hba.conf"
+    printf '%s\\n' "$2" >> "$PGDATA/pg_hba.conf"
+    printf 'changed\\n'
+fi
+"""
+
+
 def refresh_hba(app):
     role = identifier(app.database_role('replicator'))
     network = json.loads(run('podman', 'network', 'inspect', apps.NETWORK).stdout)
     subnet = str(ipaddress.ip_network(network[0]['subnets'][0]['subnet']))
-    result = run('podman', 'exec', app.resource('postgres'), 'sh', '-c',
-                 'current=$(grep "^host replication $1 " "$PGDATA/pg_hba.conf" || true); '
-                 'if [ "$current" != "$2" ]; then '
-                 'sed -i "/^host replication $1 /d" "$PGDATA/pg_hba.conf"; '
-                 'printf "%s\\n" "$2" >> "$PGDATA/pg_hba.conf"; printf "changed\\n"; fi',
-                 'replication-hba', role, f'host replication {role} {subnet} scram-sha-256')
+    rule = f'host replication {role} {subnet} scram-sha-256'
+    result = run('podman', 'exec', '-i', app.resource('postgres'), 'sh', '-s', '--',
+                 role, rule, input=REFRESH_HBA_SCRIPT)
     sql(app, 'SELECT pg_reload_conf();')
     return result.stdout.strip() == 'changed'
 
@@ -141,6 +149,26 @@ def data_claim(app, rendered_manifest_dir):
     return yaml.safe_dump(claims[0])
 
 
+# $1 primary_address, $2 replication_port, $3 role, $4 slot, $5 passfile name,
+# $6 replication secret name. pg_basebackup already wrote a bare
+# primary_conninfo/primary_slot_name pair; this replaces both with values that
+# include the passfile, and writes that passfile from the mounted secret.
+WRITE_RECOVERY_CONF_SCRIPT = """
+set -eu
+data=/var/lib/postgresql/data
+passfile=$data/$5
+auto=$data/postgresql.auto.conf
+umask 077
+printf '%s:%s:replication:%s:' "$1" "$2" "$3" > "$passfile"
+cat "/run/secrets/$6" >> "$passfile"
+printf '\\n' >> "$passfile"
+sed -i "/^primary_conninfo =/d; /^primary_slot_name =/d" "$auto"
+printf "primary_conninfo = 'host=%s port=%s user=%s application_name=%s passfile=%s'\\n" \\
+    "$1" "$2" "$3" "$4" "$passfile" >> "$auto"
+printf "primary_slot_name = '%s'\\n" "$4" >> "$auto"
+"""
+
+
 def bootstrap_standby(app, primary_address, *, project_root, quadlet_dir,
                       kube_runtime_dir, rendered_manifest_dir, image_archive=None, slot=None):
     primary_address = address(primary_address)
@@ -170,17 +198,10 @@ def bootstrap_standby(app, primary_address, *, project_root, quadlet_dir,
     run(*common, '--volume', f'{app.volume("data")}:{DATA}:Z', '--entrypoint', 'chmod',
         app.image('postgres'), '0700', DATA)
     # The final helper must leave the shared Kube SELinux label, not a private MCS label.
-    run(*common, '--volume', f'{app.volume("data")}:{DATA}:z', '--secret', app.secret('replicator'),
-        '--entrypoint', '/bin/sh', app.image('postgres'), '-ec',
-        'data=/var/lib/postgresql/data; passfile=$data/$5; auto=$data/postgresql.auto.conf; '
-        'umask 077; printf "%s:%s:replication:%s:" "$1" "$2" "$3" > "$passfile"; '
-        'cat "/run/secrets/$6" >> "$passfile"; printf "\\n" >> "$passfile"; '
-        'sed -i "/^primary_conninfo =/d; /^primary_slot_name =/d" "$auto"; '
-        'printf "primary_conninfo = \'host=%s port=%s user=%s application_name=%s passfile=%s\'\\n" '
-        '"$1" "$2" "$3" "$4" "$passfile" >> "$auto"; '
-        'printf "primary_slot_name = \'%s\'\\n" "$4" >> "$auto"',
-        app.resource('standby-config'), primary_address, str(app.replication_port), role, slot,
-        app.replication_passfile(), app.secret('replicator'))
+    run(*common, '-i', '--volume', f'{app.volume("data")}:{DATA}:z', '--secret', app.secret('replicator'),
+        '--entrypoint', '/bin/sh', app.image('postgres'), '-s', '--',
+        primary_address, str(app.replication_port), role, slot,
+        app.replication_passfile(), app.secret('replicator'), input=WRITE_RECOVERY_CONF_SCRIPT)
     workloads.install_postgres(project_root, quadlet_dir, kube_runtime_dir,
                                rendered_manifest_dir, app=app)
     quadlet.systemctl('start', app.service('postgres'))

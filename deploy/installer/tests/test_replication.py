@@ -31,7 +31,7 @@ class ReplicationTests(unittest.TestCase):
                 output = 'f|off|||0'
             elif argv[:3] == ('podman', 'network', 'inspect'):
                 output = json.dumps([{'subnets': [{'subnet': '10.89.0.0/24'}]}])
-            elif 'replication-hba' in argv:
+            elif kwargs.get('input') == replication.REFRESH_HBA_SCRIPT:
                 output = '' if state['hba'] else 'changed'
                 state['hba'] = True
             elif 'SELECT rolcanlogin' in statement:
@@ -158,9 +158,9 @@ class ReplicationTests(unittest.TestCase):
                 if argv[:3] == ('podman', 'network', 'inspect'):
                     self.assertEqual(argv[3], apps.NETWORK)
                     return subprocess.CompletedProcess(argv, 0, '[{"subnets":[{"subnet":"10.99.0.0/24"}]}]', '')
-                self.assertEqual(argv[:3], ('podman', 'exec', 'todo-postgres'))
-                return subprocess.run(argv[3:], check=True, text=True, capture_output=True,
-                                      env={**os.environ, 'PGDATA': temp})
+                self.assertEqual(argv[:4], ('podman', 'exec', '-i', 'todo-postgres'))
+                return subprocess.run(argv[4:], input=kwargs.get('input'), check=True, text=True,
+                                      capture_output=True, env={**os.environ, 'PGDATA': temp})
 
             with patch.object(replication, 'run', side_effect=command), patch.object(replication, 'sql') as sql:
                 self.assertTrue(replication.refresh_hba(apps.APPS[0]))

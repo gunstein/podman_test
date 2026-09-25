@@ -17,6 +17,10 @@ host identity, clear refusals and repeat runs that change nothing.
 A pass here is evidence for retiring the Ansible playbooks. Retiring them is a
 separate decision.
 
+An autonomous agent run uses [ACCEPTANCE-AGENT.md](ACCEPTANCE-AGENT.md) with
+`Operations tool: app-ops`. Its section C9.13 says how the agent handles sudo,
+trust and inventories.
+
 ## What changes
 
 | Phase | Ansible playbook | app-ops command | Runs on (controller) |

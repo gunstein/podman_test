@@ -4,6 +4,8 @@ This document lets a coding agent run the full two-VM acceptance in
 [ACCEPTANCE.md](ACCEPTANCE.md) with as little operator typing as possible.
 It adds **how** the agent operates (Proxmox API token, passwordless lab sudo,
 evidence, stop rules) on top of the canonical **what** in ACCEPTANCE.md.
+The kickoff chooses the operations tool: the Ansible playbooks, or `app-ops`
+as in [ACCEPTANCE-APP-OPS.md](ACCEPTANCE-APP-OPS.md) (see C9.13).
 
 - Part A: one-time operator preparation.
 - Part B: the kickoff message the operator pastes to the agent.
@@ -155,6 +157,7 @@ Run the Todo/Notes two-VM acceptance. Follow docs/ACCEPTANCE-AGENT.md Part C
 exactly, with docs/ACCEPTANCE.md as the phase sequence.
 
 Mode: NEW clean run
+Operations tool: <ansible | app-ops>
 Revision to test: <full 40-char commit SHA on feature/podman-kube>
 CI on that revision: <green | red | unknown>
 Run ID: <e.g. 2026-09-25-agent-1>
@@ -284,13 +287,17 @@ finish: do not repeat it; poll
 **Guests.** SSH as `gunstein` with host-key checking on. Use `sudo -n` for root
 commands inside the VMs so a missing sudo rule fails immediately instead of
 hanging. Run Ansible **without** `--ask-become-pass`; passwordless sudo
-replaces it. Everything else in ACCEPTANCE.md stays the same.
+replaces it. With `Operations tool: app-ops`, use app-ops instead of every
+playbook as C9.13 says; it never asks for a password. Everything else in
+ACCEPTANCE.md stays the same.
 
 **Long commands.** Bundle builds, `bootstrap-standby.yml` and
 `rebuild-standby.yml` can take more than ten minutes. Start them in the
 background with output to a log file, for example
 `nohup ssh ... 'cd ~/todo-operations && ansible-playbook ...' > logs/09-rebuild.log 2>&1 &`,
-then read the log until `PLAY RECAP` appears. If your tool times out, the
+then read the log until `PLAY RECAP` appears. For app-ops, end the remote
+command with `; echo "exit=$?"` and read the log until that line appears. If
+your tool times out, the
 command may still be running: read the log and `ps`; never start it a second time.
 
 **Interactive prompts in ACCEPTANCE.md.** Replace `read -rp "Client IPv4..."`
@@ -332,7 +339,9 @@ every 10 seconds for up to 10 minutes until the boot ID differs.
 
 For every phase, write into `run-record.md`:
 
-- Ansible `PLAY RECAP` lines (ok/changed/failed counts) and for repeats `changed=0`.
+- Ansible `PLAY RECAP` lines (ok/changed/failed counts) and for repeats `changed=0`;
+  with app-ops, each command's JSON line and exit code, and for repeats
+  `{"changed": false}`.
 - `hostname`, boot ID before and after each reboot.
 - Per database (todo, notes, keycloak): role (`pg_is_in_recovery`,
   `transaction_read_only`), receive/replay LSNs, lag, slot name and state.
@@ -347,7 +356,9 @@ Environment deviations that are expected in an agent run and must be recorded,
 but do not by themselves downgrade the verdict: passwordless sudo instead of
 `--ask-become-pass`; Proxmox API token instead of the node Shell; the testuser
 password in a tmpfs file; firewall evidence from API rule listings plus
-connection tests instead of `pve-firewall` output.
+connection tests instead of `pve-firewall` output. With app-ops, also the
+lab sudoers file from A3 instead of the run-only file in ACCEPTANCE-APP-OPS.md,
+and the skipped refusal check that needs sudo without NOPASSWD (C9.13).
 
 ### C8. If a command fails or times out
 
@@ -365,12 +376,14 @@ Execute the phases of `docs/ACCEPTANCE.md` in order. Read each phase completely
 before starting it. The notes below tell you how to perform the steps that
 normally need the operator, and what extra checks are required. Values below
 use the lab defaults (`.102` = VM 107 = `todo-primary`, `.108` = VM 108 =
-`todo-standby`, client `.100`); use the kickoff values.
+`todo-standby`, client `.100`); use the kickoff values. With
+`Operations tool: app-ops`, C9.13 replaces every Ansible command below.
 
 #### C9.0 Before phase 1
 
 1. Read `AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/ACCEPTANCE.md`,
-   `docs/PROXMOX-QUARANTINE.md` and `docs/ACCEPTANCE-TROUBLESHOOTING.md`.
+   `docs/PROXMOX-QUARANTINE.md` and `docs/ACCEPTANCE-TROUBLESHOOTING.md`; with
+   `Operations tool: app-ops`, also `docs/ACCEPTANCE-APP-OPS.md` and C9.13.
 2. `git status --porcelain` must be empty and `git rev-parse HEAD` must equal the
    kickoff revision. Otherwise STOP.
 3. If CI is not `green`, run the local suite and record the result; STOP on failure:
@@ -678,7 +691,7 @@ restore commands. Record every backup name printed by `create`
 
 #### C9.12 Key-based SSH between the VMs (no password needed)
 
-Ansible on `FROM` must reach `TO` with a key, and `FROM` must know `TO`'s host
+Ansible or app-ops on `FROM` must reach `TO` with a key, and `FROM` must know `TO`'s host
 key through an independently verified fingerprint. Your own SSH connections
 from the client are the trusted path. Run from the client (example
 `FROM=192.168.0.102`, `TO=192.168.0.108`):
@@ -702,3 +715,43 @@ ssh gunstein@$FROM "ssh -o BatchMode=yes gunstein@$TO hostname"
 ```
 
 A fingerprint mismatch is a STOP. The last command must print `TO`'s hostname.
+
+#### C9.13 With `Operations tool: app-ops`
+
+Follow [ACCEPTANCE-APP-OPS.md](ACCEPTANCE-APP-OPS.md) wherever a C9 step runs
+a playbook. Do not run `ansible` or `ansible-playbook` at all; the verdict
+requires that. Run every app-ops command on the controller VM over SSH, from
+the package directory:
+
+```bash
+ssh gunstein@192.168.0.102 'cd ~/todo-operations && PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops --inventory initial.yaml replication-status; echo "exit=$?"'
+```
+
+Differences from ACCEPTANCE-APP-OPS.md in an agent run:
+
+1. Sudo. The A3 lab sudoers file already grants passwordless sudo, so do not
+   create or remove `90-app-ops-acceptance`. Skip the first refusal check
+   (app-ops without NOPASSWD): you cannot take the rule away and get it back
+   without a password. Record the skip; unit tests cover that refusal. Do all
+   the other refusal checks.
+2. Controller trust. Run the trust command with `sudo -n sh deploy/scripts/trust-files.sh ...`:
+   on `.102` before C9.5, and on `.108` before C9.8.
+3. Inventories. Write `initial.yaml` on `.102` before C9.5 and `recovery.yaml`
+   on `.108` before C9.8, with the kickoff names and addresses, using a
+   heredoc over SSH. Save both in the run folder; they hold no secrets.
+
+Substitutions:
+
+| Step | Instead of | Run on | app-ops |
+|---|---|---|---|
+| C9.5 | preflight, bootstrap, status playbooks | `.102` | `preflight-standby`, `bootstrap-standby` (background, C5), `replication-status` twice |
+| C9.6 step 1 | `install-dr-tool.yml` and its repeat | `.102` | `install-dr-tool` twice |
+| C9.6 step 2 | `install-quarantine-tool.yml -e ...` | `.102` | `install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint`, then once more |
+| C9.8 | `deploy-promoted-application.yml` and its repeat | `.108` | `deploy-promoted-application` twice |
+| C9.9 | `configure-backup.yml` and its repeat | `.108` | `configure-backup` twice |
+| C9.10 step 9 | `preflight-standby-rebuild.yml` | `.108` | the wrong-confirmation check, then `preflight-standby-rebuild` |
+| C9.10 step 10 | `rebuild-standby.yml` | `.108` | `rebuild-standby` once, in the background (C5); a non-zero exit is a STOP, never rerun |
+| C9.10 step 11, C9.11 | `cluster-status.yml` | `.108` | `cluster-status` |
+
+The confirmations are the ones in ACCEPTANCE-APP-OPS.md. Each repeat must
+print `{"changed": false}`. Anything else is a failed gate (C3).

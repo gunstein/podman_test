@@ -28,7 +28,7 @@ def write(path, content, mode):
             return False
         path.chmod(mode)
         return True
-    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".todo-installer-")
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".app-installer-")
     try:
         with os.fdopen(fd, "wb") as stream:
             stream.write(content)

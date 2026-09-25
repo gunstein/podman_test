@@ -10,12 +10,12 @@
 
 - name: Read the complete registered database group
   ansible.builtin.command:
-    argv: [python3, -m, todo_installer, replication-apps, --details]
+    argv: [python3, -m, app_installer, replication-apps, --details]
   environment:
     PYTHONPATH: >-
       {{ '/opt/todo/lib' if todo_status_fapolicyd.rc == 0 else
          (todo_user_home if todo_user_home is defined else '/home/' ~ ansible_user)
-         ~ '/.local/share/todo-installer/deploy/installer' }}
+         ~ '/.local/share/app-installer/deploy/installer' }}
     PYTHONDONTWRITEBYTECODE: "1"
   register: todo_status_registry
   changed_when: false

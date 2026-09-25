@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from todo_installer import apps, images, quadlet, workloads  # noqa: E402
+from app_installer import apps, images, quadlet, workloads  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 

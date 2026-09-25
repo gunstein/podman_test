@@ -2,11 +2,11 @@
 # Controller-to-target transport only. Python owns workload installation.
 - name: Resolve target installer paths
   ansible.builtin.set_fact:
-    todo_installer_target: >-
+    app_installer_target: >-
       {{ (todo_kube_user_home if todo_kube_user_home is defined else
           todo_user_home if todo_user_home is defined else '/home/' ~ ansible_user)
-         ~ '/.local/share/todo-installer' }}
-    todo_installer_quadlet: >-
+         ~ '/.local/share/app-installer' }}
+    app_installer_quadlet: >-
       {{ todo_quadlet_directory | default(
          (todo_kube_user_home if todo_kube_user_home is defined else
           todo_user_home if todo_user_home is defined else '/home/' ~ ansible_user)
@@ -17,5 +17,5 @@
 - name: Stage this operations package once for the target
   ansible.builtin.include_tasks: stage-installer-files.yml
   when: >-
-    todo_installer_completed_stage | default([]) !=
-    [project_root, todo_installer_target, todo_installer_quadlet]
+    app_installer_completed_stage | default([]) !=
+    [project_root, app_installer_target, app_installer_quadlet]

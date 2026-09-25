@@ -7,8 +7,8 @@
 - name: Install the shared PostgreSQL Kube runtime with LAN replication
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
   vars:
-    todo_installer_workload: postgres
-    todo_installer_app: "{{ todo_replication_app }}"
+    app_installer_workload: postgres
+    app_installer_app: "{{ todo_replication_app }}"
     postgres_publish_address: "{{ todo_node_address }}"
 
 - name: Restart PostgreSQL with the LAN replication port

@@ -31,7 +31,7 @@ class OfflineScriptTests(unittest.TestCase):
         shutil.copy(ROOT / "deploy/offline/install.sh", bundle / "install.sh")
         (bundle / "preflight.sh").write_text("exit 0\n")
         self.executable("sha256sum", "exit 0\n")
-        module = bundle / "deploy/installer/todo_installer"
+        module = bundle / "deploy/installer/app_installer"
         module.mkdir(parents=True, exist_ok=True)
         (module / "__main__.py").write_text("import json,sys; print(json.dumps(sys.argv[1:]))")
         self.executable("python3", 'exec "' + sys.executable + '" "$@"\n')
@@ -76,7 +76,7 @@ class OfflineScriptTests(unittest.TestCase):
         shutil.copytree(ROOT / "deploy/manifests", project_root / "deploy/manifests")
         (project_root / "deploy/manifests/shared-proxy.yaml.j2").write_text("{% broken jinja syntax\n")
         result = subprocess.run(
-            [sys.executable, "-m", "todo_installer.render", str(project_root),
+            [sys.executable, "-m", "app_installer.render", str(project_root),
              str(ROOT / "deploy/environments/prod/values.yaml"), str(output)],
             env={**self.env, "PYTHONPATH": str(ROOT / "deploy/installer")},
             capture_output=True, text=True, check=False,

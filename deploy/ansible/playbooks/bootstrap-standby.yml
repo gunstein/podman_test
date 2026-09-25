@@ -26,10 +26,10 @@
     project_root: "{{ playbook_dir }}/../../.."
     todo_rendered_manifest_directory: "{{ project_root }}/generated/kube-runtime"
     standby_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
-    # postgres_archive names the version pinned in todo_installer/settings.py;
+    # postgres_archive names the version pinned in app_installer/settings.py;
     # read it from there instead of duplicating the version number here.
     standby_postgres_archive_name: >-
-      {{ (lookup('pipe', 'PYTHONPATH=' ~ project_root ~ '/deploy/installer python3 -m todo_installer app-info')
+      {{ (lookup('pipe', 'PYTHONPATH=' ~ project_root ~ '/deploy/installer python3 -m app_installer app-info')
           | from_json).postgres_archive }}
     standby_postgres_image_archive: "{{ standby_user_home }}/todo-offline-m12/images/{{ standby_postgres_archive_name }}"
     todo_dr_config_directory: "{{ standby_user_home }}/.config/todo"

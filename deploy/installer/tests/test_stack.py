@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from todo_installer.stack import Database  # noqa: E402
+from app_installer.stack import Database  # noqa: E402
 
 
 class DatabaseTests(unittest.TestCase):

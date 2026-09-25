@@ -8,8 +8,8 @@
 - name: Install replication-capable PostgreSQL Kube runtime
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
   vars:
-    todo_installer_workload: postgres
-    todo_installer_app: "{{ redundancy_app.name }}"
+    app_installer_workload: postgres
+    app_installer_app: "{{ redundancy_app.name }}"
     postgres_publish_address: "{{ todo_node_address }}"
 
 - name: Stop application tier before current primary restart

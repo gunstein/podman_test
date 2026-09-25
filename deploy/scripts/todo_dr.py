@@ -15,10 +15,10 @@ from typing import Callable, List, Optional, Sequence
 # Checkout/operations package and trusted target installation, respectively.
 for location in ('installer', 'lib'):
     directory = Path(__file__).resolve().parents[1] / location
-    if (directory / 'todo_installer').is_dir():
+    if (directory / 'app_installer').is_dir():
         sys.path.insert(0, str(directory))
         break
-from todo_installer import apps, replication  # noqa: E402
+from app_installer import apps, replication  # noqa: E402
 
 DEFAULT_CONFIG = Path.home() / '.config/todo/todo-dr.json'
 DEFAULT_JOURNAL = DEFAULT_CONFIG.with_name('promotion.json')

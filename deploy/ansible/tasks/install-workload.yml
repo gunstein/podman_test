@@ -6,40 +6,40 @@
 - name: Read application metadata from the shared registry
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/app-info.yml"
   vars:
-    todo_metadata_app: "{{ todo_installer_app | default('') }}"
+    todo_metadata_app: "{{ app_installer_app | default('') }}"
 
 - name: Stage canonical Quadlet templates and network on the target
   ansible.builtin.copy:
     src: "{{ project_root }}/deploy/quadlet/{{ item }}"
-    dest: "{{ todo_installer_target }}/deploy/quadlet/{{ item }}"
+    dest: "{{ app_installer_target }}/deploy/quadlet/{{ item }}"
     mode: "0600"
   loop: "{{ todo_app_metadata.templates }}"
 
 - name: Stage the caller's rendered workload manifests on the target
   ansible.builtin.copy:
     src: "{{ todo_rendered_manifest_directory | default(project_root ~ '/generated/kube-runtime') }}/{{ item }}"
-    dest: "{{ todo_installer_target }}/generated/kube-runtime/{{ item }}"
+    dest: "{{ app_installer_target }}/generated/kube-runtime/{{ item }}"
     mode: "0600"
-  loop: "{{ todo_app_metadata.manifests[todo_installer_workload] }}"
+  loop: "{{ todo_app_metadata.manifests[app_installer_workload] }}"
 
 - name: Install the shared workload with Python
   ansible.builtin.command:
     argv:
       - python3
       - -m
-      - todo_installer
+      - app_installer
       - install-workload
-      - "{{ todo_installer_workload }}"
+      - "{{ app_installer_workload }}"
       - --app
       - "{{ todo_app_metadata.name }}"
       - --project-root
-      - "{{ todo_installer_target }}"
+      - "{{ app_installer_target }}"
       - --quadlet-dir
-      - "{{ todo_installer_quadlet }}"
+      - "{{ app_installer_quadlet }}"
       - --kube-runtime-dir
-      - "{{ todo_kube_runtime_directory | default(todo_installer_quadlet ~ '/todo-kube-runtime') }}"
+      - "{{ todo_kube_runtime_directory | default(app_installer_quadlet ~ '/todo-kube-runtime') }}"
       - --rendered-manifest-dir
-      - "{{ todo_installer_target }}/generated/kube-runtime"
+      - "{{ app_installer_target }}/generated/kube-runtime"
       - --publish-address
       - "{{ todo_publish_address | default('127.0.0.1') }}"
       - --postgres-publish-address
@@ -48,8 +48,8 @@
       - "{{ todo_service_port | default(8443) | string }}"
   environment:
     PYTHONPATH: >-
-      {{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0
-         else todo_installer_target ~ '/deploy/installer' }}
+      {{ '/opt/todo/lib' if app_installer_fapolicyd.rc == 0
+         else app_installer_target ~ '/deploy/installer' }}
     PYTHONDONTWRITEBYTECODE: "1"
   register: todo_workload_install
   changed_when: (todo_workload_install.stdout | from_json).changed
@@ -57,14 +57,14 @@
 - name: Preserve the postgres workload change fact
   ansible.builtin.set_fact:
     todo_postgres_kube_changed: "{{ (todo_workload_install.stdout | from_json).changed }}"
-  when: todo_installer_workload == 'postgres'
+  when: app_installer_workload == 'postgres'
 
 - name: Preserve the application workload change fact
   ansible.builtin.set_fact:
     todo_application_kube_changed: "{{ (todo_workload_install.stdout | from_json).changed }}"
-  when: todo_installer_workload == 'application'
+  when: app_installer_workload == 'application'
 
 - name: Preserve the shared-proxy workload change fact
   ansible.builtin.set_fact:
     todo_proxy_kube_changed: "{{ (todo_workload_install.stdout | from_json).changed }}"
-  when: todo_installer_workload == 'shared-proxy'
+  when: app_installer_workload == 'shared-proxy'

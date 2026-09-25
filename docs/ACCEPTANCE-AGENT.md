@@ -11,7 +11,7 @@ evidence, stop rules) on top of the canonical **what** in ACCEPTANCE.md.
 
 If this document and ACCEPTANCE.md disagree on a safety gate, the stricter rule
 wins. If either disagrees with the App registry
-(`deploy/installer/todo_installer/apps.py`) on a name, port or service, the
+(`deploy/installer/app_installer/apps.py`) on a name, port or service, the
 registry wins and the agent records the drift.
 
 ---
@@ -389,7 +389,7 @@ use the lab defaults (`.102` = VM 107 = `todo-primary`, `.108` = VM 108 =
    ("Registered workload group"); record any drift:
 
    ```bash
-   PYTHONPATH=deploy/installer python3 -m todo_installer replication-apps --details
+   PYTHONPATH=deploy/installer python3 -m app_installer replication-apps --details
    ```
 
 5. Check the Proxmox helper and access: `get /version`, both VMs'

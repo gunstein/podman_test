@@ -115,14 +115,14 @@ names; this does not claim a minimum supported Podman version.
 
 ## Registered workload group
 
-The App registry in `deploy/installer/todo_installer/apps.py` is the source of
+The App registry in `deploy/installer/app_installer/apps.py` is the source of
 truth for names below. If this table and the registry disagree, the registry
 wins; record the drift as a documentation defect. Print the current group on
 the build host with:
 
 ```bash
-PYTHONPATH=deploy/installer python3 -m todo_installer replication-apps --details
-PYTHONPATH=deploy/installer python3 -c 'from todo_installer import apps; print(" ".join(apps.services()))'
+PYTHONPATH=deploy/installer python3 -m app_installer replication-apps --details
+PYTHONPATH=deploy/installer python3 -c 'from app_installer import apps; print(" ".join(apps.services()))'
 ```
 
 | Pod / user service | Contents | Runs on |

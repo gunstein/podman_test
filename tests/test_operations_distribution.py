@@ -80,12 +80,12 @@ def verify_package(test, archive, prefix):
                 target = package_root / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(contents)
-        for source in (ROOT / "deploy/installer/todo_installer").glob("*.py"):
+        for source in (ROOT / "deploy/installer/app_installer").glob("*.py"):
             relative = str(source.relative_to(ROOT))
             test.assertEqual(files.get(relative), source.read_bytes(), relative)
         result = subprocess.run([sys.executable, "-c", """
 from pathlib import Path
-from todo_installer.quadlet import render
+from app_installer.quadlet import render
 root = Path.cwd()
 for name in ('todo-app', 'notes-app', 'keycloak', 'todo-postgres', 'notes-postgres', 'shared-proxy'):
     (root / (name + '.kube')).write_bytes(render(root, name + '.kube', {
@@ -123,7 +123,7 @@ class OperationsDistributionTests(unittest.TestCase):
                 names = {name.removeprefix("todo-operations/") for name in package.getnames()}
             for path in (
                 "deploy/ansible/playbooks/bootstrap-standby.yml",
-                "deploy/installer/todo_installer/workloads.py",
+                "deploy/installer/app_installer/workloads.py",
                 "deploy/quadlet/shared-proxy.kube.j2",
                 "generated/kube-runtime/shared-proxy.yaml",
                 "deploy/ansible/playbooks/rebuild-standby.yml",
@@ -180,7 +180,7 @@ class OperationsDistributionTests(unittest.TestCase):
             copy_task = next(task for task in tasks if task["name"] ==
                              "Stage the caller's rendered workload manifests on the target")
             metadata_result = subprocess.run(
-                [sys.executable, '-m', 'todo_installer', 'app-info'], cwd=unpacked,
+                [sys.executable, '-m', 'app_installer', 'app-info'], cwd=unpacked,
                 env={**os.environ, 'PYTHONPATH': str(unpacked / 'deploy/installer')},
                 capture_output=True, text=True, check=True)
             metadata = json.loads(metadata_result.stdout)
@@ -196,8 +196,8 @@ class OperationsDistributionTests(unittest.TestCase):
                     destinations.append(destination / "generated/kube-runtime")
                     probes.append({
                         "name": play["name"], "hosts": "localhost", "gather_facts": False,
-                        "vars": {**play["vars"], "todo_installer_workload": "postgres",
-                                 "todo_installer_target": str(destination), "todo_app_metadata": metadata},
+                        "vars": {**play["vars"], "app_installer_workload": "postgres",
+                                 "app_installer_target": str(destination), "todo_app_metadata": metadata},
                         "tasks": [copy_task],
                     })
             self.assertEqual(len(probes), 4)

@@ -16,7 +16,7 @@
     - name: Install through the shared Python implementation
       ansible.builtin.command:
         argv: >-
-          {{ ['python3', '-m', 'todo_installer', 'install', '--mode', 'server',
+          {{ ['python3', '-m', 'app_installer', 'install', '--mode', 'server',
               '--project-root', project_root, '--deployment-mode', deployment_mode,
               '--bundle-dir', bundle_directory, '--quadlet-dir', todo_quadlet_directory,
               '--kube-runtime-dir', todo_kube_runtime_directory,

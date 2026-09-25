@@ -16,10 +16,10 @@ From a checkout or extracted package with OS-managed Jinja2:
 ```bash
 export PYTHONDONTWRITEBYTECODE=1
 export PYTHONPATH="$PWD/deploy/installer${PYTHONPATH:+:$PYTHONPATH}"
-python3 -m todo_installer install --mode server --deployment-mode build
-python3 -m todo_installer install --mode dev --deployment-mode build
-python3 -m todo_installer down
-python3 -m todo_installer uninstall
+python3 -m app_installer install --mode server --deployment-mode build
+python3 -m app_installer install --mode dev --deployment-mode build
+python3 -m app_installer down
+python3 -m app_installer uninstall
 ```
 
 Map `todo.test` and `notes.test` to the serving host (both to `127.0.0.1` for
@@ -34,7 +34,7 @@ Offline installation consumes existing YAML and OCI archives without
 network access:
 
 ```bash
-python3 -m todo_installer install --mode server --deployment-mode offline \
+python3 -m app_installer install --mode server --deployment-mode offline \
   --bundle-dir /path/to/todo-offline-m12 --publish-address 192.168.0.102
 ```
 
@@ -79,7 +79,7 @@ Callers control safe stop/start ordering. Secret creation and obsolete `.volume`
 file cleanup do not affect the definition-change flag used by DR.
 
 ```bash
-python3 -m todo_installer install-workload postgres \
+python3 -m app_installer install-workload postgres \
   --project-root /path/to/package \
   --quadlet-dir "$HOME/.config/containers/systemd" \
   --kube-runtime-dir "$HOME/.config/containers/systemd/todo-kube-runtime" \

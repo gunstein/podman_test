@@ -32,6 +32,6 @@ sh "$bundle_directory/preflight.sh"
 
 export PYTHONPATH="$bundle_directory/deploy/installer${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONDONTWRITEBYTECODE=1
-exec python3 -m todo_installer install --mode server --deployment-mode offline \
+exec python3 -m app_installer install --mode server --deployment-mode offline \
   --project-root "$bundle_directory" --bundle-dir "$bundle_directory" \
   --publish-address "$publish_address"

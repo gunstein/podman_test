@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from todo_installer import (  # noqa: E402
+from app_installer import (  # noqa: E402
     apps,
     install,
     keycloak,
@@ -55,7 +55,7 @@ class InstallTests(unittest.TestCase):
 
             with patch('subprocess.run', side_effect=command), \
                     patch.object(keycloak, 'configure') as configure, \
-                    patch.object(settings, 'DEV_STATE_FILE', root / 'todo-installer-dev.json'):
+                    patch.object(settings, 'DEV_STATE_FILE', root / 'app-installer-dev.json'):
                 install.install(ROOT, mode=mode, deployment_mode='offline',
                                 bundle_directory=root, quadlet_dir=directory,
                                 applications=applications)
@@ -147,7 +147,7 @@ class InstallTests(unittest.TestCase):
 
             with patch('subprocess.run', side_effect=command), \
                     patch.object(keycloak, 'configure'), \
-                    patch.object(settings, 'DEV_STATE_FILE', root / 'todo-installer-dev.json'):
+                    patch.object(settings, 'DEV_STATE_FILE', root / 'app-installer-dev.json'):
                 install.install(ROOT, mode='server', deployment_mode='offline',
                                 bundle_directory=root, quadlet_dir=directory, applications=applications)
                 (rendered / apps.APPS[0].manifest('app')).write_text('fixture: changed\n')
@@ -177,7 +177,7 @@ class InstallTests(unittest.TestCase):
         self.assertFalse(any(a[0] == 'systemctl' for a in calls))
 
     def test_dev_repeat_preserves_pods_and_manifest_changes_reapply(self):
-        from todo_installer.apps import APPS
+        from app_installer.apps import APPS
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp)
             for name in ('app', 'postgres', 'config', 'keycloak-postgres', 'keycloak-config',
@@ -215,7 +215,7 @@ class InstallTests(unittest.TestCase):
                 self.assertEqual(roles.call_count, 2)
 
     def test_down_uses_reverse_order_and_only_existing_files(self):
-        with tempfile.TemporaryDirectory() as temp, patch('todo_installer.kube_play.run') as run:
+        with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run:
             root = Path(temp)
             for name in ('shared-proxy', 'app', 'postgres'):
                 (root / (name + '.yaml')).touch()
@@ -230,7 +230,7 @@ class InstallTests(unittest.TestCase):
         # An offline install plays from the bundle's own generated/kube-runtime,
         # not the source tree's generated/dev; down must still find those exact
         # pods rather than silently matching nothing in the wrong directory.
-        with tempfile.TemporaryDirectory() as temp, patch('todo_installer.kube_play.run') as run:
+        with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run:
             root = Path(temp)
             recorded = root / 'elsewhere' / 'shared-proxy.yaml'
             recorded.parent.mkdir()
@@ -244,7 +244,7 @@ class InstallTests(unittest.TestCase):
             self.assertFalse(state.exists())
 
     def test_down_reports_when_nothing_was_installed(self):
-        with tempfile.TemporaryDirectory() as temp, patch('todo_installer.kube_play.run') as run:
+        with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run:
             root = Path(temp)
             self.assertFalse(kube_play.down(root, state_file=root / '.state.json'))
             run.assert_not_called()
@@ -254,10 +254,10 @@ class InstallTests(unittest.TestCase):
         # caller passing state_file explicitly, the way the CLI's plain
         # `install --mode dev` and `down` commands actually call them.
         with tempfile.TemporaryDirectory() as temp, \
-                patch.object(settings, 'DEV_STATE_FILE', Path(temp) / 'todo-installer-dev.json'), \
-                patch('todo_installer.kube_play.exists', return_value=False), \
-                patch('todo_installer.kube_play.setup_roles'), \
-                patch('todo_installer.kube_play.run',
+                patch.object(settings, 'DEV_STATE_FILE', Path(temp) / 'app-installer-dev.json'), \
+                patch('app_installer.kube_play.exists', return_value=False), \
+                patch('app_installer.kube_play.setup_roles'), \
+                patch('app_installer.kube_play.run',
                       return_value=subprocess.CompletedProcess([], 0, 'Running', '')):
             directory = Path(temp) / 'rendered'
             directory.mkdir()
@@ -267,7 +267,7 @@ class InstallTests(unittest.TestCase):
             self.assertTrue(kube_play.up(directory, (apps.APPS[0],)))
             self.assertTrue(settings.DEV_STATE_FILE.is_file())
 
-            with patch('todo_installer.kube_play.run') as run:
+            with patch('app_installer.kube_play.run') as run:
                 # A different directory argument: down must still find the
                 # pods through the recorded state file, not through this one.
                 self.assertTrue(kube_play.down(Path(temp) / 'unrelated'))
@@ -278,9 +278,9 @@ class InstallTests(unittest.TestCase):
         # No secret should ever require an interactive prompt: provision() must
         # work unattended (CI, scripted installs) for every one of them, not
         # just the migrator/app role passwords.
-        with patch('todo_installer.secrets.exists', return_value=False), \
+        with patch('app_installer.secrets.exists', return_value=False), \
                 patch('sys.stdin.isatty', return_value=False), \
-                patch('todo_installer.secrets.run') as run:
+                patch('app_installer.secrets.run') as run:
             secrets.provision()
         names = {call.args[3] for call in run.call_args_list}
         self.assertEqual(names, {
@@ -294,8 +294,8 @@ class InstallTests(unittest.TestCase):
     def test_generated_secrets_are_alphanumeric_and_existing_secrets_preserved(self):
         missing = {'todo-db-password', 'todo-migrator-password', 'todo-app-password',
                   'keycloak-db-password', 'keycloak-admin-password'}
-        with patch('todo_installer.secrets.exists', side_effect=lambda _, name: name not in missing), \
-                patch('todo_installer.secrets.run') as run:
+        with patch('app_installer.secrets.exists', side_effect=lambda _, name: name not in missing), \
+                patch('app_installer.secrets.run') as run:
             secrets.provision()
             self.assertEqual(run.call_count, len(missing))
             for call in run.call_args_list:
@@ -347,7 +347,7 @@ class InstallTests(unittest.TestCase):
 
     def test_readiness_retries_connection_reset_during_proxy_startup(self):
         with patch.object(keycloak, 'request', side_effect=[ConnectionResetError(), {'status': 'ok'}]), \
-                patch('todo_installer.keycloak.time.sleep') as sleep:
+                patch('app_installer.keycloak.time.sleep') as sleep:
             self.assertEqual(keycloak.wait('/health', 30, 1, 'ok'), {'status': 'ok'})
             sleep.assert_called_once_with(1)
 
@@ -361,8 +361,8 @@ class InstallTests(unittest.TestCase):
 
 class UninstallTests(unittest.TestCase):
     def test_refuses_dr_secret_before_any_mutation(self):
-        with patch('todo_installer.uninstall.exists', return_value=True), \
-                patch('todo_installer.uninstall.run') as run:
+        with patch('app_installer.uninstall.exists', return_value=True), \
+                patch('app_installer.uninstall.run') as run:
             with self.assertRaisesRegex(RuntimeError, 'single-host deployment'):
                 uninstall.uninstall()
             run.assert_not_called()
@@ -370,7 +370,7 @@ class UninstallTests(unittest.TestCase):
     def test_data_and_secret_removal_requires_explicit_flag(self):
         for remove_data in (False, True):
             with tempfile.TemporaryDirectory() as temp, \
-                    patch('todo_installer.uninstall.exists',
+                    patch('app_installer.uninstall.exists',
                           side_effect=lambda kind, name: not name.endswith('-replicator-password')), \
                     patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run, \
                     patch.object(settings, 'DEV_STATE_FILE', Path(temp) / '_unused' / 'dev.json'):
@@ -396,7 +396,7 @@ class UninstallTests(unittest.TestCase):
             return subprocess.CompletedProcess(argv, rc, '', '')
 
         with tempfile.TemporaryDirectory() as temp, \
-                patch('todo_installer.uninstall.exists', return_value=False), \
+                patch('app_installer.uninstall.exists', return_value=False), \
                 patch('subprocess.run', side_effect=command), \
                 patch.object(settings, 'DEV_STATE_FILE', Path(temp) / '_unused' / 'dev.json'):
             directory = Path(temp)
@@ -404,13 +404,13 @@ class UninstallTests(unittest.TestCase):
 
     def test_uninstall_removes_only_registered_pods_before_the_shared_network(self):
         with tempfile.TemporaryDirectory() as temp, \
-                patch('todo_installer.uninstall.exists',
+                patch('app_installer.uninstall.exists',
                       side_effect=lambda kind, name: kind == 'network'), \
                 patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run, \
-                patch.object(settings, 'DEV_STATE_FILE', Path(temp) / 'todo-installer-dev.json'):
+                patch.object(settings, 'DEV_STATE_FILE', Path(temp) / 'app-installer-dev.json'):
             directory = Path(temp) / 'systemd'
             directory.mkdir()
-            state = Path(temp) / 'todo-installer-dev.json'
+            state = Path(temp) / 'app-installer-dev.json'
             state.write_text('{}')
             unrelated = Path(temp) / 'unrelated.json'
             unrelated.write_text('{}')
@@ -428,7 +428,7 @@ class UninstallTests(unittest.TestCase):
 
     def test_unexpected_stop_failure_preserves_files(self):
         with tempfile.TemporaryDirectory() as temp, \
-                patch('todo_installer.uninstall.exists', return_value=False), \
+                patch('app_installer.uninstall.exists', return_value=False), \
                 patch('subprocess.run', return_value=subprocess.CompletedProcess([], 1, '', '')):
             directory = Path(temp)
             target = directory / 'app-network.network'
@@ -442,10 +442,10 @@ class FailureBoundaryTests(unittest.TestCase):
     def test_each_dr_marker_refuses_uninstall(self):
         for marker in ('.config/todo/todo-standby-entrypoint.sh',
                        '/opt/todo/bin/todo_dr.py', '/opt/todo/bin/todo_backup.py'):
-            with patch('todo_installer.uninstall.exists', return_value=False), \
+            with patch('app_installer.uninstall.exists', return_value=False), \
                     patch.object(Path, 'exists', autospec=True,
                                  side_effect=lambda p: str(p).endswith(marker)), \
-                    patch('todo_installer.uninstall.run') as run:
+                    patch('app_installer.uninstall.run') as run:
                 with self.assertRaisesRegex(RuntimeError, 'single-host deployment'):
                     uninstall.uninstall()
                 run.assert_not_called()
@@ -455,7 +455,7 @@ class FailureBoundaryTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp:
                 directory = Path(temp)
                 (directory / (name + '.container')).touch()
-                with patch('todo_installer.install.run', return_value=
+                with patch('app_installer.install.run', return_value=
                            subprocess.CompletedProcess([], 0, '--no-pod-prefix', '')) as run:
                     with self.assertRaisesRegex(RuntimeError, 'does not migrate'):
                         install.install(ROOT, quadlet_dir=directory)
@@ -467,7 +467,7 @@ class FailureBoundaryTests(unittest.TestCase):
                                              ('/ready', 30, 1, 'ready'),
                                              ('/discovery', 90, 2, None)]:
             with patch.object(keycloak, 'request', side_effect=TimeoutError), \
-                    patch('todo_installer.keycloak.time.sleep') as sleep:
+                    patch('app_installer.keycloak.time.sleep') as sleep:
                 with self.assertRaisesRegex(RuntimeError, str(attempts)):
                     keycloak.wait(path, attempts, delay, status)
                 self.assertEqual(sleep.call_count, attempts - 1)
@@ -476,7 +476,7 @@ class FailureBoundaryTests(unittest.TestCase):
 
 class RecoveryClientTests(unittest.TestCase):
     def test_client_configuration_reads_secrets_directly_without_logging_values(self):
-        from todo_installer import cli
+        from app_installer import cli
         output = io.StringIO()
         with patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, 'private-admin-fixture\n', '')) as run, \
                 patch.object(keycloak, 'configure', return_value=False) as configure, redirect_stdout(output):

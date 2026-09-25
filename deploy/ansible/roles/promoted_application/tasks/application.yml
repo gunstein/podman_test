@@ -2,8 +2,8 @@
 - name: Install the selected application through the shared workload bridge
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
   vars:
-    todo_installer_workload: application
-    todo_installer_app: "{{ promoted_app.name }}"
+    app_installer_workload: application
+    app_installer_app: "{{ promoted_app.name }}"
     todo_rendered_manifest_directory: "{{ promoted_bundle_directory }}/generated/kube-runtime"
     todo_publish_address: "{{ promoted_node_address }}"
     todo_service_port: "{{ promoted_service_port }}"

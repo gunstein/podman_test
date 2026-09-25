@@ -32,9 +32,9 @@ are preserved; remote commands receive target staging paths. The task sets
 `PYTHONPATH` explicitly, so no editable pip installation is required.
 
 On ordinary targets, staging is under the service user's
-`~/.local/share/todo-installer`. When target `fapolicyd` is active, the existing
+`~/.local/share/app-installer`. When target `fapolicyd` is active, the existing
 `todo_fapolicyd` role installs root-owned Python sources under
-`/opt/todo/lib/todo_installer`, refreshes exact controller/target file trust,
+`/opt/todo/lib/app_installer`, refreshes exact controller/target file trust,
 and waits for the trust database. Supply the same controller/target become
 credentials as other hardened DR operations (`--ask-become-pass` when needed).
 Neither trust rules nor SELinux enforcement are relaxed.
@@ -61,10 +61,10 @@ is generated automatically when missing, so these wrappers work unattended
 under Ansible with no TTY and no pre-provisioned Podman secrets required.
 
 ```bash
-PYTHONPATH=deploy/installer python3 -m todo_installer install --mode server
-PYTHONPATH=deploy/installer python3 -m todo_installer uninstall
+PYTHONPATH=deploy/installer python3 -m app_installer install --mode server
+PYTHONPATH=deploy/installer python3 -m app_installer uninstall
 # Only when permanently deleting the single-host database is intended:
-PYTHONPATH=deploy/installer python3 -m todo_installer uninstall --remove-data
+PYTHONPATH=deploy/installer python3 -m app_installer uninstall --remove-data
 ```
 
 Normal uninstall preserves database and backup volumes and database/Keycloak

@@ -4,11 +4,11 @@
 
 - name: Read the replicated applications from the registry
   ansible.builtin.command:
-    argv: [python3, -m, todo_installer, replication-apps]
+    argv: [python3, -m, app_installer, replication-apps]
   environment:
     PYTHONPATH: >-
-      {{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0
-         else todo_installer_target ~ '/deploy/installer' }}
+      {{ '/opt/todo/lib' if app_installer_fapolicyd.rc == 0
+         else app_installer_target ~ '/deploy/installer' }}
     PYTHONDONTWRITEBYTECODE: "1"
   register: todo_replication_registry
   changed_when: false

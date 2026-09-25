@@ -28,7 +28,7 @@ Jinja2 renders build-time YAML directly from `deploy/manifests/*.yaml.j2`;
 there is no template engine to install on the target host, only Python.
 CI compares packaged YAML with independent rendering. This is the Podman-supported
 subset of Kubernetes YAML: no Kubernetes cluster or portability promise.
-Read `deploy/manifests/postgres.yaml.j2`, `deploy/installer/todo_installer/stack.py`,
+Read `deploy/manifests/postgres.yaml.j2`, `deploy/installer/app_installer/stack.py`,
 `deploy/environments/prod/values.yaml`,
 `deploy/scripts/render-kube-runtime.sh` and `deploy/runtime/README.md`.
 To experiment, render into a temporary directory, never over deployed state:

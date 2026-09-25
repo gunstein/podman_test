@@ -178,7 +178,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertEqual(list((ROOT / "deploy/ansible/roles").rglob("*.kube.j2")), [])
 
     def test_active_application_constructs_separate_secrets_in_memory(self):
-        from todo_installer import secrets
+        from app_installer import secrets
         with patch.object(secrets, "read", return_value="fixture-password"), \
                 patch.object(secrets, "exists", return_value=False), \
                 patch.object(secrets, "run") as run:
@@ -244,19 +244,19 @@ class KubeRuntimeTests(unittest.TestCase):
                             self.assertIn("secretKeyRef", entry["valueFrom"], entry)
 
     def test_clean_deploy_targets_kube_without_legacy_chain(self):
-        from todo_installer import install
+        from app_installer import install
         deploy = read(ROOT / "deploy/ansible/playbooks/deploy.yml")
-        self.assertIn("todo_installer", deploy)
+        self.assertIn("app_installer", deploy)
         self.assertNotIn("include_role", deploy)
         self.assertEqual(set(install.SERVICES), {
             "todo-app", "notes-app", "keycloak", "todo-postgres", "notes-postgres",
             "keycloak-postgres", "shared-proxy"})
-        self.assertIn("SourcePath", read(ROOT / "deploy/installer/todo_installer/install.py"))
+        self.assertIn("SourcePath", read(ROOT / "deploy/installer/app_installer/install.py"))
 
     def test_clean_dev_start_bootstraps_roles_before_shared_services(self):
-        from todo_installer.kube_play import up
+        from app_installer.kube_play import up
         with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run, \
-                patch("todo_installer.kube_play.exists", return_value=False):
+                patch("app_installer.kube_play.exists", return_value=False):
             up(RUNTIME, state_file=RUNTIME / '.dev-state.json')
         calls = [call.args[0] for call in run.call_args_list]
         postgres = next(i for i, a in enumerate(calls) if a[-1] == str(RUNTIME / "postgres.yaml"))
@@ -267,12 +267,12 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertLess(healthy, setup[0])
         self.assertLess(setup[0], keycloak)
         self.assertEqual(len(setup), 4)
-        self.assertIn("todo_installer install --mode dev", read(ROOT / "deploy/scripts/dev-up.sh"))
+        self.assertIn("app_installer install --mode dev", read(ROOT / "deploy/scripts/dev-up.sh"))
 
     def test_offline_bundle_packages_rendered_kube_runtime(self):
         offline = read(ROOT / "deploy/offline" / "build-bundle.sh")
         self.assertIn('deploy/scripts/render-kube-runtime.sh"', offline)
-        self.assertIn("deploy/installer/todo_installer/", offline)
+        self.assertIn("deploy/installer/app_installer/", offline)
         self.assertNotIn("deploy/charts", offline)
 
 

@@ -3,10 +3,10 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "todo-installer"
+name = "app-installer"
 version = "0.1.0"
 requires-python = ">=3.9"
 dependencies = ["jinja2", "PyYAML>=6"]
 
 [tool.setuptools.packages.find]
-include = ["todo_installer*"]
+include = ["app_installer*"]

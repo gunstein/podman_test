@@ -19,7 +19,7 @@ sh ./install.sh
 ```
 
 Before running the installer on an enforcing host, trust only the verified
-`deploy/installer/todo_installer/*.py` files using the exact-file recipe in
+`deploy/installer/app_installer/*.py` files using the exact-file recipe in
 [offline installation](README.md#oracle-linux-9-with-fapolicyd). Replacing or
 moving the extraction requires refreshing those paths and hashes. The wrapper
 checks the internal manifest before importing the Python module. This differs
@@ -29,7 +29,7 @@ Python trust entries.
 The package-level `ansible.cfg` retains pipelining for local and SSH DR
 connections, avoiding transient Ansible Python modules under `~/.ansible/tmp`.
 The shared workload transport reuses `todo_fapolicyd` on active hardened
-targets to install root-owned modules under `/opt/todo/lib/todo_installer` and
+targets to install root-owned modules under `/opt/todo/lib/app_installer` and
 wait for exact source/target trust. It does not duplicate that role's trust logic.
 
 The DR and backup workflows add project-owned Python tools. Their shared
@@ -140,7 +140,7 @@ sudo fapolicyd-cli --update
 ```
 
 The Ansible-managed tools use the dedicated `todo` trust source. Manual
-single-host installer entries use `todo-installer`. Remove an
+single-host installer entries use `app-installer`. Remove an
 exact source entry on its controller and an exact installed entry on its target
 only when that tool is retired:
 

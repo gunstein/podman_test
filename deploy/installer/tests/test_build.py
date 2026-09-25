@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from todo_installer import install  # noqa: E402
+from app_installer import install  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -52,7 +52,7 @@ class BuildInstallTests(unittest.TestCase):
                     return subprocess.CompletedProcess(argv, rc, stdout, '')
 
                 with patch('subprocess.run', side_effect=command), \
-                        patch('todo_installer.keycloak.configure'):
+                        patch('app_installer.keycloak.configure'):
                     install.install(root, mode=mode, quadlet_dir=directory)
                 render = [str(root / 'deploy/scripts/render-kube-runtime.sh'),
                           str(root / f'deploy/environments/{profile}/values.yaml'),

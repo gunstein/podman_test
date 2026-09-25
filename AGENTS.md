@@ -14,7 +14,7 @@ Current architecture and workflow:
   Each app has its own PostgreSQL pod. Shared nginx, Keycloak and Keycloak's
   own keycloak-postgres pod bring the single-host topology to seven pods on
   rootless app-network. The App registry in
-  deploy/installer/todo_installer/apps.py owns per-app installer names.
+  deploy/installer/app_installer/apps.py owns per-app installer names.
   DR/backup/rebuild act on one group of three databases (todo, notes,
   keycloak; apps.REPLICATED_DATABASES), never on a partial group.
   shared-proxy.service owns nginx and persistent TLS volume todo-nginx-data.
@@ -36,7 +36,7 @@ Constraints:
 - Workload boundary: group containers in one pod only when they share a
   lifecycle; connect independent workloads through a user-defined network.
 - Deployment: Python installer for single-host, Ansible for DR/multi-host.
-- Shared workload installation lives in deploy/installer/todo_installer; DR calls
+- Shared workload installation lives in deploy/installer/app_installer; DR calls
   it through deploy/ansible/tasks/install-workload.yml. Keep one implementation.
 - Reverse proxy: nginx.
 - Offline delivery: rendered YAML and OCI images in the offline bundle;

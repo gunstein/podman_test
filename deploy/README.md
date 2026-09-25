@@ -33,7 +33,7 @@ deploy/scripts/dev-up.sh
 deploy/scripts/dev-down.sh
 
 # Production installation uses Quadlet/user-systemd.
-PYTHONPATH=deploy/installer python3 -m todo_installer install --mode server
+PYTHONPATH=deploy/installer python3 -m app_installer install --mode server
 ```
 
 Workload settings that vary by environment belong in `environments/*/values.yaml`;

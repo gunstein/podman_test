@@ -19,7 +19,7 @@ subprocess.run(
 
 
 def render_units(destination, publish_address, postgres_address=""):
-    from todo_installer.quadlet import render
+    from app_installer.quadlet import render
     destination.mkdir(parents=True, exist_ok=True)
     for unit in ("todo-app", "notes-app", "keycloak", "todo-postgres", "notes-postgres",
                 "keycloak-postgres", "shared-proxy"):

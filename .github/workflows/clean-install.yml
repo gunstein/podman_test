@@ -212,11 +212,11 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - id: version
-        # Read the pinned version from todo_installer/settings.py instead of
+        # Read the pinned version from app_installer/settings.py instead of
         # duplicating it as a literal in the service containers below.
         run: |
           echo "version=$(PYTHONPATH=deploy/installer python3 -c \
-            'from todo_installer import settings; print(settings.POSTGRES_VERSION)')" >> "$GITHUB_OUTPUT"
+            'from app_installer import settings; print(settings.POSTGRES_VERSION)')" >> "$GITHUB_OUTPUT"
 
   backend:
     needs: postgres-version

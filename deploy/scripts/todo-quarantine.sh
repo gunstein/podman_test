@@ -20,7 +20,7 @@ as_user() {
 }
 # One trusted registry owns the complete group; never leave another app running.
 units=$(PYTHONPATH=/opt/todo/lib PYTHONDONTWRITEBYTECODE=1 python3 -c \
-  'from todo_installer.apps import services; print("\n".join(services()))')
+  'from app_installer.apps import services; print("\n".join(services()))')
 set -f
 # Intentional splitting of the registry's newline-separated, validated unit names.
 # shellcheck disable=SC2086

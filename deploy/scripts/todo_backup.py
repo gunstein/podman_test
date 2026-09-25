@@ -12,10 +12,10 @@ from typing import Callable, Optional, Sequence
 # Checkout/operations package and exact-file trusted target installation.
 for location in ('installer', 'lib'):
     directory = Path(__file__).resolve().parents[1] / location
-    if (directory / 'todo_installer').is_dir():
+    if (directory / 'app_installer').is_dir():
         sys.path.insert(0, str(directory))
         break
-from todo_installer import apps  # noqa: E402
+from app_installer import apps  # noqa: E402
 
 DATA_DIRECTORY = "/var/lib/postgresql/data"
 BACKUP_NAME = re.compile(r"base-[0-9]{8}T[0-9]{6}Z")

@@ -14,7 +14,7 @@ import jinja2
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from todo_installer import apps, manifests, render, stack  # noqa: E402
+from app_installer import apps, manifests, render, stack  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 VALUES = ROOT / "deploy/environments/local/values.yaml"

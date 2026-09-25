@@ -43,7 +43,7 @@ class DRInstallerTests(unittest.TestCase):
                     tasks.extend([
                         {'name': 'Install ' + workload,
                          'ansible.builtin.include_tasks': str(ROOT / 'deploy/ansible/tasks/install-workload.yml'),
-                         'vars': {'todo_installer_workload': workload, 'todo_installer_app': app}},
+                         'vars': {'app_installer_workload': workload, 'app_installer_app': app}},
                         {'name': 'Check change result', 'ansible.builtin.assert': {
                             'that': [f'{fact} == {expected}']}},
                     ])
@@ -100,7 +100,7 @@ class ReplicationBridgeTests(unittest.TestCase):
                 'vars': {'todo_replication_operation': operation, 'todo_replication_app': app}}
 
     def test_replication_bridge_reports_idempotent_primary_and_status(self):
-        from todo_installer import apps
+        from app_installer import apps
         tasks = []
         for app in apps.APPS:
             for expected in ('true', 'false'):
@@ -118,7 +118,7 @@ class ReplicationBridgeTests(unittest.TestCase):
     def test_standby_bridge_stages_pvc_and_refuses_destructive_repeat(self):
         import json
 
-        from todo_installer import apps
+        from app_installer import apps
         for app in apps.APPS:
             with self.subTest(app=app.name), tempfile.TemporaryDirectory() as directory:
                 base = Path(directory)

@@ -10,7 +10,7 @@
     - name: Uninstall through the guarded Python implementation
       ansible.builtin.command:
         argv: >-
-          {{ ['python3', '-m', 'todo_installer', 'uninstall',
+          {{ ['python3', '-m', 'app_installer', 'uninstall',
               '--quadlet-dir', quadlet_directory]
              + (['--remove-data'] if remove_data | bool else []) }}
       environment:

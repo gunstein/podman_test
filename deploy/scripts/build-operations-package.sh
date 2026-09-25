@@ -71,10 +71,10 @@ cp "$project_root/docs/ARCHITECTURE.md" \
   "$project_root/docs/PROXMOX-QUARANTINE.md" \
   "$package_directory/docs/"
 
-mkdir -p "$package_directory/deploy/installer/todo_installer"
+mkdir -p "$package_directory/deploy/installer/app_installer"
 cp "$project_root/deploy/installer/README.md" "$project_root/deploy/installer/pyproject.toml" "$package_directory/deploy/installer/"
-cp "$project_root/deploy/installer/todo_installer/"*.py \
-  "$package_directory/deploy/installer/todo_installer/"
+cp "$project_root/deploy/installer/app_installer/"*.py \
+  "$package_directory/deploy/installer/app_installer/"
 
 source_revision=unknown
 source_state=unknown

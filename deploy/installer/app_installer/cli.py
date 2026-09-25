@@ -178,6 +178,6 @@ def main(argv=None):
                     args.project_root, directory, runtime, manifests) or changed
             print(json.dumps({'changed': changed}))
     except (OSError, RuntimeError, ValueError, KeyError, TemplateError) as error:
-        print(f'todo-installer: {error}', file=sys.stderr)
+        print(f'app-installer: {error}', file=sys.stderr)
         return 1
     return 0

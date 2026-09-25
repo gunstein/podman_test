@@ -98,7 +98,7 @@ deploy/installer/.venv/bin/python -m pip install -e deploy/installer
 Deploy the complete single-host application:
 
 ```bash
-deploy/installer/.venv/bin/python -m todo_installer install --mode server --project-root "$PWD"
+deploy/installer/.venv/bin/python -m app_installer install --mode server --project-root "$PWD"
 ```
 
 Every password - PostgreSQL bootstrap, database-role and the Keycloak
@@ -109,7 +109,7 @@ secrets and are not written to the repository. Retrieve one later with
 `keycloak-admin-password`) when you actually need it. A normal repeat deployment preserves installed
 definitions and credentials and does not restart unchanged workloads.
 Use `--refresh-images` to rebuild/pull images. Direct development uses
-`--mode dev` and `python -m todo_installer down`; the existing dev shell scripts
+`--mode dev` and `python -m app_installer down`; the existing dev shell scripts
 remain thin wrappers. See [installer usage](deploy/installer/README.md).
 
 Both profiles expose <https://todo.test:8443> and <https://notes.test:8443>.

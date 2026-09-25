@@ -108,10 +108,10 @@ After verifying the external archive checksum from a trusted source and
 extracting it, register only the installer Python files. From the bundle root:
 
 ```bash
-for source in "$PWD"/deploy/installer/todo_installer/*.py; do
+for source in "$PWD"/deploy/installer/app_installer/*.py; do
   source=$(realpath "$source")
-  sudo fapolicyd-cli --file update "$source" --trust-file todo-installer ||
-    sudo fapolicyd-cli --file add "$source" --trust-file todo-installer
+  sudo fapolicyd-cli --file update "$source" --trust-file app-installer ||
+    sudo fapolicyd-cli --file add "$source" --trust-file app-installer
 done
 sudo fapolicyd-cli --update
 ```
@@ -138,7 +138,7 @@ Uninstall this offline bundle while preserving database data. The installer
 refuses replication, promotion and backup hosts:
 
 ```bash
-PYTHONPATH=deploy/installer python3 -m todo_installer uninstall
+PYTHONPATH=deploy/installer python3 -m app_installer uninstall
 ```
 
 Use `--remove-data` only when permanently deleting the single-host database and

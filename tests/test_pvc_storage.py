@@ -100,7 +100,7 @@ class PVCStorageTests(unittest.TestCase):
         # (used identically by bootstrap_standby and reseed_standby) owns playing
         # only the canonical PVC before pg_basebackup, covered directly by
         # deploy/installer/tests/test_replication.py.
-        from todo_installer import apps, replication
+        from app_installer import apps, replication
         canonical = next(d for d in yaml.safe_load_all((RUNTIME / "postgres.yaml").read_text())
                          if d["metadata"]["name"] == "todo-postgres-data")
         self.assertEqual(yaml.safe_load(replication.data_claim(apps.SHARED_RESOURCE_OWNER, RUNTIME)), canonical)
@@ -112,7 +112,7 @@ class PVCStorageTests(unittest.TestCase):
         self.assertIn('todo_replication_operation: reseed', reseed_role)
 
     def test_backup_rejects_missing_wrong_readonly_or_misplaced_mounts(self):
-        from todo_installer import apps
+        from app_installer import apps
         steps = yaml.safe_load((ROOT / 'deploy/ansible/roles/postgres_backup/tasks/database.yml').read_text())
         gate = next(t for t in steps if t["name"] == "Require the PVC backup volume at the archive path")
         existence = next(i for i, t in enumerate(steps) if
@@ -137,10 +137,10 @@ class PVCStorageTests(unittest.TestCase):
                     self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
     def test_uninstall_preserves_database_and_tls_data_by_default_and_never_removes_backup(self):
-        from todo_installer import uninstall
+        from app_installer import uninstall
         for remove_data in (False, True):
             with tempfile.TemporaryDirectory() as directory, \
-                    patch("todo_installer.uninstall.exists",
+                    patch("app_installer.uninstall.exists",
                           side_effect=lambda kind, name: not name.endswith("-replicator-password")), \
                     patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
                 uninstall.uninstall(remove_data=remove_data, quadlet_dir=directory)

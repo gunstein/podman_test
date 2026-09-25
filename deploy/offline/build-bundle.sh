@@ -15,7 +15,7 @@ mkdir -p "$(dirname "$output")"
 "$project_root/deploy/scripts/render-kube-runtime.sh" "$project_root/deploy/environments/prod/values.yaml" "$bundle_directory/generated/kube-runtime"
 
 PYTHONPATH="$project_root/deploy/installer${PYTHONPATH:+:$PYTHONPATH}" \
-  python3 -m todo_installer.images "$project_root" "$bundle_directory/images"
+  python3 -m app_installer.images "$project_root" "$bundle_directory/images"
 
 cp "$project_root/ansible.cfg" "$bundle_directory/"
 cp "$project_root/docs/ARCHITECTURE.md" \
@@ -53,10 +53,10 @@ printf '%s\n' '# Todo offline bundle' '' \
   'See [offline installation](deploy/offline/README.md) for verification and installation.' \
   > "$bundle_directory/README.md"
 
-mkdir -p "$bundle_directory/deploy/installer/todo_installer"
+mkdir -p "$bundle_directory/deploy/installer/app_installer"
 cp "$project_root/deploy/installer/README.md" "$project_root/deploy/installer/pyproject.toml" "$bundle_directory/deploy/installer/"
-cp "$project_root/deploy/installer/todo_installer/"*.py \
-  "$bundle_directory/deploy/installer/todo_installer/"
+cp "$project_root/deploy/installer/app_installer/"*.py \
+  "$bundle_directory/deploy/installer/app_installer/"
 
 source_revision=unknown
 source_state=unknown

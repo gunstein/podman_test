@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from todo_installer.apps import (  # noqa: E402
+from app_installer.apps import (  # noqa: E402
     APPS,
     KEYCLOAK_ADMIN_SECRET,
     KEYCLOAK_DATABASE,
@@ -69,7 +69,7 @@ class AppRegistryTests(unittest.TestCase):
                     self.assertEqual(entry["application_service"], database.name + "-app.service")
 
     def test_images_come_from_the_app(self):
-        from todo_installer.images import image_list, shared_images
+        from app_installer.images import image_list, shared_images
         app = App("notes", "notes", "notes.test", "notes-frontend")
         images = image_list(app)
         self.assertEqual([image.reference for image in images], [
@@ -80,7 +80,7 @@ class AppRegistryTests(unittest.TestCase):
         self.assertEqual(len(shared_images()), 2)
 
     def test_secret_names_are_isolated_between_apps(self):
-        from todo_installer.secrets import application_secret_mapping, postgres_secret_mapping
+        from app_installer.secrets import application_secret_mapping, postgres_secret_mapping
         mappings = []
         for name in ("todo", "notes"):
             app = App(name, name + ".test", name + "-frontend")

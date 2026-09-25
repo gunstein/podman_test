@@ -157,7 +157,7 @@ registry. Both acceptance artifacts must identify the same clean revision.
 Checksums establish integrity against the supplied digest, not publisher
 identity; organizational artifact signing is not implemented.
 
-The portable module lives in `deploy/installer/todo_installer/` and uses Jinja2
+The portable module lives in `deploy/installer/app_installer/` and uses Jinja2
 plus the Python standard library. `apps.py` is the single registry of per-app
 names; image, secret, workload, lifecycle and cleanup code consume App objects.
 Rendering calls the shared `deploy/manifests/*.yaml.j2` templates once per app

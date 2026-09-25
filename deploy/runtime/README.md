@@ -138,7 +138,7 @@ Map both `todo.test` and `notes.test` to the serving host and trust one shared
 CA; see [TLS instructions](../../docs/TLS.md). Both apps use the same `todo`
 realm, separate clients, and a single SAN certificate.
 
-The shell entry points are thin wrappers around `python3 -m todo_installer`.
+The shell entry points are thin wrappers around `python3 -m app_installer`.
 The installer invokes the existing renderer with local values, prepares images
 and external secrets, then performs ordered `podman kube play` calls. Every
 missing password, bootstrap/admin included, is generated in code and never

@@ -2,12 +2,12 @@
 - name: Query the target application registry
   ansible.builtin.command:
     argv: >-
-      {{ ['python3', '-m', 'todo_installer', 'app-info'] +
+      {{ ['python3', '-m', 'app_installer', 'app-info'] +
          (['--app', todo_metadata_app] if todo_metadata_app | default('') | length > 0 else []) }}
   environment:
     PYTHONPATH: >-
-      {{ '/opt/todo/lib' if todo_installer_fapolicyd.rc == 0
-         else todo_installer_target ~ '/deploy/installer' }}
+      {{ '/opt/todo/lib' if app_installer_fapolicyd.rc == 0
+         else app_installer_target ~ '/deploy/installer' }}
     PYTHONDONTWRITEBYTECODE: "1"
   register: todo_application_info
   changed_when: false

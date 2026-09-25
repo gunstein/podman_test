@@ -165,11 +165,11 @@ jobs:
       - name: Lint Python
         run: ruff check todo-backend notes-backend e2e deploy/scripts deploy/installer tests
 
-      - name: Test frontend authentication adapter in Chromium
+      - name: Test frontend authentication adapter and marker helper in Chromium
         run: |
           python -m pip install -r todo-backend/requirements-e2e.txt
           python -m playwright install --with-deps chromium
-          python -m pytest e2e/test_auth_adapter.py --browser chromium -q
+          python -m pytest e2e/test_auth_adapter.py e2e/test_create_markers.py --browser chromium -q
 
       - name: Lint shell scripts
         shell: bash

@@ -584,17 +584,22 @@ their `.sha256` files with `scp` to both VMs, then verify there. Record both
    `todo-backend/.venv` is ignored by Git; confirm `git status --porcelain` is
    still empty afterwards.
 6. Provision `testuser` (C6 password). `e2e/provision_user.py` talks to
-   `http://127.0.0.1:8080`, so forward that port from the serving host:
+   `http://127.0.0.1:8080`, so forward that port from the serving host. The
+   control socket lets you close exactly this tunnel afterwards. Never close
+   it with `pkill -f`: the pattern also matches your own shell running the
+   block, and kills it.
 
    ```bash
-   ssh -o ExitOnForwardFailure=yes -f -N -L 127.0.0.1:8080:127.0.0.1:8080 gunstein@192.168.0.102
+   tunnel="$XDG_RUNTIME_DIR/todo-acceptance/tunnel"
+   ssh -o ExitOnForwardFailure=yes -o ControlMaster=yes -o ControlPath="$tunnel" \
+     -f -N -L 127.0.0.1:8080:127.0.0.1:8080 gunstein@192.168.0.102
    (
      KEYCLOAK_ADMIN_PASSWORD="$(ssh gunstein@192.168.0.102 "podman secret inspect --showsecret --format '{{.SecretData}}' keycloak-admin-password")"
      E2E_PASSWORD="$(cat "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password")"
      export KEYCLOAK_ADMIN_PASSWORD E2E_PASSWORD
      todo-backend/.venv/bin/python e2e/provision_user.py
    )
-   pkill -f 'ssh -o ExitOnForwardFailure=yes -f -N -L 127.0.0.1:8080:127.0.0.1:8080'
+   ssh -o ControlPath="$tunnel" -O exit gunstein@192.168.0.102
    ```
 
    Provision once. The user lives in the replicated Keycloak database and must

@@ -190,7 +190,8 @@ echo "todo_state=$(podman ps -a --format '{{.Names}}' 2>/dev/null | grep -cE '^(
 
 def check_guest(report, args, address, hostname):
     """One VM over SSH: identity, security services, rootless Podman, sudo and leftover state."""
-    print(f'== {hostname} ({address}) over SSH, read-only')
+    # The running VM, which may differ from its clean snapshot; phase 1 checks again after rollback.
+    print(f'== {hostname} ({address}) over SSH, read-only (running state, not the snapshot)')
     code, out, error = _ssh(args, address)
     if not report.check(code == 0, 'Key-based SSH with verified host key', error.splitlines()[-1] if error else ''):
         if 'Permission denied' in error:

@@ -74,6 +74,13 @@ What is weak is how they are checked and switched.
 
 ## After a CLEAN PASS with app-ops: retire Ansible
 
+- **R0. Record the result first.** Add the run's evidence as
+  `docs/history/ACCEPTANCE-<short-sha>.md`, as for earlier runs, and update the
+  verdict and run list in `PROJECT.md#acceptance`, which AGENTS.md points to.
+- **R0b. Replace `deploy.yml` and `uninstall.yml`.** They were never ported to
+  app-ops because they only wrap `app_installer install` and `uninstall`. Show
+  those direct commands in the guides before the playbooks go.
+
 3. Delete `deploy/ansible` and `ansible.cfg`, and take them out of the
    operations package.
 4. Remove the Ansible CI jobs and the tests that run playbooks.
@@ -83,6 +90,21 @@ What is weak is how they are checked and switched.
 6. Update AGENTS.md: "Python installer for single-host, app-ops (plain SSH) for
    DR/multi-host", and the rule that DR installs workloads through
    `install-workload.yml`.
+
+## Operations and DR decisions
+
+- **D1. Sudo with a password in app-ops.** app-ops needs `NOPASSWD` today, and
+  acceptance grants `NOPASSWD: ALL` (see F6). As agreed when passwords were
+  dropped, add password support later by running every privileged command
+  through `/bin/sh`, so a narrow NOPASSWD rule can never match it and a
+  password line can never become a command's stdin.
+- **D2. Backup to another host** (decision needed). Base backups and WAL live on
+  the same VM as the database, so losing the VM loses its backups unless the
+  standby survives. Either copy them to another host, or keep the limit and
+  state it plainly as a design decision.
+- **D3. `deploy-promoted-application` runs only on the promoted host.** It
+  refuses unless that host is the machine running app-ops. Either lift the
+  limit or document it as deliberate in `deploy/ops/README.md`.
 
 ## DR code structure
 

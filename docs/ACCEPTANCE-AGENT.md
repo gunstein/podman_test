@@ -291,6 +291,19 @@ echo "Wrote $dir/pve.env"
    change or delete it; never act on a rule position alone.
 8. A failed check means **STOP** (C3). A passing command exit code alone is not
    a passing check: compare the output with the expected values.
+9. **Never** run `install.sh`, `app_installer install` or `deploy.yml` after
+   phase 3. On a host with replication, a new install rewrites the database
+   units without their LAN publication and silently cuts off the standby.
+10. **Never** start, stop or restart services or pods by hand
+    (`systemctl --user start|stop|restart`, `podman kube play`, `podman start`)
+    unless a C9 step tells you to run exactly that command. Services come back
+    through the documented reboot or tool, never through an improvised command.
+11. **Never** change Proxmox state (power, `nic`, firewall options or rules)
+    outside the C9 step that says so, and never skip a step of a sequence
+    that changed Proxmox state: the later steps are what undo it.
+12. Do not act on a theory. When something does not match the guide, record
+    your observations and diagnosis, then STOP (C3). Fixing things is the
+    operator's decision.
 
 ### C3. What STOP means
 
@@ -481,6 +494,9 @@ and the skipped refusal check that needs sudo without NOPASSWD (C9.13).
 4. Only read-only commands, waits for asynchronous work (fapolicyd refresh,
    replication catching up, Keycloak starting after boot) and re-running a
    read-only check may be repeated. Everything else: STOP (C3).
+5. Look up the symptom in `docs/ACCEPTANCE-TROUBLESHOOTING.md` and put its
+   "safe next observation" in your report. Do not carry out a recovery
+   yourself, even one that looks obvious.
 
 ### C9. Phase-by-phase instructions
 
@@ -689,7 +705,14 @@ through the API and re-check.
    - Record `get .../firewall/rules` and `get .../firewall/options`.
 5. Rehearsal (VM 107 is still the writable primary, so a brief exposure is
    harmless). A blocked port only proves something when a service is really
-   listening behind it, so the outside proofs run **before** services stop:
+   listening behind it, so the outside proofs run **before** services stop.
+   Run all nine sub-steps, in order, without adding any. Sub-steps 2-6 put
+   VM 107 into quarantine (Proxmox firewall on, links down, services
+   stopped); only sub-steps 7 and 8 take it out again. The helper in
+   sub-step 6 only stops services: it never touches the network. Between
+   sub-steps 6 and 8 the services stay stopped on purpose; the reboot in
+   sub-step 8 starts them. If any sub-step fails, STOP (C3) and leave
+   everything as it is.
    1. Baseline with the firewall still off: from the client
       `curl --fail https://todo.test:8443/ready` works; from `.108`
       `timeout 5 bash -c '</dev/tcp/192.168.0.102/5432'` works; from `.102`
@@ -715,10 +738,14 @@ through the API and re-check.
       On `.102`: every service from `apps.services()` is inactive or failed
       with zero MainPID and ControlPID, and `podman ps` shows no running containers.
    8. Restore normal operation: `set .../107/firewall/options enable=0`, then
-      `task .../107/status/reboot` so the services start at boot.
+      `task .../107/status/reboot` so the services start at boot. Record
+      `get .../107/firewall/options` (no `enable: 1`) and every `netN` (no
+      `link_down=1`) afterwards.
    9. Require all seven services active on `.102`, `.102` writable for all three
       databases, streaming with zero lag to `.108` again, and trusted HTTPS from
-      the client. Only then continue.
+      the client. Only then continue. If streaming does not come back, do not
+      start anything or rerun an installer: record the two readings from
+      sub-step 8 and `ss -ltn` on `.102`, then STOP.
 
 #### C9.7 Phase 6 — Fence and promote (pre-approved)
 

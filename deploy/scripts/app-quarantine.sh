@@ -1,6 +1,8 @@
 #!/bin/sh
 # Run via Guest Agent with every VM network link disconnected.
-# This stops workloads; it does not fence the VM or delete database data.
+# The operator disconnects and reconnects the links in Proxmox; this helper
+# never touches the network. It only stops workloads: it does not fence the
+# VM, delete database data or start anything again.
 set -eu
 if [ "$#" -ne 3 ]; then
   echo "Usage: app-quarantine.sh check|stop EXPECTED_HOST SERVICE_USER" >&2

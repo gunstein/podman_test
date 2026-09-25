@@ -1,5 +1,6 @@
 """Command line interface; workload commands emit exactly one JSON result."""
 import argparse
+import base64
 import json
 import sys
 from pathlib import Path
@@ -60,6 +61,8 @@ def main(argv=None):
     recovered_images = subcommands.add_parser('prepare-promoted-images')
     recovered_images.add_argument('--bundle-dir', type=Path, required=True)
     subcommands.add_parser('configure-clients')
+    subcommands.add_parser('export-replication-secrets')
+    subcommands.add_parser('import-replication-secrets')
     service_list = subcommands.add_parser('services')
     service_list.add_argument('--application-tier', action='store_true')
     remove = subcommands.add_parser('uninstall')
@@ -126,6 +129,15 @@ def main(argv=None):
             changed = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
                                          [(app.keycloak_client, app.hostname) for app in apps.APPS])
             print(json.dumps({'changed': changed}))
+        elif args.command == 'export-replication-secrets':
+            from . import secrets
+            # Value-bearing stdout: callers must pipe it, never log or store it. Base64
+            # keeps it opaque; Ansible templating would otherwise parse JSON into a dict.
+            print(base64.b64encode(json.dumps(secrets.export_replicated()).encode()).decode())
+        elif args.command == 'import-replication-secrets':
+            from . import secrets
+            transfer = json.loads(base64.b64decode(sys.stdin.read().strip(), validate=True))
+            print(json.dumps({'changed': secrets.import_replicated(transfer)}))
         elif args.command == 'services':
             print(json.dumps(apps.services(databases=not args.application_tier)))
         elif args.command == 'install':

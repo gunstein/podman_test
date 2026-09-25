@@ -69,6 +69,71 @@ class DRInstallerTests(unittest.TestCase):
                 self.assertEqual(path.read_bytes(), expected)
 
 
+class SecretSyncPlaybookTests(unittest.TestCase):
+    """Run the real playbook against two local hosts, each with its own fake Podman state."""
+
+    def run_playbook(self, base):
+        fixture = (ROOT / 'tests/fake_replication_runtime.py').read_text()
+        inventory = []
+        for host in ('primary', 'standby'):
+            binaries = base / host / 'bin'
+            binaries.mkdir(parents=True, exist_ok=True)
+            for name in ('podman', 'systemctl'):
+                (binaries / name).write_text(f'#!{sys.executable}\n' + fixture)
+                (binaries / name).chmod(0o755)
+            interpreter = base / host / 'python'
+            interpreter.write_text(
+                '#!/bin/sh\n'
+                f'export PATH="{binaries}:$PATH" REPLICATION_TEST_STATE="{base / host / "state.json"}"\n'
+                f'exec "{sys.executable}" "$@"\n')
+            interpreter.chmod(0o755)
+            inventory.append(f'[todo_{host}]\n{host} ansible_connection=local '
+                             f'ansible_python_interpreter={interpreter} todo_user_home={base / host / "home"}\n')
+        (base / 'hosts.ini').write_text('\n'.join(inventory))
+        return subprocess.run([os.environ.get('ANSIBLE_PLAYBOOK', 'ansible-playbook'), '-i', str(base / 'hosts.ini'),
+                               str(ROOT / 'deploy/ansible/playbooks/sync-standby-secrets.yml')],
+                              capture_output=True, text=True)
+
+    def state(self, base, host):
+        import json
+        path = base / host / 'state.json'
+        return json.loads(path.read_text()) if path.exists() else {
+            'secrets': [], 'roles': [], 'hba': [], 'volumes': [], 'standbys': [], 'commands': []}
+
+    def test_missing_standby_secrets_are_created_once_without_logging_values(self):
+        from app_installer import secrets
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            first = self.run_playbook(base)
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            self.assertEqual(sorted(self.state(base, 'standby')['secrets']), sorted(secrets.replicated_names()))
+            self.assertEqual(self.state(base, 'primary')['secrets'], [])
+            second = self.run_playbook(base)
+            self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+            self.assertEqual(sorted(self.state(base, 'standby')['secrets']), sorted(secrets.replicated_names()))
+            self.assertIn('changed=0', second.stdout.split('PLAY RECAP')[-1].split('standby')[1].split('\n')[0])
+            self.assertNotIn('S' * 32, first.stdout + first.stderr + second.stdout + second.stderr)
+
+    def test_a_different_standby_value_stops_before_any_create(self):
+        import json
+
+        from app_installer import secrets
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            different = secrets.replicated_names()[-1]
+            (base / 'standby').mkdir()
+            seeded = self.state(base, 'standby')
+            seeded.update(secrets=[different], values={different: 'standby-only-value'})
+            (base / 'standby' / 'state.json').write_text(json.dumps(seeded))
+            result = self.run_playbook(base)
+            output = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, output)
+            self.assertIn(different, output)
+            self.assertNotIn('standby-only-value', output)
+            self.assertNotIn('S' * 32, output)
+            self.assertEqual(self.state(base, 'standby')['secrets'], [different])
+
+
 class ReplicationBridgeTests(unittest.TestCase):
     def probe(self, base, tasks, standby=False):
         binaries = base / 'bin'

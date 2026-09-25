@@ -26,13 +26,15 @@ if Path(sys.argv[0]).name == 'systemctl':
     finish(code=99)
 if args == ['kube', 'play', '--help']:
     finish('--no-pod-prefix')
+if args == ['--version']:
+    finish('podman version 5.4.0')
 if args[:2] == ['secret', 'exists']:
     # The standby fixture starts with transferred raw credentials.
     present = args[2] in state['secrets'] or (
         os.getenv('REPLICATION_TEST_STANDBY') == '1' and args[2].endswith('-password'))
     finish(code=0 if present else 1)
 if args[:2] == ['secret', 'inspect']:
-    finish('S' * 32)
+    finish(state.get('values', {}).get(args[-1], 'S' * 32))
 if args[:2] == ['secret', 'create']:
     sys.stdin.read()
     state['secrets'].append(args[2])

@@ -43,6 +43,38 @@ def create_kube(mapping, values=None):
     return changed
 
 
+def replicated_names():
+    """Every raw credential the standby needs, for the complete replication group."""
+    names = []
+    for database in apps.REPLICATED_DATABASES:
+        for name in apps.describe(database)["raw_secrets"]:
+            if name not in names:
+                names.append(name)
+    return names
+
+
+def export_replicated():
+    return {name: read(name) for name in replicated_names()}
+
+
+def import_replicated(values):
+    """Create missing credentials; refuse before any write if one differs. Errors name, never show, values."""
+    expected = replicated_names()
+    if not isinstance(values, dict) or sorted(values) != sorted(expected):
+        raise ValueError("The credential transfer must contain exactly the complete replication group.")
+    if not all(isinstance(value, str) and value for value in values.values()):
+        raise ValueError("Every transferred credential must be a non-empty string.")
+    missing = [name for name in expected if not exists("secret", name)]
+    different = [name for name in expected if name not in missing and read(name) != values[name]]
+    if different:
+        raise RuntimeError(
+            "Existing standby secrets differ from primary and were not overwritten: "
+            + ", ".join(different) + ". No secret was created; resolve the mismatch explicitly.")
+    for name in missing:
+        run("podman", "secret", "create", name, "-", input=values[name])
+    return bool(missing)
+
+
 def provision(applications=None):
     """Keep existing credentials; generate every missing password."""
     import secrets as random

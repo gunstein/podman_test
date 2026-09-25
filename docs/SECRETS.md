@@ -19,10 +19,12 @@ container processes
 The initial deployment generates independent credentials for PostgreSQL,
 application roles and Keycloak. Standby bootstrap demonstrates that Podman
 secrets are host-local by copying the required values from the initial primary
-through Ansible memory and SSH. The playbook uses
-`podman secret inspect --showsecret`, marks value-bearing tasks `no_log`, creates
-only missing secrets and rejects mismatched existing values. It never writes a
-plaintext transfer file.
+through Ansible memory and SSH. `app_installer` owns the transfer: its export
+command reads the complete group with `podman secret inspect --showsecret`, and
+its import command checks every standby secret before creating only the missing
+ones. A mismatched existing value stops the import before any secret is created.
+Ansible marks the value-bearing tasks `no_log` and never writes a plaintext
+transfer file.
 
 After promotion, the surviving node holds the values needed to rebuild the
 other node. Destructive rebuild preflight compares the replication secret on

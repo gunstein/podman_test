@@ -48,15 +48,19 @@ ansible-playbook \
   deploy/ansible/playbooks/sync-standby-secrets.yml
 ```
 
-The playbook reads each existing primary secret with `podman secret inspect
---showsecret`. Ansible suppresses the values with `no_log`, keeps them in memory
-and sends them over SSH directly to `podman secret create` on standby. The
+Ansible is only the transport here. On primary, `python3 -m app_installer
+export-replication-secrets` reads every credential of the complete replication
+group with `podman secret inspect --showsecret` and prints them as one opaque
+base64 value. Ansible keeps that value in memory with `no_log` and pipes it over
+SSH to `python3 -m app_installer import-replication-secrets` on standby. The
 project-level `ansible.cfg` enables pipelining, so Ansible does not need normal
 module transfer files or a helper image.
 
-Only missing secrets are created. If a secret already exists with a different
-value, the playbook stops instead of overwriting it. No plaintext secret file or
-command-line password is created. After provisioning, each host has its own
+The import checks every secret before it writes any. It refuses a transfer that
+is not exactly the complete group. If an existing standby secret has a different
+value, it names that secret, creates nothing and the playbook stops. Otherwise
+it creates only the missing secrets. No plaintext secret file or command-line
+password is created, and error messages name secrets without showing values. After provisioning, each host has its own
 local Podman secret objects, so standby does not need primary during failover.
 
 This is bootstrap transfer, not a centralized secret backup. The demo assumes

@@ -77,6 +77,10 @@ What is weak is how they are checked and switched.
 - **R0. Record the result first.** Add the run's evidence as
   `docs/history/ACCEPTANCE-<short-sha>.md`, as for earlier runs, and update the
   verdict and run list in `PROJECT.md#acceptance`, which AGENTS.md points to.
+  Bring the rest of `PROJECT.md` up to date too: app-ops, the new runs and this
+  backlog. Check and state whether the two standby-rebuild defects that the
+  `3fb897f` record names are fixed. Move `docs/ACCEPTANCE-3fb897f.md` into
+  `docs/history/` with the other evidence, changing only the links to it.
 - **R0b. Replace `deploy.yml` and `uninstall.yml`.** They were never ported to
   app-ops because they only wrap `app_installer install` and `uninstall`. Show
   those direct commands in the guides before the playbooks go.
@@ -132,16 +136,21 @@ What is weak is how they are checked and switched.
     today.
 13. **Mutation testing in CI** runs only from the default branch
     (`schedule` and `workflow_dispatch`); it starts working after the merge.
-14. Optional: GitHub secret scanning, or a gitleaks/trufflehog run, on top of
+14. **Security update routine.** Python packages, base images (Python,
+    nginx, Keycloak, PostgreSQL) and GitHub Actions are all pinned, but nothing
+    reports a security fix. Enable Dependabot for pip, container images and
+    Actions, so each update arrives as a pull request that CI tests. No runtime
+    dependency is added.
+15. Optional: GitHub secret scanning, or a gitleaks/trufflehog run, on top of
     the pattern search already done.
 
 ## Lab housekeeping (operator)
 
-15. Rebuild the `clean-agent` snapshots with `prepare-agent-snapshots.sh`, so
+16. Rebuild the `clean-agent` snapshots with `prepare-agent-snapshots.sh`, so
     they contain `python3-jinja2` and `python3-pyyaml` (every run installs them
     as a recorded deviation today).
-16. Remove the old `todo-lab-ca-*` nicknames from the client NSS database
+17. Remove the old `todo-lab-ca-*` nicknames from the client NSS database
     (`certutil -D -d sql:$HOME/.pki/nssdb -n NAME`).
-17. Review and remove the old Proxmox firewall rules: three
+18. Review and remove the old Proxmox firewall rules: three
     `todo-quarantine-*` rules and DROP policies on VM 107, and one rule without
     a comment (tcp 5432 from `.111`) on VM 108.

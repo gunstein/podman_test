@@ -62,6 +62,23 @@
     label: "{{ item.name }}"
   when: item.manifests.application is defined
 
+# reseed_standby only authenticates against its own database immediately
+# before deleting it (see replication.py's reseed_check/reseed_standby
+# docstrings); it cannot gate the whole group. Authenticate every registered
+# database against the primary here, before any of them is touched, so a
+# missing firewall rule or credential for one database (for example notes'
+# port 5433) fails closed instead of leaving a partially rebuilt group.
+- name: Authenticate against the primary for every registered database before any reseed
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
+  loop: "{{ todo_replication_metadata }}"
+  loop_control:
+    loop_var: todo_replication_app_meta
+    label: "{{ todo_replication_app_meta.name }}"
+  vars:
+    todo_replication_app: "{{ todo_replication_app_meta.name }}"
+    todo_replication_operation: authenticate
+    todo_replication_primary_address: "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}"
+
 - name: Explicitly confirm the fenced host and reseed each registered database
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
   loop: "{{ todo_replication_metadata }}"

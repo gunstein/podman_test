@@ -23,13 +23,27 @@ class AnsibleSafetyTests(unittest.TestCase):
 
         quarantine = index(lambda task: task.get("vars", {}).get("todo_replication_operation") == "quarantined")
         removal = index(lambda task: "Remove the shared Kube units" in task["name"])
+        authenticate = index(lambda task: task.get("vars", {}).get("todo_replication_operation") == "authenticate")
         reseed = index(lambda task: task.get("vars", {}).get("todo_replication_operation") == "reseed")
 
         self.assertLess(quarantine, removal)
         self.assertLess(removal, reseed)
+        # reseed_standby only authenticates its own database right before deleting
+        # it (replication.py); a group-wide authenticate task here, before any
+        # database is touched, is what actually stops a partial rebuild when one
+        # database's replication port or credential is not ready.
+        self.assertLess(authenticate, reseed)
+        self.assertEqual(
+            tasks[authenticate]["loop"], tasks[reseed]["loop"],
+            "the authenticate gate must cover the exact same registered group as reseed",
+        )
         self.assertEqual(
             tasks[reseed]["vars"]["todo_replication_primary_address"],
             "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}",
+        )
+        self.assertEqual(
+            tasks[authenticate]["vars"]["todo_replication_primary_address"],
+            tasks[reseed]["vars"]["todo_replication_primary_address"],
         )
 
     def test_rebuild_preflight_verifies_every_registered_database_before_destructive_reseed(self):

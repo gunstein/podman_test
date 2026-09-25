@@ -3,7 +3,7 @@
 Use [Acceptance](ACCEPTANCE.md) for phase order. This reference specifies the
 host-specific quarantine boundary. Verify the actual Proxmox version, firewall
 backend and effective rules for each new drill; previous evidence is not current
-state. Historical acceptance is recorded in [688a0f6](ACCEPTANCE-688a0f6.md).
+state. Historical acceptance is recorded in [688a0f6](history/ACCEPTANCE-688a0f6.md).
 Do not enable a datacenter/node firewall based only on this document: that
 can affect management access and unrelated VMs.
 

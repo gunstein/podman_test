@@ -32,5 +32,5 @@ def render_units(destination, publish_address, postgres_address=""):
 
 
 render_units(RUNTIME, "192.0.2.10")
-for name in ("README.md", "RESULTS.md"):
-    shutil.copy(ROOT / "deploy/runtime" / name, RUNTIME)
+shutil.copy(ROOT / "deploy/runtime/README.md", RUNTIME)
+shutil.copy(ROOT / "docs/history/RESULTS.md", RUNTIME)

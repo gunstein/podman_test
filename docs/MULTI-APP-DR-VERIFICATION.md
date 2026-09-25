@@ -1,7 +1,7 @@
 # Phased multi-app DR verification
 
 This record tracks the dedicated DR generalization after the
-[single-host prerequisite](MULTI-APP-VERIFICATION.md). It is not a complete
+[single-host prerequisite](history/MULTI-APP-VERIFICATION.md). It is not a complete
 multi-app DR acceptance verdict. The existing Todo acceptance VMs are untouched.
 
 ## Isolated targets

@@ -80,4 +80,4 @@ local role and fencing evidence before any further action; never retry blindly.
 ## Acceptance evidence
 
 Use [Acceptance](../../docs/ACCEPTANCE.md) for the full sequence and verdict.
-[688a0f6](../../docs/ACCEPTANCE-688a0f6.md) records historical evidence only.
+[688a0f6](../../docs/history/ACCEPTANCE-688a0f6.md) records historical evidence only.

@@ -358,7 +358,7 @@ Fedora VMs ([multi-app DR verification](MULTI-APP-DR-VERIFICATION.md)) and a
 full two-VM Oracle Linux run on 3fb897f with a REPAIRED FUNCTIONAL PASS
 ([record](ACCEPTANCE-3fb897f.md)): two standby-rebuild defects were worked
 around, so an unchanged-revision clean pass is still pending.
-See [runtime results](../deploy/runtime/RESULTS.md). Static tests or a green CI
+See [runtime results](history/RESULTS.md). Static tests or a green CI
 run do not replace the full two-VM test. The Python installer extraction has
 unit, real rendering, package and Ansible transport coverage; it still requires
 a new unchanged-revision Oracle Linux DR acceptance run. The multi-app

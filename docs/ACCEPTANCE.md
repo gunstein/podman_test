@@ -7,8 +7,8 @@ databases (Todo, Notes and Keycloak). Use direct DR tools and Ansible
 playbooks below. The final rebuild permanently replaces old-primary database
 data; use disposable lab hosts and explicit infrastructure fencing.
 
-[688a0f6](ACCEPTANCE-688a0f6.md), [12c3bef](ACCEPTANCE-12c3bef.md),
-[9e54cfb](ACCEPTANCE-9e54cfb.md) and [3fb897f](ACCEPTANCE-3fb897f.md) are historical evidence, not current machine
+[688a0f6](history/ACCEPTANCE-688a0f6.md), [12c3bef](history/ACCEPTANCE-12c3bef.md),
+[9e54cfb](history/ACCEPTANCE-9e54cfb.md) and [3fb897f](ACCEPTANCE-3fb897f.md) are historical evidence, not current machine
 state or authorization. A NEW run evaluates its own clean revision. Use
 [troubleshooting](ACCEPTANCE-TROUBLESHOOTING.md) only when a gate fails;
 [Proxmox quarantine](PROXMOX-QUARANTINE.md) supplies the specialized

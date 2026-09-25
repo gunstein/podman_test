@@ -52,7 +52,8 @@ cp -r "$project_root/deploy/ansible/tasks" "$package_directory/deploy/ansible/"
 cp "$project_root/deploy/quadlet/app-network.network" "$project_root/deploy/quadlet/"*.kube.j2 \
   "$package_directory/deploy/quadlet/"
 "$project_root/deploy/scripts/render-kube-runtime.sh" "$project_root/deploy/environments/prod/values.yaml" "$package_directory/generated/kube-runtime"
-cp "$project_root/deploy/runtime/README.md" "$project_root/deploy/runtime/RESULTS.md" "$package_directory/deploy/runtime/"
+cp "$project_root/deploy/runtime/README.md" "$package_directory/deploy/runtime/"
+cp "$project_root/docs/history/RESULTS.md" "$package_directory/deploy/runtime/"
 cp "$project_root/deploy/scripts/todo_dr.py" \
   "$project_root/deploy/scripts/todo-quarantine.sh" \
   "$project_root/deploy/scripts/todo_backup.py" "$package_directory/deploy/scripts/"

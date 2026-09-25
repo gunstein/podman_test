@@ -5,7 +5,7 @@ historical per-container model. The implementation is preserved by
 `quadlet-reference-v1`; the former learning guide is available at
 `c377161:docs/legacy/LEARNING-GUIDE.md`, not in the active tree or bundles.
 Unchanged-revision Oracle Linux acceptance passed on 688a0f6.
-See the [run record](ACCEPTANCE-688a0f6.md) and [procedure](ACCEPTANCE.md).
+See the [run record](history/ACCEPTANCE-688a0f6.md) and [procedure](ACCEPTANCE.md).
 
 For the authoritative system overview and design boundaries, read
 [System architecture](ARCHITECTURE.md). This guide focuses on learning exercises.
@@ -86,7 +86,7 @@ loginctl show-user "$USER" -p Linger
 
 Ordering is not readiness. Init migration, container health checks, systemd
 restart and Ansible readiness checks have different responsibilities.
-See `deploy/runtime/RESULTS.md` for demonstrated behavior and revision-specific acceptance.
+See `docs/history/RESULTS.md` for demonstrated behavior and revision-specific acceptance.
 
 ## 4. Images, rootless storage and external secrets
 

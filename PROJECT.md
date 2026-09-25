@@ -11,10 +11,10 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 Full unchanged-revision Oracle Linux acceptance of the prior three-pod
 architecture passed on `688a0f6` and again on `12c3bef`; see
-[688a0f6](docs/ACCEPTANCE-688a0f6.md) and [12c3bef](docs/ACCEPTANCE-12c3bef.md)
+[688a0f6](docs/history/ACCEPTANCE-688a0f6.md) and [12c3bef](docs/history/ACCEPTANCE-12c3bef.md)
 for evidence and deviations. The later four-pod shared-proxy architecture
 passed a process-level, evidence-light two-agent acceptance on `9e54cfb`; see
-[the run record](docs/ACCEPTANCE-9e54cfb.md). That run exercised a destructive
+[the run record](docs/history/ACCEPTANCE-9e54cfb.md). That run exercised a destructive
 standby rebuild again, so the topology recorded in the older runs is stale.
 No topology was captured for `9e54cfb`; this is not a substitute for fresh
 checks before operations.

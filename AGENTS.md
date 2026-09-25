@@ -19,10 +19,10 @@ Current architecture and workflow:
   keycloak; apps.REPLICATED_DATABASES), never on a partial group.
   shared-proxy.service owns nginx and persistent TLS volume todo-nginx-data.
 - Four-pod shared-proxy architecture passed a two-agent acceptance pass on
-  9e54cfb; see docs/ACCEPTANCE-9e54cfb.md (process-level, not evidence-grade:
+  9e54cfb; see docs/history/ACCEPTANCE-9e54cfb.md (process-level, not evidence-grade:
   no phase-by-phase counts, markers or topology were captured). The prior
   three-pod architecture's evidence-grade acceptance remains
-  docs/ACCEPTANCE-688a0f6.md and docs/ACCEPTANCE-12c3bef.md. Legacy
+  docs/history/ACCEPTANCE-688a0f6.md and docs/history/ACCEPTANCE-12c3bef.md. Legacy
   runtime/transition files are retired from the active tree; Git history and
   quadlet-reference-v1 preserve them. The seven-pod, three-database group
   reached a REPAIRED FUNCTIONAL PASS on 3fb897f (docs/ACCEPTANCE-3fb897f.md):

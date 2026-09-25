@@ -10,7 +10,7 @@ The project demonstrates Podman, Quadlet, Ansible and offline installation in sm
 
 Unchanged-revision Oracle Linux acceptance passed on 2026-09-05 at
 `688a0f67d190cd48dc6a8e4cfbedba66a89a5e24`.
-See [the authoritative run record](docs/ACCEPTANCE-688a0f6.md).
+See [the authoritative run record](ACCEPTANCE-688a0f6.md).
 VM108 is primary; VM107 is rebuilt standby under quarantine. No runtime
 changes or legacy retirement accompany this documentation update.
 

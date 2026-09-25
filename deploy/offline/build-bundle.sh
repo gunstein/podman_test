@@ -34,7 +34,8 @@ cp "$project_root/deploy/quadlet/README.md" "$bundle_directory/deploy/quadlet/"
 cp "$project_root/deploy/quadlet/app-network.network" "$project_root/deploy/quadlet/"*.kube.j2 \
   "$bundle_directory/deploy/quadlet/"
 cp -r "$project_root/deploy/environments" "$bundle_directory/deploy/"
-cp "$project_root/deploy/runtime/README.md" "$project_root/deploy/runtime/RESULTS.md" "$bundle_directory/deploy/runtime/"
+cp "$project_root/deploy/runtime/README.md" "$bundle_directory/deploy/runtime/"
+cp "$project_root/docs/history/RESULTS.md" "$bundle_directory/deploy/runtime/"
 mkdir -p "$bundle_directory/deploy/ansible/roles"
 cp "$project_root/deploy/ansible/playbooks/deploy.yml" \
   "$project_root/deploy/ansible/playbooks/uninstall.yml" \

@@ -668,7 +668,7 @@ restore commands. Record every backup name printed by `create`
    - `REPAIRED FUNCTIONAL PASS`: everything works, but something had to be
      repaired during the run. List each repair and its original failure.
    - `BLOCKED` / `IN PROGRESS`: not finished; say where and why.
-4. Write a draft evidence record in the style of `docs/ACCEPTANCE-12c3bef.md` to
+4. Write a draft evidence record in the style of `docs/history/ACCEPTANCE-12c3bef.md` to
    `~/todo-acceptance-runs/<RUN_ID>/ACCEPTANCE-<short-sha>.md`. Do not copy it
    into the repository; the operator decides.
 5. Delete `$XDG_RUNTIME_DIR/todo-acceptance/e2e-password`. Leave both VMs in the

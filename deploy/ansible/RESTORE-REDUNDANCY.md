@@ -92,7 +92,7 @@ standby-then-primary reboots with application, CA, data and backup persistence.
 ## Acceptance evidence
 
 Use [Acceptance](../../docs/ACCEPTANCE.md) for the full sequence and verdict.
-[688a0f6](../../docs/ACCEPTANCE-688a0f6.md) records historical evidence only.
+[688a0f6](../../docs/history/ACCEPTANCE-688a0f6.md) records historical evidence only.
 
 ## Failback is separate
 

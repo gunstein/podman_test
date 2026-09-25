@@ -5,7 +5,7 @@ The current single-host architecture has seven pods: `todo-app`, `todo-postgres`
 `shared-proxy`. The apps have separate databases and audiences, sharing one
 realm, proxy, SAN certificate and network. DR, backup, promotion and rebuild act
 on the Todo, Notes and Keycloak databases as one group; see the
-[phased DR checkpoints](../../docs/MULTI-APP-DR-VERIFICATION.md).
+[phased DR checkpoints](../MULTI-APP-DR-VERIFICATION.md).
 The seven-pod change requires its own full unchanged-revision VM acceptance
 before claiming the complete Oracle Linux operational baseline.
 
@@ -48,13 +48,13 @@ and 2.20. The Notes runtime privilege test also runs against PostgreSQL in CI.
 ## Historical acceptance
 
 Historical unchanged-revision acceptance passed on 688a0f6; see its
-[record](../../docs/ACCEPTANCE-688a0f6.md). The subsequent simplification revision
+[record](ACCEPTANCE-688a0f6.md). The subsequent simplification revision
 12c3bef received a full CLEAN PASS on 7 September 2026. The four-pod shared-proxy
 revision 9e54cfb received a lighter process-level acceptance; see its
-[record](../../docs/ACCEPTANCE-9e54cfb.md). These records retain their original
+[record](ACCEPTANCE-9e54cfb.md). These records retain their original
 scope and do not accept the current seven-pod, three-database topology.
 Revision 3fb897f ran the full two-VM sequence for that topology and received a
-REPAIRED FUNCTIONAL PASS; see its [record](../../docs/ACCEPTANCE-3fb897f.md).
+REPAIRED FUNCTIONAL PASS; see its [record](../ACCEPTANCE-3fb897f.md).
 
-Follow [Acceptance](../../docs/ACCEPTANCE.md) for a new full Oracle Linux DR run;
+Follow [Acceptance](../ACCEPTANCE.md) for a new full Oracle Linux DR run;
 use separate disposable targets for multi-app development experiments.

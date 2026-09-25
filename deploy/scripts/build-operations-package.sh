@@ -68,6 +68,7 @@ cp "$project_root/docs/ARCHITECTURE.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
   "$project_root/docs/LEARNING-GUIDE.md" \
   "$project_root/docs/ACCEPTANCE.md" \
+  "$project_root/docs/ACCEPTANCE-APP-OPS.md" \
   "$project_root/docs/ACCEPTANCE-TROUBLESHOOTING.md" \
   "$project_root/docs/PROXMOX-QUARANTINE.md" \
   "$package_directory/docs/"

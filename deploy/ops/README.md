@@ -5,7 +5,8 @@ controller, without Ansible. Each command has the same name, host roles and
 order as the Ansible playbook it replaces. The hosts still run the same
 `app_installer` commands, `app_dr.py`, `app_backup.py` and
 `deploy/scripts/trust-files.sh`. The Ansible playbooks remain supported until
-a full two-VM acceptance run has verified `app-ops`.
+a full two-VM acceptance run has verified `app-ops`; the operations package
+has that run in `docs/ACCEPTANCE-APP-OPS.md`.
 
 ## Requirements
 

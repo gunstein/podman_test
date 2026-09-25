@@ -139,6 +139,7 @@ class OperationsDistributionTests(unittest.TestCase):
                 "generated/kube-runtime/app.yaml",
                 "generated/kube-runtime/postgres.yaml",
                 "docs/ACCEPTANCE.md",
+                "docs/ACCEPTANCE-APP-OPS.md",
                 "docs/ACCEPTANCE-TROUBLESHOOTING.md",
                 "docs/ARCHITECTURE.md",
                 "deploy/ansible/roles/postgres_reseed_standby/tasks/main.yml",

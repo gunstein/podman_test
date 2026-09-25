@@ -110,9 +110,45 @@ class AcceptanceGuideTests(unittest.TestCase):
         self.assertIn('app-quarantine.sh stop todo-primary gunstein', guide)
 
     def test_acceptance_reference_links_resolve_in_source(self):
-        for name in ('ACCEPTANCE.md', 'ACCEPTANCE-TROUBLESHOOTING.md', 'ACCEPTANCE-AGENT.md'):
+        for name in ('ACCEPTANCE.md', 'ACCEPTANCE-TROUBLESHOOTING.md', 'ACCEPTANCE-AGENT.md', 'ACCEPTANCE-APP-OPS.md'):
             path = ROOT / 'docs' / name
             for target in re.findall(r'\]\(([^)]+)\)', path.read_text()):
                 if '://' in target or target.startswith('#'):
                     continue
                 self.assertTrue((path.parent / target.split('#')[0]).is_file(), target)
+
+
+class AppOpsGuideTests(unittest.TestCase):
+    """The app-ops acceptance guide only uses commands, flags and inventories app-ops accepts."""
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT / 'deploy/ops'))
+        from app_ops import cli, inventory
+        self.cli, self.inventory = cli, inventory
+        self.guide = (ROOT / 'docs/ACCEPTANCE-APP-OPS.md').read_text()
+
+    def test_commands_parse_and_use_the_inventory_for_their_topology(self):
+        blocks = re.findall(r'```bash\n(.*?)```', self.guide, re.S)
+        for block in blocks:
+            result = subprocess.run(['bash', '-n'], input=block, text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        lines = "\n".join(blocks).replace("\\\n", "").splitlines()
+        used = set()
+        for line in (line for line in lines if 'python3 -m app_ops' in line):
+            argv = shlex.split(line.split(';')[0])[3:]
+            args = self.cli.parser().parse_args(argv)
+            expected = 'initial.yaml' if self.cli.COMMANDS[args.command] == self.cli.INITIAL else 'recovery.yaml'
+            self.assertEqual(str(args.inventory), expected, line)
+            used.add(args.command)
+        self.assertEqual(used - {'sync-standby-secrets'}, set(self.cli.COMMANDS) - {'sync-standby-secrets'})
+
+    def test_example_inventories_load_for_their_commands(self):
+        import tempfile
+        examples = re.findall(r'```yaml\n(.*?)```', self.guide, re.S)
+        self.assertEqual(len(examples), 2)
+        for text, roles in zip(examples, (self.cli.INITIAL, self.cli.RECOVERY)):
+            with tempfile.NamedTemporaryFile('w', suffix='.yaml') as file:
+                file.write(text)
+                file.flush()
+                hosts = self.inventory.load(file.name, roles)
+            self.assertEqual([host.local for host in hosts.values()], [True, False])

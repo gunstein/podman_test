@@ -14,8 +14,10 @@ state or authorization. A NEW run evaluates its own clean revision. Use
 [Proxmox quarantine](PROXMOX-QUARANTINE.md) supplies the specialized
 infrastructure procedure. An autonomous agent run additionally follows
 [ACCEPTANCE-AGENT.md](ACCEPTANCE-AGENT.md) for Proxmox API, sudo, secret and
-evidence handling. Operation references describe contracts, not another
-acceptance sequence.
+evidence handling. [ACCEPTANCE-APP-OPS.md](ACCEPTANCE-APP-OPS.md) runs these
+same phases with the plain-SSH `app-ops` tool in place of the Ansible
+playbooks. Operation references describe contracts, not another acceptance
+sequence.
 
 ## Entry, approvals and evidence
 

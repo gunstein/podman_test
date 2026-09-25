@@ -186,6 +186,7 @@ jobs:
             deploy/scripts/smoke-proxy.sh \
             deploy/scripts/run-e2e.sh \
             deploy/scripts/todo-quarantine.sh \
+            deploy/scripts/trust-files.sh \
             deploy/scripts/trust-serving-ca.sh \
             deploy/scripts/bootstrap-ssh-key.sh
 

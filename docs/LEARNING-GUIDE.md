@@ -172,7 +172,7 @@ getenforce
 systemctl is-active fapolicyd firewalld
 ```
 
-Read `deploy/ansible/roles/todo_fapolicyd/`, `deploy/offline/FAPOLICYD.md` and
+Read `deploy/scripts/trust-files.sh`, `deploy/offline/FAPOLICYD.md` and
 [quarantine](PROXMOX-QUARANTINE.md). Do not disable security to diagnose failures.
 
 ## 8. Recovery is part of the architecture

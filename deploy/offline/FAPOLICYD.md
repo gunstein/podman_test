@@ -39,6 +39,15 @@ root-owned copies under `/opt/todo/bin`, and registers only those exact target
 files. Supply normal Ansible become credentials; no manual trust preparation is
 part of the supported workflow.
 
+The trust logic lives in `deploy/scripts/trust-files.sh`, run through the
+RPM-trusted system shell. It cannot be project Python, because the files it
+trusts are that Python. `install DEST MODE` writes one root-owned file
+atomically from base64 standard input. `trust TRUST_FILE PATH...` updates or
+adds exact trust, reloads the daemon, and then waits until
+`fapolicyd-cli --dump-db` shows every exact path, size and SHA-256 line. A
+stale hash or a path prefix does not count. The role passes the script text as
+an argument, so no helper file is written to the target.
+
 ## Diagnose a denial
 
 First confirm which security controls are active:

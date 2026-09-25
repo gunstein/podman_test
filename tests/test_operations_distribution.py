@@ -132,6 +132,7 @@ class OperationsDistributionTests(unittest.TestCase):
                 "deploy/scripts/todo_dr.py",
                 "deploy/scripts/todo_backup.py",
                 "deploy/scripts/todo-quarantine.sh",
+                "deploy/scripts/trust-files.sh",
                 "generated/kube-runtime/app.yaml",
                 "generated/kube-runtime/postgres.yaml",
                 "docs/ACCEPTANCE.md",

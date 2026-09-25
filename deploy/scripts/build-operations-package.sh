@@ -56,6 +56,7 @@ cp "$project_root/deploy/runtime/README.md" "$package_directory/deploy/runtime/"
 cp "$project_root/docs/history/RESULTS.md" "$package_directory/deploy/runtime/"
 cp "$project_root/deploy/scripts/todo_dr.py" \
   "$project_root/deploy/scripts/todo-quarantine.sh" \
+  "$project_root/deploy/scripts/trust-files.sh" \
   "$project_root/deploy/scripts/todo_backup.py" "$package_directory/deploy/scripts/"
 cp "$project_root/deploy/offline/FAPOLICYD.md" "$project_root/deploy/offline/README.md" \
   "$package_directory/deploy/offline/"

@@ -50,11 +50,15 @@ class AnsibleSafetyTests(unittest.TestCase):
             self.assertNotIn("ansible_pipelining", read(inventory))
 
     def test_tool_installers_use_central_exact_file_trust(self):
-        trust = read("deploy/ansible/roles/todo_fapolicyd/tasks/main.yml")
-        self.assertIn("base64 --decode", trust)
-        self.assertIn("--trust-file", trust)
-        self.assertIn("item.dest", trust)
-        self.assertNotIn("import pathlib", trust)
+        role = read("deploy/ansible/roles/todo_fapolicyd/tasks/main.yml")
+        script = read("deploy/scripts/trust-files.sh")
+        # tests/test_trust_files.py runs the script and the real role.
+        self.assertIn("base64 --decode", script)
+        self.assertIn("--trust-file", script)
+        self.assertIn("/deploy/scripts/trust-files.sh", role)
+        self.assertIn("item.dest", role)
+        self.assertNotIn("ansible.builtin.script", role)
+        self.assertNotIn("import pathlib", role)
         for tasks_file in (
             "deploy/ansible/roles/todo_dr/tasks/main.yml",
             "deploy/ansible/roles/postgres_backup/tasks/main.yml",

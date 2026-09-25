@@ -44,6 +44,34 @@ whatever its current contents, which makes F2 and F4 real weaknesses.
   anything as root, so acceptance does not test fapolicyd as a barrier against
   that user. Say so in the acceptance docs.
 
+## Firewalls
+
+The guest firewalld rules and the Proxmox quarantine are both needed: the
+first lets only the client and the peer in, the second fences an old primary.
+What is weak is how they are checked and switched.
+
+- **W1. A firewall check that cannot pass wrongly.** app-ops
+  (`standby.require_firewall`) only queries the permanent configuration of zone
+  `public`. A rule added without `--reload`, or an interface in another zone,
+  still passes. Find the zone of the interface that holds the address, and
+  require the rule in both the runtime and the permanent configuration.
+- **W2. Quarantine as one tool.** The phase 5 rehearsal and phase 9 switch the
+  Proxmox VM firewall, links and rules in many separate API calls; skipping
+  one left VM 107 quarantined in run 2. Add one idempotent command that applies,
+  lifts and verifies the whole profile, so lifting and checking cannot be
+  forgotten halfway.
+- **W3. An exact lab baseline.** Proxmox firewall state is not part of a VM
+  snapshot, and leftovers from earlier runs stay behind. Phase 1 deletes them
+  by comment prefix. Add a script that resets both VMs to an exact expected
+  rule list and reports anything else, and say clearly that snapshots do not
+  cover this state.
+- **W4. Tool-owned guest rules.** The firewalld rules are copy-and-paste
+  commands in phases 3, 4, 7 and 9, tied to fixed addresses. Let a tool add
+  or at least verify them (with the W1 check) before each DR command.
+- **W5. Note the node-wide effect.** VM rules need the datacenter and node
+  firewall on, which also changes access to the Proxmox host itself. State this
+  in the agent guide's preparation part.
+
 ## After a CLEAN PASS with app-ops: retire Ansible
 
 3. Delete `deploy/ansible` and `ansible.cfg`, and take them out of the

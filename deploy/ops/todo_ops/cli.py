@@ -1,6 +1,5 @@
 """todo-ops: DR operations over plain SSH, replacing the Ansible playbooks one at a time."""
 import argparse
-import getpass
 import json
 import sys
 from pathlib import Path
@@ -15,7 +14,6 @@ LOCAL = inventory.HostSpec(name='controller', role='controller', address='127.0.
 def parser():
     result = argparse.ArgumentParser(prog='todo-ops', description=__doc__)
     result.add_argument('--inventory', type=Path, required=True)
-    result.add_argument('--ask-become-pass', action='store_true')
     commands = result.add_subparsers(dest='command', required=True)
     helper = commands.add_parser('install-quarantine-tool')
     helper.add_argument('--enable-guest-exec', action='store_true')
@@ -26,11 +24,10 @@ def parser():
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
-        password = getpass.getpass('BECOME password: ') if args.ask_become_pass else None
-        controller = Host(LOCAL, password)
+        controller = Host(LOCAL)
         if args.command == 'install-quarantine-tool':
             hosts = inventory.load(args.inventory, ('primary', 'standby'))
-            changed = quarantine.install(PROJECT_ROOT, controller, Host(hosts['primary'], password),
+            changed = quarantine.install(PROJECT_ROOT, controller, Host(hosts['primary']),
                                          guest_exec=args.enable_guest_exec,
                                          selinux_entrypoint=args.enable_selinux_entrypoint)
         print(json.dumps({'changed': changed}))

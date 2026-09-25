@@ -18,9 +18,9 @@ POLICY = 'OTHER=1\nFILTER_RPC_ARGS="--allow-rpcs=guest-ping,guest-info"\n'
 class FakeRunner:
     """Answers like a hardened host; records each command after unwrapping ssh and sudo."""
 
-    def __init__(self, passwordless=False, fapolicyd="active", policy=POLICY, contexts="", booleans="",
+    def __init__(self, sudo_password_required=False, fapolicyd="active", policy=POLICY, contexts="", booleans="",
                  trust="changed", install="changed", restorecon=""):
-        self.passwordless, self.fapolicyd, self.policy = passwordless, fapolicyd, policy
+        self.sudo_password_required, self.fapolicyd, self.policy = sudo_password_required, fapolicyd, policy
         self.contexts, self.booleans, self.trust, self.install_result = contexts, booleans, trust, install
         self.restorecon = restorecon
         self.raw, self.commands = [], []
@@ -28,9 +28,10 @@ class FakeRunner:
     def __call__(self, argv, input=None, capture_output=True, text=True):
         self.raw.append((argv, input))
         command = shlex.split(argv[-1]) if argv[0] == "ssh" else list(argv)
-        if command[:4] == ["sudo", "-k", "-n", "true"]:
-            return subprocess.CompletedProcess(argv, 0 if self.passwordless else 1, "", "")
         if command[0] == "sudo":
+            assert command[:3] == ["sudo", "-n", "--"], command
+            if self.sudo_password_required:
+                return subprocess.CompletedProcess(argv, 1, "", "sudo: a password is required\n")
             command = command[command.index("--") + 1:]
         self.commands.append((argv[0] == "ssh", command))
         out, rc = "", 0
@@ -69,31 +70,29 @@ class TransportTests(unittest.TestCase):
         self.assertIn("StrictHostKeyChecking=yes", argv)
         self.assertEqual(shlex.split(argv[-1]), ["sh", "-c", 'echo "$1"; rm -rf /', "x", "a b;c"])
 
-    def test_sudo_password_is_always_consumed_by_sudo_and_never_in_argv(self):
+    def test_sudo_is_non_interactive_and_stdin_passes_through_unchanged(self):
         runner = FakeRunner()
-        host = transport.Host(PRIMARY, "s3cret pass", runner=runner)
-        host.run(["cat", "/etc/x"], sudo=True, input="payload")
+        transport.Host(PRIMARY, runner=runner).run(["cat", "/etc/x"], sudo=True, input="payload")
         argv, stdin = runner.raw[-1]
-        self.assertEqual(shlex.split(argv[-1])[:6], ["sudo", "-k", "-S", "-p", "", "--"])
-        self.assertEqual(stdin, "s3cret pass\npayload")
-        self.assertFalse(any("s3cret" in part for argv, _ in runner.raw for part in argv))
+        self.assertEqual(shlex.split(argv[-1]), ["sudo", "-n", "--", "cat", "/etc/x"])
+        self.assertEqual(stdin, "payload")
+        self.assertEqual(len(runner.raw), 1)
 
-    def test_passwordless_sudo_never_sends_the_password(self):
-        runner = FakeRunner(passwordless=True)
-        transport.Host(PRIMARY, "s3cret", runner=runner).run(["id"], sudo=True, input="payload")
-        self.assertEqual(runner.raw[-1][1], "payload")
-        self.assertEqual(shlex.split(runner.raw[-1][0][-1])[:3], ["sudo", "-n", "--"])
+    def test_a_host_that_needs_a_sudo_password_gets_a_clear_error(self):
+        with self.assertRaisesRegex(transport.CommandError, "passwordless sudo \\(NOPASSWD\\) for ops"):
+            transport.Host(PRIMARY, runner=FakeRunner(sudo_password_required=True)).run(["id"], sudo=True)
 
-    def test_missing_password_and_failures_never_echo_stdin(self):
-        with self.assertRaisesRegex(transport.CommandError, "--ask-become-pass"):
-            transport.Host(PRIMARY, runner=FakeRunner()).run(["id"], sudo=True)
-
+    def test_failures_never_echo_stdin(self):
         def failing(argv, input=None, **kwargs):
             return subprocess.CompletedProcess(argv, 5, "", "boom")
         with self.assertRaises(transport.CommandError) as error:
             transport.Host(PRIMARY, runner=failing).run(["podman", "secret", "create", "x", "-"], input="value")
         self.assertIn("exit 5", str(error.exception))
         self.assertNotIn("value", str(error.exception))
+
+    def test_the_cli_offers_no_password_option(self):
+        with self.assertRaises(SystemExit):
+            cli.parser().parse_args(["--inventory", "x", "--ask-become-pass", "install-quarantine-tool"])
 
     def test_local_hosts_run_without_ssh(self):
         runner = FakeRunner()
@@ -133,8 +132,8 @@ class InventoryTests(unittest.TestCase):
 
 class QuarantineToolTests(unittest.TestCase):
     def install(self, runner, **options):
-        controller = transport.Host(cli.LOCAL, "pw", runner=runner)
-        primary = transport.Host(PRIMARY, "pw", runner=runner)
+        controller = transport.Host(cli.LOCAL, runner=runner)
+        primary = transport.Host(PRIMARY, runner=runner)
         return quarantine.install(str(ROOT), controller, primary, **options)
 
     def test_guest_agent_policy_keeps_existing_rpcs_once(self):

@@ -326,12 +326,13 @@ Still on VM1:
 ```bash
 cd ~/todo-operations
 
-ansible-playbook \
+ansible-playbook --ask-become-pass \
   --inventory deploy/ansible/inventories/initial/hosts.ini \
   deploy/ansible/playbooks/preflight-standby.yml
 ```
 
-This should be green before you continue.
+This should be green before you continue. The preflight checks that the
+firewalld rule from step 8 is in place, which needs become privileges to query.
 
 ## 10. Build the PostgreSQL standby on VM2
 

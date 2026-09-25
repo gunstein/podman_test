@@ -1,20 +1,10 @@
 # PostgreSQL standby bootstrap
 
-Run the read-only preflight before changing either database host:
-
-```bash
-ansible-playbook --inventory deploy/ansible/inventories/initial/hosts.ini deploy/ansible/playbooks/preflight-standby.yml
-```
-
-By default, the offline bundle must still exist on standby under
-`/home/<ansible_user>/todo-offline-m12`. Set `todo_user_home` in the inventory
-when the remote account uses another home directory.
-
 Configure the primary host firewall before bootstrap publishes PostgreSQL on
 the LAN interface. Allow only standby and reload firewalld:
 
 ```bash
-sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="<standby-address>/32" destination address="<primary-address>" port port="5432-5434" protocol="tcp" accept'
+sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="<standby-address>/32" destination address="<primary-address>" port port="5432-5434" protocol="tcp" accept'
 sudo firewall-cmd --reload
 ```
 
@@ -25,6 +15,18 @@ address. The primary role therefore inspects `app-network` and grants the
 dedicated replication role access from that internal Podman subnet. In the
 verified Oracle Linux environment PostgreSQL saw `10.89.0.0/24`, not the
 standby LAN address; firewalld enforces the real machine boundary.
+
+Run the read-only preflight before changing either database host. It checks
+that this rich rule is already in place on the primary, so add it first; the
+check needs to query firewalld and so asks for become privileges:
+
+```bash
+ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/initial/hosts.ini deploy/ansible/playbooks/preflight-standby.yml
+```
+
+By default, the offline bundle must still exist on standby under
+`/home/<ansible_user>/todo-offline-m12`. Set `todo_user_home` in the inventory
+when the remote account uses another home directory.
 
 The demo authenticates replication with SCRAM-SHA-256 but does not configure or
 require encrypted PostgreSQL transport. It is intended for this isolated,

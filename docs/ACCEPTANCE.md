@@ -502,7 +502,7 @@ sudo firewall-cmd --reload
 Run:
 
 ```bash
-ansible-playbook --inventory deploy/ansible/inventories/initial/hosts.ini \
+ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/initial/hosts.ini \
   deploy/ansible/playbooks/preflight-standby.yml
 ansible-playbook --inventory deploy/ansible/inventories/initial/hosts.ini \
   deploy/ansible/playbooks/bootstrap-standby.yml

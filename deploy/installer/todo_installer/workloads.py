@@ -10,17 +10,17 @@ from . import apps, quadlet, secrets, settings
 from .commands import run
 
 
-def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-             manifests, units, obsolete, legacy, message, capability, mapping,
-             variables, values=None):
+def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir, *,
+             manifests, units, obsolete, capability, mapping, variables, values=None):
     root, directory, runtime, rendered = map(Path, (
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir))
     if runtime != directory / "todo-kube-runtime" or runtime.is_symlink():
         raise ValueError("kube_runtime_dir must be quadlet_dir/todo-kube-runtime")
     if "--no-pod-prefix" not in run("podman", "kube", "play", "--help").stdout:
         raise RuntimeError(f"The {capability} Kube runtime requires Podman --no-pod-prefix.")
-    if any((directory / name).exists() for name in legacy):
-        raise RuntimeError(message)
+    # install.preflight() already refuses a legacy per-container Quadlet host-wide,
+    # before any workload install runs; see install-workload's CLI dispatch for the
+    # DR/Ansible path, which calls it for the same reason.
     # Read and render everything before mutating the installation.
     files = [(runtime / name, (rendered / name).read_bytes(), 0o600)
              for name in manifests]
@@ -44,17 +44,14 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
                      publish_address="", db_password=None, *, app: apps.App = apps.APPS[0]):
     if publish_address and app.name not in {d.name for d in apps.REPLICATED_DATABASES}:
         raise ValueError("Replication publication requires membership in the verified DR group.")
-    legacy = app.resource("postgres") + ".container"
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        (app.manifest("postgres"), app.manifest("config")), (app.unit("postgres"),),
-        (app.volume("data"), app.volume("backup")), (legacy,),
-        f"Unsupported {legacy} is installed. Stop and review the host "
-        "separately; this operation does not migrate an existing PostgreSQL runtime.",
-        "PostgreSQL", secrets.postgres_secret_mapping(app),
-        {"todo_postgres_publish_address": publish_address,
-         "postgres_publish_port": app.replication_port},
-        {app.secret("db"): db_password} if db_password is not None else None,
+        manifests=(app.manifest("postgres"), app.manifest("config")), units=(app.unit("postgres"),),
+        obsolete=(app.volume("data"), app.volume("backup")),
+        capability="PostgreSQL", mapping=secrets.postgres_secret_mapping(app),
+        variables={"todo_postgres_publish_address": publish_address,
+                  "postgres_publish_port": app.replication_port},
+        values={app.secret("db"): db_password} if db_password is not None else None,
     )
 
 
@@ -63,22 +60,17 @@ def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_ma
                         app: apps.App = apps.APPS[0]):
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        (app.manifest("app"), app.manifest("config")), (app.unit("app"),), (),
-        tuple(app.resource(component) + ".container" for component in ("backend", "frontend")),
-        "Unsupported application container Quadlets are installed. Stop and review "
-        "the host separately before installing the grouped Kube application.",
-        "application", secrets.application_secret_mapping(app),
-        {"todo_publish_address": publish_address, "todo_service_port": service_port},
+        manifests=(app.manifest("app"), app.manifest("config")), units=(app.unit("app"),), obsolete=(),
+        capability="application", mapping=secrets.application_secret_mapping(app),
+        variables={"todo_publish_address": publish_address, "todo_service_port": service_port},
     )
 
 
 def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir):
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        ("keycloak.yaml",), ("keycloak.kube",), (),
-        ("todo-keycloak.container", "keycloak.container"),
-        "Unsupported identity container Quadlet is installed. Stop and review the host separately.",
-        "identity", secrets.keycloak_secret_mapping(), {},
+        manifests=("keycloak.yaml",), units=("keycloak.kube",), obsolete=(),
+        capability="identity", mapping=secrets.keycloak_secret_mapping(), variables={},
     )
 
 
@@ -94,15 +86,12 @@ def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_m
             f"publish_address must not be a wildcard address ({publish_address!r}); "
             "it would collide with the fixed 127.0.0.1 binding. Use the host's own address."
         )
-    applications = apps.REPLICATED_APPS if applications is None else applications
+    applications = apps.APPS if applications is None else applications
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        ("shared-proxy.yaml", "config.yaml"), ("shared-proxy.kube",),
-        (apps.IDENTITY_DATABASE_APP.resource("nginx-data"),),
-        (apps.IDENTITY_DATABASE_APP.resource("frontend") + ".container",),
-        "Unsupported legacy frontend container Quadlet is installed. Stop and "
-        "review the host separately before installing the shared Kube proxy.",
-        "shared proxy", {},
-        {"todo_publish_address": publish_address, "todo_service_port": service_port,
-         "app_services": [app.service("app") for app in applications]},
+        manifests=("shared-proxy.yaml", "config.yaml"), units=("shared-proxy.kube",),
+        obsolete=(apps.IDENTITY_DATABASE_APP.resource("nginx-data"),),
+        capability="shared proxy", mapping={},
+        variables={"todo_publish_address": publish_address, "todo_service_port": service_port,
+                  "app_services": [app.service("app") for app in applications]},
     )

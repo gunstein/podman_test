@@ -117,14 +117,14 @@ def main(argv=None):
         elif args.command == 'prepare-promoted-images':
             from . import images
             changed = any(images.prepare_shared(args.bundle_dir, 'offline', args.bundle_dir).values())
-            for app in apps.REPLICATED_APPS:
+            for app in apps.APPS:
                 changed = any(images.prepare(args.bundle_dir, 'offline', args.bundle_dir,
                                              app=app, include_shared=False).values()) or changed
             print(json.dumps({'changed': changed}))
         elif args.command == 'configure-clients':
             from . import keycloak, secrets
             changed = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
-                                         [(app.keycloak_client, app.hostname) for app in apps.REPLICATED_APPS])
+                                         [(app.keycloak_client, app.hostname) for app in apps.APPS])
             print(json.dumps({'changed': changed}))
         elif args.command == 'services':
             print(json.dumps(apps.services(databases=not args.application_tier)))
@@ -148,6 +148,7 @@ def main(argv=None):
                       f'{args.rendered_manifest_dir}; nothing was torn down.', file=sys.stderr)
         else:
             directory = args.quadlet_dir.resolve()
+            install.preflight(directory)
             runtime = (args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve()
             manifests = args.rendered_manifest_dir or args.project_root / 'generated/kube-runtime'
             kwargs = {'publish_address': args.publish_address, 'service_port': args.service_port}

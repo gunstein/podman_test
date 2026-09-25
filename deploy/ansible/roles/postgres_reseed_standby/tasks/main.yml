@@ -21,19 +21,6 @@
     todo_replication_app: "{{ todo_replication_metadata[0].name }}"
     todo_replication_operation: quarantined
 
-- name: Remove legacy pre-Kube-play Todo container Quadlets from the rebuilt standby
-  ansible.builtin.file:
-    path: "{{ m16_quadlet_directory }}/{{ item }}"
-    state: absent
-  loop:
-    - todo-frontend.container
-    - todo-backend.container
-    - keycloak.container
-    - todo-db-setup.container
-    - todo-migrate.container
-    - todo-db-grants.container
-    - todo-nginx-data.volume
-
 - name: Remove the shared Kube units from the rebuilt standby
   ansible.builtin.file:
     path: "{{ m16_quadlet_directory }}/todo-kube-runtime/{{ item }}"

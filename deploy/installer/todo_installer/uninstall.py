@@ -4,7 +4,6 @@ from pathlib import Path
 
 from . import apps, secrets, settings
 from .commands import exists, run
-from .install import LEGACY
 from .quadlet import systemctl
 
 IDENTITY = apps.IDENTITY_DATABASE_APP
@@ -15,15 +14,11 @@ QUADLET_FILES = (apps.NETWORK + '.network',
                  *(app.volume(purpose) + '.volume' for app in apps.APPS
                    for purpose in ('data', 'backup')),
                  *(apps.KEYCLOAK_DATABASE.volume(purpose) + '.volume' for purpose in ('data', 'backup')),
-                 *(volume + '.volume' for volume in TLS_VOLUMES),
-                 *(name + '.container' for name in LEGACY))
+                 *(volume + '.volume' for volume in TLS_VOLUMES))
 SERVICES = (*(app.resource(component) for app in apps.APPS
               for component in ('app', 'frontend', 'backend', 'db-grants',
                                 'migrate', 'db-setup', 'postgres')),
-            'keycloak', apps.KEYCLOAK_DATABASE.resource('postgres'), 'shared-proxy', apps.NETWORK + '-network',
-            *(app.legacy_volume_service(purpose) for app in apps.APPS for purpose in ('data', 'backup')),
-            *(apps.KEYCLOAK_DATABASE.legacy_volume_service(purpose) for purpose in ('data', 'backup')),
-            IDENTITY.resource('nginx-data-volume'))
+            'keycloak', apps.KEYCLOAK_DATABASE.resource('postgres'), 'shared-proxy', apps.NETWORK + '-network')
 CONTAINERS = (*(app.resource(component) for app in apps.APPS
                 for component in ('frontend', 'backend', 'migrate', 'db-grants', 'db-setup', 'postgres')),
               'nginx', 'keycloak')

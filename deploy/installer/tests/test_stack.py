@@ -24,7 +24,6 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(database.replication_slot(rebuilt=True), name + "_rebuilt_standby")
             self.assertEqual(database.replication_passfile(), "." + name + "-replication.pgpass")
             self.assertEqual(database.volume("data"), name + "-postgres-data")
-            self.assertEqual(database.legacy_volume_service("data"), name + "-postgres-data-volume")
             self.assertEqual(database.image("postgres"), "docker.io/library/postgres:17.11")
             self.assertEqual(database.image_archive("postgres"), "postgres-17.11.tar")
 

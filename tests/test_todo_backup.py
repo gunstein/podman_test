@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import subprocess
 import unittest
 from datetime import datetime, timezone
@@ -185,6 +186,204 @@ class ApplicationBackupTests(unittest.TestCase):
             self.assertEqual(todo_backup.main(['create']), 1)
         for tool in instances:
             tool.create_backup.assert_not_called()
+
+
+class FakeHost:
+    """One promoted host running every registered database, for the configure command."""
+
+    def __init__(self, configured=(), directories_ready=(), mounts=None, source=None, active=True):
+        self.databases = {d.resource('postgres'): d for d in todo_backup.apps.REPLICATED_DATABASES}
+        self.configured = set(configured)
+        self.directories_ready = set(directories_ready)
+        self.mounts = mounts or {}
+        self.source = source or {}
+        self.active = active
+        self.commands = []
+
+    def container_for(self, command):
+        return next((c for c in command if c in self.databases), None)
+
+    def __call__(self, arguments, timeout=None):
+        command = list(arguments)
+        self.commands.append(command)
+        container = self.container_for(command)
+        if command[:3] == ["systemctl", "--user", "is-active"]:
+            return completed("active\n" if self.active else "inactive\n", returncode=0 if self.active else 3)
+        if command[:3] == ["systemctl", "--user", "show"]:
+            database = next(d for d in self.databases.values() if d.service('postgres') == command[3])
+            default = "/home/u/.config/containers/systemd/todo-kube-runtime/" + database.unit('postgres')
+            return completed(self.source.get(database.name, default) + "\n")
+        if command[:2] == ["systemctl", "--user"]:
+            return completed()
+        if command[:3] in (["podman", "secret", "exists"], ["podman", "volume", "exists"]):
+            return completed()
+        if command[:2] == ["podman", "inspect"]:
+            database = self.databases[container]
+            good = [{"Type": "volume", "Name": database.volume('backup'),
+                     "Destination": "/var/lib/postgresql/backup", "RW": True}]
+            return completed(json.dumps(self.mounts.get(database.name, good)))
+        if command[:2] == ["podman", "run"] and todo_backup.BACKUP_DIRECTORIES_SCRIPT in command:
+            volume = command[command.index("--volume") + 1].split(":")[0]
+            ready = volume in self.directories_ready
+            self.directories_ready.add(volume)
+            return completed("unchanged\n" if ready else "changed\n")
+        if "psql" in command:
+            sql = " ".join(command[command.index("psql"):])
+            if "ALTER SYSTEM" in sql:
+                self.configured.add(container)
+                return completed("ALTER SYSTEM\n")
+            if "current_setting('archive_command')" in sql:
+                if container in self.configured:
+                    return completed(f"on|{todo_backup.ARCHIVE_COMMAND}|{todo_backup.ARCHIVE_TIMEOUT}\n")
+                return completed("off|(disabled)|0\n")
+            if "pg_is_in_recovery" in sql:
+                return completed("f|off\n")
+            if "pg_create_restore_point" in sql:
+                return completed("0/5000100\n")
+            if "pg_walfile_name" in sql:
+                return completed("000000010000000000000001\n")
+        return completed()
+
+    def index(self, predicate):
+        return next(i for i, command in enumerate(self.commands) if predicate(command))
+
+    def matching(self, predicate):
+        return [command for command in self.commands if predicate(command)]
+
+
+class ConfigureArchiveTests(unittest.TestCase):
+    DATABASES = todo_backup.apps.REPLICATED_DATABASES
+
+    def configure(self, host, promoted=True, access_changed=False):
+        tools = [todo_backup.TodoBackup(runner=host, app=app, sleeper=lambda _s: None,
+                                        clock=lambda: datetime(2026, 9, 25, 12, 0, 0, 123456, tzinfo=timezone.utc))
+                 for app in self.DATABASES]
+        self.hba = []
+        self.waits = []
+        journal = mock.Mock(side_effect=None if promoted else RuntimeError('A readable completed group '
+                                                                                'promotion record is required'))
+        with mock.patch.object(todo_backup.replication, 'require_promoted_group', journal), \
+                mock.patch.object(todo_backup.replication, 'refresh_hba',
+                                  side_effect=lambda app: (self.hba.append((len(host.commands), app.name)), access_changed)[1]), \
+                mock.patch.object(todo_backup.keycloak, 'wait',
+                                  side_effect=lambda path, *a, **k: self.waits.append((path, k.get('hostname')))):
+            return todo_backup.configure(tools, Path('/journal.json'))
+
+    def test_archive_settings_stay_byte_identical_to_deployed_hosts(self):
+        self.assertEqual(todo_backup.ARCHIVE_COMMAND,
+                         'test ! -f /var/lib/postgresql/backup/wal/%f && cp %p /var/lib/postgresql/backup/wal/%f || '
+                         'test "$(sha256sum < %p)" = "$(sha256sum < /var/lib/postgresql/backup/wal/%f)"')
+        self.assertEqual(todo_backup.ARCHIVE_TIMEOUT, '1h')
+
+    def test_fresh_group_is_gated_first_then_restarted_behind_one_application_tier_stop(self):
+        host = FakeHost()
+        result = self.configure(host)
+        names = [d.name for d in self.DATABASES]
+        self.assertEqual(result['changed'], True)
+        self.assertEqual(result['restarted'], names)
+        self.assertEqual(sorted(result['verified']), sorted(names))
+        self.assertEqual(result['verified']['todo'], 'todo_archive_check_20260925120000123456')
+        last_gate = max(i for i, c in enumerate(host.commands) if c[:3] == ["systemctl", "--user", "show"])
+        first_write = min([self.hba[0][0], host.index(lambda c: todo_backup.BACKUP_DIRECTORIES_SCRIPT in c)])
+        self.assertLess(last_gate, first_write)
+        stops = host.matching(lambda c: c[:3] == ["systemctl", "--user", "stop"])
+        self.assertEqual([c[3] for c in stops], todo_backup.apps.services(databases=False))
+        restarts = host.matching(lambda c: c[:3] == ["systemctl", "--user", "restart"])
+        self.assertEqual([c[3] for c in restarts], [d.service('postgres') for d in self.DATABASES])
+        start = host.index(lambda c: c == ["systemctl", "--user", "start", "shared-proxy.service"])
+        self.assertLess(host.index(lambda c: c[:3] == ["systemctl", "--user", "stop"]),
+                        host.index(lambda c: c[:3] == ["systemctl", "--user", "restart"]))
+        self.assertLess(max(host.commands.index(c) for c in restarts), start)
+        self.assertLess(start, host.index(lambda c: any('pg_create_restore_point' in part for part in c)))
+        self.assertEqual(self.waits[:len(todo_backup.apps.APPS)],
+                         [('/ready', app.hostname) for app in todo_backup.apps.APPS])
+
+    def test_configured_group_is_left_running_and_unverified(self):
+        host = FakeHost(configured={d.resource('postgres') for d in self.DATABASES},
+                        directories_ready={d.volume('backup') for d in self.DATABASES})
+        result = self.configure(host)
+        self.assertEqual(result, {'changed': False, 'restarted': [], 'verified': {}})
+        for verb in ("stop", "restart"):
+            self.assertEqual(host.matching(lambda c: c[:3] == ["systemctl", "--user", verb]), [])
+        self.assertFalse(host.matching(lambda c: any('ALTER SYSTEM' in part or 'pg_switch_wal' in part
+                                                     for part in c)))
+        self.assertTrue(host.matching(lambda c: c == ["systemctl", "--user", "start", "shared-proxy.service"]))
+
+    def test_changed_replication_access_alone_reports_change_without_restart(self):
+        host = FakeHost(configured={d.resource('postgres') for d in self.DATABASES},
+                        directories_ready={d.volume('backup') for d in self.DATABASES})
+        self.assertEqual(self.configure(host, access_changed=True),
+                         {'changed': True, 'restarted': [], 'verified': {}})
+
+    def test_invalid_mount_json_or_a_hung_stop_is_an_operator_error(self):
+        class BrokenInspect(FakeHost):
+            def __call__(self, arguments, timeout=None):
+                if list(arguments[:2]) == ["podman", "inspect"]:
+                    return completed("not json")
+                return super().__call__(arguments, timeout)
+
+        class HungStop(FakeHost):
+            def __call__(self, arguments, timeout=None):
+                if list(arguments[:3]) == ["systemctl", "--user", "stop"]:
+                    raise subprocess.TimeoutExpired(arguments, timeout)
+                return super().__call__(arguments, timeout)
+
+        with self.assertRaisesRegex(todo_backup.BackupError, 'invalid JSON'):
+            self.configure(BrokenInspect())
+        with self.assertRaises(todo_backup.BackupError):
+            self.configure(HungStop())
+
+    def test_only_the_changed_database_restarts_and_is_verified(self):
+        last = self.DATABASES[-1]
+        host = FakeHost(configured={d.resource('postgres') for d in self.DATABASES[:-1]},
+                        directories_ready={d.volume('backup') for d in self.DATABASES})
+        result = self.configure(host)
+        self.assertEqual(result['restarted'], [last.name])
+        self.assertEqual(list(result['verified']), [last.name])
+        self.assertEqual(len(host.matching(lambda c: c[:3] == ["systemctl", "--user", "stop"])),
+                         len(todo_backup.apps.services(databases=False)))
+
+    def test_a_failed_gate_on_the_last_database_stops_before_any_write(self):
+        host = FakeHost(mounts={self.DATABASES[-1].name: []})
+        with self.assertRaisesRegex(todo_backup.BackupError, 'writable backup PVC'):
+            self.configure(host)
+        self.assertEqual(self.hba, [])
+        self.assertFalse(host.matching(lambda c: todo_backup.BACKUP_DIRECTORIES_SCRIPT in c
+                                       or any('ALTER SYSTEM' in part for part in c)
+                                       or c[:3] == ["systemctl", "--user", "stop"]))
+
+    def test_backup_mount_must_be_exactly_the_writable_pvc_at_the_archive_path(self):
+        for database in self.DATABASES:
+            other = next(d for d in self.DATABASES if d != database)
+            good = {"Type": "volume", "Name": database.volume('backup'),
+                    "Destination": "/var/lib/postgresql/backup", "RW": True}
+            for mounts, accepted in [([good], True), ([], False), ([good, good], False),
+                                     ([{**good, "Name": other.volume('backup')}], False),
+                                     ([{**good, "Destination": "/wrong"}], False),
+                                     ([{**good, "RW": False}], False), ([{**good, "Type": "bind"}], False)]:
+                with self.subTest(database=database.name, mounts=mounts):
+                    tool = todo_backup.TodoBackup(runner=FakeHost(mounts={database.name: mounts}), app=database)
+                    if accepted:
+                        tool.require_archive_prerequisites()
+                    else:
+                        with self.assertRaises(todo_backup.BackupError):
+                            tool.require_archive_prerequisites()
+
+    def test_non_kube_or_inactive_postgres_is_refused(self):
+        name = self.DATABASES[0].name
+        with self.assertRaisesRegex(todo_backup.BackupError, 'non-Kube'):
+            self.configure(FakeHost(source={name: '/etc/containers/systemd/todo-postgres.container'}))
+        with self.assertRaisesRegex(todo_backup.BackupError, 'is not active'):
+            self.configure(FakeHost(active=False))
+
+    def test_incomplete_promotion_refuses_before_any_host_command(self):
+        host = FakeHost()
+        with self.assertRaisesRegex(todo_backup.BackupError, 'completed group promotion'):
+            self.configure(host, promoted=False)
+        self.assertEqual(host.commands, [])
+
+    def test_configure_always_covers_the_complete_group(self):
+        self.assertEqual(todo_backup.main(['--app', 'todo', 'configure']), 1)
 
 
 if __name__ == "__main__":

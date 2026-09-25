@@ -1,10 +1,7 @@
 """Protect PVC creation, operational consumers and non-destructive shutdown."""
-import json
-import os
 import subprocess
 import tempfile
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 import yaml
@@ -13,19 +10,6 @@ from tests.runtime_fixture import ROOT, RUNTIME
 
 VOLUMES = {"todo-postgres-data", "todo-postgres-backup", "todo-nginx-data",
            "notes-postgres-data", "notes-postgres-backup"}
-
-
-def ansible_probe(directory, task_list, variables):
-    play = directory / "probe.yml"
-    play.write_text(yaml.safe_dump([{
-        "name": "Exercise storage contract", "hosts": "localhost", "gather_facts": False,
-        "vars": variables, "tasks": task_list,
-    }]))
-    return subprocess.run(
-        [os.environ.get("ANSIBLE_PLAYBOOK", "ansible-playbook"),
-         "-i", "localhost,", "-c", "local", str(play)],
-        capture_output=True, text=True, timeout=60,
-    )
 
 
 class PVCStorageTests(unittest.TestCase):
@@ -110,31 +94,6 @@ class PVCStorageTests(unittest.TestCase):
         reseed_role = (ROOT / "deploy/ansible/roles/postgres_reseed_standby/tasks/main.yml").read_text()
         self.assertIn('replicate-workload.yml', reseed_role)
         self.assertIn('todo_replication_operation: reseed', reseed_role)
-
-    def test_backup_rejects_missing_wrong_readonly_or_misplaced_mounts(self):
-        from app_installer import apps
-        steps = yaml.safe_load((ROOT / 'deploy/ansible/roles/postgres_backup/tasks/database.yml').read_text())
-        gate = next(t for t in steps if t["name"] == "Require the PVC backup volume at the archive path")
-        existence = next(i for i, t in enumerate(steps) if
-                         t.get("ansible.builtin.command", {}).get("argv") ==
-                         ["podman", "volume", "exists", "{{ backup_app.backup_volume }}"])
-        helper = next(i for i, t in enumerate(steps) if "{{ backup_app.backup_volume }}:/backup:U,z"
-                      in t.get("ansible.builtin.command", {}).get("argv", []))
-        self.assertLess(existence, steps.index(gate))
-        self.assertLess(steps.index(gate), helper)
-        for app in apps.APPS:
-            good = {"Type": "volume", "Name": app.volume('backup'),
-                    "Destination": "/var/lib/postgresql/backup", "RW": True}
-            other = next(candidate for candidate in apps.APPS if candidate != app)
-            for mounts, accepted in [([good], True), ([], False), ([good, good], False),
-                                     ([{**good, "Name": other.volume('backup')}], False),
-                                     ([{**good, "Destination": "/wrong"}], False),
-                                     ([{**good, "RW": False}], False)]:
-                with self.subTest(app=app.name, mounts=mounts), tempfile.TemporaryDirectory() as directory:
-                    result = ansible_probe(Path(directory), [gate], {
-                        "backup_app": apps.describe(app),
-                        "backup_postgres_mounts": {"stdout": json.dumps(mounts)}})
-                    self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
     def test_uninstall_preserves_database_and_tls_data_by_default_and_never_removes_backup(self):
         from app_installer import uninstall

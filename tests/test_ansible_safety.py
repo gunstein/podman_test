@@ -82,25 +82,19 @@ class AnsibleSafetyTests(unittest.TestCase):
             self.assertIn("name: todo_fapolicyd", tasks)
             self.assertIn("/opt/todo/bin/", tasks)
 
-    def test_backup_uses_capacity_safe_archive_timeout(self):
-        playbook = read("deploy/ansible/playbooks/configure-backup.yml")
-        tasks = read("deploy/ansible/roles/postgres_backup/tasks/database.yml")
-
-        self.assertIn("backup_archive_timeout: 1h", playbook)
-        self.assertIn("backup_archive_timeout", tasks)
-        self.assertNotIn("archive_timeout = '60s'", tasks)
-
-    def test_backup_refreshes_local_replication_access_before_base_backup(self):
-        tasks = yaml.safe_load(read("deploy/ansible/roles/postgres_backup/tasks/database.yml"))
-        hba = next(i for i, task in enumerate(tasks)
-                   if task.get("vars", {}).get("todo_replication_operation") == "hba")
-        backup = next(i for i, task in enumerate(tasks)
-                      if task["name"] == "Require the backup volume created by the PostgreSQL PVC")
-        self.assertLess(hba, backup)
-        self.assertEqual(tasks[hba]["vars"]["todo_replication_app"], "{{ backup_app.name }}")
-        self.assertIn("replicate-workload.yml", tasks[hba]["ansible.builtin.include_tasks"])
-        # test_replication executes refresh_hba's actual shell against an inherited
-        # configuration and verifies the current subnet, scope and unchanged repeat.
+    def test_backup_role_is_transport_for_the_backup_tool(self):
+        # Archive gates, settings, the single restart and WAL verification live in
+        # todo_backup.py configure; tests/test_todo_backup.py exercises them.
+        tasks = yaml.safe_load(read("deploy/ansible/roles/postgres_backup/tasks/main.yml"))
+        names = [task["name"] for task in tasks]
+        promotion = names.index("Require completed promotion for the entire writable group")
+        install = names.index("Install and trust the backup and PITR tool")
+        configure = names.index("Configure and verify continuous WAL archiving for the complete group")
+        self.assertLess(promotion, install)
+        self.assertLess(install, configure)
+        self.assertEqual(tasks[configure]["ansible.builtin.command"]["argv"][1:3],
+                         ["/opt/todo/bin/todo_backup.py", "configure"])
+        self.assertFalse((PROJECT_ROOT / "deploy/ansible/roles/postgres_backup/tasks/database.yml").exists())
 
     def test_cluster_status_preserves_backup_health(self):
         status = read("deploy/ansible/tasks/cluster-status-primary.yml")
@@ -192,19 +186,15 @@ class AnsibleSafetyTests(unittest.TestCase):
             self.assertNotIn("src: todo-postgres.container.j2", tasks)
             self.assertNotIn("dest: todo-postgres.container", tasks)
 
-        backup = read("deploy/ansible/roles/postgres_backup/tasks/main.yml")
         redundancy = read("deploy/ansible/roles/postgres_redundancy_primary/tasks/main.yml")
-        self.assertIn("map(attribute='application_service')", backup)
         self.assertIn("map(attribute='application_service')", redundancy)
-        for role in ("postgres_primary", "postgres_backup", "postgres_redundancy_primary"):
-            tasks = yaml.safe_load(read(f"deploy/ansible/roles/{role}/tasks/" +
-                                          ({"postgres_primary": "primary.yml", "postgres_backup": "database.yml",
-                                            "postgres_redundancy_primary": "primary.yml"}.get(role, "main.yml"))))
+        # postgres_backup delegates its application-tier restart to todo_backup.py configure.
+        for role in ("postgres_primary", "postgres_redundancy_primary"):
+            tasks = yaml.safe_load(read(f"deploy/ansible/roles/{role}/tasks/primary.yml"))
             starts = [task["ansible.builtin.systemd_service"].get("name")
                       for task in tasks if task.get("ansible.builtin.systemd_service", {}).get("state") == "started"]
             self.assertIn("shared-proxy.service", starts, role)
 
-        self.assertNotIn("else 'todo-frontend.service'", backup)
         self.assertNotIn("else 'todo-frontend.service'", redundancy)
 
 

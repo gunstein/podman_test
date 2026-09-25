@@ -64,16 +64,21 @@ ansible-playbook \
   deploy/ansible/playbooks/configure-backup.yml
 ```
 
-The playbook refuses to continue unless the live database reports `f|off`. It
-requires the existing PVC backup volume mounted read-write in PostgreSQL, enables
-`archive_mode=on`, configures a non-overwriting `archive_command`, restarts
-PostgreSQL once when required, restores the application tier and verifies that a
-forced WAL segment reaches the archive.
+The playbook installs `todo_backup.py` and runs its `configure` command, which
+covers the complete group. Before it changes anything, it requires a completed
+group promotion and, for every database, an active Kube-native PostgreSQL
+service reporting `f|off`, the replication credential and the PVC backup volume
+mounted read-write at the archive path. It then enables `archive_mode=on` and a
+non-overwriting `archive_command` where they differ. If any database needs a
+restart, it stops the application tier once, restarts only the changed
+databases, rechecks every database and restores the application tier. Each
+changed database is verified by a named restore point whose forced WAL segment
+must reach the archive.
 
 The demo defaults to `archive_timeout=1h`. PostgreSQL archives complete 16 MiB
 segments even when a forced early segment switch contains little useful WAL, so
 one hour limits worst-case time-driven growth from recurring writes to
-about 384 MiB per day. The `mark` command and the Ansible verification still
+about 384 MiB per day. The `mark` and `configure` commands still
 force an explicit WAL switch, so drills do not need an aggressive timeout.
 
 The archive remains intentionally non-circular: PostgreSQL must never silently
@@ -92,6 +97,7 @@ fapolicyd diagnostics and trust-entry cleanup.
 |---|---|
 | `--app NAME` (before the command) | Selects one database; `status`, `create` and `mark` default to all three, restore commands require it |
 | `status` | Reports live role and archive diagnostics |
+| `configure [--journal PATH]` | Always the complete group; checks every database before any change, enables archiving, restarts the application tier at most once and verifies an archived restore point for each changed database. Prints one JSON result |
 | `create` | Requires writable database and archive mode; streams a base backup and verifies its SHA-256 manifest with `pg_verifybackup` |
 | `mark --name NAME` | Creates a named restore point, switches WAL and waits for the exact segment in the archive |
 | `restore --backup NAME --target POINT` | Copies into fixed disposable resources and pauses recovery at the target; database networking is disabled and backup is mounted read-only |

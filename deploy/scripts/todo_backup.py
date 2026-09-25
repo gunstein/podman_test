@@ -1,6 +1,7 @@
 """Independent physical PostgreSQL backups and scoped disposable PITR per app."""
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -15,9 +16,27 @@ for location in ('installer', 'lib'):
     if (directory / 'app_installer').is_dir():
         sys.path.insert(0, str(directory))
         break
-from app_installer import apps  # noqa: E402
+from app_installer import apps, keycloak, replication  # noqa: E402
 
 DATA_DIRECTORY = "/var/lib/postgresql/data"
+BACKUP_DIRECTORY = "/var/lib/postgresql/backup"
+# Must stay byte-identical to what running hosts already have, or every run restarts them.
+ARCHIVE_COMMAND = (
+    f"test ! -f {BACKUP_DIRECTORY}/wal/%f && cp %p {BACKUP_DIRECTORY}/wal/%f || "
+    f'test "$(sha256sum < %p)" = "$(sha256sum < {BACKUP_DIRECTORY}/wal/%f)"'
+)
+# One hour caps time-driven growth near 384 MiB/day; mark and configure force a switch.
+ARCHIVE_TIMEOUT = "1h"
+BACKUP_DIRECTORIES_SCRIPT = """
+changed=false
+for path in /backup /backup/base /backup/wal; do
+    if [ ! -d "$path" ] || [ "$(stat -c %a "$path")" != 700 ]; then changed=true; fi
+done
+umask 077
+mkdir -p /backup/base /backup/wal
+chmod 0700 /backup /backup/base /backup/wal
+if $changed; then echo changed; else echo unchanged; fi
+"""
 BACKUP_NAME = re.compile(r"base-[0-9]{8}T[0-9]{6}Z")
 RESTORE_POINT = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,62}")
 WAL_SEGMENT = re.compile(r"[0-9A-F]{24}")
@@ -205,6 +224,91 @@ class TodoBackup:
             "Latest backup marker update",
         )
         return name
+
+    def _sql(self, sql: str, description: str) -> str:
+        return self._run(
+            [
+                "podman", "exec", self.app.resource("postgres"), "psql",
+                "--username", self.app.name, "--dbname", "postgres",
+                "--tuples-only", "--no-align", "--field-separator=|",
+                "--set", "ON_ERROR_STOP=1", "--command", sql,
+            ],
+            description,
+        )
+
+    def _archive_settings(self) -> str:
+        return self._sql(
+            "SELECT current_setting('archive_mode'), current_setting('archive_command'), "
+            "current_setting('archive_timeout');",
+            "Archive settings query",
+        )
+
+    def require_archive_prerequisites(self) -> None:
+        """Read-only gates; the group checks all of them before its first write."""
+        service = self.app.service("postgres")
+        try:
+            active = self.runner(["systemctl", "--user", "is-active", service], 30).stdout.strip()
+        except subprocess.TimeoutExpired as error:
+            raise BackupError(f"{service} state query timed out after 30 seconds") from error
+        if active != "active":
+            raise BackupError(f"{service} is not active")
+        self.require_writable_primary()
+        if not self._exists("secret", self.app.secret("replicator")):
+            raise BackupError(f"Replication credential {self.app.secret('replicator')} is missing")
+        if not self._exists("volume", self.backup_volume):
+            raise BackupError(f"Backup volume {self.backup_volume} created by the PostgreSQL PVC is missing")
+        try:
+            mounts = json.loads(self._run(
+                ["podman", "inspect", "--format", "{{json .Mounts}}", self.app.resource("postgres")],
+                "PostgreSQL mount inspection",
+            ))
+        except ValueError as error:
+            raise BackupError("PostgreSQL mount inspection returned invalid JSON") from error
+        backup_mounts = [mount for mount in mounts if mount.get("Type") == "volume"
+                         and mount.get("Name") == self.backup_volume
+                         and mount.get("Destination") == BACKUP_DIRECTORY and mount.get("RW") is True]
+        if len(backup_mounts) != 1:
+            raise BackupError("The active Kube PostgreSQL workload must mount its writable backup PVC "
+                              f"{self.backup_volume} at {BACKUP_DIRECTORY}")
+        source = self._run(
+            ["systemctl", "--user", "show", service, "--property=SourcePath", "--value"],
+            "PostgreSQL service source query",
+        )
+        if not source.endswith("/todo-kube-runtime/" + self.app.unit("postgres")):
+            raise BackupError("Backup configuration refuses to replace a non-Kube PostgreSQL runtime")
+
+    def prepare_archive(self) -> tuple[bool, bool, bool]:
+        """Returns (replication access changed, backup directories changed, restart needed)."""
+        access = replication.refresh_hba(self.app)
+        directories = self._run(
+            [
+                "podman", "run", "--rm", "--user", "postgres",
+                "--security-opt", "no-new-privileges", "--cap-drop", "all",
+                "--volume", f"{self.backup_volume}:/backup:U,z",
+                "--entrypoint", "/bin/sh", self.image, "-ec", BACKUP_DIRECTORIES_SCRIPT,
+            ],
+            "Private base-backup and WAL directory initialization",
+        )
+        if self._archive_settings() == f"on|{ARCHIVE_COMMAND}|{ARCHIVE_TIMEOUT}":
+            return access, directories == "changed", False
+        self._run(
+            [
+                "podman", "exec", self.app.resource("postgres"), "psql",
+                "--username", self.app.name, "--dbname", "postgres", "--set", "ON_ERROR_STOP=1",
+                "--command", "ALTER SYSTEM SET archive_mode = 'on';",
+                "--command", f"ALTER SYSTEM SET archive_command = '{ARCHIVE_COMMAND}';",
+                "--command", f"ALTER SYSTEM SET archive_timeout = '{ARCHIVE_TIMEOUT}';",
+            ],
+            "Continuous WAL archiving configuration",
+        )
+        return access, directories == "changed", True
+
+    def require_configured_archive(self) -> None:
+        self._run(["podman", "wait", "--condition=healthy", self.app.resource("postgres")],
+                  "PostgreSQL health wait", timeout=None)
+        self.require_writable_primary()
+        if self._archive_settings() != f"on|{ARCHIVE_COMMAND}|{ARCHIVE_TIMEOUT}":
+            raise BackupError("PostgreSQL did not keep the configured archive settings after restart")
 
     def create_restore_point(self, name: str) -> str:
         self.require_writable_primary()
@@ -422,6 +526,44 @@ class TodoBackup:
             )
 
 
+def configure(tools: Sequence[TodoBackup], journal: Path) -> dict:
+    """Configure archiving for the complete group with at most one application-tier restart."""
+    runner = tools[0].runner
+    try:
+        replication.require_promoted_group(journal)
+        for tool in tools:
+            tool.require_archive_prerequisites()
+        prepared = [(tool, *tool.prepare_archive()) for tool in tools]
+        restart = [tool for tool, _access, _directories, needed in prepared if needed]
+        if restart:
+            for service in apps.services(databases=False):
+                if runner(["systemctl", "--user", "stop", service], None).returncode not in (0, 5):
+                    raise BackupError(f"Could not stop {service} before the PostgreSQL restart")
+        tools[0]._run(["systemctl", "--user", "daemon-reload"], "User systemd reload")
+        for tool in restart:
+            tool._run(["systemctl", "--user", "restart", tool.app.service("postgres")],
+                      f"{tool.app.service('postgres')} restart", timeout=None)
+        for tool in tools:
+            tool.require_configured_archive()
+        tools[0]._run(["systemctl", "--user", "start", "shared-proxy.service"],
+                      "Application tier start", timeout=None)
+        for app in apps.APPS:
+            keycloak.wait("/ready", 30, 1, "ready", hostname=app.hostname)
+        keycloak.wait("/auth/realms/todo/.well-known/openid-configuration", 90, 2)
+        verified = {}
+        for tool, _access, directories, needed in prepared:
+            if directories or needed:
+                point = f"{tool.app.database_role('archive_check')}_{tool.clock():%Y%m%d%H%M%S%f}"
+                tool.create_restore_point(point)
+                verified[tool.app.name] = point
+    except BackupError:
+        raise
+    except (RuntimeError, subprocess.TimeoutExpired) as error:
+        raise BackupError(str(error)) from error
+    return {"changed": any(any(flags) for _tool, *flags in prepared),
+            "restarted": [tool.app.name for tool in restart], "verified": verified}
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
         description="Manage independent application backups and disposable PITR."
@@ -440,6 +582,11 @@ def parser() -> argparse.ArgumentParser:
     restore.add_argument("--target", required=True)
     restore.add_argument("--replace", action="store_true")
     commands.add_parser("restore-status", help="Show disposable PITR state")
+    configuration = commands.add_parser(
+        "configure", help="Configure and verify continuous WAL archiving for the whole group"
+    )
+    configuration.add_argument("--journal", type=Path,
+                               default=Path.home() / ".config/todo/promotion.json")
     cleanup = commands.add_parser(
         "cleanup-restore", help="Delete only the disposable PITR container and volume"
     )
@@ -453,7 +600,12 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
     try:
         if args.command in ('restore', 'restore-status', 'cleanup-restore') and len(selected) != 1:
             raise BackupError('Disposable restore operations require an explicit --app')
+        if args.command == 'configure' and args.app is not None:
+            raise BackupError('configure always covers the complete database group')
         tools = [TodoBackup(app=app) for app in selected]
+        if args.command == 'configure':
+            print(json.dumps(configure(tools, args.journal)))
+            return 0
         # Validate the whole requested group before the first backup/restore-point write.
         if args.command in ('create', 'mark'):
             for tool in tools:

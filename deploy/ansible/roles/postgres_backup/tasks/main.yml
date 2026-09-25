@@ -1,4 +1,6 @@
 ---
+# Transport only: todo_backup.py configure owns the archive gates, settings,
+# the single application-tier restart and the archived-WAL verification.
 - name: Resolve the complete database group before archive configuration
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/read-replication-registry.yml"
 
@@ -10,19 +12,6 @@
     PYTHONDONTWRITEBYTECODE: "1"
   changed_when: false
 
-- name: Select the shared application tier for database restarts
-  ansible.builtin.set_fact:
-    backup_application_services: >-
-      {{ ['shared-proxy.service'] + (todo_replication_metadata | map(attribute='application_service') | list)
-         + ['keycloak.service'] }}
-
-- name: Configure an independent archive for each database
-  ansible.builtin.include_tasks: database.yml
-  loop: "{{ todo_replication_metadata }}"
-  loop_control:
-    loop_var: backup_app
-    label: "{{ backup_app.name }}"
-
 - name: Install and trust the backup and PITR tool
   ansible.builtin.include_role:
     name: todo_fapolicyd
@@ -31,3 +20,23 @@
       - source: "{{ project_root }}/deploy/scripts/todo_backup.py"
         dest: /opt/todo/bin/todo_backup.py
         mode: "0644"
+
+- name: Configure and verify continuous WAL archiving for the complete group
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /opt/todo/bin/todo_backup.py
+      - configure
+      - --journal
+      - "{{ backup_config_directory }}/promotion.json"
+  environment:
+    PYTHONDONTWRITEBYTECODE: "1"
+  register: backup_configuration
+  changed_when: (backup_configuration.stdout | from_json).changed
+
+- name: Report healthy continuous archiving
+  ansible.builtin.debug:
+    msg: >-
+      WAL archiving is active for every database.
+      Restarted: {{ (backup_configuration.stdout | from_json).restarted | join(', ') or 'none' }}.
+      Verified with an archived restore point: {{ (backup_configuration.stdout | from_json).verified | join(', ') or 'none (unchanged)' }}.

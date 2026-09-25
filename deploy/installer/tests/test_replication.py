@@ -284,3 +284,115 @@ class ReplicationTests(unittest.TestCase):
                         replication.require_stopped_service('notes-postgres.service')
                 self.assertEqual(run.call_count, 1)
                 self.assertIn('show', run.call_args.args)
+
+
+class PublishPrimariesTests(unittest.TestCase):
+    DATABASES = apps.REPLICATED_DATABASES
+
+    def publish(self, bootstrap, changed=(), access_changed=False, legacy=False, readonly=None):
+        steps = self.steps = []
+
+        def run(*argv, input=None, allowed=(0,)):
+            steps.append(argv)
+            return subprocess.CompletedProcess(argv, 0, '', '')
+
+        def preflight(directory):
+            steps.append(('legacy-preflight',))
+            if legacy:
+                raise RuntimeError('Unsupported per-container Quadlets are installed.')
+
+        def require_primary(app):
+            steps.append(('require-primary', app.name))
+            if app.name == readonly:
+                raise RuntimeError(f'{app.name}: expected a writable primary')
+
+        def identity(name):
+            return lambda app, *args: (steps.append((name, app.name) + args), access_changed)[1]
+
+        def install(project_root, quadlet_dir, runtime, rendered, publish_address, *, app):
+            steps.append(('install', app.name, publish_address))
+            return app.name in changed
+
+        with patch.object(replication, 'run', run), \
+                patch.object(replication.install, 'preflight', preflight), \
+                patch.object(replication, 'require_primary', require_primary), \
+                patch.object(replication, 'configure_primary', identity('configure-primary')), \
+                patch.object(replication, 'refresh_hba', identity('refresh-hba')), \
+                patch.object(replication.workloads, 'install_postgres', install), \
+                patch.object(replication.quadlet, 'systemctl', lambda *args: steps.append(('systemctl',) + args)), \
+                patch.object(replication.keycloak, 'wait',
+                             lambda path, *a, hostname=None, **k: steps.append(('wait', path, hostname))):
+            result = replication.publish_primaries(
+                '192.0.2.10', bootstrap=bootstrap, project_root='/staged', quadlet_dir='/q',
+                kube_runtime_dir='/q/todo-kube-runtime', rendered_manifest_dir='/staged/generated/kube-runtime')
+        return result, steps
+
+    def first(self, steps, predicate):
+        return next(i for i, step in enumerate(steps) if predicate(step))
+
+    def test_every_primary_is_checked_before_the_first_write(self):
+        for bootstrap in (True, False):
+            with self.subTest(bootstrap=bootstrap):
+                _result, steps = self.publish(bootstrap)
+                gates = [i for i, step in enumerate(steps) if step[0] == 'require-primary']
+                self.assertEqual([steps[i][1] for i in gates], [d.name for d in self.DATABASES])
+                first_write = self.first(steps, lambda s: s[0] in ('configure-primary', 'refresh-hba', 'install'))
+                self.assertLess(max(gates), first_write)
+                self.assertEqual(steps[0], ('legacy-preflight',))
+
+    def test_bootstrap_creates_identities_and_redundancy_only_refreshes_access(self):
+        _result, steps = self.publish(True)
+        self.assertEqual([s for s in steps if s[0] in ('configure-primary', 'refresh-hba')],
+                         [('configure-primary', d.name, '192.0.2.10') for d in self.DATABASES])
+        _result, steps = self.publish(False)
+        self.assertEqual([s for s in steps if s[0] in ('configure-primary', 'refresh-hba')],
+                         [('refresh-hba', d.name) for d in self.DATABASES])
+
+    def test_every_database_is_published_on_the_node_address(self):
+        _result, steps = self.publish(True)
+        self.assertEqual([s for s in steps if s[0] == 'install'],
+                         [('install', d.name, '192.0.2.10') for d in self.DATABASES])
+
+    def test_unchanged_group_is_neither_stopped_nor_restarted_but_verified(self):
+        result, steps = self.publish(False)
+        self.assertEqual(result, {'changed': False, 'restarted': []})
+        self.assertFalse([s for s in steps if s[:3] == ('systemctl', '--user', 'stop')
+                          or s[:2] == ('systemctl', 'restart')])
+        self.assertEqual([s[-1] for s in steps if s[:3] == ('podman', 'wait', '--condition=healthy')],
+                         [d.resource('postgres') for d in self.DATABASES])
+        self.assertIn(('systemctl', 'start', 'shared-proxy.service'), steps)
+        self.assertEqual([s for s in steps if s[0] == 'wait'],
+                         [('wait', '/ready', app.hostname) for app in apps.APPS])
+
+    def test_changed_databases_restart_behind_one_application_tier_stop(self):
+        changed = [d.name for d in self.DATABASES[1:]]
+        result, steps = self.publish(True, changed=changed)
+        self.assertEqual(result, {'changed': True, 'restarted': changed})
+        stops = [s for s in steps if s[:3] == ('systemctl', '--user', 'stop')]
+        self.assertEqual(stops, [('systemctl', '--user', 'stop', *apps.services(databases=False))])
+        restarts = [s for s in steps if s[:2] == ('systemctl', 'restart')]
+        self.assertEqual([s[2] for s in restarts], [d.service('postgres') for d in self.DATABASES[1:]])
+        self.assertLess(steps.index(stops[0]), steps.index(restarts[0]))
+        self.assertLess(steps.index(restarts[-1]), steps.index(('systemctl', 'start', 'shared-proxy.service')))
+        self.assertLess(steps.index(('systemctl', 'start', 'shared-proxy.service')),
+                        self.first(steps, lambda s: s[0] == 'wait'))
+
+    def test_changed_access_alone_reports_change_without_restart(self):
+        result, _steps = self.publish(False, access_changed=True)
+        self.assertEqual(result, {'changed': True, 'restarted': []})
+
+    def test_legacy_quadlets_or_a_readonly_last_database_refuse_before_any_write(self):
+        for options in ({'legacy': True}, {'readonly': self.DATABASES[-1].name}):
+            with self.subTest(**options):
+                with self.assertRaises(RuntimeError):
+                    self.publish(True, changed=[d.name for d in self.DATABASES], **options)
+                self.assertFalse([step for step in self.steps
+                                  if step[0] in ('configure-primary', 'refresh-hba', 'install', 'systemctl')])
+
+    def test_node_address_must_be_a_literal_ip(self):
+        with patch.object(replication.install, 'preflight') as preflight:
+            with self.assertRaises(ValueError):
+                replication.publish_primaries('primary.example', bootstrap=True, project_root='/s',
+                                              quadlet_dir='/q', kube_runtime_dir='/q/todo-kube-runtime',
+                                              rendered_manifest_dir='/r')
+            preflight.assert_not_called()

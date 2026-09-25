@@ -6,6 +6,12 @@ starts standby in recovery mode. It is deliberately separate from normal
 deployment, and does not install the local DR tool: that keeps controller-side
 `fapolicyd` source checks ahead of the one-shot database work.
 
+`app_installer publish-primaries bootstrap` does the primary side for the whole
+group. It requires every database to be a writable primary before it changes
+any of them. When a publication change needs a restart, it stops the
+application tier once, restarts only the changed databases and waits for
+application readiness.
+
 ## Firewall and preflight contract
 
 Bootstrap requires a firewalld rich rule on the primary, allowing only standby

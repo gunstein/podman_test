@@ -12,7 +12,7 @@ import socket
 import string
 from pathlib import Path
 
-from . import apps, quadlet, secrets, workloads
+from . import apps, install, keycloak, quadlet, secrets, workloads
 from .commands import exists, run
 
 DATA = '/var/lib/postgresql/data'
@@ -136,6 +136,33 @@ def configure_primary(app, node_address):
         raise RuntimeError(f'{app.name}: replication slot is invalid or not physical')
     return changed
 
+
+
+def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kube_runtime_dir,
+                      rendered_manifest_dir):
+    """LAN-publish every primary, restarting the app tier at most once; bootstrap also creates the replicator."""
+    node_address = address(node_address)
+    install.preflight(quadlet_dir)
+    for app in apps.REPLICATED_DATABASES:
+        require_primary(app)
+    access_changed, restart = False, []
+    for app in apps.REPLICATED_DATABASES:
+        changed = configure_primary(app, node_address) if bootstrap else refresh_hba(app)
+        access_changed = changed or access_changed
+        if workloads.install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
+                                      node_address, app=app):
+            restart.append(app)
+    if restart:
+        run('systemctl', '--user', 'stop', *apps.services(databases=False), allowed=(0, 5))
+    quadlet.systemctl('daemon-reload')
+    for app in restart:
+        quadlet.systemctl('restart', app.service('postgres'))
+    for app in apps.REPLICATED_DATABASES:
+        run('podman', 'wait', '--condition=healthy', app.resource('postgres'))
+    quadlet.systemctl('start', 'shared-proxy.service')
+    for app in apps.APPS:
+        keycloak.wait('/ready', 30, 1, 'ready', hostname=app.hostname)
+    return {'changed': access_changed or bool(restart), 'restarted': [app.name for app in restart]}
 
 def data_claim(app, rendered_manifest_dir):
     # YAML parsing is a DR-only dependency; never reconstruct the PVC in Python.

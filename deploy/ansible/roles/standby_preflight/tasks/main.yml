@@ -26,7 +26,7 @@
   changed_when: false
 
 # Only the primary publishes PostgreSQL on the LAN interface during bootstrap
-# (postgres_primary/tasks/primary.yml); the standby installs loopback-only.
+# (app_installer publish-primaries bootstrap); the standby installs loopback-only.
 # Require the operator's documented firewalld rule (STANDBY-BOOTSTRAP.md) before
 # bootstrap opens those ports, instead of only relying on a manual step.
 - name: Require an active firewall before this primary's databases go on the LAN

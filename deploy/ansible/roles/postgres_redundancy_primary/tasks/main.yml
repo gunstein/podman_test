@@ -1,16 +1,5 @@
 ---
-- name: Resolve the complete promoted database group
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/read-replication-registry.yml"
-
-- name: Select all application services for database restarts
-  ansible.builtin.set_fact:
-    redundancy_application_services: >-
-      {{ ['shared-proxy.service'] + (todo_replication_metadata | map(attribute='application_service') | list)
-         + ['keycloak.service'] }}
-
-- name: Restore each independent primary replication endpoint
-  ansible.builtin.include_tasks: primary.yml
-  loop: "{{ todo_replication_metadata }}"
-  loop_control:
-    loop_var: redundancy_app
-    label: "{{ redundancy_app.name }}"
+- name: Refresh replication access and publish every promoted primary on the LAN
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/publish-primaries.yml"
+  vars:
+    todo_publish_primaries_mode: redundancy

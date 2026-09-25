@@ -181,21 +181,19 @@ class AnsibleSafetyTests(unittest.TestCase):
             "deploy/ansible/roles/postgres_standby/tasks/main.yml",
             "deploy/ansible/roles/postgres_redundancy_primary/tasks/main.yml",
             "deploy/ansible/roles/postgres_reseed_standby/tasks/main.yml",
+            "deploy/ansible/tasks/publish-primaries.yml",
         ):
             tasks = read(tasks_file)
             self.assertNotIn("src: todo-postgres.container.j2", tasks)
             self.assertNotIn("dest: todo-postgres.container", tasks)
 
-        redundancy = read("deploy/ansible/roles/postgres_redundancy_primary/tasks/main.yml")
-        self.assertIn("map(attribute='application_service')", redundancy)
-        # postgres_backup delegates its application-tier restart to todo_backup.py configure.
-        for role in ("postgres_primary", "postgres_redundancy_primary"):
-            tasks = yaml.safe_load(read(f"deploy/ansible/roles/{role}/tasks/primary.yml"))
-            starts = [task["ansible.builtin.systemd_service"].get("name")
-                      for task in tasks if task.get("ansible.builtin.systemd_service", {}).get("state") == "started"]
-            self.assertIn("shared-proxy.service", starts, role)
-
-        self.assertNotIn("else 'todo-frontend.service'", redundancy)
+        # Application-tier restarts after a database restart are owned by Python:
+        # todo_backup.py configure and app_installer publish-primaries, both tested there.
+        for role, mode in (("postgres_primary", "bootstrap"), ("postgres_redundancy_primary", "redundancy")):
+            tasks = yaml.safe_load(read(f"deploy/ansible/roles/{role}/tasks/main.yml"))
+            publish = [task for task in tasks if str(task.get("ansible.builtin.include_tasks", "")).endswith(
+                "/tasks/publish-primaries.yml")]
+            self.assertEqual([task["vars"]["todo_publish_primaries_mode"] for task in publish], [mode], role)
 
 
 if __name__ == "__main__":

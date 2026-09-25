@@ -55,6 +55,11 @@ def main(argv=None):
     replicate.add_argument('--rebuilt', action='store_true')
     replicate.add_argument('--confirm-fenced', default='')
     replicate.add_argument('--confirm-reseed', default='')
+    publish = subcommands.add_parser('publish-primaries')
+    paths(publish)
+    publish.add_argument('mode', choices=('bootstrap', 'redundancy'))
+    publish.add_argument('--node-address', required=True)
+    publish.add_argument('--rendered-manifest-dir', type=Path, required=True)
     promoted = subcommands.add_parser('require-promoted-group')
     promoted.add_argument('--journal', type=Path,
                           default=Path.home() / '.config/todo/promotion.json')
@@ -127,6 +132,14 @@ def main(argv=None):
             else:
                 result['status'] = replication.status(app)
             print(json.dumps(result))
+        elif args.command == 'publish-primaries':
+            from . import replication
+            directory = args.quadlet_dir.resolve()
+            print(json.dumps(replication.publish_primaries(
+                args.node_address, bootstrap=args.mode == 'bootstrap', project_root=args.project_root,
+                quadlet_dir=directory,
+                kube_runtime_dir=(args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve(),
+                rendered_manifest_dir=args.rendered_manifest_dir)))
         elif args.command == 'require-promoted-group':
             from . import replication
             print(json.dumps({'changed': replication.require_promoted_group(args.journal)}))

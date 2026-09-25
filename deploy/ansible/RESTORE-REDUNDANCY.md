@@ -65,7 +65,10 @@ backup volume, an absent new slot, existing old data, stopped old services and
 both exact operator confirmations. Secret values remain under `no_log`.
 
 The rebuild playbook imports preflight again. It preserves archiving while
-publishing a narrowly firewalled replication endpoint. Before deleting old data,
+publishing a narrowly firewalled replication endpoint through
+`app_installer publish-primaries redundancy`. That command refreshes replication
+access for the current rootless subnet and restarts the application tier at
+most once for the whole group. Before deleting old data,
 the target requires its PostgreSQL image, TCP connectivity and authenticated
 physical replication via `IDENTIFY_SYSTEM`. TCP connectivity alone is insufficient.
 Rootless port forwarding hides the original peer address from PostgreSQL;

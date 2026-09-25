@@ -152,3 +152,12 @@ class AppOpsGuideTests(unittest.TestCase):
                 file.flush()
                 hosts = self.inventory.load(file.name, roles)
             self.assertEqual([host.local for host in hosts.values()], [True, False])
+
+
+class BrowserFlowTests(unittest.TestCase):
+    def test_agent_guide_runs_the_same_browser_flows_as_acceptance(self):
+        def flows(name):
+            return set(re.findall(r'pytest (e2e/test_\w+\.py)', (ROOT / 'docs' / name).read_text()))
+        self.assertEqual(flows('ACCEPTANCE.md'), {'e2e/test_todo_flow.py', 'e2e/test_notes_flow.py',
+                                                  'e2e/test_multi_app.py'})
+        self.assertEqual(flows('ACCEPTANCE-AGENT.md'), flows('ACCEPTANCE.md'))

@@ -593,12 +593,15 @@ their `.sha256` files with `scp` to both VMs, then verify there. Record both
      export E2E_PASSWORD E2E_USERNAME=testuser
      E2E_BASE_URL=https://todo.test:8443 E2E_IGNORE_HTTPS_ERRORS=false \
        todo-backend/.venv/bin/python -m pytest e2e/test_todo_flow.py --browser chromium -q
+     E2E_NOTES_URL=https://notes.test:8443 E2E_IGNORE_HTTPS_ERRORS=false \
+       todo-backend/.venv/bin/python -m pytest e2e/test_notes_flow.py --browser chromium -q
      E2E_MULTI_APP=1 E2E_CA_FILE=/tmp/todo-public-root.crt E2E_IGNORE_HTTPS_ERRORS=false \
        todo-backend/.venv/bin/python -m pytest e2e/test_multi_app.py -q
    )
    ```
 
-   Require all passed and **0 skipped**. A skip is a failure.
+   Require the Todo, Notes and multi-app SSO tests all passed and **0 skipped**.
+   A skip is a failure. Use this same block in phases 7 and 11.
 8. Persistent markers: create one authenticated Todo and one Note with the
    helper and record the printed IDs:
 

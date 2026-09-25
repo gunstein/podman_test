@@ -140,6 +140,119 @@ class TodoBackupTests(unittest.TestCase):
         with self.assertRaisesRegex(app_backup.BackupError, "timed out"):
             self.tool(timeout_runner).database_state()
 
+
+class RestoreEdgeTests(unittest.TestCase):
+    """Replacing old restore state, failed starts and timeouts never touch live data."""
+
+    BACKUP = "base-20260829T123456Z"
+
+    def tool(self, runner):
+        return app_backup.TodoBackup(runner=runner, sleeper=lambda _seconds: None)
+
+    def live_names(self, tool):
+        app = tool.app
+        return {app.resource("postgres"), app.volume("data"), app.volume("backup")}
+
+    def removals(self, runner):
+        return [command for command in runner.commands
+                if command[:2] == ["podman", "rm"] or command[:3] == ["podman", "volume", "rm"]]
+
+    def test_replace_removes_only_the_old_restore_state_then_restores(self):
+        tool = self.tool(None)
+        runner = FakeRunner(containers={tool.restore_container}, volumes={tool.restore_volume})
+        tool.runner = runner
+        tool.restore(self.BACKUP, "before_delete", replace=True)
+        self.assertEqual(self.removals(runner), [
+            ["podman", "rm", "--force", tool.restore_container],
+            ["podman", "volume", "rm", tool.restore_volume]])
+        create = runner.commands.index(["podman", "volume", "create", tool.restore_volume])
+        self.assertGreater(create, runner.commands.index(["podman", "volume", "rm", tool.restore_volume]))
+        removed = {name for command in self.removals(runner) for name in command}
+        self.assertFalse(removed & self.live_names(tool))
+
+    def test_replace_without_old_state_removes_nothing(self):
+        runner = FakeRunner()
+        self.tool(runner).restore(self.BACKUP, "before_delete", replace=True)
+        self.assertEqual(self.removals(runner), [])
+
+    def test_a_missing_base_backup_refuses_before_old_state_is_removed(self):
+        class MissingBackup(FakeRunner):
+            def __call__(self, arguments, timeout=None):
+                if "PG_VERSION" in " ".join(arguments):
+                    self.commands.append(list(arguments))
+                    return completed(returncode=1, stderr="no such backup")
+                return super().__call__(arguments, timeout)
+
+        tool = self.tool(None)
+        runner = MissingBackup(containers={tool.restore_container}, volumes={tool.restore_volume})
+        tool.runner = runner
+        with self.assertRaisesRegex(app_backup.BackupError, "Selected base backup check failed"):
+            tool.restore(self.BACKUP, "before_delete", replace=True)
+        self.assertEqual(self.removals(runner), [])
+
+    def test_a_failed_start_removes_only_the_new_restore_container(self):
+        class FailingStart(FakeRunner):
+            def __call__(self, arguments, timeout=None):
+                if arguments[:3] == ["podman", "run", "--detach"]:
+                    self.commands.append(list(arguments))
+                    return completed(returncode=125, stderr="cannot start")
+                return super().__call__(arguments, timeout)
+
+        runner = FailingStart()
+        tool = self.tool(runner)
+        with self.assertRaisesRegex(app_backup.BackupError, "Disposable PITR container start failed"):
+            tool.restore(self.BACKUP, "before_delete", replace=False)
+        self.assertEqual(self.removals(runner), [["podman", "rm", "--force", tool.restore_container]])
+
+    def test_a_restore_that_never_pauses_or_stops_early_is_reported(self):
+        class NeverPaused(FakeRunner):
+            def __init__(self, stops):
+                super().__init__()
+                self.stops = stops
+
+            def __call__(self, arguments, timeout=None):
+                if "pg_is_wal_replay_paused" in arguments[-1]:
+                    self.commands.append(list(arguments))
+                    return completed("t|f\n")
+                if arguments[:3] == ["podman", "container", "exists"]:
+                    self.commands.append(list(arguments))
+                    return completed(returncode=1 if self.stops else 0)
+                return super().__call__(arguments, timeout)
+
+        for stops, message in ((False, "did not reach the named restore point within 60 seconds"),
+                               (True, "stopped during recovery")):
+            with self.subTest(stops=stops):
+                runner = NeverPaused(stops)
+                with self.assertRaisesRegex(app_backup.BackupError, message):
+                    self.tool(runner)._wait_for_restore_pause()
+
+    def test_restore_status_without_a_restore_container(self):
+        with self.assertRaisesRegex(app_backup.BackupError, "does not exist"):
+            self.tool(FakeRunner()).restore_status()
+
+    def test_wal_that_is_never_archived_or_cannot_be_inspected(self):
+        for code, message in ((1, "was not archived within 30 seconds"), (125, "WAL archive inspection failed")):
+            with self.subTest(code=code):
+                def runner(arguments, timeout=None, code=code):
+                    return completed(returncode=code, stderr="boom")
+                with self.assertRaisesRegex(app_backup.BackupError, message):
+                    self.tool(runner)._wait_for_archived_wal("000000010000000000000001")
+        with self.assertRaisesRegex(app_backup.BackupError, "Unexpected WAL segment name"):
+            self.tool(FakeRunner())._wait_for_archived_wal("../etc/passwd")
+
+    def test_timeouts_during_restore_waits_are_operator_errors(self):
+        def timeout_runner(arguments, timeout=None):
+            raise subprocess.TimeoutExpired(arguments, timeout)
+
+        tool = self.tool(timeout_runner)
+        for call, message in ((tool._wait_for_restore_pause, "PITR status query timed out"),
+                              (lambda: tool._wait_for_archived_wal("000000010000000000000001"),
+                               "WAL archive inspection timed out"),
+                              (lambda: tool._exists("volume", "x"), "inspection timed out")):
+            with self.subTest(message=message), self.assertRaisesRegex(app_backup.BackupError, message):
+                call()
+
+
 class ApplicationBackupTests(unittest.TestCase):
     def test_each_backup_and_restore_stays_within_its_app(self):
         for app in app_backup.apps.REPLICATED_DATABASES:

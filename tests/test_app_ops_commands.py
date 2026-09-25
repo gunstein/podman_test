@@ -196,5 +196,89 @@ class CliTests(unittest.TestCase):
                                        "--confirm-reseed", "y"]), 1)
 
 
+
+class CliDispatchTests(unittest.TestCase):
+    """Every command reaches its function with the hosts of its roles, and prints one JSON line."""
+
+    INITIAL = ("user: ops\nhosts:\n  todo-primary: {role: primary, address: 192.0.2.10, local: true}\n"
+               "  todo-standby: {role: standby, address: 192.0.2.11}\n")
+    RECOVERY = ("user: ops\nhosts:\n  todo-standby: {role: current_primary, address: 192.0.2.11, local: true}\n"
+                "  todo-primary: {role: rebuild_standby, address: 192.0.2.10}\n")
+
+    def inventory(self, text):
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as file:
+            file.write(text)
+        self.addCleanup(Path(file.name).unlink)
+        return file.name
+
+    def main(self, text, *argv):
+        with unittest.mock.patch("sys.stdout") as stdout, unittest.mock.patch("sys.stderr") as stderr:
+            code = cli.main(["--inventory", self.inventory(text), *argv])
+        printed = "".join(call.args[0] for call in stdout.write.call_args_list)
+        errors = "".join(call.args[0] for call in stderr.write.call_args_list)
+        return code, printed, errors
+
+    def names(self, call):
+        return [argument.name for argument in call.args if isinstance(argument, Host)]
+
+    def test_each_command_calls_its_function_with_the_right_hosts(self):
+        both, controller = ["todo-primary", "todo-standby"], ["controller"]
+        cases = [
+            ("preflight-standby", standby, "preflight", self.INITIAL, controller + both),
+            ("sync-standby-secrets", standby, "sync_secrets", self.INITIAL, controller + both),
+            ("bootstrap-standby", standby, "bootstrap", self.INITIAL, controller + both),
+            ("replication-status", standby, "replication_status", self.INITIAL, controller + both),
+            ("install-dr-tool", standby, "install_dr_tool", self.INITIAL, controller + ["todo-standby"]),
+            ("install-quarantine-tool", cli.quarantine, "install", self.INITIAL, controller + ["todo-primary"]),
+            ("deploy-promoted-application", recovery, "deploy_promoted", self.RECOVERY,
+             controller + ["todo-standby"]),
+            ("configure-backup", recovery, "configure_backup", self.RECOVERY, controller + ["todo-standby"]),
+            # Read-only: no controller, current primary first.
+            ("cluster-status", recovery, "cluster_status", self.RECOVERY, ["todo-standby", "todo-primary"]),
+        ]
+        for command, module, function, text, hosts in cases:
+            with self.subTest(command=command), unittest.mock.patch.object(
+                    module, function, return_value=True) as called:
+                code, printed, _ = self.main(text, command)
+                self.assertEqual(code, 0)
+                self.assertEqual(json.loads(printed), {"changed": True})
+                self.assertEqual(called.call_count, 1)
+                self.assertEqual(self.names(called.call_args), hosts)
+
+    def test_install_dr_tool_passes_the_primary_identity(self):
+        with unittest.mock.patch.object(standby, "install_dr_tool", return_value=False) as called:
+            self.main(self.INITIAL, "install-dr-tool")
+        self.assertEqual(called.call_args.args[-1].address, "192.0.2.10")
+
+    def test_quarantine_options_are_passed_through(self):
+        with unittest.mock.patch.object(cli.quarantine, "install", return_value=False) as called:
+            self.main(self.INITIAL, "install-quarantine-tool", "--enable-guest-exec")
+        self.assertEqual(called.call_args.kwargs, {"guest_exec": True, "selinux_entrypoint": False})
+
+    def test_rebuild_commands_pass_both_confirmations(self):
+        for command, function, printed_result in (("preflight-standby-rebuild", "preflight_rebuild", False),
+                                                  ("rebuild-standby", "rebuild", True)):
+            with self.subTest(command=command), unittest.mock.patch.object(
+                    recovery, function, return_value=True) as called:
+                code, printed, _ = self.main(self.RECOVERY, command, "--confirm-fenced", "todo-primary is fenced",
+                                             "--confirm-reseed", "todo-primary")
+                self.assertEqual(code, 0)
+                self.assertEqual(called.call_args.args[-2:], ("todo-primary is fenced", "todo-primary"))
+                self.assertEqual(json.loads(printed), {"changed": printed_result})
+
+    def test_a_report_is_printed_as_it_is(self):
+        report = {"changed": False, "primary": {}, "standby": {}}
+        with unittest.mock.patch.object(recovery, "cluster_status", return_value=report):
+            self.assertEqual(json.loads(self.main(self.RECOVERY, "cluster-status")[1]), report)
+
+    def test_failures_print_one_error_line_and_exit_1(self):
+        with unittest.mock.patch.object(standby, "bootstrap", side_effect=RuntimeError("firewall rule missing")):
+            code, printed, errors = self.main(self.INITIAL, "bootstrap-standby")
+        self.assertEqual((code, printed, errors), (1, "", "app-ops: firewall rule missing\n"))
+        with unittest.mock.patch("sys.stderr") as stderr:
+            self.assertEqual(cli.main(["--inventory", "/nonexistent.yaml", "cluster-status"]), 1)
+        self.assertIn("app-ops:", "".join(call.args[0] for call in stderr.write.call_args_list))
+
+
 if __name__ == "__main__":
     unittest.main()

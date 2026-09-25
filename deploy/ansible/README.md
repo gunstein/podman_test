@@ -1,8 +1,8 @@
 # Ansible DR and multi-host operations
 
-The same DR operations are also available without Ansible, as `todo-ops` over
+The same DR operations are also available without Ansible, as `app-ops` over
 plain SSH; see [../ops/README.md](../ops/README.md). These playbooks stay
-supported until a two-VM acceptance run has verified `todo-ops`.
+supported until a two-VM acceptance run has verified `app-ops`.
 
 Single-host installation and removal use the [Python installer](../installer/README.md).
 Ansible retains remote transport, fencing, replication, backup, promotion,
@@ -136,7 +136,7 @@ Historical migration/rollback playbooks were retired after full acceptance of
 688a0f6. They remain in Git history, not in the active operations package.
 
 The backup workflow uses the `postgres_backup` role to add a separate backup volume and
-continuous WAL archiving to that promoted host. The local `todo_backup.py`
+continuous WAL archiving to that promoted host. The local `app_backup.py`
 tool creates verified physical base backups and restores only into fixed,
 disposable Podman resources. Follow
 [BACKUP-PITR.md](BACKUP-PITR.md). The same-VM backup volume is a PITR

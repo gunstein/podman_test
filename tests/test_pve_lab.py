@@ -85,10 +85,10 @@ class PveLabTests(unittest.TestCase):
     def test_guest_exec_waits_for_completion_and_returns_exit_code(self):
         fake = FakeProxmox()
         code, out, _ = self.run_main(
-            ["exec", "107", "--", "/opt/todo/bin/todo-quarantine.sh", "stop", "todo-primary", "gunstein"], fake)
+            ["exec", "107", "--", "/opt/todo/bin/app-quarantine.sh", "stop", "todo-primary", "gunstein"], fake)
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(fake.requests[0][3])["command"],
-                         ["/opt/todo/bin/todo-quarantine.sh", "stop", "todo-primary", "gunstein"])
+                         ["/opt/todo/bin/app-quarantine.sh", "stop", "todo-primary", "gunstein"])
         self.assertEqual(fake.exec_polls, 2)
         self.assertIn("STOPPED", out)
 

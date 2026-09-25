@@ -200,8 +200,8 @@ end you write a verdict. Being careful is more important than being fast.
    the Proxmox token, the Keycloak admin password, the testuser password and any
    `podman secret` value. Never run `set -x`. Never `cat` `pve.env`.
 3. **Never** retry a destructive or one-shot command after it failed or timed
-   out: `todo_dr.py promote`, `rebuild-standby.yml`, snapshot rollback, volume
-   deletion, `todo_backup.py restore --replace`, `cleanup-restore`. Inspect state
+   out: `app_dr.py promote`, `rebuild-standby.yml`, snapshot rollback, volume
+   deletion, `app_backup.py restore --replace`, `cleanup-restore`. Inspect state
    instead (C8).
 4. **Never** disable or weaken SELinux, fapolicyd, firewalld, SSH host-key
    checking or TLS verification. Never use `curl -k`, `--insecure`,
@@ -265,7 +265,7 @@ python3 deploy/scripts/pve_lab.py task /nodes/{node}/qemu/107/status/shutdown
 python3 deploy/scripts/pve_lab.py task /nodes/{node}/qemu/107/status/stop
 python3 deploy/scripts/pve_lab.py task /nodes/{node}/qemu/107/status/reboot
 python3 deploy/scripts/pve_lab.py post /nodes/{node}/qemu/107/agent/ping
-python3 deploy/scripts/pve_lab.py exec 107 -- /opt/todo/bin/todo-quarantine.sh check todo-primary gunstein
+python3 deploy/scripts/pve_lab.py exec 107 -- /opt/todo/bin/app-quarantine.sh check todo-primary gunstein
 python3 deploy/scripts/pve_lab.py nic 107 link_down 1
 python3 deploy/scripts/pve_lab.py set /nodes/{node}/qemu/107/config onboot=0
 python3 deploy/scripts/pve_lab.py get /nodes/{node}/qemu/107/firewall/options
@@ -518,7 +518,7 @@ through the API and re-check.
 
 #### C9.6 Phase 5 — DR tool and quarantine rehearsal (pre-approved outage)
 
-1. `install-dr-tool.yml`, then `todo_dr.py status` on `.108`, then the repeat
+1. `install-dr-tool.yml`, then `app_dr.py status` on `.108`, then the repeat
    (`changed=0`).
 2. On `.102`, install the quarantine helper with both pre-approved opt-ins:
 
@@ -528,7 +528,7 @@ through the API and re-check.
      -e todo_quarantine_enable_guest_exec=true -e todo_quarantine_enable_selinux_entrypoint=true
    ```
 
-3. `pve_lab.py exec 107 -- /opt/todo/bin/todo-quarantine.sh check todo-primary gunstein`
+3. `pve_lab.py exec 107 -- /opt/todo/bin/app-quarantine.sh check todo-primary gunstein`
    must exit 0 and print `READY`.
 4. Prepare the quarantine profile on VM 107 **while it is still disabled**:
    - `get /cluster/firewall/options`: datacenter firewall must be enabled (else C4).
@@ -578,7 +578,7 @@ through the API and re-check.
       the authorized primary in this phase).
    4. `task .../107/status/shutdown`; then `nic 107 link_down 1`.
    5. `task .../107/status/start` (firewall stays enabled); wait for `agent/ping`.
-   6. `exec 107 -- /opt/todo/bin/todo-quarantine.sh stop todo-primary gunstein`:
+   6. `exec 107 -- /opt/todo/bin/app-quarantine.sh stop todo-primary gunstein`:
       require exit 0, `exited: 1` and `STOPPED` in `out-data`.
    7. `nic 107 link_down 0`. Wait up to three minutes for the guest to get
       its address back. SSH from the client and from `.108` must work.
@@ -599,7 +599,7 @@ through the API and re-check.
    Record `status/current` (`stopped`) and every `netN` (`link_down=1`).
 3. From `.108` and from the client: `.102` ports 22, 5432, 5433, 5434 and 8443
    must be unreachable (`timeout 5 bash -c '</dev/tcp/...'` fails).
-4. On `.108`: `todo_dr.py preflight`, `promote`, `status` exactly as in
+4. On `.108`: `app_dr.py preflight`, `promote`, `status` exactly as in
    ACCEPTANCE.md (the confirmation strings are fixed). Run `promote` once.
 5. Rolled-back write probes on Todo and Notes, markers present, all three
    databases `f|off`.
@@ -624,7 +624,7 @@ restore commands. Record every backup name printed by `create`
 1. VM 107 is stopped with links down. `set .../107/firewall/options enable=1`
    (the replication rule is still `enable=0`).
 2. `task .../107/status/start`; wait for `agent/ping`.
-3. `exec 107 -- /opt/todo/bin/todo-quarantine.sh stop todo-primary gunstein`:
+3. `exec 107 -- /opt/todo/bin/app-quarantine.sh stop todo-primary gunstein`:
    exit 0 and `STOPPED`. A warning about failed units is allowed; save it.
 4. `nic 107 link_down 0`. SSH from the client and from `.108` must work; from
    `.102`, `timeout 5 bash -c '</dev/tcp/192.168.0.108/22'` must fail. Record

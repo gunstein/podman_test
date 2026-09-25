@@ -6,11 +6,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
-SCRIPT = Path(__file__).parents[1] / "deploy/scripts" / "todo_backup.py"
-SPEC = importlib.util.spec_from_file_location("todo_backup", SCRIPT)
+SCRIPT = Path(__file__).parents[1] / "deploy/scripts" / "app_backup.py"
+SPEC = importlib.util.spec_from_file_location("app_backup", SCRIPT)
 assert SPEC and SPEC.loader
-todo_backup = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(todo_backup)
+app_backup = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(app_backup)
 
 
 def completed(stdout="", stderr="", returncode=0):
@@ -55,7 +55,7 @@ class FakeRunner:
 
 class TodoBackupTests(unittest.TestCase):
     def tool(self, runner):
-        return todo_backup.TodoBackup(
+        return app_backup.TodoBackup(
             runner=runner,
             clock=lambda: datetime(2026, 8, 29, 12, 34, 56, tzinfo=timezone.utc),
             sleeper=lambda _seconds: None,
@@ -78,7 +78,7 @@ class TodoBackupTests(unittest.TestCase):
         self.assertIn("--manifest-checksums=SHA256", flattened)
 
     def test_create_backup_rejects_read_only_database(self):
-        with self.assertRaisesRegex(todo_backup.BackupError, "not a writable"):
+        with self.assertRaisesRegex(app_backup.BackupError, "not a writable"):
             self.tool(FakeRunner(recovery="t|on")).create_backup()
 
     def test_restore_point_is_archived(self):
@@ -99,9 +99,9 @@ class TodoBackupTests(unittest.TestCase):
         self.tool(runner).create_restore_point("after_old_failure")
 
     def test_restore_rejects_existing_disposable_state_without_replace(self):
-        restore_container = todo_backup.apps.SHARED_RESOURCE_OWNER.resource("postgres-restore")
+        restore_container = app_backup.apps.SHARED_RESOURCE_OWNER.resource("postgres-restore")
         runner = FakeRunner(containers={restore_container})
-        with self.assertRaisesRegex(todo_backup.BackupError, "--replace"):
+        with self.assertRaisesRegex(app_backup.BackupError, "--replace"):
             self.tool(runner).restore(
                 "base-20260829T123456Z", "before_delete", replace=False
             )
@@ -116,14 +116,14 @@ class TodoBackupTests(unittest.TestCase):
         self.assertNotIn("todo-postgres-data", flattened)
 
     def test_cleanup_requires_exact_confirmation(self):
-        with self.assertRaisesRegex(todo_backup.BackupError, "exactly"):
+        with self.assertRaisesRegex(app_backup.BackupError, "exactly"):
             self.tool(FakeRunner()).cleanup_restore("yes")
 
     def test_rejects_unsafe_backup_and_restore_point_names(self):
-        with self.assertRaises(todo_backup.BackupError):
-            todo_backup.TodoBackup._validate_backup_name("../../data")
-        with self.assertRaises(todo_backup.BackupError):
-            todo_backup.TodoBackup._validate_restore_point("bad point; rm")
+        with self.assertRaises(app_backup.BackupError):
+            app_backup.TodoBackup._validate_backup_name("../../data")
+        with self.assertRaises(app_backup.BackupError):
+            app_backup.TodoBackup._validate_restore_point("bad point; rm")
 
     def test_restore_point_checks_exact_wal_file_after_archiver_advances(self):
         runner = FakeRunner(
@@ -137,14 +137,14 @@ class TodoBackupTests(unittest.TestCase):
         def timeout_runner(arguments, timeout=None):
             raise subprocess.TimeoutExpired(arguments, timeout)
 
-        with self.assertRaisesRegex(todo_backup.BackupError, "timed out"):
+        with self.assertRaisesRegex(app_backup.BackupError, "timed out"):
             self.tool(timeout_runner).database_state()
 
 class ApplicationBackupTests(unittest.TestCase):
     def test_each_backup_and_restore_stays_within_its_app(self):
-        for app in todo_backup.apps.REPLICATED_DATABASES:
+        for app in app_backup.apps.REPLICATED_DATABASES:
             runner = FakeRunner()
-            tool = todo_backup.TodoBackup(runner=runner, app=app)
+            tool = app_backup.TodoBackup(runner=runner, app=app)
             tool.create_backup()
             tool.restore('base-20260829T123456Z', 'before_delete', False)
             commands = runner.commands
@@ -153,7 +153,7 @@ class ApplicationBackupTests(unittest.TestCase):
             self.assertIn('--username=' + app.database_role('replicator'), backup)
             self.assertIn(app.secret('replicator') + ',type=env,target=PGPASSWORD', backup)
             self.assertIn(app.volume('backup') + ':/backup:z', backup)
-            for other in todo_backup.apps.REPLICATED_DATABASES:
+            for other in app_backup.apps.REPLICATED_DATABASES:
                 if other == app:
                     continue
                 self.assertFalse(any(other.resource('postgres') in argument
@@ -164,11 +164,11 @@ class ApplicationBackupTests(unittest.TestCase):
             self.assertTrue(any('recovery_target_action=pause' in command for command in commands))
 
     def test_cleanup_cannot_target_the_other_apps_restore(self):
-        for app in todo_backup.apps.REPLICATED_DATABASES:
+        for app in app_backup.apps.REPLICATED_DATABASES:
             runner = FakeRunner(containers={app.resource('postgres-restore')},
                                 volumes={app.volume('restore-data')})
-            tool = todo_backup.TodoBackup(runner=runner, app=app)
-            with self.assertRaises(todo_backup.BackupError):
+            tool = app_backup.TodoBackup(runner=runner, app=app)
+            with self.assertRaises(app_backup.BackupError):
                 tool.cleanup_restore('yes')
             self.assertEqual(runner.commands, [])
             tool.cleanup_restore(app.resource('postgres-restore'))
@@ -181,9 +181,9 @@ class ApplicationBackupTests(unittest.TestCase):
         instances = [mock.Mock(), mock.Mock(), mock.Mock()]
         instances[0].archive_status.return_value = 'on|'
         instances[1].archive_status.return_value = 'on|'
-        instances[2].require_writable_primary.side_effect = todo_backup.BackupError('keycloak is read-only')
-        with mock.patch.object(todo_backup, 'TodoBackup', side_effect=instances):
-            self.assertEqual(todo_backup.main(['create']), 1)
+        instances[2].require_writable_primary.side_effect = app_backup.BackupError('keycloak is read-only')
+        with mock.patch.object(app_backup, 'TodoBackup', side_effect=instances):
+            self.assertEqual(app_backup.main(['create']), 1)
         for tool in instances:
             tool.create_backup.assert_not_called()
 
@@ -192,7 +192,7 @@ class FakeHost:
     """One promoted host running every registered database, for the configure command."""
 
     def __init__(self, configured=(), directories_ready=(), mounts=None, source=None, active=True):
-        self.databases = {d.resource('postgres'): d for d in todo_backup.apps.REPLICATED_DATABASES}
+        self.databases = {d.resource('postgres'): d for d in app_backup.apps.REPLICATED_DATABASES}
         self.configured = set(configured)
         self.directories_ready = set(directories_ready)
         self.mounts = mounts or {}
@@ -222,7 +222,7 @@ class FakeHost:
             good = [{"Type": "volume", "Name": database.volume('backup'),
                      "Destination": "/var/lib/postgresql/backup", "RW": True}]
             return completed(json.dumps(self.mounts.get(database.name, good)))
-        if command[:2] == ["podman", "run"] and todo_backup.BACKUP_DIRECTORIES_SCRIPT in command:
+        if command[:2] == ["podman", "run"] and app_backup.BACKUP_DIRECTORIES_SCRIPT in command:
             volume = command[command.index("--volume") + 1].split(":")[0]
             ready = volume in self.directories_ready
             self.directories_ready.add(volume)
@@ -234,7 +234,7 @@ class FakeHost:
                 return completed("ALTER SYSTEM\n")
             if "current_setting('archive_command')" in sql:
                 if container in self.configured:
-                    return completed(f"on|{todo_backup.ARCHIVE_COMMAND}|{todo_backup.ARCHIVE_TIMEOUT}\n")
+                    return completed(f"on|{app_backup.ARCHIVE_COMMAND}|{app_backup.ARCHIVE_TIMEOUT}\n")
                 return completed("off|(disabled)|0\n")
             if "pg_is_in_recovery" in sql:
                 return completed("f|off\n")
@@ -252,28 +252,28 @@ class FakeHost:
 
 
 class ConfigureArchiveTests(unittest.TestCase):
-    DATABASES = todo_backup.apps.REPLICATED_DATABASES
+    DATABASES = app_backup.apps.REPLICATED_DATABASES
 
     def configure(self, host, promoted=True, access_changed=False):
-        tools = [todo_backup.TodoBackup(runner=host, app=app, sleeper=lambda _s: None,
+        tools = [app_backup.TodoBackup(runner=host, app=app, sleeper=lambda _s: None,
                                         clock=lambda: datetime(2026, 9, 25, 12, 0, 0, 123456, tzinfo=timezone.utc))
                  for app in self.DATABASES]
         self.hba = []
         self.waits = []
         journal = mock.Mock(side_effect=None if promoted else RuntimeError('A readable completed group '
                                                                                 'promotion record is required'))
-        with mock.patch.object(todo_backup.replication, 'require_promoted_group', journal), \
-                mock.patch.object(todo_backup.replication, 'refresh_hba',
+        with mock.patch.object(app_backup.replication, 'require_promoted_group', journal), \
+                mock.patch.object(app_backup.replication, 'refresh_hba',
                                   side_effect=lambda app: (self.hba.append((len(host.commands), app.name)), access_changed)[1]), \
-                mock.patch.object(todo_backup.keycloak, 'wait',
+                mock.patch.object(app_backup.keycloak, 'wait',
                                   side_effect=lambda path, *a, **k: self.waits.append((path, k.get('hostname')))):
-            return todo_backup.configure(tools, Path('/journal.json'))
+            return app_backup.configure(tools, Path('/journal.json'))
 
     def test_archive_settings_stay_byte_identical_to_deployed_hosts(self):
-        self.assertEqual(todo_backup.ARCHIVE_COMMAND,
+        self.assertEqual(app_backup.ARCHIVE_COMMAND,
                          'test ! -f /var/lib/postgresql/backup/wal/%f && cp %p /var/lib/postgresql/backup/wal/%f || '
                          'test "$(sha256sum < %p)" = "$(sha256sum < /var/lib/postgresql/backup/wal/%f)"')
-        self.assertEqual(todo_backup.ARCHIVE_TIMEOUT, '1h')
+        self.assertEqual(app_backup.ARCHIVE_TIMEOUT, '1h')
 
     def test_fresh_group_is_gated_first_then_restarted_behind_one_application_tier_stop(self):
         host = FakeHost()
@@ -284,10 +284,10 @@ class ConfigureArchiveTests(unittest.TestCase):
         self.assertEqual(sorted(result['verified']), sorted(names))
         self.assertEqual(result['verified']['todo'], 'todo_archive_check_20260925120000123456')
         last_gate = max(i for i, c in enumerate(host.commands) if c[:3] == ["systemctl", "--user", "show"])
-        first_write = min([self.hba[0][0], host.index(lambda c: todo_backup.BACKUP_DIRECTORIES_SCRIPT in c)])
+        first_write = min([self.hba[0][0], host.index(lambda c: app_backup.BACKUP_DIRECTORIES_SCRIPT in c)])
         self.assertLess(last_gate, first_write)
         stops = host.matching(lambda c: c[:3] == ["systemctl", "--user", "stop"])
-        self.assertEqual([c[3] for c in stops], todo_backup.apps.services(databases=False))
+        self.assertEqual([c[3] for c in stops], app_backup.apps.services(databases=False))
         restarts = host.matching(lambda c: c[:3] == ["systemctl", "--user", "restart"])
         self.assertEqual([c[3] for c in restarts], [d.service('postgres') for d in self.DATABASES])
         start = host.index(lambda c: c == ["systemctl", "--user", "start", "shared-proxy.service"])
@@ -295,8 +295,8 @@ class ConfigureArchiveTests(unittest.TestCase):
                         host.index(lambda c: c[:3] == ["systemctl", "--user", "restart"]))
         self.assertLess(max(host.commands.index(c) for c in restarts), start)
         self.assertLess(start, host.index(lambda c: any('pg_create_restore_point' in part for part in c)))
-        self.assertEqual(self.waits[:len(todo_backup.apps.APPS)],
-                         [('/ready', app.hostname) for app in todo_backup.apps.APPS])
+        self.assertEqual(self.waits[:len(app_backup.apps.APPS)],
+                         [('/ready', app.hostname) for app in app_backup.apps.APPS])
 
     def test_configured_group_is_left_running_and_unverified(self):
         host = FakeHost(configured={d.resource('postgres') for d in self.DATABASES},
@@ -328,9 +328,9 @@ class ConfigureArchiveTests(unittest.TestCase):
                     raise subprocess.TimeoutExpired(arguments, timeout)
                 return super().__call__(arguments, timeout)
 
-        with self.assertRaisesRegex(todo_backup.BackupError, 'invalid JSON'):
+        with self.assertRaisesRegex(app_backup.BackupError, 'invalid JSON'):
             self.configure(BrokenInspect())
-        with self.assertRaises(todo_backup.BackupError):
+        with self.assertRaises(app_backup.BackupError):
             self.configure(HungStop())
 
     def test_only_the_changed_database_restarts_and_is_verified(self):
@@ -341,14 +341,14 @@ class ConfigureArchiveTests(unittest.TestCase):
         self.assertEqual(result['restarted'], [last.name])
         self.assertEqual(list(result['verified']), [last.name])
         self.assertEqual(len(host.matching(lambda c: c[:3] == ["systemctl", "--user", "stop"])),
-                         len(todo_backup.apps.services(databases=False)))
+                         len(app_backup.apps.services(databases=False)))
 
     def test_a_failed_gate_on_the_last_database_stops_before_any_write(self):
         host = FakeHost(mounts={self.DATABASES[-1].name: []})
-        with self.assertRaisesRegex(todo_backup.BackupError, 'writable backup PVC'):
+        with self.assertRaisesRegex(app_backup.BackupError, 'writable backup PVC'):
             self.configure(host)
         self.assertEqual(self.hba, [])
-        self.assertFalse(host.matching(lambda c: todo_backup.BACKUP_DIRECTORIES_SCRIPT in c
+        self.assertFalse(host.matching(lambda c: app_backup.BACKUP_DIRECTORIES_SCRIPT in c
                                        or any('ALTER SYSTEM' in part for part in c)
                                        or c[:3] == ["systemctl", "--user", "stop"]))
 
@@ -362,28 +362,28 @@ class ConfigureArchiveTests(unittest.TestCase):
                                      ([{**good, "Destination": "/wrong"}], False),
                                      ([{**good, "RW": False}], False), ([{**good, "Type": "bind"}], False)]:
                 with self.subTest(database=database.name, mounts=mounts):
-                    tool = todo_backup.TodoBackup(runner=FakeHost(mounts={database.name: mounts}), app=database)
+                    tool = app_backup.TodoBackup(runner=FakeHost(mounts={database.name: mounts}), app=database)
                     if accepted:
                         tool.require_archive_prerequisites()
                     else:
-                        with self.assertRaises(todo_backup.BackupError):
+                        with self.assertRaises(app_backup.BackupError):
                             tool.require_archive_prerequisites()
 
     def test_non_kube_or_inactive_postgres_is_refused(self):
         name = self.DATABASES[0].name
-        with self.assertRaisesRegex(todo_backup.BackupError, 'non-Kube'):
+        with self.assertRaisesRegex(app_backup.BackupError, 'non-Kube'):
             self.configure(FakeHost(source={name: '/etc/containers/systemd/todo-postgres.container'}))
-        with self.assertRaisesRegex(todo_backup.BackupError, 'is not active'):
+        with self.assertRaisesRegex(app_backup.BackupError, 'is not active'):
             self.configure(FakeHost(active=False))
 
     def test_incomplete_promotion_refuses_before_any_host_command(self):
         host = FakeHost()
-        with self.assertRaisesRegex(todo_backup.BackupError, 'completed group promotion'):
+        with self.assertRaisesRegex(app_backup.BackupError, 'completed group promotion'):
             self.configure(host, promoted=False)
         self.assertEqual(host.commands, [])
 
     def test_configure_always_covers_the_complete_group(self):
-        self.assertEqual(todo_backup.main(['--app', 'todo', 'configure']), 1)
+        self.assertEqual(app_backup.main(['--app', 'todo', 'configure']), 1)
 
 
 if __name__ == "__main__":

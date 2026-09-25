@@ -50,6 +50,8 @@ def unlink(path):
 def uninstall(remove_data=False, quadlet_dir=None):
     directory = Path(quadlet_dir or settings.QUADLET_DIR)
     markers = (Path.home() / '.config/todo/todo-standby-entrypoint.sh',
+               Path('/opt/todo/bin/app_dr.py'), Path('/opt/todo/bin/app_backup.py'),
+               # Names installed before the tools were renamed still mark a clustered host.
                Path('/opt/todo/bin/todo_dr.py'), Path('/opt/todo/bin/todo_backup.py'))
     if any(exists('secret', d.secret('replicator')) for d in apps.REPLICATED_DATABASES) or any(
             path.exists() for path in markers):

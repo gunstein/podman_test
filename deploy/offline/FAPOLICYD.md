@@ -154,11 +154,11 @@ exact source entry on its controller and an exact installed entry on its target
 only when that tool is retired:
 
 ```bash
-sudo fapolicyd-cli --file delete "$HOME/todo-operations/deploy/scripts/todo_dr.py" --trust-file todo
-sudo fapolicyd-cli --file delete "$HOME/todo-operations/deploy/scripts/todo_backup.py" --trust-file todo
+sudo fapolicyd-cli --file delete "$HOME/todo-operations/deploy/scripts/app_dr.py" --trust-file todo
+sudo fapolicyd-cli --file delete "$HOME/todo-operations/deploy/scripts/app_backup.py" --trust-file todo
 
-sudo fapolicyd-cli --file delete /opt/todo/bin/todo_dr.py --trust-file todo
-sudo fapolicyd-cli --file delete /opt/todo/bin/todo_backup.py --trust-file todo
+sudo fapolicyd-cli --file delete /opt/todo/bin/app_dr.py --trust-file todo
+sudo fapolicyd-cli --file delete /opt/todo/bin/app_backup.py --trust-file todo
 sudo fapolicyd-cli --update
 ```
 
@@ -170,7 +170,7 @@ delete a file, and deleting a file does not clean up trust. The DR config under
 
 Exact-file trust is intentionally visible in this lab because it teaches the
 policy boundary. For repeated deployment across more hosts, package operational
-tools such as `todo_dr.py` and `todo_backup.py` as a signed RPM and install or
+tools such as `app_dr.py` and `app_backup.py` as a signed RPM and install or
 upgrade it with DNF. The fapolicyd DNF integration can then derive file trust
 from the RPM database instead of requiring a manual hash refresh for every
 copy. Package signature verification and fapolicyd trust are related controls,

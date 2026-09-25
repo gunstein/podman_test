@@ -83,9 +83,9 @@ def replication_status(project_root, controller, primary, standby):
 def install_dr_tool(project_root, controller, standby, primary_spec):
     trust.stage_installer(project_root, controller, standby)
     changed = trust.install_trusted(project_root, controller, standby,
-                                    [(f'{project_root}/deploy/scripts/todo_dr.py', '/opt/todo/bin/todo_dr.py', '0644')],
+                                    [(f'{project_root}/deploy/scripts/app_dr.py', '/opt/todo/bin/app_dr.py', '0644')],
                                     '/opt/todo/bin')
-    result = standby.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', '/opt/todo/bin/todo_dr.py', '--config',
+    result = standby.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', '/opt/todo/bin/app_dr.py', '--config',
                           steps.paths(standby)['config'] + '/todo-dr.json', 'configure',
                           '--primary-name', primary_spec.name, '--primary-address', primary_spec.address,
                           '--standby-name', standby.name, '--rpo-target-seconds', '30'])

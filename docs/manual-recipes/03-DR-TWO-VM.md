@@ -399,13 +399,13 @@ ansible-playbook \
 VM2 should now have:
 
 ```text
-/opt/todo/bin/todo_dr.py
+/opt/todo/bin/app_dr.py
 ```
 
 Test from VM2:
 
 ```bash
-python3 /opt/todo/bin/todo_dr.py status
+python3 /opt/todo/bin/app_dr.py status
 ```
 
 You expect roughly:
@@ -514,7 +514,7 @@ ssh todo@192.168.1.51
 Run:
 
 ```bash
-python3 /opt/todo/bin/todo_dr.py preflight \
+python3 /opt/todo/bin/app_dr.py preflight \
   --confirm-primary-fenced 'todo-primary is fenced'
 ```
 
@@ -535,7 +535,7 @@ Require successful preflight, replicated marker, zero apply lag, unreachable
 old database and explicit promotion approval. Keep VM1 fenced. On VM2:
 
 ```bash
-python3 /opt/todo/bin/todo_dr.py promote \
+python3 /opt/todo/bin/app_dr.py promote \
   --confirm-primary-fenced 'todo-primary is fenced' \
   --confirm-promotion todo-standby
 ```
@@ -543,7 +543,7 @@ python3 /opt/todo/bin/todo_dr.py promote \
 Check:
 
 ```bash
-python3 /opt/todo/bin/todo_dr.py status
+python3 /opt/todo/bin/app_dr.py status
 ```
 
 And directly against PostgreSQL:
@@ -786,14 +786,14 @@ DR setup
 
 SIMULATE DISASTER
   -> fence VM1
-  -> todo_dr.py preflight
-  -> todo_dr.py promote
+  -> app_dr.py preflight
+  -> app_dr.py promote
   -> deploy-promoted-application.yml
   -> todo.test -> VM2
   -> test Todo
 
 RESTORE REDUNDANCY
-  -> boot VM1 in quarantine, stop via todo-quarantine.sh
+  -> boot VM1 in quarantine, stop via app-quarantine.sh
   -> preflight-standby-rebuild.yml
   -> rebuild-standby.yml
   -> cluster-status.yml

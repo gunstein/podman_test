@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "deploy/ops"))
-from todo_ops import cli, inventory, quarantine, transport  # noqa: E402
+from app_ops import cli, inventory, quarantine, transport  # noqa: E402
 
 PRIMARY = inventory.HostSpec(name="todo-primary", role="primary", address="192.0.2.10",
                              user="ops", home="/home/ops")

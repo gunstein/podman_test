@@ -3,7 +3,7 @@
 # This stops workloads; it does not fence the VM or delete database data.
 set -eu
 if [ "$#" -ne 3 ]; then
-  echo "Usage: todo-quarantine.sh check|stop EXPECTED_HOST SERVICE_USER" >&2
+  echo "Usage: app-quarantine.sh check|stop EXPECTED_HOST SERVICE_USER" >&2
   exit 2
 fi
 action=$1

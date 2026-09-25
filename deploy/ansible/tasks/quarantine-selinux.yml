@@ -43,7 +43,7 @@
 
 - name: Apply and verify the helper SELinux label
   ansible.builtin.file:
-    path: /opt/todo/bin/todo-quarantine.sh
+    path: /opt/todo/bin/app-quarantine.sh
     owner: root
     group: root
     mode: '0755'

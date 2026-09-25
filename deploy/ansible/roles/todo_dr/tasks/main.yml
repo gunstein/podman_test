@@ -7,16 +7,16 @@
     name: todo_fapolicyd
   vars:
     todo_fapolicyd_files:
-      - source: "{{ project_root }}/deploy/scripts/todo_dr.py"
-        dest: /opt/todo/bin/todo_dr.py
+      - source: "{{ project_root }}/deploy/scripts/app_dr.py"
+        dest: /opt/todo/bin/app_dr.py
         mode: "0644"
 
-# todo_dr.py owns its configuration format: the same code writes and reads it.
+# app_dr.py owns its configuration format: the same code writes and reads it.
 - name: Write the local Todo DR configuration
   ansible.builtin.command:
     argv:
       - python3
-      - /opt/todo/bin/todo_dr.py
+      - /opt/todo/bin/app_dr.py
       - --config
       - "{{ todo_dr_config_directory }}/todo-dr.json"
       - configure

@@ -20,7 +20,7 @@ class QuarantineLabelTests(unittest.TestCase):
         )[0]['tasks']
         restore = tasks[-1]
         self.assertEqual(restore['ansible.builtin.command']['argv'],
-                         ['restorecon', '-v', '/opt/todo/bin/todo-quarantine.sh'])
+                         ['restorecon', '-v', '/opt/todo/bin/app-quarantine.sh'])
         self.assertTrue(restore['become'])
         self.assertNotIn('when', restore)
         self.assertIn('stdout', restore['changed_when'])

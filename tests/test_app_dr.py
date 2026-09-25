@@ -7,11 +7,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-SCRIPT = Path(__file__).parents[1] / "deploy/scripts" / "todo_dr.py"
-SPEC = importlib.util.spec_from_file_location("todo_dr", SCRIPT)
+SCRIPT = Path(__file__).parents[1] / "deploy/scripts" / "app_dr.py"
+SPEC = importlib.util.spec_from_file_location("app_dr", SCRIPT)
 assert SPEC and SPEC.loader
-todo_dr = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(todo_dr)
+app_dr = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(app_dr)
 
 
 def completed(stdout="", stderr="", returncode=0):
@@ -41,7 +41,7 @@ class FakeRunner:
 
 class TodoDrTests(unittest.TestCase):
     def setUp(self):
-        registry = mock.patch.object(todo_dr.apps, 'REPLICATED_DATABASES', (todo_dr.apps.APPS[0],))
+        registry = mock.patch.object(app_dr.apps, 'REPLICATED_DATABASES', (app_dr.apps.APPS[0],))
         registry.start()
         self.addCleanup(registry.stop)
         self.temporary = tempfile.TemporaryDirectory()
@@ -49,11 +49,11 @@ class TodoDrTests(unittest.TestCase):
         self.journal = Path(self.temporary.name) / 'promotion.json'
 
     def config(self):
-        return todo_dr.Config("todo-primary", "192.0.2.10", "todo-standby", 30)
+        return app_dr.Config("todo-primary", "192.0.2.10", "todo-standby", 30)
 
     def tool(self, outputs, reachable=False):
         runner = FakeRunner(outputs)
-        tool = todo_dr.TodoDr(
+        tool = app_dr.TodoDr(
             self.config(),
             runner=runner,
             connector=lambda address, port, timeout: reachable,
@@ -69,7 +69,7 @@ class TodoDrTests(unittest.TestCase):
                 '"standby_name":"s","rpo_seconds":30}',
                 encoding="utf-8",
             )
-            self.assertEqual(todo_dr.load_config(path).rpo_target_seconds, 30)
+            self.assertEqual(app_dr.load_config(path).rpo_target_seconds, 30)
 
     def test_status_reports_normal_standby(self):
         tool, _runner = self.tool(["t|on|0/10|0/10|0"], reachable=True)
@@ -87,30 +87,30 @@ class TodoDrTests(unittest.TestCase):
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
     def test_preflight_rejects_reachable_primary(self, _hostname):
         tool, _runner = self.tool(["t|on|0/10|0/10|0"], reachable=True)
-        with self.assertRaisesRegex(todo_dr.DrError, "still answers"):
+        with self.assertRaisesRegex(app_dr.DrError, "still answers"):
             tool.preflight("todo-primary is fenced")
 
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
     def test_preflight_rejects_missing_lsn(self, _hostname):
         tool, _runner = self.tool(["t|on|||0"])
-        with self.assertRaisesRegex(todo_dr.DrError, "LSN is unavailable"):
+        with self.assertRaisesRegex(app_dr.DrError, "LSN is unavailable"):
             tool.preflight("todo-primary is fenced")
 
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
     def test_preflight_rejects_local_apply_lag(self, _hostname):
         tool, _runner = self.tool(["t|on|0/20|0/10|16"])
-        with self.assertRaisesRegex(todo_dr.DrError, "unreplayed local WAL"):
+        with self.assertRaisesRegex(app_dr.DrError, "unreplayed local WAL"):
             tool.preflight("todo-primary is fenced")
 
     @mock.patch.object(socket, "gethostname", return_value="wrong-host")
     def test_preflight_rejects_wrong_host(self, _hostname):
         tool, _runner = self.tool([])
-        with self.assertRaisesRegex(todo_dr.DrError, "configured standby host"):
+        with self.assertRaisesRegex(app_dr.DrError, "configured standby host"):
             tool.preflight("todo-primary is fenced")
 
     def test_preflight_requires_exact_fencing_confirmation(self):
         tool, _runner = self.tool([])
-        with self.assertRaisesRegex(todo_dr.DrError, "must be exactly"):
+        with self.assertRaisesRegex(app_dr.DrError, "must be exactly"):
             tool.preflight("yes")
 
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
@@ -127,7 +127,7 @@ class TodoDrTests(unittest.TestCase):
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
     def test_promote_requires_exact_standby_confirmation(self, _hostname):
         tool, runner = self.tool(["t|on|0/10|0/10|0"])
-        with self.assertRaisesRegex(todo_dr.DrError, "standby hostname"):
+        with self.assertRaisesRegex(app_dr.DrError, "standby hostname"):
             tool.promote("todo-primary is fenced", "wrong-host")
         flattened = [item for command in runner.commands for item in command]
         self.assertNotIn("pg_ctl", flattened)
@@ -140,7 +140,7 @@ class TodoDrTests(unittest.TestCase):
                 '"standby_name":"s","rpo_target_seconds":45}',
                 encoding="utf-8",
             )
-            self.assertEqual(todo_dr.load_config(path).rpo_target_seconds, 45)
+            self.assertEqual(app_dr.load_config(path).rpo_target_seconds, 45)
 
     def test_status_labels_rpo_target_as_informational(self):
         tool, _runner = self.tool(["t|on|0/10|0/10|0"], reachable=True)
@@ -151,8 +151,8 @@ class TodoDrTests(unittest.TestCase):
         def timeout_runner(arguments, timeout=None):
             raise subprocess.TimeoutExpired(arguments, timeout)
 
-        tool = todo_dr.TodoDr(self.config(), runner=timeout_runner)
-        with self.assertRaisesRegex(todo_dr.DrError, "timed out"):
+        tool = app_dr.TodoDr(self.config(), runner=timeout_runner)
+        with self.assertRaisesRegex(app_dr.DrError, "timed out"):
             tool.service_status()
 
 class GroupPromotionTests(unittest.TestCase):
@@ -161,8 +161,8 @@ class GroupPromotionTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.journal = Path(self.temporary.name) / 'promotion.json'
-        self.apps = (todo_dr.apps.APPS[0], replace(todo_dr.apps.APPS[1], replication_port=5433))
-        self.registry = mock.patch.object(todo_dr.apps, 'REPLICATED_DATABASES', self.apps)
+        self.apps = (app_dr.apps.APPS[0], replace(app_dr.apps.APPS[1], replication_port=5433))
+        self.registry = mock.patch.object(app_dr.apps, 'REPLICATED_DATABASES', self.apps)
         self.registry.start()
         self.addCleanup(self.registry.stop)
         self.hostname = mock.patch.object(socket, 'gethostname', return_value='standby')
@@ -196,12 +196,12 @@ class GroupPromotionTests(unittest.TestCase):
         def connect(address, port, timeout):
             self.endpoints.append(port)
             return port == reachable_port
-        return todo_dr.TodoDr(todo_dr.Config('primary', '192.0.2.50', 'standby', 30, ('todo', 'notes')),
+        return app_dr.TodoDr(app_dr.Config('primary', '192.0.2.50', 'standby', 30, ('todo', 'notes')),
                               runner=self.runner, connector=connect, journal_path=self.journal)
 
     def test_last_app_lag_prevents_every_promotion(self):
         self.states['notes-postgres'] = 't|on|0/20|0/10|16'
-        with self.assertRaisesRegex(todo_dr.DrError, 'notes.*unreplayed'):
+        with self.assertRaisesRegex(app_dr.DrError, 'notes.*unreplayed'):
             self.tool().promote('primary is fenced', 'standby')
         self.assertFalse(any('pg_ctl' in command for command in self.commands))
         self.assertFalse(self.journal.exists())
@@ -209,13 +209,13 @@ class GroupPromotionTests(unittest.TestCase):
     def test_last_app_missing_lsn_or_wrong_role_prevents_every_promotion(self):
         for state in ('t|on|||0', 'f|off|||0', 't|off|0/10|0/10|0'):
             self.states['notes-postgres'] = state
-            with self.assertRaises(todo_dr.DrError):
+            with self.assertRaises(app_dr.DrError):
                 self.tool().promote('primary is fenced', 'standby')
         self.assertFalse(any('pg_ctl' in command for command in self.commands))
         self.assertFalse(self.journal.exists())
 
     def test_every_primary_port_must_be_unreachable(self):
-        with self.assertRaisesRegex(todo_dr.DrError, '5433'):
+        with self.assertRaisesRegex(app_dr.DrError, '5433'):
             self.tool(reachable_port=5433).promote('primary is fenced', 'standby')
         self.assertEqual(self.endpoints, [5432, 5433])
         self.assertFalse(any('pg_ctl' in command for command in self.commands))
@@ -236,20 +236,20 @@ class GroupPromotionTests(unittest.TestCase):
     def test_partial_failure_is_recorded_and_blind_retry_is_refused(self):
         self.failed_promotion = 'notes-postgres'
         tool = self.tool()
-        with self.assertRaisesRegex(todo_dr.DrError, 'injected'):
+        with self.assertRaisesRegex(app_dr.DrError, 'injected'):
             tool.promote('primary is fenced', 'standby')
         decision = json.loads(self.journal.read_text())
         self.assertEqual(decision['state'], 'failed')
         self.assertEqual(decision['completed'], ['todo'])
         count = len(self.commands)
-        with self.assertRaisesRegex(todo_dr.DrError, 'decision already exists'):
+        with self.assertRaisesRegex(app_dr.DrError, 'decision already exists'):
             tool.promote('primary is fenced', 'standby')
         self.assertEqual(len(self.commands), count)
 
     def test_explicit_complete_group_is_required(self):
         for names in ((), ('todo',), ('notes', 'todo')):
-            with self.assertRaisesRegex(todo_dr.DrError, 'complete ordered'):
-                todo_dr.TodoDr(todo_dr.Config('primary', '192.0.2.50', 'standby', 30, names))
+            with self.assertRaisesRegex(app_dr.DrError, 'complete ordered'):
+                app_dr.TodoDr(app_dr.Config('primary', '192.0.2.50', 'standby', 30, names))
 
     def test_failed_durable_decision_prevents_every_promotion(self):
         tool = self.tool()
@@ -271,20 +271,20 @@ class GroupPromotionTests(unittest.TestCase):
                 return original(arguments, timeout)
 
             tool.runner = failed
-            with self.assertRaises(todo_dr.DrError):
+            with self.assertRaises(app_dr.DrError):
                 tool.promote('primary is fenced', 'standby')
             self.assertFalse(any('pg_ctl' in command for command in self.commands))
 
     def test_concurrent_promotion_cannot_enter_preflight(self):
         tool = self.tool()
-        with tool._promotion_lock(), self.assertRaisesRegex(todo_dr.DrError, 'holds the lock'):
+        with tool._promotion_lock(), self.assertRaisesRegex(app_dr.DrError, 'holds the lock'):
             self.tool().promote('primary is fenced', 'standby')
         self.assertEqual(self.commands, [])
 
 
 class ConfigureTests(unittest.TestCase):
     def configure(self, config, *extra):
-        return todo_dr.main(['--config', str(config), 'configure', '--primary-name', 'todo-primary',
+        return app_dr.main(['--config', str(config), 'configure', '--primary-name', 'todo-primary',
                              '--primary-address', '192.0.2.10', '--standby-name', 'todo-standby', *extra])
 
     def test_writes_a_private_complete_group_config_that_the_tool_reads_back(self):
@@ -295,11 +295,11 @@ class ConfigureTests(unittest.TestCase):
             self.assertIn('"changed": true', "".join(call.args[0] for call in stdout.write.call_args_list))
             self.assertEqual(config.stat().st_mode & 0o777, 0o600)
             self.assertEqual(config.parent.stat().st_mode & 0o777, 0o700)
-            loaded = todo_dr.load_config(config)
-            self.assertEqual(loaded.applications, tuple(d.name for d in todo_dr.apps.REPLICATED_DATABASES))
+            loaded = app_dr.load_config(config)
+            self.assertEqual(loaded.applications, tuple(d.name for d in app_dr.apps.REPLICATED_DATABASES))
             self.assertEqual((loaded.primary_name, loaded.primary_address, loaded.standby_name,
                               loaded.rpo_target_seconds), ("todo-primary", "192.0.2.10", "todo-standby", 30))
-            todo_dr.TodoDr(loaded)
+            app_dr.TodoDr(loaded)
 
     def test_repeat_is_unchanged_and_existing_ansible_written_config_is_byte_identical(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -309,17 +309,17 @@ class ConfigureTests(unittest.TestCase):
                               '"primary_address": "192.0.2.10", "standby_name": "todo-standby", '
                               '"rpo_target_seconds": 30}')
             config.chmod(0o600)
-            self.assertFalse(todo_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 30))
-            self.assertTrue(todo_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 60))
-            self.assertEqual(todo_dr.load_config(config).rpo_target_seconds, 60)
+            self.assertFalse(app_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 30))
+            self.assertTrue(app_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 60))
+            self.assertEqual(app_dr.load_config(config).rpo_target_seconds, 60)
 
     def test_invalid_values_are_refused_without_writing(self):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "todo-dr.json"
             for arguments in (("primary.example", "todo-standby", 30), ("192.0.2.10", "", 30),
                               ("192.0.2.10", "todo-standby", 0)):
-                with self.subTest(arguments=arguments), self.assertRaises(todo_dr.DrError):
-                    todo_dr.write_config(config, "todo-primary", *arguments)
+                with self.subTest(arguments=arguments), self.assertRaises(app_dr.DrError):
+                    app_dr.write_config(config, "todo-primary", *arguments)
             self.assertFalse(config.exists())
             with mock.patch("sys.stderr"):
                 self.assertEqual(self.configure(config, '--rpo-target-seconds', '-5'), 1)

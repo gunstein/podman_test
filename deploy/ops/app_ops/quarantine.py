@@ -4,8 +4,8 @@ import time
 
 from . import trust
 
-HELPER = '/opt/todo/bin/todo-quarantine.sh'
-HELPER_REGEX = '/opt/todo/bin/todo-quarantine\\.sh'
+HELPER = '/opt/todo/bin/app-quarantine.sh'
+HELPER_REGEX = '/opt/todo/bin/app-quarantine\\.sh'
 HELPER_TYPE = 'virt_qemu_ga_unconfined_exec_t'
 GA_POLICY = '/etc/sysconfig/qemu-ga'
 
@@ -67,7 +67,7 @@ def install(project_root, controller, primary, *, guest_exec=False, selinux_entr
     if guest_exec:
         changed = enable_guest_exec(primary) or changed
     changed = trust.install_trusted(project_root, controller, primary,
-                                    [(f'{project_root}/deploy/scripts/todo-quarantine.sh', HELPER, '0755')],
+                                    [(f'{project_root}/deploy/scripts/app-quarantine.sh', HELPER, '0755')],
                                     '/opt/todo/bin') or changed
     if selinux_entrypoint:
         changed = enable_selinux_entrypoint(primary) or changed

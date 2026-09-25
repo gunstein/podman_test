@@ -31,7 +31,7 @@ class Host:
         result = self.runner(self._argv(command), input=input, capture_output=True, text=True)
         if result.returncode not in allowed:
             if sudo and 'password is required' in result.stderr:
-                raise CommandError(f'{self.name}: sudo requires a password; todo-ops needs passwordless '
+                raise CommandError(f'{self.name}: sudo requires a password; app-ops needs passwordless '
                                    f'sudo (NOPASSWD) for {self.spec.user or "this user"}')
             detail = ' '.join(str(argument) for argument in argv)[:120]
             raise CommandError(f'{self.name}: {detail} failed (exit {result.returncode}): '

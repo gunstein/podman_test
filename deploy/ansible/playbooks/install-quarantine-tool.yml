@@ -5,7 +5,7 @@
   any_errors_fatal: true
   vars:
     project_root: "{{ playbook_dir }}/../../.."
-    todo_quarantine_entrypoint_regex: /opt/todo/bin/todo-quarantine\.sh
+    todo_quarantine_entrypoint_regex: /opt/todo/bin/app-quarantine\.sh
   tasks:
     - name: Stage the trusted application registry used by quarantine
       ansible.builtin.include_tasks: ../tasks/stage-installer.yml
@@ -19,8 +19,8 @@
         name: todo_fapolicyd
       vars:
         todo_fapolicyd_files:
-          - source: "{{ project_root }}/deploy/scripts/todo-quarantine.sh"
-            dest: /opt/todo/bin/todo-quarantine.sh
+          - source: "{{ project_root }}/deploy/scripts/app-quarantine.sh"
+            dest: /opt/todo/bin/app-quarantine.sh
             mode: "0755"
 
     - name: Configure the explicitly authorized SELinux entrypoint
@@ -31,7 +31,7 @@
     # Apply only the policy already configured; do not grant a new transition.
     - name: Restore the helper label from existing persistent SELinux policy
       ansible.builtin.command:
-        argv: [restorecon, -v, /opt/todo/bin/todo-quarantine.sh]
+        argv: [restorecon, -v, /opt/todo/bin/app-quarantine.sh]
       become: true
       register: todo_quarantine_restorecon
       changed_when: todo_quarantine_restorecon.stdout | trim != ''

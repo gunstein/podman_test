@@ -42,7 +42,7 @@ packages on both hosts before an incident; verify checksums and matching clean
 VERSION values before running extracted code.
 
 The configure playbook uses the central `todo_fapolicyd` role to refresh
-exact source trust, install root-owned `/opt/todo/bin/todo_backup.py`, and
+exact source trust, install root-owned `/opt/todo/bin/app_backup.py`, and
 maintain its exact target trust entry. Supply normal Ansible become credentials;
 do not disable `fapolicyd` or trust the extracted directory.
 
@@ -64,7 +64,7 @@ ansible-playbook \
   deploy/ansible/playbooks/configure-backup.yml
 ```
 
-The playbook installs `todo_backup.py` and runs its `configure` command, which
+The playbook installs `app_backup.py` and runs its `configure` command, which
 covers the complete group. Before it changes anything, it requires a completed
 group promotion and, for every database, an active Kube-native PostgreSQL
 service reporting `f|off`, the replication credential and the PVC backup volume

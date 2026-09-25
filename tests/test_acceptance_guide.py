@@ -41,7 +41,7 @@ class AcceptanceGuideTests(unittest.TestCase):
     def test_direct_mutation_examples_keep_exact_confirmation_arguments(self):
         commands = '\n'.join(shell_blocks()).replace('\\\n', '')
         promotion = [shlex.split(line) for line in commands.splitlines()
-                     if 'todo_dr.py promote' in line]
+                     if 'app_dr.py promote' in line]
         self.assertTrue(promotion)
         for command in promotion:
             self.assertEqual(command[command.index('--confirm-primary-fenced') + 1],
@@ -107,7 +107,7 @@ class AcceptanceGuideTests(unittest.TestCase):
         actions = re.findall(r'pve_lab\.py (\w+)', guide)
         self.assertTrue(actions)
         self.assertLessEqual(set(actions), {'get', 'set', 'post', 'delete', 'task', 'exec', 'nic'})
-        self.assertIn('todo-quarantine.sh stop todo-primary gunstein', guide)
+        self.assertIn('app-quarantine.sh stop todo-primary gunstein', guide)
 
     def test_acceptance_reference_links_resolve_in_source(self):
         for name in ('ACCEPTANCE.md', 'ACCEPTANCE-TROUBLESHOOTING.md', 'ACCEPTANCE-AGENT.md'):

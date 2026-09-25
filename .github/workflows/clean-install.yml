@@ -113,8 +113,8 @@ jobs:
             todo-operations/deploy/ansible/playbooks/rebuild-standby.yml \
             todo-operations/deploy/ansible/roles/promoted_application/tasks/main.yml \
             todo-operations/deploy/ansible/roles/postgres_backup/tasks/main.yml \
-            todo-operations/deploy/scripts/todo_dr.py \
-            todo-operations/deploy/scripts/todo_backup.py \
+            todo-operations/deploy/scripts/app_dr.py \
+            todo-operations/deploy/scripts/app_backup.py \
             todo-operations/deploy/offline/FAPOLICYD.md \
             todo-operations/docs/SECRETS.md \
             todo-operations/docs/TLS.md \
@@ -185,7 +185,7 @@ jobs:
             deploy/scripts/dev-down.sh \
             deploy/scripts/smoke-proxy.sh \
             deploy/scripts/run-e2e.sh \
-            deploy/scripts/todo-quarantine.sh \
+            deploy/scripts/app-quarantine.sh \
             deploy/scripts/trust-files.sh \
             deploy/scripts/trust-serving-ca.sh \
             deploy/scripts/bootstrap-ssh-key.sh

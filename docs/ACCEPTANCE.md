@@ -214,7 +214,7 @@ podman volume ls
 podman secret ls
 podman network ls
 find "$HOME/.config/containers/systemd" -type f \( -name 'todo*' -o -name 'notes*' -o -name 'keycloak*' -o -name 'shared-proxy*' -o -name 'app-network*' \) -print
-ls -ld "$HOME/.config/todo" /opt/todo/bin/todo_dr.py /opt/todo/bin/todo_backup.py
+ls -ld "$HOME/.config/todo" /opt/todo/bin/app_dr.py /opt/todo/bin/app_backup.py
 ```
 
 For a clean baseline, require distinct machine IDs and expected hostnames/IPs,
@@ -544,7 +544,7 @@ configuration under `~/.config/todo`. Require, for each database, healthy
 standby, read-only database, reachable primary and zero local apply lag:
 
 ```bash
-python3 /opt/todo/bin/todo_dr.py status
+python3 /opt/todo/bin/app_dr.py status
 ```
 
 Rerun the installer and require no file or trust changes.
@@ -567,12 +567,12 @@ unreachable before continuing.
 On standby:
 
 ```bash
-python3 /opt/todo/bin/todo_dr.py preflight \
+python3 /opt/todo/bin/app_dr.py preflight \
   --confirm-primary-fenced 'todo-primary is fenced'
-python3 /opt/todo/bin/todo_dr.py promote \
+python3 /opt/todo/bin/app_dr.py promote \
   --confirm-primary-fenced 'todo-primary is fenced' \
   --confirm-promotion todo-standby
-python3 /opt/todo/bin/todo_dr.py status
+python3 /opt/todo/bin/app_dr.py status
 ```
 
 Promotion acts on the complete group: preflight refuses unless every database
@@ -646,8 +646,8 @@ prefix each line with the database name. Require, for each, writable database,
 failures:
 
 ```bash
-python3 /opt/todo/bin/todo_backup.py status
-python3 /opt/todo/bin/todo_backup.py create
+python3 /opt/todo/bin/app_backup.py status
+python3 /opt/todo/bin/app_backup.py create
 ```
 
 Record the returned backup name for each database; they are separate backups.
@@ -661,22 +661,22 @@ podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP
   --command "INSERT INTO todos (title, completed) VALUES ('PITR before restore point', false);"
 podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 \
   --command "INSERT INTO notes (title) VALUES ('PITR before restore point');"
-python3 /opt/todo/bin/todo_backup.py mark --name acceptance_before_after
+python3 /opt/todo/bin/app_backup.py mark --name acceptance_before_after
 podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 \
   --command "INSERT INTO todos (title, completed) VALUES ('PITR after restore point', false);"
 podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 \
   --command "INSERT INTO notes (title) VALUES ('PITR after restore point');"
-python3 /opt/todo/bin/todo_backup.py --app todo restore \
+python3 /opt/todo/bin/app_backup.py --app todo restore \
   --backup base-YYYYMMDDTHHMMSSZ --target acceptance_before_after
-python3 /opt/todo/bin/todo_backup.py --app todo restore-status
+python3 /opt/todo/bin/app_backup.py --app todo restore-status
 podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}'
 podman exec todo-postgres-restore psql --username todo --dbname todo \
   --command "SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;"
 podman exec todo-postgres psql --username todo --dbname todo \
   --command "SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;"
-python3 /opt/todo/bin/todo_backup.py --app notes restore \
+python3 /opt/todo/bin/app_backup.py --app notes restore \
   --backup base-YYYYMMDDTHHMMSSZ --target acceptance_before_after
-python3 /opt/todo/bin/todo_backup.py --app notes restore-status
+python3 /opt/todo/bin/app_backup.py --app notes restore-status
 podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}'
 podman exec notes-postgres-restore psql --username notes --dbname notes \
   --command "SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;"
@@ -693,8 +693,8 @@ it using troubleshooting before authorizing any replacement.
 After explicit cleanup approval:
 
 ```bash
-python3 /opt/todo/bin/todo_backup.py --app todo cleanup-restore --confirm todo-postgres-restore
-python3 /opt/todo/bin/todo_backup.py --app notes cleanup-restore --confirm notes-postgres-restore
+python3 /opt/todo/bin/app_backup.py --app todo cleanup-restore --confirm todo-postgres-restore
+python3 /opt/todo/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore
 ```
 
 Verify that only disposable restore resources disappeared; live data and all

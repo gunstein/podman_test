@@ -69,7 +69,7 @@ class AnsibleSafetyTests(unittest.TestCase):
 
     def test_backup_role_is_transport_for_the_backup_tool(self):
         # Archive gates, settings, the single restart and WAL verification live in
-        # todo_backup.py configure; tests/test_todo_backup.py exercises them.
+        # app_backup.py configure; tests/test_todo_backup.py exercises them.
         tasks = yaml.safe_load(read("deploy/ansible/roles/postgres_backup/tasks/main.yml"))
         names = [task["name"] for task in tasks]
         promotion = names.index("Require completed promotion for the entire writable group")
@@ -78,7 +78,7 @@ class AnsibleSafetyTests(unittest.TestCase):
         self.assertLess(promotion, install)
         self.assertLess(install, configure)
         self.assertEqual(tasks[configure]["ansible.builtin.command"]["argv"][1:3],
-                         ["/opt/todo/bin/todo_backup.py", "configure"])
+                         ["/opt/todo/bin/app_backup.py", "configure"])
         self.assertFalse((PROJECT_ROOT / "deploy/ansible/roles/postgres_backup/tasks/database.yml").exists())
 
     def test_cluster_status_is_read_only_transport_for_both_roles(self):
@@ -105,7 +105,7 @@ class AnsibleSafetyTests(unittest.TestCase):
             self.assertNotIn("dest: todo-postgres.container", tasks)
 
         # Application-tier restarts after a database restart are owned by Python:
-        # todo_backup.py configure and app_installer publish-primaries, both tested there.
+        # app_backup.py configure and app_installer publish-primaries, both tested there.
         for role, mode in (("postgres_primary", "bootstrap"), ("postgres_redundancy_primary", "redundancy")):
             tasks = yaml.safe_load(read(f"deploy/ansible/roles/{role}/tasks/main.yml"))
             publish = [task for task in tasks if str(task.get("ansible.builtin.include_tasks", "")).endswith(

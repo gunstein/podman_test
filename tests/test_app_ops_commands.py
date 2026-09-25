@@ -1,4 +1,4 @@
-"""todo_ops DR commands against a fake two-host world: order, gates and what crosses hosts."""
+"""app_ops DR commands against a fake two-host world: order, gates and what crosses hosts."""
 import json
 import shlex
 import subprocess
@@ -10,8 +10,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "deploy/ops"))
-from todo_ops import cli, inventory, recovery, standby, steps  # noqa: E402
-from todo_ops.transport import Host  # noqa: E402
+from app_ops import cli, inventory, recovery, standby, steps  # noqa: E402
+from app_ops.transport import Host  # noqa: E402
 
 NAMES = [entry["name"] for entry in steps.GROUP]
 
@@ -150,7 +150,7 @@ class RecoveryTests(unittest.TestCase):
         world = World()
         recovery.rebuild(str(PROJECT), *self.hosts(world), "todo-primary is fenced", "todo-primary")
         order = [step for step in world.steps() if step[0] in ("true", "replicate-workload", "publish-primaries",
-                                                               "reseed-group", "todo_dr.py")]
+                                                               "reseed-group", "app_dr.py")]
         kinds = [step[:2] if step[0] == "replicate-workload" else step[:1] for step in order]
         first = {kind: kinds.index(kind) for kind in reversed(kinds)}
         self.assertEqual(kinds[:2], [("true",), ("true",)])
@@ -160,7 +160,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertLess(max(i for i, k in enumerate(kinds) if k == ("replicate-workload", "reseed-check")),
                         first[("publish-primaries",)])
         self.assertLess(first[("publish-primaries",)], first[("reseed-group",)])
-        self.assertLess(first[("reseed-group",)], first[("todo_dr.py",)])
+        self.assertLess(first[("reseed-group",)], first[("app_dr.py",)])
         self.assertEqual(kinds[-3:], [("replicate-workload", "streaming")] * 3)
         self.assertIn(("reseed-group",), world.steps("todo-primary"))
 

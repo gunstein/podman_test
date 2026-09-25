@@ -190,8 +190,8 @@ On-VM backup does not protect against loss of that VM or its host.
 For observation on the configured standby / promoted primary respectively:
 
 ```bash
-python3 /opt/todo/bin/todo_dr.py status
-python3 /opt/todo/bin/todo_backup.py status
+python3 /opt/todo/bin/app_dr.py status
+python3 /opt/todo/bin/app_backup.py status
 ```
 
 Follow [the operator checklist](ACCEPTANCE.md) for the correct machine

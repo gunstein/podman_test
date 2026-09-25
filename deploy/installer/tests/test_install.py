@@ -441,6 +441,7 @@ class UninstallTests(unittest.TestCase):
 class FailureBoundaryTests(unittest.TestCase):
     def test_each_dr_marker_refuses_uninstall(self):
         for marker in ('.config/todo/todo-standby-entrypoint.sh',
+                       '/opt/todo/bin/app_dr.py', '/opt/todo/bin/app_backup.py',
                        '/opt/todo/bin/todo_dr.py', '/opt/todo/bin/todo_backup.py'):
             with patch('app_installer.uninstall.exists', return_value=False), \
                     patch.object(Path, 'exists', autospec=True,

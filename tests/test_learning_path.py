@@ -27,4 +27,4 @@ class LearningPathTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/clean-install.yml").read_text()
         self.assertIn("pytest e2e/test_auth_adapter.py", workflow)
         shell_step = workflow.split("shellcheck \\", 1)[1].split("- name:", 1)[0]
-        self.assertIn("deploy/scripts/todo-quarantine.sh", shell_step)
+        self.assertIn("deploy/scripts/app-quarantine.sh", shell_step)

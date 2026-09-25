@@ -1,5 +1,5 @@
 ---
-# Transport only: todo_backup.py configure owns the archive gates, settings,
+# Transport only: app_backup.py configure owns the archive gates, settings,
 # the single application-tier restart and the archived-WAL verification.
 - name: Resolve the complete database group before archive configuration
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/read-replication-registry.yml"
@@ -17,15 +17,15 @@
     name: todo_fapolicyd
   vars:
     todo_fapolicyd_files:
-      - source: "{{ project_root }}/deploy/scripts/todo_backup.py"
-        dest: /opt/todo/bin/todo_backup.py
+      - source: "{{ project_root }}/deploy/scripts/app_backup.py"
+        dest: /opt/todo/bin/app_backup.py
         mode: "0644"
 
 - name: Configure and verify continuous WAL archiving for the complete group
   ansible.builtin.command:
     argv:
       - python3
-      - /opt/todo/bin/todo_backup.py
+      - /opt/todo/bin/app_backup.py
       - configure
       - --journal
       - "{{ backup_config_directory }}/promotion.json"

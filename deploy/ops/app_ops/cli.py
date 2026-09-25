@@ -1,4 +1,4 @@
-"""todo-ops: DR operations over plain SSH. Each command replaces the Ansible playbook of the same name."""
+"""app-ops: DR operations over plain SSH. Each command replaces the Ansible playbook of the same name."""
 import argparse
 import json
 import sys
@@ -20,7 +20,7 @@ COMMANDS = {
 
 
 def parser():
-    result = argparse.ArgumentParser(prog='todo-ops', description=__doc__)
+    result = argparse.ArgumentParser(prog='app-ops', description=__doc__)
     result.add_argument('--inventory', type=Path, required=True)
     commands = result.add_subparsers(dest='command', required=True)
     for name in COMMANDS:
@@ -66,5 +66,5 @@ def main(argv=None):
         print(json.dumps(result if isinstance(result, dict) else {'changed': result}))
         return 0
     except (OSError, RuntimeError, ValueError) as error:
-        print(f'todo-ops: {error}', file=sys.stderr)
+        print(f'app-ops: {error}', file=sys.stderr)
         return 1

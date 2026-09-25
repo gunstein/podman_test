@@ -29,8 +29,8 @@ def configure_backup(project_root, controller, current):
     app_installer(current, pythonpath, 'require-promoted-group', '--journal', journal)
     changed = trust.install_trusted(
         project_root, controller, current,
-        [(f'{project_root}/deploy/scripts/todo_backup.py', '/opt/todo/bin/todo_backup.py', '0644')], '/opt/todo/bin')
-    result = current.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', '/opt/todo/bin/todo_backup.py',
+        [(f'{project_root}/deploy/scripts/app_backup.py', '/opt/todo/bin/app_backup.py', '0644')], '/opt/todo/bin')
+    result = current.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', '/opt/todo/bin/app_backup.py',
                           'configure', '--journal', journal])
     return steps.changed(result) or changed
 

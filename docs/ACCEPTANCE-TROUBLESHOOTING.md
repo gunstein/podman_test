@@ -53,7 +53,7 @@ reason to delete database volumes or to start the old writable database.
 ## Console fallback when Guest Agent preparation cannot be completed
 
 Keep every old-primary network link disconnected. A separately reviewed console
-session may run the same root-owned `todo-quarantine.sh stop EXPECTED_HOST USER`
+session may run the same root-owned `app-quarantine.sh stop EXPECTED_HOST USER`
 as root. Require its successful STOPPED result and inspect applied IPv4/IPv6
 quarantine rules before reconnecting restricted SSH. Do not improvise an SSH
 exception to obtain the stop evidence. If these requirements cannot be met,
@@ -72,7 +72,7 @@ Inspect `<app>-postgres-restore` and `<app>-postgres-restore-data` (for example
 `todo-postgres-restore`), the selected
 backup and the failed restore logs. Preserve the live and backup volumes.
 After explicit approval to discard only the disposable resources, repeat the
-reviewed `todo_backup.py --app APP restore --backup NAME --target POINT` command with
+reviewed `app_backup.py --app APP restore --backup NAME --target POINT` command with
 `--replace`. This option is not permission to modify live data. Recheck network
 `none`, paused read-only recovery, before/after comparison and live data before
 approving cleanup. Record the original failure and repair in the private run log.

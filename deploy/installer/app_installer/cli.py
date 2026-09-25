@@ -55,6 +55,8 @@ def main(argv=None):
     replicate.add_argument('--rebuilt', action='store_true')
     replicate.add_argument('--confirm-fenced', default='')
     replicate.add_argument('--confirm-reseed', default='')
+    cluster = subcommands.add_parser('cluster-status')
+    cluster.add_argument('role', choices=('primary', 'standby'))
     reseed = subcommands.add_parser('reseed-group')
     paths(reseed)
     reseed.add_argument('--primary-address', required=True)
@@ -138,6 +140,9 @@ def main(argv=None):
             else:
                 result['status'] = replication.status(app)
             print(json.dumps(result))
+        elif args.command == 'cluster-status':
+            from . import replication
+            print(json.dumps({'changed': False, 'status': replication.cluster_status(args.role)}))
         elif args.command == 'reseed-group':
             from . import replication
             directory = args.quadlet_dir.resolve()

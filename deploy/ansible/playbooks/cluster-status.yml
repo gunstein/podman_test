@@ -6,15 +6,10 @@
   any_errors_fatal: true
 
   tasks:
-    - name: Read the registered database group
-      ansible.builtin.include_tasks: ../tasks/cluster-status-registry.yml
-
-    - name: Check rebuilt-standby streaming and WAL archiving for each database
-      ansible.builtin.include_tasks: ../tasks/cluster-status-primary.yml
-      loop: "{{ todo_status_databases }}"
-      loop_control:
-        loop_var: todo_status_db
-        label: "{{ todo_status_db.name }}"
+    - name: Check rebuilt-standby streaming and WAL archiving for every database
+      ansible.builtin.include_tasks: ../tasks/cluster-status-check.yml
+      vars:
+        todo_status_role: primary
 
 - name: Read recovery state from rebuilt standby
   hosts: todo_current_standby
@@ -22,12 +17,7 @@
   any_errors_fatal: true
 
   tasks:
-    - name: Read the registered database group
-      ansible.builtin.include_tasks: ../tasks/cluster-status-registry.yml
-
-    - name: Check read-only recovery for each database
-      ansible.builtin.include_tasks: ../tasks/cluster-status-standby.yml
-      loop: "{{ todo_status_databases }}"
-      loop_control:
-        loop_var: todo_status_db
-        label: "{{ todo_status_db.name }}"
+    - name: Check read-only recovery for every database
+      ansible.builtin.include_tasks: ../tasks/cluster-status-check.yml
+      vars:
+        todo_status_role: standby

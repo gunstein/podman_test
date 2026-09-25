@@ -504,3 +504,56 @@ class ReseedGroupTests(unittest.TestCase):
     def test_the_cli_offers_no_single_database_reseed(self):
         with patch('sys.stderr'), self.assertRaises(SystemExit):
             cli.main(['replicate-workload', 'reseed', '--app', 'todo'])
+
+
+class ClusterStatusTests(unittest.TestCase):
+    HEALTHY_PRIMARY = {
+        'pg_stat_replication': '{slot}|192.0.2.10|streaming|async|0',
+        'pg_replication_slots': '{slot}|t|reserved|1024|',
+        'pg_stat_archiver': 'f|off|on|000000010000000000000003|0|healthy',
+    }
+
+    def answer(self, overrides):
+        def sql(app, statement, **kwargs):
+            for table, value in {**self.HEALTHY_PRIMARY, **overrides.get(app.name, {})}.items():
+                if table in statement:
+                    return value.format(slot=app.replication_slot(rebuilt=True))
+            if 'pg_is_in_recovery' in statement:
+                return overrides.get(app.name, {}).get('status', 'f|off||0/1|0')
+            raise AssertionError(statement)
+        return sql
+
+    def status(self, role, **overrides):
+        with patch.object(replication, 'sql', self.answer(overrides)):
+            return replication.cluster_status(role)
+
+    def test_healthy_primary_reports_rebuilt_slot_and_archive_for_every_database(self):
+        report = self.status('primary')
+        self.assertEqual(list(report), [d.name for d in apps.REPLICATED_DATABASES])
+        for database in apps.REPLICATED_DATABASES:
+            self.assertEqual(report[database.name]['replication']['connection'][0],
+                             database.replication_slot(rebuilt=True))
+            self.assertEqual(report[database.name]['archive']['archive_health'], 'healthy')
+
+    def test_every_unhealthy_database_is_reported_together(self):
+        todo, keycloak = apps.REPLICATED_DATABASES[0], apps.REPLICATED_DATABASES[-1]
+        with self.assertRaises(RuntimeError) as refused:
+            self.status('primary', **{
+                todo.name: {'pg_stat_archiver': 'f|off|on|000000010000000000000003|2|failed'},
+                keycloak.name: {'pg_stat_replication': '{slot}|192.0.2.10|streaming|sync|0'}})
+        self.assertIn(f'{todo.name}: current primary is not writable, or WAL archiving', str(refused.exception))
+        self.assertIn(f'{keycloak.name}: standby connection is not streaming asynchronously', str(refused.exception))
+
+    def test_archive_requires_a_writable_primary_with_archived_wal(self):
+        for archiver in ('t|on|on|000000010000000000000003|0|healthy', 'f|off|off||0|healthy',
+                         'f|off|on||0|healthy'):
+            with self.subTest(archiver=archiver), self.assertRaisesRegex(RuntimeError, 'WAL archiving'):
+                self.status('primary', **{apps.REPLICATED_DATABASES[0].name: {'pg_stat_archiver': archiver}})
+
+    def test_standby_must_be_read_only_and_receiving_for_every_database(self):
+        healthy = {d.name: {'status': 't|on|0/5000000|0/5000000|0'} for d in apps.REPLICATED_DATABASES}
+        self.assertEqual(set(self.status('standby', **healthy)), {d.name for d in apps.REPLICATED_DATABASES})
+        notes = apps.REPLICATED_DATABASES[1].name
+        for state in ('f|off|0/5000000|0/5000000|0', 't|on||0/5000000|0'):
+            with self.subTest(state=state), self.assertRaisesRegex(RuntimeError, f'{notes}: rebuilt standby'):
+                self.status('standby', **{**healthy, notes: {'status': state}})

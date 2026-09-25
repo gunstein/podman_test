@@ -92,8 +92,10 @@ any partial failure, inspect both roles, slot, volume, logs and quarantine, and
 review recovery explicitly. Never repeat destructive rebuild to finish a failed
 DR-tool installation; use [troubleshooting](../../docs/ACCEPTANCE-TROUBLESHOOTING.md).
 
-`cluster-status.yml` checks writable primary, active usable streaming slot,
-read-only recovery standby and archive health after its latest failure. Read the
+`cluster-status.yml` runs `app_installer cluster-status` on each host. For every
+database it checks a writable primary, an active usable asynchronous streaming
+slot, a read-only recovering standby and archive health after the latest
+failure, then reports every failing database together. Read the
 reported lag and LSNs too; its exit code does not prove zero lag. Full acceptance
 also requires a fresh authenticated Todo on rebuilt standby and sequential
 standby-then-primary reboots with application, CA, data and backup persistence.

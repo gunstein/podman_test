@@ -254,14 +254,49 @@ def streaming_status(app, *, rebuilt=False):
     fields = sql(app, "SELECT application_name, client_addr, state, sync_state, "
                  "pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)::bigint "
                  f"FROM pg_stat_replication WHERE application_name = '{slot}';").split('|')
-    if len(fields) != 5 or fields[2] != 'streaming':
-        raise RuntimeError(f'{app.name}: standby connection is not streaming')
+    if len(fields) != 5 or fields[2] != 'streaming' or fields[3] != 'async':
+        raise RuntimeError(f'{app.name}: standby connection is not streaming asynchronously')
     health = sql(app, "SELECT slot_name, active, wal_status, safe_wal_size, "
                  "COALESCE(invalidation_reason, '') FROM pg_replication_slots "
                  f"WHERE slot_name = '{slot}';").split('|')
     if len(health) != 5 or health[1] != 't' or health[2] not in ('reserved', 'extended') or health[4]:
         raise RuntimeError(f'{app.name}: physical slot is inactive, losing WAL or invalidated')
     return {'connection': fields, 'slot': health}
+
+
+def archive_health(app):
+    """Writable primary whose WAL archiving has recovered from its most recent failure."""
+    fields = sql(app, "SELECT pg_is_in_recovery(), current_setting('transaction_read_only'), "
+                 "current_setting('archive_mode'), COALESCE(last_archived_wal, ''), failed_count, "
+                 "CASE WHEN last_failed_time IS NULL OR (last_archived_time IS NOT NULL AND "
+                 "last_archived_time >= last_failed_time) THEN 'healthy' ELSE 'failed' END "
+                 "FROM pg_stat_archiver;").split('|')
+    if len(fields) != 6 or fields[:3] != ['f', 'off', 'on'] or not fields[3] or fields[5] != 'healthy':
+        raise RuntimeError(f'{app.name}: current primary is not writable, or WAL archiving has not '
+                           'recovered from its most recent failure')
+    return dict(zip(('in_recovery', 'read_only', 'archive_mode', 'last_archived_wal',
+                     'historical_failures', 'archive_health'), fields))
+
+
+def cluster_status(role):
+    """Read-only group report after rebuild; every database is checked before any failure is raised."""
+    report, problems = {}, []
+    for app in apps.REPLICATED_DATABASES:
+        try:
+            if role == 'primary':
+                report[app.name] = {'replication': streaming_status(app, rebuilt=True),
+                                    'archive': archive_health(app)}
+            else:
+                state = status(app)
+                if not (state['in_recovery'] and state['transaction_read_only']
+                        and state['receive_lsn'] and state['replay_lsn']):
+                    raise RuntimeError(f'{app.name}: rebuilt standby is not a read-only recovering database')
+                report[app.name] = state
+        except RuntimeError as error:
+            problems.append(str(error))
+    if problems:
+        raise RuntimeError('; '.join(problems))
+    return report
 
 
 def require_promoted_group(journal_path):

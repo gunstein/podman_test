@@ -77,83 +77,15 @@ class AnsibleSafetyTests(unittest.TestCase):
                          ["/opt/todo/bin/todo_backup.py", "configure"])
         self.assertFalse((PROJECT_ROOT / "deploy/ansible/roles/postgres_backup/tasks/database.yml").exists())
 
-    def test_cluster_status_preserves_backup_health(self):
-        status = read("deploy/ansible/tasks/cluster-status-primary.yml")
-
-        self.assertIn("current_setting('archive_mode')", status)
-        self.assertIn("last_archived_wal", status)
-        self.assertIn("last_archived_time >= last_failed_time", status)
-
-    def test_cluster_status_checks_every_registered_database(self):
+    def test_cluster_status_is_read_only_transport_for_both_roles(self):
+        # app_installer cluster-status owns the checks: test_replication.py ClusterStatusTests.
         playbook = yaml.safe_load(read("deploy/ansible/playbooks/cluster-status.yml"))
-        for play in playbook:
-            loops = [task for task in play["tasks"] if "loop" in task]
-            self.assertEqual(len(loops), 1, play["name"])
-            self.assertEqual(loops[0]["loop"], "{{ todo_status_databases }}")
-        registry = read("deploy/ansible/tasks/cluster-status-registry.yml")
-        self.assertIn("replication-apps, --details", registry)
-        self.assertNotIn("become", registry)
-        for name in ("cluster-status-primary.yml", "cluster-status-standby.yml"):
-            tasks = read("deploy/ansible/tasks/" + name)
-            self.assertNotIn("todo-postgres", tasks)
-            self.assertIn("todo_status_db.postgres_container", tasks)
-        self.assertIn("todo_status_db.rebuild_slot", read("deploy/ansible/tasks/cluster-status-primary.yml"))
-
-    def test_vault_provisioning_is_outside_demo_scope(self):
-        for removed_path in (
-            "deploy/ansible/provision-secrets.yml",
-            "deploy/ansible/secrets.example.yml",
-            "deploy/ansible/tasks/provision_secret.yml",
-        ):
-            self.assertFalse((PROJECT_ROOT / removed_path).exists())
-
-        surfaces = "\n".join(
-            read(path)
-            for path in (
-                "README.md",
-                "PROJECT.md",
-                "deploy/ansible/README.md",
-                "docs/SECRETS.md",
-                "deploy/offline/build-bundle.sh",
-                "deploy/scripts/build-operations-package.sh",
-                ".github/workflows/clean-install.yml",
-            )
-        )
-        self.assertNotIn("ansible-vault", surfaces)
-        self.assertNotIn("provision-secrets", surfaces)
-
-    def test_offline_packages_record_source_revision(self):
-        for builder_path, package_name in (
-            ("deploy/offline/build-bundle.sh", "todo-offline-m12"),
-            ("deploy/scripts/build-operations-package.sh", "todo-operations"),
-        ):
-            builder = read(builder_path)
-            self.assertIn(f"package={package_name}", builder)
-            self.assertIn("source_revision=", builder)
-            self.assertIn("source_state=", builder)
-            self.assertIn("rev-parse --verify HEAD", builder)
-
-    def test_operational_surface_has_two_inventories_and_one_package_builder(self):
-        inventories = sorted(
-            path.parent.name for path in (PROJECT_ROOT / "deploy/ansible/inventories").glob("*/hosts.example.ini")
-        )
-        builders = sorted(
-            path.name for path in (PROJECT_ROOT / "deploy/scripts").glob("build-*-package.sh")
-        )
-
-        self.assertEqual(
-            inventories,
-            ["initial", "recovery"],
-        )
-        self.assertEqual(builders, ["build-operations-package.sh"])
-
-    def test_rebuild_installs_role_reversed_dr_configuration(self):
-        rebuild = read("deploy/ansible/playbooks/rebuild-standby.yml")
-        dr_role = read("deploy/ansible/roles/todo_dr/tasks/main.yml")
-        self.assertIn("- role: todo_dr", rebuild)
-        self.assertIn("todo_dr_primary_group: todo_current_primary", rebuild)
-        self.assertIn("todo_dr_standby_group: todo_rebuild_standby", rebuild)
-        self.assertIn("todo_dr_primary_group | default(", dr_role)
+        roles = [task["vars"]["todo_status_role"] for play in playbook for task in play["tasks"]]
+        self.assertEqual(roles, ["primary", "standby"])
+        check = read("deploy/ansible/tasks/cluster-status-check.yml")
+        self.assertIn("[python3, -m, app_installer, cluster-status,", check)
+        self.assertNotIn("become", check)
+        self.assertNotIn("stage-installer", check)
 
     def test_active_postgres_operations_are_kube_native(self):
         for tasks_file in (

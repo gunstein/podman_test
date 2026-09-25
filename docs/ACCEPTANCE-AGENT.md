@@ -20,6 +20,12 @@ registry wins and the agent records the drift.
 
 ## Part A — Operator preparation (once, before the first agent run)
 
+You do not have to work through Part A before starting the agent. You can paste
+the kickoff message (Part B) straight away. The agent first runs the readiness
+check (C1a), does everything it can itself, and then gives you **one** request
+with ready-made commands and scripts for whatever is still missing. Part A is
+the reference for what those commands do and why.
+
 ### A1. Proxmox API token scoped to the two lab VMs
 
 In the **Proxmox node Shell**, check the version first:
@@ -168,7 +174,7 @@ Topology:
   client/build host source IPv4 as seen by the VMs: 192.168.0.100
   service user on both VMs: gunstein
   Proxmox env file: ~/.config/todo-acceptance/pve.env
-  CLIENT_SUDO: <yes | no>
+  CLIENT_SUDO: <yes only if 'sudo -n true' works on the client | no>
 
 Pre-approvals (durable for this run only; every STOP rule still applies):
   [x] Reset both VMs to the clean snapshots above (destroys their current state)
@@ -190,9 +196,77 @@ Not approved: anything else destructive, any source change, commit or push.
 You execute the eleven phases of `docs/ACCEPTANCE.md` on two Proxmox lab VMs,
 in order, on one clean Git revision, and you collect evidence for every phase.
 You work alone: you use SSH to the VMs, the Proxmox API through
-`deploy/scripts/pve_lab.py`, and passwordless sudo inside the VMs. You ask the
-operator only in the cases listed in C4. You never change source code. At the
-end you write a verdict. Being careful is more important than being fast.
+`deploy/scripts/pve_lab.py`, and passwordless sudo inside the VMs. You do
+as much as possible yourself. You ask the operator only in the cases listed in
+C4, as seldom as possible, and always in the form C4a describes. You never
+change source code. At the end you write a verdict. Being careful is more
+important than being fast.
+
+### C1a. Start: readiness first, then at most one operator request
+
+Before phase 1, and before anything that changes a VM:
+
+1. Create the run folder (C5). If `git status --porcelain` is empty but `HEAD`
+   is not the kickoff revision, run `git fetch origin` and
+   `git checkout --detach <revision>`; that is not a source change. A dirty
+   tree is a STOP.
+2. Run the read-only readiness check with the kickoff values and save it to
+   `logs/00-readiness.log`:
+
+   ```bash
+   python3 deploy/scripts/acceptance_preflight.py --snapshot clean-agent \
+     --revision "$(git rev-parse HEAD)" --primary 192.168.0.102 --standby 192.168.0.108 \
+     --primary-vmid 107 --standby-vmid 108 --user gunstein --client-ip 192.168.0.100
+   ```
+
+   Also run `sudo -n true` on the client. If `CLIENT_SUDO: yes` but that fails,
+   continue as `CLIENT_SUDO: no` and record it. You cannot type a password.
+3. Fix yourself whatever you can with your own access: a missing client SSH key
+   (`ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519`), the virtual
+   environments and Python packages, and client packages when client sudo works
+   without a password.
+4. For each remaining FAIL, add the operator step from the table below to
+   **one** request (C4a). Order the steps so that each one works: Proxmox node
+   Shell first, then the token file, then the snapshots. Fill in every real
+   value: VM IDs, addresses, node name, Proxmox version and existing snapshot
+   names. Read snapshot names with
+   `pve_lab.py get /nodes/{node}/qemu/<VMID>/snapshot` once the token works.
+   If the token does not work yet, give the operator the command that shows
+   them: `qm listsnapshot <VMID>` in the node Shell.
+5. After "done", run the readiness check again. If a FAIL remains, send one
+   follow-up request that covers only what is still missing, with the error.
+   Start phase 1 only when nothing FAILs.
+
+| Readiness FAIL | Operator step you prepare |
+|---|---|
+| Token file, Proxmox CA, API access, token privileges, Guest Agent exec privilege, `SDN.Use` | Node Shell block from A1 with the real VM IDs. Include only the role line for the operator's Proxmox version. If you cannot read the version yet, include `pveversion` and both lines, and say which to use. Then a ThinkPad script that writes `pve.env` and the CA file (template below). |
+| Node firewall disabled | Node Shell: `pvesh set /nodes/<node>/firewall/options -enable 1` and `systemctl enable --now pve-firewall`. |
+| Datacenter firewall disabled | Node Shell: `pvesh get /cluster/firewall/options`, then `pvesh set /cluster/firewall/options -enable 1`. Say that Proxmox then blocks incoming traffic to the Proxmox host except the web GUI (8006) and SSH (22) from its local network. The operator decides; do not enable it yourself (C2 rule 6). |
+| QEMU Guest Agent not enabled on a VM | Node Shell: `qm set <VMID> --agent enabled=1`, **before** the snapshot step, so that the new snapshot contains it. |
+| Snapshot `clean-agent` missing, passwordless sudo missing, Jinja2/PyYAML missing, or client SSH key not accepted | ThinkPad, in the checkout: `bash deploy/scripts/prepare-agent-snapshots.sh 107:192.168.0.102:<existing clean snapshot> 108:192.168.0.108:<existing clean snapshot>`. Say that it destroys the current state of both VMs, and that it asks for each VM's login password and sudo password. |
+| `clean-agent` exists but a guest check still fails | STOP and ask. The snapshot is not the documented baseline, and deleting a snapshot is the operator's decision. |
+| Client tool missing and no client sudo | ThinkPad: one `sudo apt-get install -y ...` line with exactly the missing packages (`podman`, `libnss3-tools`, `python3-venv`). |
+| Hostname or VM identity mismatch | STOP: wrong VM or wrong kickoff values. |
+
+Record WARN lines, but do not ask about them unless C4 lists them.
+
+Token file script. Write it to the run folder's `operator/` directory and show
+its full content in the request. The secret is typed only into `read -s`:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+dir="$HOME/.config/todo-acceptance"
+install -d -m 700 "$dir"
+read -rp "Proxmox address (as in its certificate): " host
+read -rp "Proxmox node name (as in the GUI): " node
+read -rsp "Token secret printed by pveum: " secret; echo
+echo "Paste the CA printed by 'cat /etc/pve/pve-root-ca.pem', then press Ctrl-D:"
+cat > "$dir/pve-root-ca.pem"
+( umask 077; printf 'PVE_HOST=%s\nPVE_NODE=%s\nPVE_TOKEN_ID=acceptance@pve!agent\nPVE_TOKEN_SECRET=%s\nPVE_CA=%s\n' \
+    "$host" "$node" "$secret" "$dir/pve-root-ca.pem" > "$dir/pve.env" )
+echo "Wrote $dir/pve.env"
+```
 
 ### C2. Absolute rules (never break these)
 
@@ -232,6 +306,8 @@ end you write a verdict. Being careful is more important than being fast.
 
 ### C4. When to ask the operator (the only cases)
 
+- Before phase 1: whatever the readiness check (C1a) finds missing that you
+  cannot fix yourself, in one request.
 - A STOP condition (C3).
 - `pve_lab.py` returns HTTP 401/403, or either the datacenter firewall
   (`get /cluster/firewall/options`) or the node's own firewall
@@ -239,11 +315,47 @@ end you write a verdict. Being careful is more important than being fast.
   firewall rules would have no effect either way. Ask; do not enable either
   yourself (A1 should have enabled the node firewall ahead of time).
 - `CLIENT_SUDO: no` and client `/etc/hosts` or CA trust must change (phase 3
-  and phase 7). Give the operator exactly the two commands in C9.4 and wait for
-  "done". Then verify the result yourself.
+  and phase 7). Give the operator the prepared script from C9.4 and wait for
+  "done". Then verify the result yourself. Say in the C1a request that these
+  two moments will come.
 - Anything the kickoff message did not pre-approve.
 
 Otherwise do not ask. Report progress briefly at the end of each phase.
+
+### C4a. How to ask the operator
+
+The operator should be able to act without reading any other document. Every
+request uses this form:
+
+```text
+OPERATOR ACTION <n> (about <m> minutes)
+Why: <one sentence>
+Where: <exact place: ThinkPad terminal in the checkout | Proxmox node Shell
+       (web GUI: Datacenter > <node> > Shell) | a named web GUI page>
+Destructive: <what is destroyed, or "nothing">
+Steps:
+  1. <complete command or script path, with every real value filled in>
+  2. ...
+You should see: <expected output per step>
+Reply: "done", or paste the lines that start with <...>. Never paste passwords
+or tokens.
+Next I will: <what you do afterwards>
+```
+
+- Put everything the operator must do at that moment into one request, in the
+  order to run it. Never send one question at a time.
+- Commands must be complete and ready to paste: no `<placeholders>`, no
+  "adjust as needed", no shell prompts such as `$` or `#`.
+- If a ThinkPad step is longer than about five lines, write it as a script in
+  `~/todo-acceptance-runs/<RUN_ID>/operator/NN-<name>.sh` (outside the
+  checkout), show its full content in the request, and ask the operator to run
+  `bash <path>`. The Proxmox node Shell cannot read ThinkPad files, so give
+  node Shell steps as one paste block.
+- Secrets are typed only into `read -s` prompts or an editor, never into chat
+  or command arguments.
+- Never ask for something you can do with your own access, and never ask the
+  operator to copy output that you can read yourself. Afterwards, check the
+  result yourself.
 
 ### C5. Tools you use
 
@@ -506,9 +618,11 @@ their `.sha256` files with `scp` to both VMs, then verify there. Record both
 
 #### C9.4 Client name resolution and CA trust (phase 3 and phase 7)
 
-With `CLIENT_SUDO: yes`, run these yourself. With `CLIENT_SUDO: no`, show the
-operator exactly these commands, with the first line set to the current serving
-host (`.102` in phase 3, `.108` in phase 7), and wait:
+With `CLIENT_SUDO: yes` (and `sudo -n true` working on the client), run these
+yourself. With `CLIENT_SUDO: no`, write them as
+`operator/<phase>-client-<ip>.sh`, with the first line set to the current
+serving host (`.102` in phase 3, `.108` in phase 7). Ask as C4a describes, and
+wait:
 
 ```bash
 IP=192.168.0.102

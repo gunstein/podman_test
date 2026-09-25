@@ -102,7 +102,7 @@ class ReplicationBridgeTests(unittest.TestCase):
     def test_replication_bridge_reports_idempotent_primary_and_status(self):
         from todo_installer import apps
         tasks = []
-        for app in apps.REPLICATED_APPS:
+        for app in apps.APPS:
             for expected in ('true', 'false'):
                 tasks += [self.bridge('primary', app.name), {
                     'name': 'Check replication change result', 'ansible.builtin.assert': {
@@ -119,7 +119,7 @@ class ReplicationBridgeTests(unittest.TestCase):
         import json
 
         from todo_installer import apps
-        for app in apps.REPLICATED_APPS:
+        for app in apps.APPS:
             with self.subTest(app=app.name), tempfile.TemporaryDirectory() as directory:
                 base = Path(directory)
                 repeated = {'name': 'Expect existing-data refusal', 'block': [self.bridge('standby', app.name),

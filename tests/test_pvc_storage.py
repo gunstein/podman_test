@@ -122,10 +122,10 @@ class PVCStorageTests(unittest.TestCase):
                       in t.get("ansible.builtin.command", {}).get("argv", []))
         self.assertLess(existence, steps.index(gate))
         self.assertLess(steps.index(gate), helper)
-        for app in apps.REPLICATED_APPS:
+        for app in apps.APPS:
             good = {"Type": "volume", "Name": app.volume('backup'),
                     "Destination": "/var/lib/postgresql/backup", "RW": True}
-            other = next(candidate for candidate in apps.REPLICATED_APPS if candidate != app)
+            other = next(candidate for candidate in apps.APPS if candidate != app)
             for mounts, accepted in [([good], True), ([], False), ([good, good], False),
                                      ([{**good, "Name": other.volume('backup')}], False),
                                      ([{**good, "Destination": "/wrong"}], False),

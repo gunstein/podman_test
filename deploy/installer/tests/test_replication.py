@@ -11,7 +11,7 @@ from todo_installer import apps, replication
 
 class ReplicationTests(unittest.TestCase):
     def test_registry_replicates_each_independent_database(self):
-        self.assertEqual([app.name for app in apps.REPLICATED_APPS], ['todo', 'notes'])
+        self.assertEqual([app.name for app in apps.APPS], ['todo', 'notes'])
         app = apps.IDENTITY_DATABASE_APP
         self.assertEqual(app.replication_slot(), 'todo_standby')
         self.assertEqual(app.replication_slot(rebuilt=True), 'todo_rebuilt_standby')
@@ -123,7 +123,7 @@ class ReplicationTests(unittest.TestCase):
             run.assert_not_called()
 
     def test_streaming_requires_each_apps_own_usable_slot(self):
-        for app in apps.REPLICATED_APPS:
+        for app in apps.APPS:
             slot = app.replication_slot()
             with patch.object(replication, 'require_primary'), patch.object(replication, 'sql') as sql:
                 sql.side_effect = [f'{slot}|192.0.2.51|streaming|async|0', f'{slot}|t|reserved|1000|']
@@ -135,7 +135,7 @@ class ReplicationTests(unittest.TestCase):
                         replication.streaming_status(app)
 
     def test_incomplete_promotion_record_cannot_expose_any_application(self):
-        names = [app.name for app in apps.REPLICATED_APPS]
+        names = [app.name for app in apps.APPS]
         with tempfile.TemporaryDirectory() as temp:
             journal = Path(temp) / 'promotion.json'
             for decision in ({'state': 'failed', 'applications': names, 'completed': names},
@@ -182,7 +182,7 @@ class ReplicationTests(unittest.TestCase):
             run.assert_not_called()
 
     def test_reseed_failure_cannot_delete_data_or_backup(self):
-        for app in apps.REPLICATED_APPS:
+        for app in apps.APPS:
             with patch.object(replication, 'reseed_check', side_effect=RuntimeError('authentication failed')), \
                     patch.object(replication, 'run') as run:
                 with self.assertRaisesRegex(RuntimeError, 'authentication failed'):
@@ -190,7 +190,7 @@ class ReplicationTests(unittest.TestCase):
                 run.assert_not_called()
 
     def test_confirmed_reseed_orders_checks_before_cleanup_before_deletion(self):
-        for app in apps.REPLICATED_APPS:
+        for app in apps.APPS:
             order = []
             with patch.object(replication, 'reseed_check',
                               side_effect=lambda *a, **k: order.append('check')) as gate, \
@@ -233,7 +233,7 @@ class ReplicationTests(unittest.TestCase):
         # The rebuild preflight runs reseed_check before the primary has published
         # its LAN endpoint (postgres_redundancy_primary runs later in the same
         # rebuild). It must pass without any network replication probe.
-        for app in apps.REPLICATED_APPS:
+        for app in apps.APPS:
             with tempfile.TemporaryDirectory() as temp:
                 quadlet_dir = Path(temp) / 'q'
                 kube_runtime_dir = quadlet_dir / 'todo-kube-runtime'

@@ -109,7 +109,7 @@ class WorkloadsTests(unittest.TestCase):
         self.assertIn('PublishPort=127.0.0.1:5432:5432\n', rendered)
 
     def test_databases_publish_distinct_ports_from_the_registry(self):
-        for app in apps.REPLICATED_APPS:
+        for app in apps.APPS:
             rendered = quadlet.render(ROOT, app.unit('postgres'), {
                 'postgres_publish_port': app.replication_port,
                 'todo_postgres_publish_address': '192.0.2.50',

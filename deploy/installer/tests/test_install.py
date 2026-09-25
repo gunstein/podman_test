@@ -443,5 +443,5 @@ class RecoveryClientTests(unittest.TestCase):
             'podman', 'secret', 'inspect', '--showsecret', '--format', '{{.SecretData}}',
             apps.KEYCLOAK_ADMIN_SECRET])
         configure.assert_called_once_with('private-admin-fixture', [
-            (app.keycloak_client, app.hostname) for app in apps.REPLICATED_APPS])
+            (app.keycloak_client, app.hostname) for app in apps.APPS])
         self.assertEqual(output.getvalue(), '{"changed": false}\n')

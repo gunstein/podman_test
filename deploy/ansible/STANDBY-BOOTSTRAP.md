@@ -1,32 +1,27 @@
 # PostgreSQL standby bootstrap
 
-Configure the primary host firewall before bootstrap publishes PostgreSQL on
-the LAN interface. Allow only standby and reload firewalld:
+The initial bootstrap creates the replication credential and role, publishes
+primary PostgreSQL on the LAN interface, takes one streamed base backup and
+starts standby in recovery mode. It is deliberately separate from normal
+deployment, and does not install the local DR tool: that keeps controller-side
+`fapolicyd` source checks ahead of the one-shot database work.
 
-```bash
-sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="<standby-address>/32" destination address="<primary-address>" port port="5432-5434" protocol="tcp" accept'
-sudo firewall-cmd --reload
-```
+## Firewall and preflight contract
 
-The range covers the Todo (5432), Notes (5433) and Keycloak (5434) databases.
-Do not add a general PostgreSQL service or open these ports to the entire LAN.
-Rootless Podman port forwarding does not preserve the original client source
-address. The primary role therefore inspects `app-network` and grants the
-dedicated replication role access from that internal Podman subnet. In the
-verified Oracle Linux environment PostgreSQL saw `10.89.0.0/24`, not the
-standby LAN address; firewalld enforces the real machine boundary.
+Bootstrap requires a firewalld rich rule on the primary, allowing only standby
+to reach ports 5432 (Todo), 5433 (Notes) and 5434 (Keycloak); never open these
+ports to the entire LAN. Rootless Podman port forwarding does not preserve the
+original client source address. The primary role therefore inspects
+`app-network` and grants the dedicated replication role access from that
+internal Podman subnet instead. In the verified Oracle Linux environment
+PostgreSQL saw `10.89.0.0/24`, not the standby LAN address; firewalld enforces
+the real machine boundary.
 
-Run the read-only preflight before changing either database host. It checks
-that this rich rule is already in place on the primary, so add it first; the
-check needs to query firewalld and so asks for become privileges:
-
-```bash
-ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/initial/hosts.ini deploy/ansible/playbooks/preflight-standby.yml
-```
-
-By default, the offline bundle must still exist on standby under
-`/home/<ansible_user>/todo-offline-m12`. Set `todo_user_home` in the inventory
-when the remote account uses another home directory.
+The read-only preflight queries firewalld to confirm that rule is already in
+place before bootstrap runs, so it needs become privileges. It also requires
+the offline bundle already staged on standby, by default under
+`/home/<ansible_user>/todo-offline-m12` (set `todo_user_home` in the inventory
+for another remote home directory).
 
 The demo authenticates replication with SCRAM-SHA-256 but does not configure or
 require encrypted PostgreSQL transport. It is intended for this isolated,
@@ -34,40 +29,27 @@ trusted demo LAN. A networked deployment should add PostgreSQL TLS with
 `hostssl` and `sslmode=verify-full`, or use a separately protected replication
 network, before treating WAL traffic as confidential.
 
-The initial bootstrap is deliberately separate from normal deployment. It
-creates the replication credential and role, publishes primary PostgreSQL,
-takes one streamed base backup and starts standby in recovery mode:
+## Bootstrap and replication-status contract
 
-```bash
-ansible-playbook --inventory deploy/ansible/inventories/initial/hosts.ini deploy/ansible/playbooks/bootstrap-standby.yml
-```
+Use [the standby bootstrap phase](../../docs/ACCEPTANCE.md#4-initial-standby-bootstrap)
+for the exact firewall rule, preflight, `bootstrap-standby.yml` and
+`replication-status.yml` sequence.
 
-The bootstrap verifies connectivity before creating the standby volume.
-
-`bootstrap-standby.yml` is a one-time operation and refuses to overwrite an
-existing standby volume. If it fails after creating the volume or physical slot,
-do not rerun it blindly: inspect the partial state first. Dropping the slot or
+`bootstrap-standby.yml` verifies connectivity before creating the standby
+volume, and is a one-time operation that refuses to overwrite an existing
+standby volume. If it fails after creating the volume or physical slot, do not
+rerun it blindly: inspect the partial state first. Dropping the slot or
 deleting the volume is an explicit destructive recovery operation, never an
-automatic playbook cleanup. After bootstrap, inspect replication with:
+automatic playbook cleanup.
 
-```bash
-ansible-playbook --inventory deploy/ansible/inventories/initial/hosts.ini deploy/ansible/playbooks/replication-status.yml
-```
+`replication-status.yml` requires `streaming|async` on primary and recovery
+`t` on standby, plus an active, usable `todo_standby` slot; it also reports WAL
+status, remaining safe WAL bytes and any invalidation reason.
 
-The expected primary state is `streaming|async`; standby must report recovery
-as `t`. Status also requires an active, usable `todo_standby` slot and reports
-its WAL status, remaining safe WAL bytes and any invalidation reason.
-
-A database bootstrap deliberately does not install the local DR tool. This keeps
-controller-side `fapolicyd` source checks ahead of the one-shot database work.
-After replication is healthy, install or update the DR tool on standby without
-touching the database:
-
-```bash
-ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/initial/hosts.ini deploy/ansible/playbooks/install-dr-tool.yml
-```
-
-See [the controlled promotion runbook](PROMOTION.md) before using it.
+After replication is healthy, use
+[the local DR tool phase](../../docs/ACCEPTANCE.md#5-local-dr-tool) and
+[the controlled promotion runbook](PROMOTION.md) to install or update the DR
+tool on standby without touching the database.
 
 The Kube-native standby stores a `0600` replication passfile and recovery
 settings inside each `0700` database volume. The canonical PostgreSQL YAML and
@@ -95,3 +77,8 @@ interactive login.
 
 For inherited Podman lock state after cloning, use the
 [troubleshooting reference](../../docs/ACCEPTANCE-TROUBLESHOOTING.md#rootless-podman-lock-state-after-cloning).
+
+## Acceptance evidence
+
+Use [Acceptance](../../docs/ACCEPTANCE.md) for the full sequence and verdict.
+[688a0f6](../../docs/history/ACCEPTANCE-688a0f6.md) records historical evidence only.

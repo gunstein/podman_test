@@ -18,6 +18,7 @@ class HostSpec:
     home: str
     local: bool = False
     ssh_host: str = ''
+    bundle: str = ''
 
     @property
     def destination(self):
@@ -42,7 +43,8 @@ def load(path, roles):
         hosts[role] = HostSpec(
             name=name, role=role, address=str(ipaddress.IPv4Address(entry.get('address', ''))),
             user=user, home=str(entry.get('home') or raw.get('home') or f'/home/{user}'),
-            local=entry.get('local') is True, ssh_host=str(entry.get('ssh_host', '')))
+            local=entry.get('local') is True, ssh_host=str(entry.get('ssh_host', '')),
+            bundle=str(entry.get('bundle') or raw.get('bundle') or ''))
     if sorted(hosts) != sorted(roles):
         raise ValueError(f'{path}: this command needs exactly the roles {", ".join(sorted(roles))}, '
                          f'found {", ".join(sorted(map(str, hosts)))}')

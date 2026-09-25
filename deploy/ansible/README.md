@@ -1,5 +1,9 @@
 # Ansible DR and multi-host operations
 
+The same DR operations are also available without Ansible, as `todo-ops` over
+plain SSH; see [../ops/README.md](../ops/README.md). These playbooks stay
+supported until a two-VM acceptance run has verified `todo-ops`.
+
 Single-host installation and removal use the [Python installer](../installer/README.md).
 Ansible retains remote transport, fencing, replication, backup, promotion,
 standby rebuild, security integration and operational assertions.

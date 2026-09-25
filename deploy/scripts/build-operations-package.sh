@@ -76,6 +76,9 @@ mkdir -p "$package_directory/deploy/installer/app_installer"
 cp "$project_root/deploy/installer/README.md" "$project_root/deploy/installer/pyproject.toml" "$package_directory/deploy/installer/"
 cp "$project_root/deploy/installer/app_installer/"*.py \
   "$package_directory/deploy/installer/app_installer/"
+mkdir -p "$package_directory/deploy/ops/todo_ops"
+cp "$project_root/deploy/ops/README.md" "$package_directory/deploy/ops/"
+cp "$project_root/deploy/ops/todo_ops/"*.py "$package_directory/deploy/ops/todo_ops/"
 
 source_revision=unknown
 source_state=unknown

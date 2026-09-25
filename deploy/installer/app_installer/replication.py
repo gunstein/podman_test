@@ -2,7 +2,8 @@
 
 Initial bootstrap refuses existing data. The physical slot is created by
 pg_basebackup, as in the original Ansible role, so a partial attempt is never
-silently treated as a successful bootstrap. Only explicitly confirmed reseed deletes the selected old data volume, after group gates.
+silently treated as a successful bootstrap. Only an explicitly confirmed
+reseed deletes an old data volume, and only after every group check passed.
 """
 import ipaddress
 import json
@@ -19,16 +20,27 @@ DATA = '/var/lib/postgresql/data'
 
 
 def identifier(value):
+    """Return value if it is a safe PostgreSQL role or slot name, else raise.
+
+    Role and slot names are put into SQL text, so only lowercase letters,
+    digits and underscores are allowed, as PostgreSQL identifiers.
+    """
     if not re.fullmatch(r'[a-z][a-z0-9_]{0,62}', value):
         raise ValueError('Invalid PostgreSQL replication identifier')
     return value
 
 
 def address(value):
+    """Return value as a normalized IPv4 address; raise ValueError for anything else."""
     return str(ipaddress.IPv4Address(value))
 
 
 def sql(app, statement, *, database='postgres'):
+    """Run one SQL statement with psql inside the app's database container.
+
+    The statement goes on stdin, never in argv. Fields come back separated by
+    "|" with no header, and psql stops at the first error.
+    """
     return run('podman', 'exec', '--interactive', app.resource('postgres'), 'psql',
                '--no-psqlrc', '--set', 'ON_ERROR_STOP=1', '--username', app.name,
                '--dbname', database, '--tuples-only', '--no-align', '--field-separator=|',
@@ -36,6 +48,11 @@ def sql(app, statement, *, database='postgres'):
 
 
 def status(app, query=None):
+    """Report whether the database is a standby, and how far it has replayed WAL.
+
+    Returns in_recovery, transaction_read_only, the received and replayed LSNs
+    and the bytes still to apply. query replaces sql() in tests.
+    """
     query = query or sql
     fields = query(app, "SELECT pg_is_in_recovery(), current_setting('transaction_read_only'), "
                  "COALESCE(pg_last_wal_receive_lsn()::text, ''), "
@@ -49,6 +66,7 @@ def status(app, query=None):
 
 
 def require_primary(app, query=None):
+    """Return status() if the database is a writable primary, else raise."""
     state = status(app, query)
     if state['in_recovery'] or state['transaction_read_only']:
         raise RuntimeError(f'{app.name}: expected a writable primary')
@@ -56,6 +74,11 @@ def require_primary(app, query=None):
 
 
 def require_standby(app, query=None):
+    """Return status() if the database is a read-only standby with all received WAL replayed.
+
+    Promotion calls this first: a standby that has not replayed everything it
+    received would lose those transactions.
+    """
     state = status(app, query)
     if not state['in_recovery'] or not state['transaction_read_only']:
         raise RuntimeError(f'{app.name}: expected a read-only standby')
@@ -76,6 +99,12 @@ fi
 
 
 def refresh_hba(app):
+    """Allow the replicator role to connect for replication from app-network only.
+
+    Writes one pg_hba.conf line for the current app-network subnet, replacing
+    an older line for the same role, then reloads PostgreSQL. Returns True if
+    the line changed.
+    """
     role = identifier(app.database_role('replicator'))
     network = json.loads(run('podman', 'network', 'inspect', apps.NETWORK).stdout)
     subnet = str(ipaddress.ip_network(network[0]['subnets'][0]['subnet']))
@@ -87,6 +116,14 @@ def refresh_hba(app):
 
 
 def replication_probe(app, primary_address, *, local=False):
+    """Log in as the replicator and run IDENTIFY_SYSTEM; return the psql result.
+
+    With local=True the probe connects to this host's own container over
+    app-network. Otherwise it connects to primary_address on the app's
+    published replication port. The password comes from the Podman secret as
+    an environment variable, never from argv. Exit code 2 (connection
+    refused or login failed) is returned to the caller, not raised.
+    """
     host = app.resource('postgres') if local else address(primary_address)
     port = 5432 if local else app.replication_port
     role = identifier(app.database_role('replicator'))
@@ -100,6 +137,11 @@ def replication_probe(app, primary_address, *, local=False):
 
 
 def authenticate(app, primary_address):
+    """Prove the primary accepts this host's replication login; return its system ID.
+
+    Bootstrap and reseed call this before they create or delete anything, so
+    a wrong address or password stops the run while the old data still exists.
+    """
     result = replication_probe(app, primary_address)
     if result.returncode or not result.stdout.strip():
         raise RuntimeError(f'{app.name}: replication authentication failed; data was not removed')
@@ -107,6 +149,14 @@ def authenticate(app, primary_address):
 
 
 def configure_primary(app, node_address):
+    """Make a writable primary ready to serve one standby. Safe to run again.
+
+    Creates the replication secret if it is missing, allows replication
+    logins in pg_hba.conf, and creates or repairs the replicator role (login
+    and replication only, no other rights). It refuses an existing slot of
+    the wrong type, but does not create the slot: pg_basebackup on the
+    standby does. Returns True if anything changed.
+    """
     address(node_address)
     require_primary(app)
     role = identifier(app.database_role('replicator'))
@@ -165,6 +215,12 @@ def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kub
     return {'changed': access_changed or bool(restart), 'restarted': [app.name for app in restart]}
 
 def data_claim(app, rendered_manifest_dir):
+    """Return the rendered PersistentVolumeClaim for the app's data volume, as YAML.
+
+    podman kube play creates the empty volume from this before
+    pg_basebackup fills it, so the volume is exactly the one the workload
+    YAML defines.
+    """
     # YAML parsing is a DR-only dependency; never reconstruct the PVC in Python.
     import yaml
     path = Path(rendered_manifest_dir) / app.manifest('postgres')
@@ -198,6 +254,15 @@ printf "primary_slot_name = '%s'\\n" "$4" >> "$auto"
 
 def bootstrap_standby(app, primary_address, *, project_root, quadlet_dir,
                       kube_runtime_dir, rendered_manifest_dir, image_archive=None, slot=None):
+    """Create a new read-only standby from a base backup of the primary.
+
+    Refuses if the data volume already exists: bootstrap never overwrites
+    data. Loads the PostgreSQL image from image_archive if it is missing,
+    checks the replication login, then runs pg_basebackup, which also creates
+    the replication slot on the primary. It then writes the recovery
+    settings and a passfile from the replication secret, installs the
+    database unit, starts it, and checks that it came up as a standby.
+    """
     primary_address = address(primary_address)
     slot = identifier(slot or app.replication_slot())
     role = identifier(app.database_role('replicator'))
@@ -320,6 +385,7 @@ def require_promoted_group(journal_path):
 
 
 def require_stopped_service(service):
+    """Raise unless the user service is loaded, stopped and has no processes left."""
     output = run('systemctl', '--user', 'show', service, '--property=LoadState',
                  '--property=ActiveState', '--property=MainPID', '--property=ControlPID').stdout
     fields = dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
@@ -329,6 +395,11 @@ def require_stopped_service(service):
 
 
 def require_quarantined_group():
+    """Raise unless every service is stopped and no user container runs.
+
+    This is what the quarantine stop helper leaves behind. The rebuild host
+    must look like this before anything on it is deleted.
+    """
     for service in apps.services():
         require_stopped_service(service)
     if run('podman', 'ps', '--format', '{{.Names}}').stdout.strip():
@@ -337,6 +408,13 @@ def require_quarantined_group():
 
 
 def rebuild_primary_check(app):
+    """Read-only check that the current primary can accept a rebuilt standby.
+
+    The database must be a writable, active primary with its replication
+    secret, backup volume and replication role. The rebuild slot must not
+    exist yet: if it does, an earlier rebuild stopped partway, and that
+    needs a person to look at it before anything is retried.
+    """
     require_primary(app)
     if run('systemctl', '--user', 'is-active', app.service('postgres')).stdout.strip() != 'active':
         raise RuntimeError(f'{app.name}: current database service is not active')
@@ -353,6 +431,12 @@ def rebuild_primary_check(app):
 
 
 def require_reseed_confirmations(confirm_fenced, confirm_reseed):
+    """Raise unless both confirmations name this host exactly.
+
+    confirm_fenced must be "<hostname> is fenced" and confirm_reseed must be
+    "<hostname>". Typing the name of the host being erased is the operator's
+    explicit consent to delete its data.
+    """
     host = socket.gethostname()
     if confirm_fenced != host + ' is fenced' or confirm_reseed != host:
         raise RuntimeError('Exact local hostname and infrastructure-fencing confirmations are required')

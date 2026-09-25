@@ -1,3 +1,11 @@
+"""The Notes REST API: public reading, and writing for logged-in users.
+
+GET /api/notes is public. Creating, changing and deleting need a Keycloak
+access token issued for this app (notes-frontend). The backend checks the
+token itself on every request; nginx only routes. It connects to PostgreSQL
+as the notes_app role, which may only read and write rows. The schema belongs
+to notes_migrator, and migrations run separately (migrate.py).
+"""
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -15,6 +23,12 @@ from pydantic import BaseModel, Field, field_validator
 
 
 def connect():
+    """Open a database connection that returns rows as dicts.
+
+    DATABASE_URL wins if set (local development). Otherwise the password is
+    read from DATABASE_PASSWORD_FILE, a mounted Podman secret, so it never
+    appears in the environment or the Kube YAML.
+    """
     url = os.getenv("DATABASE_URL")
     if url:
         return psycopg.connect(url, row_factory=dict_row)
@@ -45,10 +59,16 @@ bearer = HTTPBearer(auto_error=False)
 
 @lru_cache
 def get_jwks_client(jwks_url: str) -> PyJWKClient:
+    """One cached client per JWKS URL, so Keycloak's signing keys are not fetched on every request."""
     return PyJWKClient(jwks_url)
 
 
 def validate_access_token(token: str) -> dict:
+    """Check the token's signature, issuer, audience and expiry; return its claims.
+
+    The audience check means a token issued for another app is refused here,
+    even though every app shares the same Keycloak realm and login.
+    """
     issuer = os.getenv("OIDC_ISSUER")
     jwks_url = os.getenv("OIDC_JWKS_URL")
     audience = os.getenv("OIDC_AUDIENCE", "notes-frontend")
@@ -68,6 +88,7 @@ def validate_access_token(token: str) -> dict:
 def require_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
 ) -> dict:
+    """FastAPI dependency: the caller's token claims, or 401 if the token is missing or invalid."""
     if credentials is None:
         raise HTTPException(status_code=401, detail="Authentication required")
     try:
@@ -99,11 +120,13 @@ class Note(NoteUpdate):
 
 @app.get("/health")
 def health():
+    """Liveness: the process answers. Does not touch the database."""
     return {"status": "ok"}
 
 
 @app.get("/ready")
 def readiness():
+    """Readiness: 503 until the database accepts a query."""
     try:
         with connect() as connection:
             connection.execute("SELECT 1")

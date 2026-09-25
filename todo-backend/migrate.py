@@ -1,3 +1,14 @@
+"""Apply or roll back the numbered SQL files in migrations/.
+
+Runs as the init container before the backend starts, logged in as the
+migrator role that owns the schema:
+
+  python -m backend.migrate [--connect-timeout SECONDS] status | up | down
+
+Each migration is a pair NNN_name.up.sql and NNN_name.down.sql. Applied
+versions are recorded in the schema_migrations table, so up only runs the
+new ones. down rolls back only the newest one.
+"""
 import argparse
 import math
 import re
@@ -18,6 +29,8 @@ CONNECT_RETRY_INTERVAL_SECONDS = 2.0
 
 @dataclass(frozen=True)
 class Migration:
+    """One numbered migration and its up and down SQL files."""
+
     version: int
     name: str
     up_path: Path
@@ -25,6 +38,7 @@ class Migration:
 
 
 def load_migrations() -> list[Migration]:
+    """All migrations in version order; raise if a version has a conflict or lacks up or down."""
     files = {}
     for path in DIRECTORY.iterdir():
         match = PATTERN.match(path.name)
@@ -45,6 +59,7 @@ def load_migrations() -> list[Migration]:
 
 
 def ensure_table(connection) -> None:
+    """Create the schema_migrations table if it does not exist yet."""
     connection.execute("""
         CREATE TABLE IF NOT EXISTS schema_migrations (
             version INTEGER PRIMARY KEY,
@@ -55,12 +70,14 @@ def ensure_table(connection) -> None:
 
 
 def applied_versions(connection) -> set[int]:
+    """The migration versions already recorded as applied."""
     ensure_table(connection)
     rows = connection.execute("SELECT version FROM schema_migrations").fetchall()
     return {row["version"] for row in rows}
 
 
 def parse_connect_timeout(value: str) -> float:
+    """argparse type for --connect-timeout: a finite, non-negative number of seconds."""
     seconds = float(value)
     if not math.isfinite(seconds) or seconds < 0:
         raise argparse.ArgumentTypeError(
@@ -70,6 +87,12 @@ def parse_connect_timeout(value: str) -> float:
 
 
 def connect_with_retry(timeout_seconds: float):
+    """Connect, retrying while PostgreSQL is still starting, for up to timeout_seconds.
+
+    The init container can start before PostgreSQL accepts connections.
+    Only "not reachable yet" and "starting up" are retried; a wrong password
+    or missing database fails at once.
+    """
     if not math.isfinite(timeout_seconds) or timeout_seconds < 0:
         raise ValueError("connect timeout must be finite and non-negative")
     if timeout_seconds == 0:
@@ -90,6 +113,10 @@ def connect_with_retry(timeout_seconds: float):
 
 
 def migrate_up(connect_timeout: float = 0) -> None:
+    """Apply every pending migration in version order, in one transaction.
+
+    If any migration fails, none of them is applied.
+    """
     with connect_with_retry(connect_timeout) as connection:
         applied = applied_versions(connection)
         for migration in load_migrations():
@@ -104,6 +131,7 @@ def migrate_up(connect_timeout: float = 0) -> None:
 
 
 def migrate_down() -> None:
+    """Roll back the newest applied migration only."""
     migrations = {item.version: item for item in load_migrations()}
     with connect() as connection:
         ensure_table(connection)
@@ -124,6 +152,7 @@ def migrate_down() -> None:
 
 
 def show_status() -> None:
+    """Print each migration as applied or pending."""
     with connect() as connection:
         applied = applied_versions(connection)
         for migration in load_migrations():
@@ -132,6 +161,7 @@ def show_status() -> None:
 
 
 def main() -> None:
+    """Command-line entry point; see the module docstring."""
     parser = argparse.ArgumentParser(description="Run database migrations")
     parser.add_argument(
         "--connect-timeout",

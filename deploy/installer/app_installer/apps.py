@@ -6,6 +6,15 @@ from . import settings, stack
 
 @dataclass(frozen=True)
 class App:
+    """One web application: its public hostname, OAuth client and database.
+
+    Every resource name comes from the application name through
+    stack.Database, so the "todo" app owns todo-postgres, todo-app.service,
+    todo-db-password and so on. The methods below that forward to
+    self.database exist so callers can treat an App and a database-only
+    workload (Keycloak's) the same way.
+    """
+
     name: str
     hostname: str
     keycloak_client: str
@@ -14,9 +23,11 @@ class App:
 
     @property
     def database(self) -> stack.Database:
+        """The PostgreSQL workload this application owns."""
         return stack.Database(self.name, self.replication_port)
 
     def api_path(self) -> str:
+        """The REST collection nginx routes to this app's backend, e.g. /api/todos."""
         return "/api/" + (self.api_collection or self.name)
 
     def resource(self, component: str) -> str:
@@ -86,7 +97,13 @@ REPLICATED_DATABASES = APPS + (KEYCLOAK_DATABASE,)
 
 
 def describe(workload):
-    """Names and source files for transport-only Ansible bridges."""
+    """Every name and file one replicated database needs, as a plain dict.
+
+    The DR tools (the Ansible roles, app_ops and the replication-apps command)
+    read names from here rather than rebuilding them, so a new app only needs
+    an entry in APPS. Keycloak's database has no application of its own, so
+    it gets a shorter entry that also carries the Keycloak admin secret.
+    """
     if isinstance(workload, stack.Database):
         return _describe_database(workload)
     return _describe_application(workload)
@@ -158,6 +175,12 @@ def _describe_application(app):
 
 
 def services(applications=None, *, databases=True):
+    """User systemd services in start order: proxy, apps, Keycloak, then databases.
+
+    applications limits the list to some apps (default: all). With
+    databases=False only the serving tier is returned, which is what a
+    database-only standby must not run.
+    """
     selected = APPS if applications is None else applications
     return ['shared-proxy.service', *[app.service('app') for app in selected], 'keycloak.service'] + (
         [app.service('postgres') for app in selected] + [KEYCLOAK_DATABASE.service('postgres')]

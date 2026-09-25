@@ -1,4 +1,17 @@
-"""Local DR checks and guarded promotion of the complete application group."""
+"""Local DR checks and guarded promotion of the complete application group.
+
+Installed as /opt/todo/bin/app_dr.py on the standby host and run there:
+
+  app_dr.py configure ...   write the DR settings (done by install-dr-tool)
+  app_dr.py status          show each database's role, lag and primary reachability
+  app_dr.py preflight ...   read-only: may the group be promoted now?
+  app_dr.py promote ...     preflight, then promote every database
+
+Promotion is all or nothing in intent, but cannot be undone. Every step is
+written to a promotion record first, and a failed or partial promotion is
+never retried automatically: a person must look at the record and at each
+database first.
+"""
 import argparse
 import fcntl
 import json
@@ -30,6 +43,8 @@ class DrError(RuntimeError):
 
 @dataclass(frozen=True)
 class Config:
+    """The DR settings written by 'configure': who the primary is, and where."""
+
     primary_name: str
     primary_address: str
     standby_name: str
@@ -39,6 +54,8 @@ class Config:
 
 @dataclass(frozen=True)
 class DatabaseStatus:
+    """One database's role and replay position, as replication.status() reports it."""
+
     in_recovery: bool
     transaction_read_only: bool
     receive_lsn: str
@@ -51,10 +68,12 @@ Connector = Callable[[str, int, float], bool]
 
 
 def run_command(arguments: Sequence[str], timeout: float = 120) -> subprocess.CompletedProcess:
+    """Run a command and capture its output; the caller decides what a failure means."""
     return subprocess.run(list(arguments), check=False, capture_output=True, text=True, timeout=timeout)
 
 
 def tcp_reachable(address: str, port: int, timeout: float) -> bool:
+    """Return True if a TCP connection to address:port opens within timeout seconds."""
     try:
         with socket.create_connection((address, port), timeout=timeout):
             return True
@@ -63,6 +82,10 @@ def tcp_reachable(address: str, port: int, timeout: float) -> bool:
 
 
 def parse_config(raw: dict, source: Path) -> Config:
+    """Check a loaded DR configuration and return it as a Config, or raise DrError.
+
+    Also accepts the older key rpo_seconds for rpo_target_seconds.
+    """
     try:
         names = raw.get('applications', [])
         if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
@@ -79,6 +102,7 @@ def parse_config(raw: dict, source: Path) -> Config:
 
 
 def load_config(path: Path) -> Config:
+    """Read and check the DR configuration file."""
     try:
         raw = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError) as error:
@@ -103,6 +127,13 @@ def write_config(path: Path, primary_name: str, primary_address: str, standby_na
 
 
 class TodoDr:
+    """Status, preflight and promotion for every replicated database on this host.
+
+    runner and connector replace subprocess and TCP checks in tests. The
+    configuration must list exactly the registered database group, in order,
+    so a tool configured for an older group refuses to promote a newer one.
+    """
+
     def __init__(self, config: Config, runner: Runner = run_command,
                  connector: Connector = tcp_reachable, journal_path: Path = DEFAULT_JOURNAL):
         self.config, self.runner, self.connector = config, runner, connector
@@ -124,11 +155,13 @@ class TodoDr:
         return result.stdout.strip()
 
     def service_status(self, app=None):
+        """systemctl --user is-active for the database service, e.g. 'active'."""
         app = app or self.applications[0]
         return self._run(['systemctl', '--user', 'is-active', app.service('postgres')],
                          f'{app.name}: PostgreSQL systemd status check')
 
     def container_health(self, app=None):
+        """The database container's health check result, e.g. 'healthy'."""
         app = app or self.applications[0]
         return self._run(['podman', 'inspect', '--format', '{{.State.Health.Status}}',
                           app.resource('postgres')], f'{app.name}: PostgreSQL container health check')
@@ -139,6 +172,7 @@ class TodoDr:
                          '--command', statement], f'{app.name}: PostgreSQL recovery query')
 
     def database_status(self, app=None):
+        """The database's role and replay position; raises DrError if it cannot be read."""
         app = app or self.applications[0]
         try:
             return DatabaseStatus(**replication.status(app, query=self._query))
@@ -146,10 +180,12 @@ class TodoDr:
             raise DrError(str(error)) from error
 
     def primary_reachable(self, app=None):
+        """True if the configured primary still accepts TCP on this database's port."""
         app = app or self.applications[0]
         return self.connector(self.config.primary_address, app.replication_port, 2.0)
 
     def status_lines(self) -> List[str]:
+        """Human-readable status for every database; read-only."""
         lines = []
         for app in self.applications:
             service, health = self.service_status(app), self.container_health(app)
@@ -169,6 +205,14 @@ class TodoDr:
         return lines
 
     def preflight(self, fencing_confirmation):
+        """Read-only check that promotion is safe now; returns each database's state.
+
+        Refuses unless the operator confirms the primary is fenced, this is
+        the configured standby, no earlier promotion record exists, and every
+        database is healthy, read-only, fully replayed and cut off from the
+        primary. A primary that still answers means fencing has not been
+        shown, and promoting would risk two writable primaries.
+        """
         expected = f'{self.config.primary_name} is fenced'
         if fencing_confirmation != expected:
             raise DrError(f'Fencing confirmation must be exactly: {expected!r}')
@@ -201,6 +245,7 @@ class TodoDr:
 
     @contextmanager
     def _promotion_lock(self):
+        """Hold an exclusive lock so two promotions can never run at the same time."""
         self.journal_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         descriptor = os.open(self.journal_path.with_suffix('.lock'), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
@@ -213,6 +258,7 @@ class TodoDr:
             os.close(descriptor)
 
     def _record(self, decision):
+        """Write the promotion record atomically and flush it to disk before returning."""
         descriptor, temporary = tempfile.mkstemp(dir=self.journal_path.parent, prefix='.promotion-')
         try:
             with os.fdopen(descriptor, 'w') as stream:
@@ -229,6 +275,14 @@ class TodoDr:
             Path(temporary).unlink(missing_ok=True)
 
     def promote(self, fencing_confirmation, promotion_confirmation):
+        """Promote every database in the group, in order. Cannot be undone.
+
+        promotion_confirmation must be this standby's hostname. The record is
+        written before the first database is promoted and after each one, so
+        a crash shows exactly which databases were promoted. Any failure
+        marks the record failed and stops; it is never rolled back or
+        retried.
+        """
         if promotion_confirmation != self.config.standby_name:
             raise DrError('Promotion confirmation must equal the standby hostname: '
                           f'{self.config.standby_name!r}')
@@ -258,6 +312,7 @@ class TodoDr:
 
 
 def parser():
+    """Command-line arguments; see the module docstring."""
     result = argparse.ArgumentParser(description='Inspect and safely promote the complete local database group.')
     result.add_argument('--config', type=Path, default=DEFAULT_CONFIG)
     commands = result.add_subparsers(dest='command', required=True)
@@ -276,6 +331,7 @@ def parser():
 
 
 def main(arguments: Optional[Sequence[str]] = None):
+    """Run one command; print errors as 'ERROR: ...' and return exit code 1."""
     args = parser().parse_args(arguments)
     try:
         if args.command == 'configure':

@@ -1,4 +1,19 @@
-"""Independent physical PostgreSQL backups and scoped disposable PITR per app."""
+"""Independent physical PostgreSQL backups and scoped disposable PITR per app.
+
+Installed as /opt/todo/bin/app_backup.py on the current primary and run there:
+
+  app_backup.py configure              turn on WAL archiving for every database
+  app_backup.py status | create        archive status, or a verified base backup
+  app_backup.py mark --name N          a named restore point, archived at once
+  app_backup.py --app A restore ...    point-in-time restore into a throwaway
+                                       container with no network
+  app_backup.py --app A restore-status | cleanup-restore --confirm ...
+
+Without --app, status, create and mark act on every database. Backups and
+WAL live in each database's own backup volume on the same host: this
+protects against mistakes and bad data, not against losing the VM.
+A restore never touches the live database.
+"""
 
 import argparse
 import json
@@ -52,6 +67,7 @@ Runner = Callable[[Sequence[str], Optional[float]], subprocess.CompletedProcess]
 def run_command(
     arguments: Sequence[str], timeout: Optional[float] = None
 ) -> subprocess.CompletedProcess:
+    """Run a command and capture its output; the caller decides what a failure means."""
     return subprocess.run(
         list(arguments),
         check=False,
@@ -62,6 +78,11 @@ def run_command(
 
 
 class TodoBackup:
+    """Backup, archiving and disposable restore for one database.
+
+    runner, clock and sleeper replace subprocess, time and sleeping in tests.
+    """
+
     def __init__(
         self,
         runner: Runner = run_command,
@@ -84,6 +105,7 @@ class TodoBackup:
         description: str,
         timeout: Optional[float] = 30,
     ) -> str:
+        """Run a command, return its stdout, and raise BackupError naming description on failure."""
         try:
             result = self.runner(arguments, timeout)
         except subprocess.TimeoutExpired as error:
@@ -97,6 +119,7 @@ class TodoBackup:
         return result.stdout.strip()
 
     def _exists(self, kind: str, name: str) -> bool:
+        """podman <kind> exists <name>; any answer other than yes or no is an error."""
         try:
             result = self.runner(["podman", kind, "exists", name], 30)
         except subprocess.TimeoutExpired as error:
@@ -109,6 +132,7 @@ class TodoBackup:
         return result.returncode == 0
 
     def database_state(self) -> tuple[bool, bool]:
+        """Return (in recovery, read-only) for the live database."""
         output = self._run(
             [
                 "podman", "exec", self.app.resource("postgres"), "psql",
@@ -126,11 +150,13 @@ class TodoBackup:
         return recovery == "t", read_only == "on"
 
     def require_writable_primary(self) -> None:
+        """Raise unless the live database is a writable primary; backups are only taken there."""
         recovery, read_only = self.database_state()
         if recovery or read_only:
             raise BackupError("Live PostgreSQL is not a writable promoted primary")
 
     def archive_status(self) -> str:
+        """Raw archive_mode, last archived and failed WAL, timeout and counters, '|'-separated."""
         return self._run(
             [
                 "podman", "exec", self.app.resource("postgres"), "psql",
@@ -147,6 +173,7 @@ class TodoBackup:
         )
 
     def status_lines(self) -> list[str]:
+        """Human-readable role and WAL archive status; read-only."""
         recovery, read_only = self.database_state()
         archive = self.archive_status().split("|")
         if len(archive) != 6:
@@ -164,6 +191,12 @@ class TodoBackup:
         ]
 
     def create_backup(self) -> str:
+        """Take a physical base backup, verify it, mark it as latest, and return its name.
+
+        pg_basebackup logs in as the replicator over app-network and writes
+        base-<UTC time> into the backup volume. pg_verifybackup then checks
+        every file against the backup manifest before the backup counts.
+        """
         self.require_writable_primary()
         if self.archive_status().split("|", 1)[0] != "on":
             raise BackupError("archive_mode is not on")
@@ -226,6 +259,7 @@ class TodoBackup:
         return name
 
     def _sql(self, sql: str, description: str) -> str:
+        """Run one SQL statement in the live database and return its output."""
         return self._run(
             [
                 "podman", "exec", self.app.resource("postgres"), "psql",
@@ -237,6 +271,7 @@ class TodoBackup:
         )
 
     def _archive_settings(self) -> str:
+        """The current archive_mode, archive_command and archive_timeout, '|'-separated."""
         return self._sql(
             "SELECT current_setting('archive_mode'), current_setting('archive_command'), "
             "current_setting('archive_timeout');",
@@ -304,6 +339,7 @@ class TodoBackup:
         return access, directories == "changed", True
 
     def require_configured_archive(self) -> None:
+        """After a restart: wait until healthy, then raise unless the archive settings held."""
         self._run(["podman", "wait", "--condition=healthy", self.app.resource("postgres")],
                   "PostgreSQL health wait", timeout=None)
         self.require_writable_primary()
@@ -311,6 +347,11 @@ class TodoBackup:
             raise BackupError("PostgreSQL did not keep the configured archive settings after restart")
 
     def create_restore_point(self, name: str) -> str:
+        """Create a named restore point, wait until its WAL is archived, and return its LSN.
+
+        Switching to a new WAL file makes the restore point archivable at
+        once, instead of after archive_timeout.
+        """
         self.require_writable_primary()
         self._validate_restore_point(name)
         output = self._run(
@@ -345,6 +386,7 @@ class TodoBackup:
         return output
 
     def _wait_for_archived_wal(self, wal: str) -> None:
+        """Wait up to 30 seconds for the WAL file to appear in the backup volume."""
         if not WAL_SEGMENT.fullmatch(wal):
             raise BackupError(f"Unexpected WAL segment name: {wal!r}")
         archive_path = f"/var/lib/postgresql/backup/wal/{wal}"
@@ -367,6 +409,14 @@ class TodoBackup:
         raise BackupError(f"WAL segment was not archived within 30 seconds: {wal}")
 
     def restore(self, backup: str, target: str, replace: bool) -> None:
+        """Restore a base backup up to a named restore point, in a throwaway container.
+
+        The copy goes into a new restore volume, and PostgreSQL starts there
+        with no network, archiving off and no link to a primary. It replays
+        archived WAL, then pauses at the target so the data can be read. The
+        live database and backups are only read. Existing restore state is
+        replaced only with replace=True.
+        """
         self._validate_backup_name(backup)
         self._validate_restore_point(target)
         self._run(
@@ -458,6 +508,7 @@ class TodoBackup:
             raise
 
     def _wait_for_restore_pause(self) -> None:
+        """Wait up to 60 seconds for the restore to pause at its target."""
         for _attempt in range(60):
             try:
                 result = self.runner(
@@ -482,6 +533,7 @@ class TodoBackup:
         raise BackupError("PITR did not reach the named restore point within 60 seconds")
 
     def restore_status(self) -> str:
+        """'recovery|paused|read_only' for the restore container; 't|t|on' means paused at the target."""
         if not self._exists("container", self.restore_container):
             raise BackupError("Disposable PITR container does not exist")
         return self._run(
@@ -497,6 +549,7 @@ class TodoBackup:
         )
 
     def cleanup_restore(self, confirmation: str) -> None:
+        """Delete the restore container and volume; confirmation must be the container name."""
         if confirmation != self.restore_container:
             raise BackupError(
                 f"Cleanup confirmation must be exactly {self.restore_container!r}"
@@ -527,7 +580,13 @@ class TodoBackup:
 
 
 def configure(tools: Sequence[TodoBackup], journal: Path) -> dict:
-    """Configure archiving for the complete group with at most one application-tier restart."""
+    """Turn on WAL archiving for the complete group, restarting the app tier at most once.
+
+    Every database is checked before the first change. Databases whose
+    settings changed are restarted together, with the application tier
+    stopped meanwhile. Each changed database then archives a restore point,
+    which proves archiving works end to end.
+    """
     runner = tools[0].runner
     try:
         replication.require_promoted_group(journal)
@@ -565,6 +624,7 @@ def configure(tools: Sequence[TodoBackup], journal: Path) -> dict:
 
 
 def parser() -> argparse.ArgumentParser:
+    """Command-line arguments; see the module docstring."""
     result = argparse.ArgumentParser(
         description="Manage independent application backups and disposable PITR."
     )
@@ -595,6 +655,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(arguments: Optional[Sequence[str]] = None) -> int:
+    """Run one command for the selected databases; print errors as 'ERROR: ...' and return 1."""
     args = parser().parse_args(arguments)
     selected = [app for app in apps.REPLICATED_DATABASES if args.app is None or app.name == args.app]
     try:

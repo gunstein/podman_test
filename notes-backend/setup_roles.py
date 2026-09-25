@@ -1,3 +1,14 @@
+"""Create the Notes database roles and give each only the rights it needs.
+
+The installer runs this once per install, as a one-off container, logged in
+as the bootstrap owner role (notes). It is safe to run again. Afterwards:
+
+- notes_migrator owns the schema and every table, and runs migrations;
+- notes_app can connect and read and write rows in the notes table, nothing more;
+- no other role except the bootstrap owner can connect to the database.
+
+Passwords come from mounted Podman secrets, never from the environment.
+"""
 import os
 from pathlib import Path
 
@@ -6,6 +17,7 @@ from psycopg import sql
 
 
 def read_secret(name: str) -> str:
+    """Read a mounted secret file; raise if it is empty."""
     directory = Path(os.getenv("DATABASE_SECRETS_DIRECTORY", "/run/secrets"))
     value = (directory / name).read_text().strip()
     if not value:
@@ -14,6 +26,7 @@ def read_secret(name: str) -> str:
 
 
 def ensure_login_role(connection, name: str, password: str) -> None:
+    """Create the login role if needed, then set its password and remove every extra right."""
     exists = connection.execute(
         "SELECT 1 FROM pg_roles WHERE rolname = %s", (name,)
     ).fetchone()
@@ -30,6 +43,11 @@ def ensure_login_role(connection, name: str, password: str) -> None:
 
 
 def transfer_schema_objects(connection, schema: str, owner: str) -> None:
+    """Make owner the owner of every table, view and sequence in schema.
+
+    Sequences owned by a table column are skipped: they change owner with
+    their table.
+    """
     kinds = {
         "r": "TABLE",
         "p": "TABLE",
@@ -68,6 +86,7 @@ def transfer_schema_objects(connection, schema: str, owner: str) -> None:
 
 
 def main() -> None:
+    """Create the roles and apply the rights described in the module docstring."""
     database = os.getenv("DATABASE_NAME", "notes")
     with psycopg.connect(
         host=os.getenv("DATABASE_HOST", "notes-postgres"),

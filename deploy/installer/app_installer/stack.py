@@ -13,6 +13,14 @@ from . import settings
 
 @dataclass(frozen=True)
 class Database:
+    """Naming rules for one PostgreSQL workload, derived from its name.
+
+    For name="notes": container notes-postgres, unit notes-postgres.kube,
+    secret notes-db-password, role notes_migrator, slot notes_standby and
+    volume notes-postgres-data. Keeping every rule here means one database
+    cannot end up with a name another part of the system does not expect.
+    """
+
     name: str
     replication_port: int = 5432
 

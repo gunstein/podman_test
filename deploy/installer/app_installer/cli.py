@@ -58,8 +58,14 @@ def main(argv=None):
     promoted = subcommands.add_parser('require-promoted-group')
     promoted.add_argument('--journal', type=Path,
                           default=Path.home() / '.config/todo/promotion.json')
-    recovered_images = subcommands.add_parser('prepare-promoted-images')
-    recovered_images.add_argument('--bundle-dir', type=Path, required=True)
+    promoted_tier = subcommands.add_parser('deploy-promoted')
+    paths(promoted_tier)
+    promoted_tier.add_argument('--bundle-dir', type=Path, required=True)
+    promoted_tier.add_argument('--inventory-hostname', required=True)
+    promoted_tier.add_argument('--node-address', required=True)
+    promoted_tier.add_argument('--service-port', type=int, default=settings.HTTPS_PORT)
+    promoted_tier.add_argument('--journal', type=Path, default=Path.home() / '.config/todo/promotion.json')
+    promoted_tier.add_argument('--config-dir', type=Path, default=Path.home() / '.config/todo')
     subcommands.add_parser('configure-clients')
     node = subcommands.add_parser('node-facts')
     node.add_argument('--inventory-hostname', required=True)
@@ -124,13 +130,13 @@ def main(argv=None):
         elif args.command == 'require-promoted-group':
             from . import replication
             print(json.dumps({'changed': replication.require_promoted_group(args.journal)}))
-        elif args.command == 'prepare-promoted-images':
-            from . import images
-            changed = any(images.prepare_shared(args.bundle_dir, 'offline', args.bundle_dir).values())
-            for app in apps.APPS:
-                changed = any(images.prepare(args.bundle_dir, 'offline', args.bundle_dir,
-                                             app=app, include_shared=False).values()) or changed
-            print(json.dumps({'changed': changed}))
+        elif args.command == 'deploy-promoted':
+            from . import promoted
+            print(json.dumps({'changed': promoted.deploy(
+                project_root=args.project_root, quadlet_dir=args.quadlet_dir.resolve(),
+                bundle_dir=args.bundle_dir, inventory_hostname=args.inventory_hostname,
+                node_address=args.node_address, journal=args.journal, config_dir=args.config_dir,
+                service_port=args.service_port)}))
         elif args.command == 'configure-clients':
             from . import keycloak, secrets
             changed = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET),

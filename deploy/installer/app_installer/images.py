@@ -69,6 +69,15 @@ def prepare_shared(project_root, deployment_mode, bundle_directory="", refresh_i
     return _prepare(project_root, deployment_mode, bundle_directory, refresh_images, shared_images())
 
 
+def prepare_offline_group(bundle_directory):
+    """Load every missing registered image from a verified bundle; nothing is built or pulled."""
+    changed = any(prepare_shared(bundle_directory, 'offline', bundle_directory).values())
+    for app in apps.APPS:
+        changed = any(prepare(bundle_directory, 'offline', bundle_directory,
+                              app=app, include_shared=False).values()) or changed
+    return changed
+
+
 def build_and_export(project_root, destination):
     """Build and export each distinct registry image once for offline delivery."""
     specifications = {image.reference: image for app in apps.APPS for image in image_list(app)}

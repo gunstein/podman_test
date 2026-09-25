@@ -8,12 +8,10 @@
     project_root: "{{ playbook_dir }}/../../.."
     promoted_user_home: '{{ todo_user_home | default("/home/" ~ ansible_user) }}'
     promoted_config_directory: "{{ promoted_user_home }}/.config/todo"
-    promoted_quadlet_directory: "{{ promoted_user_home }}/.config/containers/systemd"
     promoted_bundle_directory: '{{ todo_bundle_directory | default(promoted_user_home ~ "/todo-offline-m12") }}'
-    # Fixed by the rendered production ConfigMap and TLS/OIDC contract.
-    promoted_service_hostname: todo.test
+    # Fixed by the rendered production ConfigMap and TLS/OIDC contract; the
+    # issuer hostname comes from the app registry's shared-resource owner.
     promoted_service_port: 8443
-    promoted_service_origin: "https://{{ promoted_service_hostname }}:{{ promoted_service_port }}"
     promoted_node_address: "{{ todo_node_address }}"
 
   roles:

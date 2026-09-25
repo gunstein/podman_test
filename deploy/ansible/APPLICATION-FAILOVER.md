@@ -35,19 +35,24 @@ for recovery inventory, client-scoped HTTPS firewall, deployment, DNS and trust.
 The playbook publishes HTTPS on the promoted host, with HTTP health access on
 loopback. PostgreSQL and internal backend/Keycloak ports are not opened to clients.
 
-The playbook fails before changing application state unless:
+The playbook runs `app_installer deploy-promoted` on the promoted host itself;
+that command owns every gate and step below. It fails before changing
+application state unless:
 
 - it runs on the declared host and address;
 - the group promotion record is complete and every registered database
   (todo, notes, keycloak) reports `f|off`, meaning promoted and writable;
 - the existing runtime credentials of every application exist;
-- every missing application image has its corresponding staged offline archive.
+- every missing application image has its corresponding staged offline archive;
+- no unsupported per-container Quadlet is installed.
 
 It loads only missing images, installs the grouped `todo-app` and `notes-app`,
 the independent `keycloak` and the `shared-proxy` Kube workloads, starts them
 through `.kube` Quadlets, updates each registered Keycloak client to the stable
 origin, and checks health, readiness, discovery and public reads for every
-application.
+application. When an image or workload definition changed, it stops the whole
+application tier once before starting it again. It exports the public nginx root
+to `~/.config/todo/todo-nginx-root.crt`.
 
 ## Client name and certificate
 

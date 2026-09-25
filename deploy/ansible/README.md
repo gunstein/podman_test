@@ -121,8 +121,9 @@ The promotion operation itself is intentionally local Python, not Ansible. Read
 ## Promoted application and backup
 
 The application failover uses the `promoted_application` role only after
-PostgreSQL has been promoted and verified writable. It installs the grouped
-`todo-app` and independent `keycloak` Kube workloads directly.
+PostgreSQL has been promoted and verified writable. It runs
+`app_installer deploy-promoted` on that host, which installs the grouped
+application pods, Keycloak and the shared proxy directly.
 Database roles are not bootstrapped during the incident; the app's normal
 idempotent schema migration remains the init-container responsibility. Follow
 [APPLICATION-FAILOVER.md](APPLICATION-FAILOVER.md).

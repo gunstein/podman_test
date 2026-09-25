@@ -124,8 +124,8 @@ Host provisioning establishes database roles and grants with separate
 bootstrap, migrator, application, Keycloak and replication identities.
 The app pod's init container applies schema migrations before serving traffic.
 Ordinary app recovery does not repeat administrative role bootstrap.
-Read `backend/`, `deploy/ansible/roles/application_kube_runtime/` and
-`deploy/ansible/roles/promoted_application/`.
+Read `todo-backend/`, `deploy/installer/app_installer/workloads.py` and
+`deploy/installer/app_installer/promoted.py`.
 
 ## 6. Browser, nginx, TLS and identity
 

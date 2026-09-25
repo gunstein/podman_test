@@ -1,144 +1,38 @@
 ---
-- name: Read the promoted host identity
-  ansible.builtin.command:
-    argv: [hostname]
-  register: promoted_hostname
-  changed_when: false
-
-- name: Read the promoted host IPv4 addresses
-  ansible.builtin.command:
-    argv: [ip, -4, -o, address, show, scope, global]
-  register: promoted_addresses
-  changed_when: false
-
-- name: Require the intended promoted host
-  ansible.builtin.assert:
-    that:
-      - promoted_hostname.stdout | trim == inventory_hostname
-      - (" " ~ promoted_node_address ~ "/") in promoted_addresses.stdout
-      - promoted_service_hostname | length > 0
-      - promoted_service_hostname is match('^[A-Za-z0-9.-]+$')
-      - "'..' not in promoted_service_hostname"
-      - promoted_service_port | int >= 1024
-      - promoted_service_port | int <= 65535
-    fail_msg: Check the recovery inventory hostname, address, service name and port.
-
-- name: Resolve all applications from the trusted registry
+# Transport only, run on the promoted host itself: app_installer.promoted owns
+# the identity and promotion gates, workload installation, the grouped restart,
+# readiness, the canonical issuer, client redirects and the public CA export.
+- name: Stage the trusted installer and read the complete database group
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/read-replication-registry.yml"
 
-- name: Require completed promotion and healthy writable databases for the entire group
-  ansible.builtin.command:
-    argv: [python3, -m, app_installer, require-promoted-group, --journal, "{{ promoted_config_directory }}/promotion.json"]
-  environment:
-    PYTHONPATH: "{{ '/opt/todo/lib' if app_installer_fapolicyd.rc == 0 else app_installer_target ~ '/deploy/installer' }}"
-    PYTHONDONTWRITEBYTECODE: "1"
-  changed_when: false
-
-- name: Require existing credentials for every application
-  ansible.builtin.command:
-    argv: [podman, secret, exists, "{{ item }}"]
-  loop: "{{ todo_replication_metadata | map(attribute='raw_secrets') | flatten | unique }}"
-  changed_when: false
-
-- name: Load missing application images and verify the nginx image identity
-  ansible.builtin.command:
-    argv: [python3, -m, app_installer, prepare-promoted-images, --bundle-dir, "{{ promoted_bundle_directory }}"]
-  environment:
-    PYTHONPATH: "{{ '/opt/todo/lib' if app_installer_fapolicyd.rc == 0 else app_installer_target ~ '/deploy/installer' }}"
-    PYTHONDONTWRITEBYTECODE: "1"
-  register: promoted_images_loaded
-  changed_when: (promoted_images_loaded.stdout | from_json).changed
-
-- name: Initialize group application changes
-  ansible.builtin.set_fact:
-    promoted_apps_changed: false
-    promoted_application_services: >-
-      {{ ['shared-proxy.service'] + (todo_replication_metadata | map(attribute='application_service') | list)
-         + ['keycloak.service'] }}
-
-- name: Install each grouped Kube application on the promoted host
-  ansible.builtin.include_tasks: application.yml
-  loop: "{{ todo_replication_metadata }}"
-  loop_control:
-    loop_var: promoted_app
-    label: "{{ promoted_app.name }}"
-  when: promoted_app.application_unit is defined
-
-- name: Install the shared Kube proxy on the promoted host
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/install-workload.yml"
-  vars:
-    app_installer_workload: shared-proxy
-    todo_rendered_manifest_directory: "{{ promoted_bundle_directory }}/generated/kube-runtime"
-    todo_publish_address: "{{ promoted_node_address }}"
-    todo_service_port: "{{ promoted_service_port }}"
-
-- name: Stop changed application workloads as a group
-  ansible.builtin.command:
-    argv: "{{ ['systemctl', '--user', 'stop'] + promoted_application_services }}"
-  changed_when: false
-  register: promoted_service_stopped
-  failed_when: promoted_service_stopped.rc not in [0, 5]
-  when: promoted_apps_changed or todo_proxy_kube_changed or promoted_images_loaded.changed
-
-- name: Start each promoted grouped application
-  ansible.builtin.systemd_service:
-    name: "{{ item.application_service }}"
-    scope: user
-    state: started
-  loop: "{{ todo_replication_metadata }}"
-  loop_control:
-    label: "{{ item.name }}"
-
-- name: Start the promoted shared proxy
-  ansible.builtin.systemd_service:
-    name: shared-proxy.service
-    scope: user
-    state: started
-
-- name: Verify health readiness and public reads for every application
-  ansible.builtin.include_tasks: readiness.yml
-  loop: "{{ todo_replication_metadata }}"
-  loop_control:
-    loop_var: promoted_app
-    label: "{{ promoted_app.name }}"
-  when: promoted_app.hostname is defined
-
-- name: Wait for the canonical shared Keycloak issuer
-  ansible.builtin.uri:
-    url: http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
-    return_content: true
-  register: promoted_discovery
-  until:
-    - promoted_discovery.status == 200
-    - promoted_discovery.json.issuer == promoted_service_origin ~ "/auth/realms/todo"
-  retries: 90
-  delay: 2
-
-- name: Configure redirects and origins for every registered frontend client
-  ansible.builtin.command:
-    argv: [python3, -m, app_installer, configure-clients]
-  environment:
-    PYTHONPATH: "{{ '/opt/todo/lib' if app_installer_fapolicyd.rc == 0 else app_installer_target ~ '/deploy/installer' }}"
-    PYTHONDONTWRITEBYTECODE: "1"
-  register: promoted_clients
-  changed_when: (promoted_clients.stdout | from_json).changed
-
-- name: Read the promoted nginx public root certificate
+- name: Deploy and verify the application tier for the promoted group
   ansible.builtin.command:
     argv:
-      - podman
-      - exec
-      - nginx
-      - cat
-      - /var/lib/todo-tls/ca.crt
-  register: promoted_nginx_root_certificate
-  changed_when: false
-
-- name: Export the promoted nginx public root certificate
-  ansible.builtin.copy:
-    content: "{{ promoted_nginx_root_certificate.stdout | trim }}\n"
-    dest: "{{ promoted_config_directory }}/todo-nginx-root.crt"
-    mode: "0644"
+      - python3
+      - -m
+      - app_installer
+      - deploy-promoted
+      - --project-root
+      - "{{ project_root }}"
+      - --quadlet-dir
+      - "{{ app_installer_quadlet }}"
+      - --bundle-dir
+      - "{{ promoted_bundle_directory }}"
+      - --inventory-hostname
+      - "{{ inventory_hostname }}"
+      - --node-address
+      - "{{ promoted_node_address }}"
+      - --service-port
+      - "{{ promoted_service_port | string }}"
+      - --journal
+      - "{{ promoted_config_directory }}/promotion.json"
+      - --config-dir
+      - "{{ promoted_config_directory }}"
+  environment:
+    PYTHONPATH: "{{ '/opt/todo/lib' if app_installer_fapolicyd.rc == 0 else app_installer_target ~ '/deploy/installer' }}"
+    PYTHONDONTWRITEBYTECODE: "1"
+  register: promoted_deployment
+  changed_when: (promoted_deployment.stdout | from_json).changed
 
 - name: Report successful promoted application deployment
   ansible.builtin.debug:

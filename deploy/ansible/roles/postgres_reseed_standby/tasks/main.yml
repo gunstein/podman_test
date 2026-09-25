@@ -1,78 +1,34 @@
 ---
-- name: Resolve the complete registered replication group
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/read-replication-registry.yml"
+# Transport only: app_installer reseed-group owns the quarantine, every local and
+# primary-authentication check for the complete group before the first
+# deletion, removal of the application-tier units, and each reseed.
+- name: Stage the installer, templates and YAML for every registered database
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/stage-postgres-group.yml"
 
-- name: Select every infrastructure service for the destructive reseed quarantine
-  ansible.builtin.set_fact:
-    reseed_services: >-
-      {{ ['shared-proxy.service'] + (todo_replication_metadata | map(attribute='application_service') | list)
-         + ['keycloak.service'] + (todo_replication_metadata | map(attribute='postgres_service') | list) }}
-
-- name: Stop all infrastructure services before reseed
+- name: Rebuild every registered database as a standby of the current primary
   ansible.builtin.command:
-    argv: "{{ ['systemctl', '--user', 'stop'] + reseed_services }}"
-  register: reseed_stopped
-  changed_when: false
-  failed_when: reseed_stopped.rc not in [0, 5]
-
-- name: Require the complete infrastructure quarantine before any destructive reseed
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
-  vars:
-    todo_replication_app: "{{ todo_replication_metadata[0].name }}"
-    todo_replication_operation: quarantined
-
-- name: Remove the shared Kube units from the rebuilt standby
-  ansible.builtin.file:
-    path: "{{ rebuild_quadlet_directory }}/todo-kube-runtime/{{ item }}"
-    state: absent
-  loop:
-    - keycloak.kube
-    - shared-proxy.kube
-    - keycloak.yaml
-    - shared-proxy.yaml
-
-- name: Remove each registered application's Kube unit from the rebuilt standby
-  ansible.builtin.file:
-    path: "{{ rebuild_quadlet_directory }}/todo-kube-runtime/{{ item.application_unit }}"
-    state: absent
-  loop: "{{ todo_replication_metadata }}"
-  loop_control:
-    label: "{{ item.name }}"
-  when: item.application_unit is defined
-
-- name: Remove each registered application's rendered manifest from the rebuilt standby
-  ansible.builtin.file:
-    path: "{{ rebuild_quadlet_directory }}/todo-kube-runtime/{{ item.manifests.application[0] }}"
-    state: absent
-  loop: "{{ todo_replication_metadata }}"
-  loop_control:
-    label: "{{ item.name }}"
-  when: item.manifests.application is defined
-
-# reseed_standby only authenticates against its own database immediately
-# before deleting it (see replication.py's reseed_check/reseed_standby
-# docstrings); it cannot gate the whole group. Authenticate every registered
-# database against the primary here, before any of them is touched, so a
-# missing firewall rule or credential for one database (for example notes'
-# port 5433) fails closed instead of leaving a partially rebuilt group.
-- name: Authenticate against the primary for every registered database before any reseed
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
-  loop: "{{ todo_replication_metadata }}"
-  loop_control:
-    loop_var: todo_replication_app_meta
-    label: "{{ todo_replication_app_meta.name }}"
-  vars:
-    todo_replication_app: "{{ todo_replication_app_meta.name }}"
-    todo_replication_operation: authenticate
-    todo_replication_primary_address: "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}"
-
-- name: Explicitly confirm the fenced host and reseed each registered database
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replicate-workload.yml"
-  loop: "{{ todo_replication_metadata }}"
-  loop_control:
-    loop_var: todo_replication_app_meta
-    label: "{{ todo_replication_app_meta.name }}"
-  vars:
-    todo_replication_app: "{{ todo_replication_app_meta.name }}"
-    todo_replication_operation: reseed
-    todo_replication_primary_address: "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}"
+    argv:
+      - python3
+      - -m
+      - app_installer
+      - reseed-group
+      - --primary-address
+      - "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}"
+      - --confirm-fenced
+      - "{{ todo_confirm_old_primary_fenced | default('') }}"
+      - --confirm-reseed
+      - "{{ todo_confirm_reseed | default('') }}"
+      - --project-root
+      - "{{ app_installer_target }}"
+      - --quadlet-dir
+      - "{{ app_installer_quadlet }}"
+      - --kube-runtime-dir
+      - "{{ todo_kube_runtime_directory | default(app_installer_quadlet ~ '/todo-kube-runtime') }}"
+      - --rendered-manifest-dir
+      - "{{ app_installer_target }}/generated/kube-runtime"
+  environment:
+    PYTHONPATH: >-
+      {{ '/opt/todo/lib' if app_installer_fapolicyd.rc == 0
+         else app_installer_target ~ '/deploy/installer' }}
+    PYTHONDONTWRITEBYTECODE: "1"
+  changed_when: true

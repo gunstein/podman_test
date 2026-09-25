@@ -282,5 +282,48 @@ class GroupPromotionTests(unittest.TestCase):
         self.assertEqual(self.commands, [])
 
 
+class ConfigureTests(unittest.TestCase):
+    def configure(self, config, *extra):
+        return todo_dr.main(['--config', str(config), 'configure', '--primary-name', 'todo-primary',
+                             '--primary-address', '192.0.2.10', '--standby-name', 'todo-standby', *extra])
+
+    def test_writes_a_private_complete_group_config_that_the_tool_reads_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "todo" / "todo-dr.json"
+            with mock.patch("sys.stdout") as stdout:
+                self.assertEqual(self.configure(config), 0)
+            self.assertIn('"changed": true', "".join(call.args[0] for call in stdout.write.call_args_list))
+            self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(config.parent.stat().st_mode & 0o777, 0o700)
+            loaded = todo_dr.load_config(config)
+            self.assertEqual(loaded.applications, tuple(d.name for d in todo_dr.apps.REPLICATED_DATABASES))
+            self.assertEqual((loaded.primary_name, loaded.primary_address, loaded.standby_name,
+                              loaded.rpo_target_seconds), ("todo-primary", "192.0.2.10", "todo-standby", 30))
+            todo_dr.TodoDr(loaded)
+
+    def test_repeat_is_unchanged_and_existing_ansible_written_config_is_byte_identical(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "todo-dr.json"
+            # Exactly what the former Ansible to_json task wrote (ansible-core 2.14 and 2.20).
+            config.write_text('{"applications": ["todo", "notes", "keycloak"], "primary_name": "todo-primary", '
+                              '"primary_address": "192.0.2.10", "standby_name": "todo-standby", '
+                              '"rpo_target_seconds": 30}')
+            config.chmod(0o600)
+            self.assertFalse(todo_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 30))
+            self.assertTrue(todo_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 60))
+            self.assertEqual(todo_dr.load_config(config).rpo_target_seconds, 60)
+
+    def test_invalid_values_are_refused_without_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "todo-dr.json"
+            for arguments in (("primary.example", "todo-standby", 30), ("192.0.2.10", "", 30),
+                              ("192.0.2.10", "todo-standby", 0)):
+                with self.subTest(arguments=arguments), self.assertRaises(todo_dr.DrError):
+                    todo_dr.write_config(config, "todo-primary", *arguments)
+            self.assertFalse(config.exists())
+            with mock.patch("sys.stderr"):
+                self.assertEqual(self.configure(config, '--rpo-target-seconds', '-5'), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

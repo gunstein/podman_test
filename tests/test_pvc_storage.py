@@ -92,8 +92,8 @@ class PVCStorageTests(unittest.TestCase):
         self.assertIn('replicate-workload.yml', role)
         self.assertIn('todo_replication_operation: standby', role)
         reseed_role = (ROOT / "deploy/ansible/roles/postgres_reseed_standby/tasks/main.yml").read_text()
-        self.assertIn('replicate-workload.yml', reseed_role)
-        self.assertIn('todo_replication_operation: reseed', reseed_role)
+        self.assertIn('stage-postgres-group.yml', reseed_role)
+        self.assertIn('- reseed-group', reseed_role)
 
     def test_uninstall_preserves_database_and_tls_data_by_default_and_never_removes_backup(self):
         from app_installer import uninstall

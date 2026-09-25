@@ -18,7 +18,7 @@ for location in ('installer', 'lib'):
     if (directory / 'app_installer').is_dir():
         sys.path.insert(0, str(directory))
         break
-from app_installer import apps, replication  # noqa: E402
+from app_installer import apps, quadlet, replication  # noqa: E402
 
 DEFAULT_CONFIG = Path.home() / '.config/todo/todo-dr.json'
 DEFAULT_JOURNAL = DEFAULT_CONFIG.with_name('promotion.json')
@@ -62,21 +62,44 @@ def tcp_reachable(address: str, port: int, timeout: float) -> bool:
         return False
 
 
-def load_config(path: Path) -> Config:
+def parse_config(raw: dict, source: Path) -> Config:
     try:
-        raw = json.loads(path.read_text(encoding='utf-8'))
         names = raw.get('applications', [])
         if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
             raise ValueError('applications must be a list of registered names')
         config = Config(str(raw['primary_name']), str(raw['primary_address']), str(raw['standby_name']),
                         int(raw.get('rpo_target_seconds', raw.get('rpo_seconds'))), tuple(names))
-    except (OSError, KeyError, TypeError, ValueError) as error:
-        raise DrError(f'Cannot read valid DR configuration from {path}: {error}') from error
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        raise DrError(f'Cannot read valid DR configuration from {source}: {error}') from error
     if not all((config.primary_name, config.primary_address, config.standby_name)):
-        raise DrError(f'DR configuration contains an empty host identity: {path}')
+        raise DrError(f'DR configuration contains an empty host identity: {source}')
     if config.rpo_target_seconds <= 0:
         raise DrError('rpo_target_seconds must be greater than zero')
     return config
+
+
+def load_config(path: Path) -> Config:
+    try:
+        raw = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as error:
+        raise DrError(f'Cannot read valid DR configuration from {path}: {error}') from error
+    return parse_config(raw, path)
+
+
+def write_config(path: Path, primary_name: str, primary_address: str, standby_name: str,
+                 rpo_target_seconds: int) -> bool:
+    """Private config for the complete group; a literal address keeps the fencing reachability check honest."""
+    try:
+        primary_address = replication.address(primary_address)
+    except ValueError as error:
+        raise DrError(f'primary_address must be a literal IPv4 address: {primary_address!r}') from error
+    raw = {'applications': [app.name for app in apps.REPLICATED_DATABASES], 'primary_name': primary_name,
+           'primary_address': primary_address, 'standby_name': standby_name,
+           'rpo_target_seconds': rpo_target_seconds}
+    parse_config(raw, path)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.parent.chmod(0o700)
+    return quadlet.write(path, json.dumps(raw).encode(), 0o600)
 
 
 class TodoDr:
@@ -239,6 +262,11 @@ def parser():
     result.add_argument('--config', type=Path, default=DEFAULT_CONFIG)
     commands = result.add_subparsers(dest='command', required=True)
     commands.add_parser('status')
+    configure = commands.add_parser('configure', help='Write the private DR configuration for the complete group')
+    configure.add_argument('--primary-name', required=True)
+    configure.add_argument('--primary-address', required=True)
+    configure.add_argument('--standby-name', required=True)
+    configure.add_argument('--rpo-target-seconds', type=int, default=30)
     preflight = commands.add_parser('preflight')
     preflight.add_argument('--confirm-primary-fenced', required=True)
     promote = commands.add_parser('promote')
@@ -250,6 +278,10 @@ def parser():
 def main(arguments: Optional[Sequence[str]] = None):
     args = parser().parse_args(arguments)
     try:
+        if args.command == 'configure':
+            print(json.dumps({'changed': write_config(args.config, args.primary_name, args.primary_address,
+                                                      args.standby_name, args.rpo_target_seconds)}))
+            return 0
         tool = TodoDr(load_config(args.config), journal_path=args.config.with_name('promotion.json'))
         if args.command == 'status':
             print('\n'.join(tool.status_lines()))

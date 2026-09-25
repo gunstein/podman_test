@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app_installer import apps, replication
+from app_installer import apps, cli, replication
 
 
 class ReplicationTests(unittest.TestCase):
@@ -396,3 +396,111 @@ class PublishPrimariesTests(unittest.TestCase):
                                               quadlet_dir='/q', kube_runtime_dir='/q/todo-kube-runtime',
                                               rendered_manifest_dir='/r')
             preflight.assert_not_called()
+
+
+class ReseedGroupTests(unittest.TestCase):
+    DATABASES = apps.REPLICATED_DATABASES
+    CONFIRM = dict(confirm_fenced='old-primary is fenced', confirm_reseed='old-primary')
+
+    def reseed(self, failing_check=None, failing_authentication=None, quarantined=True, **confirmations):
+        steps = self.steps = []
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory) / 'todo-kube-runtime'
+            runtime.mkdir()
+            tier = replication.SHARED_TIER_FILES + tuple(
+                name for app in apps.APPS for name in (app.unit('app'), app.manifest('app')))
+            for name in tier + tuple(d.unit('postgres') for d in self.DATABASES):
+                (runtime / name).write_text('fixture')
+
+            def run(*argv, input=None, allowed=(0,)):
+                steps.append(argv)
+                return subprocess.CompletedProcess(argv, 0, '', '')
+
+            def quarantine():
+                steps.append(('quarantined',))
+                if not quarantined:
+                    raise RuntimeError('Running user containers remain; keep infrastructure quarantine in place')
+
+            def check(app, primary, **kwargs):
+                steps.append(('reseed-check', app.name, primary))
+                if app.name == failing_check:
+                    raise RuntimeError(f'{app.name}: required image is missing; data was not removed')
+
+            def authenticate(app, primary):
+                steps.append(('authenticate', app.name, primary))
+                if app.name == failing_authentication:
+                    raise RuntimeError(f'{app.name}: replication authentication failed; data was not removed')
+
+            def reseed_standby(app, primary, **kwargs):
+                steps.append(('reseed', app.name, primary, sorted(p.name for p in runtime.iterdir())))
+
+            with patch.object(replication, 'run', run), \
+                    patch.object(replication.socket, 'gethostname', return_value='old-primary'), \
+                    patch.object(replication, 'require_quarantined_group', quarantine), \
+                    patch.object(replication, 'reseed_check', check), \
+                    patch.object(replication, 'authenticate', authenticate), \
+                    patch.object(replication, 'reseed_standby', reseed_standby):
+                try:
+                    return replication.reseed_group(
+                        '192.0.2.11', **{**self.CONFIRM, **confirmations}, project_root=directory,
+                        quadlet_dir=directory, kube_runtime_dir=str(runtime), rendered_manifest_dir=directory)
+                finally:
+                    self.remaining = sorted(p.name for p in runtime.iterdir())
+                    self.tier = tier
+
+    def positions(self, kind):
+        return [i for i, step in enumerate(self.steps) if step[0] == kind]
+
+    def test_every_check_and_authentication_precedes_the_first_reseed(self):
+        self.assertEqual(self.reseed(), [d.name for d in self.DATABASES])
+        stop = self.steps.index(('systemctl', '--user', 'stop', *apps.services()))
+        quarantine = self.positions('quarantined')[0]
+        checks, authentications, reseeds = (self.positions(kind) for kind in
+                                            ('reseed-check', 'authenticate', 'reseed'))
+        self.assertEqual([self.steps[i][1] for i in checks], [d.name for d in self.DATABASES])
+        self.assertEqual([self.steps[i][1] for i in authentications], [d.name for d in self.DATABASES])
+        self.assertEqual([self.steps[i][1] for i in reseeds], [d.name for d in self.DATABASES])
+        self.assertLess(stop, quarantine)
+        self.assertLess(quarantine, min(checks))
+        self.assertLess(max(checks), min(authentications))
+        self.assertLess(max(authentications), min(reseeds))
+        self.assertTrue(all(step[2] == '192.0.2.11' for step in self.steps if step[0] in ('reseed-check', 'authenticate', 'reseed')))
+
+    def test_application_tier_units_are_gone_before_the_first_reseed_but_postgres_units_stay(self):
+        self.reseed()
+        first_reseed = self.steps[self.positions('reseed')[0]]
+        self.assertFalse(set(self.tier) & set(first_reseed[3]))
+        self.assertEqual(self.remaining, sorted(d.unit('postgres') for d in self.DATABASES))
+
+    def test_a_failed_local_check_on_the_last_database_deletes_nothing(self):
+        with self.assertRaisesRegex(RuntimeError, 'required image'):
+            self.reseed(failing_check=self.DATABASES[-1].name)
+        self.assertEqual(self.positions('authenticate') + self.positions('reseed'), [])
+        self.assertTrue(set(self.tier) <= set(self.remaining))
+
+    def test_a_failed_authentication_on_the_last_database_deletes_nothing(self):
+        with self.assertRaisesRegex(RuntimeError, 'authentication failed'):
+            self.reseed(failing_authentication=self.DATABASES[-1].name)
+        self.assertEqual(self.positions('reseed'), [])
+        self.assertTrue(set(self.tier) <= set(self.remaining))
+
+    def test_wrong_confirmations_or_address_refuse_before_stopping_anything(self):
+        for options in ({'confirm_fenced': 'old-primary'}, {'confirm_reseed': 'todo-standby'}):
+            with self.subTest(**options), self.assertRaisesRegex(RuntimeError, 'confirmations'):
+                self.reseed(**options)
+            self.assertEqual(self.steps, [])
+        with patch.object(replication, 'run') as run, \
+                patch.object(replication.socket, 'gethostname', return_value='old-primary'), \
+                self.assertRaises(ValueError):
+            replication.reseed_group('primary.example', **self.CONFIRM, project_root='/p', quadlet_dir='/q',
+                                     kube_runtime_dir='/q/todo-kube-runtime', rendered_manifest_dir='/r')
+        run.assert_not_called()
+
+    def test_missing_quarantine_stops_before_any_check(self):
+        with self.assertRaisesRegex(RuntimeError, 'quarantine'):
+            self.reseed(quarantined=False)
+        self.assertEqual(self.positions('reseed-check') + self.positions('reseed'), [])
+
+    def test_the_cli_offers_no_single_database_reseed(self):
+        with patch('sys.stderr'), self.assertRaises(SystemExit):
+            cli.main(['replicate-workload', 'reseed', '--app', 'todo'])

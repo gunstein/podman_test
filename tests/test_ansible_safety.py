@@ -11,41 +11,22 @@ def read(relative_path: str) -> str:
 
 
 class AnsibleSafetyTests(unittest.TestCase):
-    def test_reseed_role_quarantines_then_reseeds_every_registered_database(self):
-        # replicate-workload.yml is transport only; replication.py owns the SELinux
-        # label helper, the authenticate-before-volume-removal ordering, and the
-        # credential check (a live authenticated connection), all covered directly
-        # by deploy/installer/tests/test_replication.py.
+    def test_reseed_role_is_transport_for_the_group_reseed(self):
+        # app_installer reseed-group owns the quarantine, every local check and
+        # primary authentication before the first deletion, and each reseed:
+        # deploy/installer/tests/test_replication.py ReseedGroupTests.
         tasks = yaml.safe_load(read("deploy/ansible/roles/postgres_reseed_standby/tasks/main.yml"))
-
-        def index(match):
-            return next(i for i, task in enumerate(tasks) if match(task))
-
-        quarantine = index(lambda task: task.get("vars", {}).get("todo_replication_operation") == "quarantined")
-        removal = index(lambda task: "Remove the shared Kube units" in task["name"])
-        authenticate = index(lambda task: task.get("vars", {}).get("todo_replication_operation") == "authenticate")
-        reseed = index(lambda task: task.get("vars", {}).get("todo_replication_operation") == "reseed")
-
-        self.assertLess(quarantine, removal)
-        self.assertLess(removal, reseed)
-        # reseed_standby only authenticates its own database right before deleting
-        # it (replication.py); a group-wide authenticate task here, before any
-        # database is touched, is what actually stops a partial rebuild when one
-        # database's replication port or credential is not ready.
-        self.assertLess(authenticate, reseed)
-        self.assertEqual(
-            tasks[authenticate]["loop"], tasks[reseed]["loop"],
-            "the authenticate gate must cover the exact same registered group as reseed",
-        )
-        self.assertEqual(
-            tasks[reseed]["vars"]["todo_replication_primary_address"],
-            "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}",
-        )
-        self.assertEqual(
-            tasks[authenticate]["vars"]["todo_replication_primary_address"],
-            tasks[reseed]["vars"]["todo_replication_primary_address"],
-        )
-
+        commands = [task for task in tasks if "ansible.builtin.command" in task]
+        self.assertEqual(len(commands), 1)
+        argv = commands[0]["ansible.builtin.command"]["argv"]
+        self.assertEqual(argv[:4], ["python3", "-m", "app_installer", "reseed-group"])
+        option = dict(zip(argv[4::2], argv[5::2]))
+        self.assertEqual(option["--primary-address"],
+                         "{{ hostvars[groups['todo_current_primary'][0]].todo_node_address }}")
+        self.assertEqual(option["--confirm-fenced"], "{{ todo_confirm_old_primary_fenced | default('') }}")
+        self.assertEqual(option["--confirm-reseed"], "{{ todo_confirm_reseed | default('') }}")
+        # The per-database reseed operation is gone: rebuild never acts on a partial group.
+        self.assertNotIn("'reseed'", read("deploy/ansible/tasks/replicate-workload.yml"))
     def test_rebuild_preflight_verifies_every_registered_database_before_destructive_reseed(self):
         preflight = read("deploy/ansible/playbooks/preflight-standby-rebuild.yml")
 

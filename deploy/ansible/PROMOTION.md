@@ -39,7 +39,9 @@ ansible-playbook --ask-become-pass \
 ```
 
 The non-secret DR configuration remains
-`~/.config/todo/todo-dr.json`. See
+`~/.config/todo/todo-dr.json`. The playbook writes it with
+`todo_dr.py configure`, so the same tool writes and reads it; the primary
+address must be a literal IPv4 address. See
 [../offline/FAPOLICYD.md](../offline/FAPOLICYD.md) for denial diagnosis and
 exact-file cleanup.
 

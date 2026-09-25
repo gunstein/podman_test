@@ -2,12 +2,6 @@
 - name: Resolve and stage the complete replication group for the operator tool
   ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replication-apps.yml"
 
-- name: Create the Todo DR configuration directory
-  ansible.builtin.file:
-    path: "{{ todo_dr_config_directory }}"
-    state: directory
-    mode: "0700"
-
 - name: Install and trust the Todo DR tools
   ansible.builtin.include_role:
     name: todo_fapolicyd
@@ -17,46 +11,24 @@
         dest: /opt/todo/bin/todo_dr.py
         mode: "0644"
 
-- name: Install the local Todo DR configuration through pipelined stdin
+# todo_dr.py owns its configuration format: the same code writes and reads it.
+- name: Write the local Todo DR configuration
   ansible.builtin.command:
     argv:
-      - /bin/sh
-      - -c
-      - |
-        set -eu
-        target=$1
-        temporary=$(mktemp "${target}.XXXXXX")
-        trap "rm -f \"$temporary\"" EXIT HUP INT TERM
-        base64 --decode > "$temporary"
-        chmod 0600 "$temporary"
-        if [ -f "$target" ] &&
-           cmp --silent "$temporary" "$target" &&
-           [ "$(stat --format=%a "$target")" = 600 ]; then
-          printf "%s\n" unchanged
-          exit 0
-        fi
-        mv --force "$temporary" "$target"
-        trap - EXIT HUP INT TERM
-        printf "%s\n" changed
-      - todo-install
+      - python3
+      - /opt/todo/bin/todo_dr.py
+      - --config
       - "{{ todo_dr_config_directory }}/todo-dr.json"
-    stdin: >-
-      {{
-        {
-          'applications': apps_to_replicate,
-          'primary_name':
-            groups[todo_dr_primary_group | default('todo_primary')][0],
-          'primary_address':
-            hostvars[
-              groups[todo_dr_primary_group | default('todo_primary')][0]
-            ].todo_node_address,
-          'standby_name':
-            groups[todo_dr_standby_group | default('todo_standby')][0],
-          'rpo_target_seconds': (
-            todo_rpo_target_seconds | default(todo_rpo_seconds | default(30))
-          )
-        } | to_json | b64encode
-      }}
-    stdin_add_newline: false
+      - configure
+      - --primary-name
+      - "{{ groups[todo_dr_primary_group | default('todo_primary')][0] }}"
+      - --primary-address
+      - "{{ hostvars[groups[todo_dr_primary_group | default('todo_primary')][0]].todo_node_address }}"
+      - --standby-name
+      - "{{ groups[todo_dr_standby_group | default('todo_standby')][0] }}"
+      - --rpo-target-seconds
+      - "{{ todo_rpo_target_seconds | default(todo_rpo_seconds | default(30)) | string }}"
+  environment:
+    PYTHONDONTWRITEBYTECODE: "1"
   register: todo_dr_config_install
-  changed_when: todo_dr_config_install.stdout | trim == "changed"
+  changed_when: (todo_dr_config_install.stdout | from_json).changed

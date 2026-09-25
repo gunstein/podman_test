@@ -2,22 +2,8 @@
 # Transport only: app_installer publish-primaries owns the primary gates, the
 # replication identity or access refresh, LAN publication, the single
 # application-tier restart and readiness. Callers set todo_publish_primaries_mode.
-- name: Read the complete database group and stage the trusted installer
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/read-replication-registry.yml"
-
-- name: Stage canonical Quadlet templates for every registered database
-  ansible.builtin.copy:
-    src: "{{ project_root }}/deploy/quadlet/{{ item }}"
-    dest: "{{ app_installer_target }}/deploy/quadlet/{{ item }}"
-    mode: "0600"
-  loop: "{{ todo_replication_metadata | map(attribute='templates') | flatten | unique }}"
-
-- name: Stage the canonical database and ConfigMap YAML for every registered database
-  ansible.builtin.copy:
-    src: "{{ todo_rendered_manifest_directory }}/{{ item }}"
-    dest: "{{ app_installer_target }}/generated/kube-runtime/{{ item }}"
-    mode: "0600"
-  loop: "{{ todo_replication_metadata | map(attribute='manifests') | map(attribute='postgres') | flatten | unique }}"
+- name: Stage the installer, templates and YAML for every registered database
+  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/stage-postgres-group.yml"
 
 - name: Publish every primary database for LAN replication
   ansible.builtin.command:

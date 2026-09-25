@@ -74,6 +74,12 @@ physical replication via `IDENTIFY_SYSTEM`. TCP connectivity alone is insufficie
 Rootless port forwarding hides the original peer address from PostgreSQL;
 firewalld and hypervisor quarantine enforce the real machine boundary.
 
+On the rebuild target, `app_installer reseed-group` runs these checks for the
+complete group: it stops every service, requires the quarantine, checks every
+database locally and authenticates every database against the primary before
+it removes the first volume. A failure for any database leaves all of them
+untouched.
+
 Only then is the old data volume removed, a replacement created, a physical slot
 created and a base backup streamed. Recovery settings and the private replication
 passfile live inside the volume. Application Kube units are removed from the

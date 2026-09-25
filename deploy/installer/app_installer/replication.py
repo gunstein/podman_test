@@ -317,6 +317,12 @@ def rebuild_primary_check(app):
     return False
 
 
+def require_reseed_confirmations(confirm_fenced, confirm_reseed):
+    host = socket.gethostname()
+    if confirm_fenced != host + ' is fenced' or confirm_reseed != host:
+        raise RuntimeError('Exact local hostname and infrastructure-fencing confirmations are required')
+
+
 def reseed_check(app, primary_address, *, project_root, quadlet_dir, kube_runtime_dir,
                  rendered_manifest_dir, confirm_fenced, confirm_reseed):
     """Local-only checks; never contacts the primary.
@@ -326,9 +332,7 @@ def reseed_check(app, primary_address, *, project_root, quadlet_dir, kube_runtim
     same rebuild run). Only ``reseed_standby`` authenticates, immediately
     before it deletes the old volume.
     """
-    host = socket.gethostname()
-    if confirm_fenced != host + ' is fenced' or confirm_reseed != host:
-        raise RuntimeError('Exact local hostname and infrastructure-fencing confirmations are required')
+    require_reseed_confirmations(confirm_fenced, confirm_reseed)
     address(primary_address)
     directory, runtime = Path(quadlet_dir), Path(kube_runtime_dir)
     if runtime != directory / 'todo-kube-runtime' or runtime.is_symlink():
@@ -389,3 +393,27 @@ def reseed_standby(app, primary_address, *, confirm_fenced, confirm_reseed, **pa
     # No force and no backup-volume removal. In-use data must fail closed.
     run('podman', 'volume', 'rm', app.volume('data'))
     return bootstrap_standby(app, primary_address, slot=app.replication_slot(rebuilt=True), **paths)
+
+
+# Application-tier runtime files the rebuilt standby must not start again.
+SHARED_TIER_FILES = ('keycloak.kube', 'shared-proxy.kube', 'keycloak.yaml', 'shared-proxy.yaml')
+
+
+def reseed_group(primary_address, *, confirm_fenced, confirm_reseed, **paths):
+    """Rebuild every database as a standby; every local and primary check passes before the first deletion."""
+    require_reseed_confirmations(confirm_fenced, confirm_reseed)
+    primary_address = address(primary_address)
+    run('systemctl', '--user', 'stop', *apps.services(), allowed=(0, 5))
+    require_quarantined_group()
+    confirmations = dict(confirm_fenced=confirm_fenced, confirm_reseed=confirm_reseed)
+    for app in apps.REPLICATED_DATABASES:
+        reseed_check(app, primary_address, **confirmations, **paths)
+    for app in apps.REPLICATED_DATABASES:
+        authenticate(app, primary_address)
+    runtime = Path(paths['kube_runtime_dir'])
+    for name in SHARED_TIER_FILES + tuple(name for app in apps.APPS
+                                          for name in (app.unit('app'), app.manifest('app'))):
+        (runtime / name).unlink(missing_ok=True)
+    for app in apps.REPLICATED_DATABASES:
+        reseed_standby(app, primary_address, **confirmations, **paths)
+    return [app.name for app in apps.REPLICATED_DATABASES]

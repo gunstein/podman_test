@@ -44,7 +44,7 @@ def main(argv=None):
     replicate = subcommands.add_parser('replicate-workload')
     paths(replicate)
     replicate.add_argument('operation', choices=('primary', 'standby', 'status', 'authenticate', 'streaming', 'hba',
-                                                   'rebuild-primary-check', 'quarantined', 'reseed-check', 'reseed'))
+                                                   'rebuild-primary-check', 'quarantined', 'reseed-check'))
     replicate.add_argument('--app', choices=[d.name for d in apps.REPLICATED_DATABASES],
                            default=apps.SHARED_RESOURCE_OWNER.name)
     replicate.add_argument('--node-address', default='')
@@ -55,6 +55,12 @@ def main(argv=None):
     replicate.add_argument('--rebuilt', action='store_true')
     replicate.add_argument('--confirm-fenced', default='')
     replicate.add_argument('--confirm-reseed', default='')
+    reseed = subcommands.add_parser('reseed-group')
+    paths(reseed)
+    reseed.add_argument('--primary-address', required=True)
+    reseed.add_argument('--rendered-manifest-dir', type=Path, required=True)
+    reseed.add_argument('--confirm-fenced', required=True)
+    reseed.add_argument('--confirm-reseed', required=True)
     publish = subcommands.add_parser('publish-primaries')
     paths(publish)
     publish.add_argument('mode', choices=('bootstrap', 'redundancy'))
@@ -104,7 +110,7 @@ def main(argv=None):
             result = {'changed': False}
             if args.operation == 'primary':
                 result['changed'] = replication.configure_primary(app, args.node_address)
-            elif args.operation in ('standby', 'reseed-check', 'reseed'):
+            elif args.operation in ('standby', 'reseed-check'):
                 directory = args.quadlet_dir.resolve()
                 options = dict(project_root=args.project_root, quadlet_dir=directory,
                                kube_runtime_dir=(args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve(),
@@ -115,9 +121,9 @@ def main(argv=None):
                 else:
                     if args.slot is not None or args.image_archive is not None:
                         raise ValueError('Reseed uses the registered rebuild slot and requires the existing image')
-                    function = replication.reseed_check if args.operation == 'reseed-check' else replication.reseed_standby
-                    result['changed'] = function(app, args.primary_address, confirm_fenced=args.confirm_fenced,
-                                                 confirm_reseed=args.confirm_reseed, **options)
+                    result['changed'] = replication.reseed_check(
+                        app, args.primary_address, confirm_fenced=args.confirm_fenced,
+                        confirm_reseed=args.confirm_reseed, **options)
             elif args.operation == 'rebuild-primary-check':
                 result['changed'] = replication.rebuild_primary_check(app)
             elif args.operation == 'quarantined':
@@ -132,6 +138,14 @@ def main(argv=None):
             else:
                 result['status'] = replication.status(app)
             print(json.dumps(result))
+        elif args.command == 'reseed-group':
+            from . import replication
+            directory = args.quadlet_dir.resolve()
+            print(json.dumps({'changed': True, 'reseeded': replication.reseed_group(
+                args.primary_address, confirm_fenced=args.confirm_fenced, confirm_reseed=args.confirm_reseed,
+                project_root=args.project_root, quadlet_dir=directory,
+                kube_runtime_dir=(args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve(),
+                rendered_manifest_dir=args.rendered_manifest_dir)}))
         elif args.command == 'publish-primaries':
             from . import replication
             directory = args.quadlet_dir.resolve()

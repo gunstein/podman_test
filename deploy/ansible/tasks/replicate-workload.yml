@@ -19,7 +19,7 @@
     dest: "{{ app_installer_target }}/deploy/quadlet/{{ item }}"
     mode: "0600"
   loop: "{{ todo_app_metadata.templates }}"
-  when: todo_replication_operation in ['standby', 'reseed-check', 'reseed']
+  when: todo_replication_operation in ['standby', 'reseed-check']
 
 - name: Stage the canonical database and ConfigMap YAML
   ansible.builtin.copy:
@@ -27,7 +27,7 @@
     dest: "{{ app_installer_target }}/generated/kube-runtime/{{ item }}"
     mode: "0600"
   loop: "{{ todo_app_metadata.manifests.postgres }}"
-  when: todo_replication_operation in ['standby', 'reseed-check', 'reseed']
+  when: todo_replication_operation in ['standby', 'reseed-check']
 
 - name: Execute replication mechanics for the selected application
   ansible.builtin.command:
@@ -45,7 +45,7 @@
          + (['--rebuilt'] if todo_replication_rebuilt | default(false) | bool else [])
          + (['--confirm-fenced', todo_confirm_old_primary_fenced | default(''),
              '--confirm-reseed', todo_confirm_reseed | default('')]
-            if todo_replication_operation in ['reseed-check', 'reseed'] else []) }}
+            if todo_replication_operation == 'reseed-check' else []) }}
   environment:
     PYTHONPATH: >-
       {{ '/opt/todo/lib' if app_installer_fapolicyd.rc == 0

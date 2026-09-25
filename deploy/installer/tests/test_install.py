@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class InstallTests(unittest.TestCase):
     def exercise_install(self, mode, repeat=False, source_override=None, applications=None):
-        applications = (apps.IDENTITY_DATABASE_APP,) if applications is None else applications
+        applications = (apps.SHARED_RESOURCE_OWNER,) if applications is None else applications
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             directory = root / 'quadlet'

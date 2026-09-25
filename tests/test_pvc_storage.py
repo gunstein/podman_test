@@ -103,7 +103,7 @@ class PVCStorageTests(unittest.TestCase):
         from todo_installer import apps, replication
         canonical = next(d for d in yaml.safe_load_all((RUNTIME / "postgres.yaml").read_text())
                          if d["metadata"]["name"] == "todo-postgres-data")
-        self.assertEqual(yaml.safe_load(replication.data_claim(apps.IDENTITY_DATABASE_APP, RUNTIME)), canonical)
+        self.assertEqual(yaml.safe_load(replication.data_claim(apps.SHARED_RESOURCE_OWNER, RUNTIME)), canonical)
         role = (ROOT / "deploy/ansible/roles/postgres_standby/tasks/main.yml").read_text()
         self.assertIn('replicate-workload.yml', role)
         self.assertIn('todo_replication_operation: standby', role)

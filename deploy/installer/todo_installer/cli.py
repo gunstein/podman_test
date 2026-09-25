@@ -30,14 +30,14 @@ def main(argv=None):
     paths(workload)
     workload.add_argument('workload', choices=('postgres', 'application', 'keycloak', 'shared-proxy'))
     workload.add_argument('--app', choices=[app.name for app in apps.APPS] + [apps.KEYCLOAK_DATABASE.name],
-                          default=apps.IDENTITY_DATABASE_APP.name)
+                          default=apps.SHARED_RESOURCE_OWNER.name)
     workload.add_argument('--rendered-manifest-dir', type=Path)
     workload.add_argument('--publish-address', default='127.0.0.1')
     workload.add_argument('--postgres-publish-address', default='')
     workload.add_argument('--service-port', type=int, default=settings.HTTPS_PORT)
     info = subcommands.add_parser('app-info')
     info.add_argument('--app', choices=[app.name for app in apps.APPS] + [apps.KEYCLOAK_DATABASE.name],
-                      default=apps.IDENTITY_DATABASE_APP.name)
+                      default=apps.SHARED_RESOURCE_OWNER.name)
     registry = subcommands.add_parser('replication-apps')
     registry.add_argument('--details', action='store_true')
     replicate = subcommands.add_parser('replicate-workload')
@@ -45,7 +45,7 @@ def main(argv=None):
     replicate.add_argument('operation', choices=('primary', 'standby', 'status', 'authenticate', 'streaming', 'hba',
                                                    'rebuild-primary-check', 'quarantined', 'reseed-check', 'reseed'))
     replicate.add_argument('--app', choices=[d.name for d in apps.REPLICATED_DATABASES],
-                           default=apps.IDENTITY_DATABASE_APP.name)
+                           default=apps.SHARED_RESOURCE_OWNER.name)
     replicate.add_argument('--node-address', default='')
     replicate.add_argument('--primary-address', default='')
     replicate.add_argument('--rendered-manifest-dir', type=Path)
@@ -164,15 +164,16 @@ def main(argv=None):
                 selected_app = next(app for app in apps.APPS if app.name == args.app)
             if args.workload in ('postgres', 'application'):
                 kwargs['app'] = selected_app
-            elif selected_app != apps.IDENTITY_DATABASE_APP:
+            elif selected_app != apps.SHARED_RESOURCE_OWNER:
                 raise ValueError('--app selects a postgres or application workload only.')
             function = {'postgres': workloads.install_postgres,
                         'application': workloads.install_application,
                         'keycloak': workloads.install_keycloak,
                         'shared-proxy': workloads.install_shared_proxy}[args.workload]
             changed = function(args.project_root, directory, runtime, manifests, **kwargs)
-            # Existing Todo DR application calls also stage the shared identity workload.
-            if args.workload == 'application' and selected_app == apps.IDENTITY_DATABASE_APP:
+            # The shared-resource owner's application call also stages the shared
+            # Keycloak workload; another app's own database has no bearing on this.
+            if args.workload == 'application' and selected_app == apps.SHARED_RESOURCE_OWNER:
                 changed = workloads.install_keycloak(
                     args.project_root, directory, runtime, manifests) or changed
             print(json.dumps({'changed': changed}))

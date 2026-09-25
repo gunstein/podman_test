@@ -98,7 +98,7 @@ class TodoBackupTests(unittest.TestCase):
         self.tool(runner).create_restore_point("after_old_failure")
 
     def test_restore_rejects_existing_disposable_state_without_replace(self):
-        restore_container = todo_backup.apps.IDENTITY_DATABASE_APP.resource("postgres-restore")
+        restore_container = todo_backup.apps.SHARED_RESOURCE_OWNER.resource("postgres-restore")
         runner = FakeRunner(containers={restore_container})
         with self.assertRaisesRegex(todo_backup.BackupError, "--replace"):
             self.tool(runner).restore(

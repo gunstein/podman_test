@@ -90,7 +90,7 @@ def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_m
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         manifests=("shared-proxy.yaml", "config.yaml"), units=("shared-proxy.kube",),
-        obsolete=(apps.IDENTITY_DATABASE_APP.resource("nginx-data"),),
+        obsolete=(apps.SHARED_RESOURCE_OWNER.resource("nginx-data"),),
         capability="shared proxy", mapping={},
         variables={"todo_publish_address": publish_address, "todo_service_port": service_port,
                   "app_services": [app.service("app") for app in applications]},

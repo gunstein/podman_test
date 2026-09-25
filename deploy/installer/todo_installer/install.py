@@ -43,8 +43,8 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
             refresh_images=False, publish_address='127.0.0.1', service_port=settings.HTTPS_PORT,
             quadlet_dir=None, kube_runtime_dir=None, applications=None):
     applications = apps.APPS if applications is None else tuple(applications)
-    if apps.IDENTITY_DATABASE_APP not in applications:
-        raise ValueError('The shared identity database application must be included.')
+    if apps.SHARED_RESOURCE_OWNER not in applications:
+        raise ValueError('The application that owns the shared resources must be included.')
     if mode not in ('dev', 'server'):
         raise ValueError('mode must be dev or server')
     if deployment_mode not in ('build', 'offline') or (

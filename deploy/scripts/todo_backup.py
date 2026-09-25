@@ -48,7 +48,7 @@ class TodoBackup:
         runner: Runner = run_command,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         sleeper: Callable[[float], None] = time.sleep,
-        *, app: apps.App = apps.IDENTITY_DATABASE_APP,
+        *, app: apps.App = apps.SHARED_RESOURCE_OWNER,
     ) -> None:
         self.app = app
         self.image = app.image('postgres')

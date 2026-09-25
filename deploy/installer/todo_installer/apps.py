@@ -65,14 +65,14 @@ APPS = (
 # this app's. The name still backs every resource shared across the whole
 # stack instead of being owned by any one app: the proxy image, the shared
 # config.yaml, the nginx-data TLS volume and the default Keycloak client trust.
-IDENTITY_DATABASE_APP = APPS[0]
+SHARED_RESOURCE_OWNER = APPS[0]
 NETWORK = "app-network"
 # Keycloak itself is the identity server, not a per-app/per-database resource,
 # so it does not go through Database.image()'s "<name>-<component>" naming.
 KEYCLOAK_IMAGE = f"localhost/keycloak:{settings.IMAGE_TAG}"
 KEYCLOAK_ARCHIVE = f"keycloak-{settings.IMAGE_TAG}.tar"
-PROXY_IMAGE = IDENTITY_DATABASE_APP.image("proxy")
-PROXY_ARCHIVE = IDENTITY_DATABASE_APP.image_archive("proxy")
+PROXY_IMAGE = SHARED_RESOURCE_OWNER.image("proxy")
+PROXY_ARCHIVE = SHARED_RESOURCE_OWNER.image_archive("proxy")
 
 # Keycloak has its own dedicated database (no frontend/backend/OAuth client of
 # its own), replicated for DR parity alongside every registered Application.
@@ -123,7 +123,7 @@ def _describe_database(database):
 
 
 def _describe_application(app):
-    identity = app == IDENTITY_DATABASE_APP
+    owns_shared_resources = app == SHARED_RESOURCE_OWNER
     return {
         "name": app.name,
         "hostname": app.hostname,
@@ -150,9 +150,9 @@ def _describe_application(app):
         "manifests": {
             "postgres": [app.manifest("postgres"), app.manifest("config")],
             "application": [app.manifest("app"), app.manifest("config")]
-                           + (["keycloak.yaml"] if identity else []),
+                           + (["keycloak.yaml"] if owns_shared_resources else []),
             "keycloak": ["keycloak.yaml"],
-            "shared-proxy": ["shared-proxy.yaml", IDENTITY_DATABASE_APP.manifest("config")],
+            "shared-proxy": ["shared-proxy.yaml", SHARED_RESOURCE_OWNER.manifest("config")],
         },
     }
 

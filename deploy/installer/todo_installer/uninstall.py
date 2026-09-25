@@ -6,10 +6,10 @@ from . import apps, secrets, settings
 from .commands import exists, run
 from .quadlet import systemctl
 
-IDENTITY = apps.IDENTITY_DATABASE_APP
+SHARED = apps.SHARED_RESOURCE_OWNER
 # caddy-data is a retired Caddy-based proxy's volume name; kept here so a host
 # still carrying it from before the nginx migration gets it cleaned up too.
-TLS_VOLUMES = (IDENTITY.resource('nginx-data'), IDENTITY.resource('caddy-data'))
+TLS_VOLUMES = (SHARED.resource('nginx-data'), SHARED.resource('caddy-data'))
 QUADLET_FILES = (apps.NETWORK + '.network',
                  *(app.volume(purpose) + '.volume' for app in apps.APPS
                    for purpose in ('data', 'backup')),

@@ -106,7 +106,8 @@ class AcceptanceGuideTests(unittest.TestCase):
             self.assertNotIn(unsafe, commands)
         actions = re.findall(r'pve_lab\.py (\w+)', guide)
         self.assertTrue(actions)
-        self.assertLessEqual(set(actions), {'get', 'set', 'post', 'delete', 'task', 'exec', 'nic'})
+        self.assertLessEqual(set(actions), {'get', 'set', 'post', 'delete', 'task', 'exec', 'nic', 'fence'})
+        self.assertIn('pve_lab.py fence 107', guide)
         self.assertIn('app-quarantine.sh stop todo-primary gunstein', guide)
 
     def test_acceptance_reference_links_resolve_in_source(self):

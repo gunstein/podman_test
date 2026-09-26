@@ -35,8 +35,9 @@ operator, not code; *[decision]* needs the owner's choice before any work.
    M1 (alerts), O1 (incident runbooks), G4 (the disaster drill in the lab) and
    G5 (rebuilding Oslo on new hardware).
 2. What operation needs: U1 (updating a replicated pair), T6 (planned
-   switchover), M4 (a durable WAL archive), M2 (scheduled backups with
-   pruning), L1 and L2 (command logging, failure reasons).
+   switchover), U2 (certificate renewal, before replication stops by itself),
+   M4 (a durable WAL archive), M2 (scheduled backups with pruning), L1 and L2
+   (command logging, failure reasons).
 3. Decide D4 (one database server or one per app).
 4. fapolicyd (F0 first, then what is left of F1-F6), firewalls (W) and data
    checks (C).
@@ -167,11 +168,25 @@ such as a small cloud VM. Without one, the safe design is one human decision
   primary while keeping the LAN publication, a fixed order for PostgreSQL
   minor updates (standby first), and a plan for major upgrades such as 17 to
   18, which cannot stream between versions.
-- **U2. TLS renewal while running.** *[new]* The server certificate lasts 397 days, and
-  `proxy-entrypoint.sh` issues a new one only when nginx starts with fewer than
-  30 days left. nginx running for over a year without a restart serves an
-  expired certificate, and nothing warns. Check the expiry in M1, and add a
-  renewal that does not need a full service restart.
+- **U2. Certificate renewal while running.** *[new]* Two certificates expire
+  without anyone being warned:
+  - *nginx.* The server certificate lasts 397 days, and `proxy-entrypoint.sh`
+    issues a new one only when nginx starts with fewer than 30 days left. nginx
+    running for over a year without a restart serves an expired certificate.
+  - *Replication.* Each primary's PostgreSQL certificate lasts 825 days and is
+    renewed only when the host is published as primary (bootstrap or rebuild).
+    A pair that runs longer without a rebuild gets an expired certificate; the
+    standby then refuses it (`verify-full`) and replication stops, which only
+    `replication-status` or `cluster-status` would show. The CA lasts 10 years.
+
+  Check the expiry of both certificates, and of the replication CA, in M1's
+  scheduled checks, with a warning well before the end (for example 60 days).
+  Add renewal that needs no full service restart: for replication, an app-ops
+  command that runs `replication_tls.install_server_tls` on the current
+  primary, which already reissues a certificate with less than 30 days left
+  and reloads PostgreSQL; for nginx, a reissue followed by `nginx -s reload`.
+  Run both from a systemd timer, so renewal does not depend on someone
+  remembering it.
 - **U3. Time synchronisation.** *[new]* Token expiry, TLS and log timestamps depend on
   correct clocks on both hosts. Check that chrony (or another time service) is
   active in the preflight and in acceptance phase 1, and document it.

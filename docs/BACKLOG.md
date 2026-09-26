@@ -10,12 +10,14 @@ in the kickoff message. Remove an item when its change is merged.
    compare against.
 2. Security: T1 (encrypted replication between the two sites), H1 (Keycloak
    brute force) and H2 (security headers).
-3. What operation needs: U1 (updating a replicated pair), M1 and M2 (alerts,
+3. A real failover between the sites: T3 (fencing without the failed site's
+   hypervisor), T4 (one CA for both sites) and T5 (moving the names).
+4. What operation needs: U1 (updating a replicated pair), M1 and M2 (alerts,
    scheduled backups with pruning), L1 and L2 (command logging, failure
    reasons).
-4. Retire Ansible (R0, R0b, 3-6) once there is a CLEAN PASS.
-5. fapolicyd (F), firewalls (W) and data checks (C).
-6. DR code structure and the rest.
+5. Retire Ansible (R0, R0b, 3-6) once there is a CLEAN PASS.
+6. fapolicyd (F), firewalls (W) and data checks (C).
+7. DR code structure and the rest.
 
 The real setup has two machines and no third, on separate hardware at separate
 physical sites. D2 and L6 are therefore designed for two hosts that keep copies
@@ -36,6 +38,25 @@ for each other, and everything between them crosses a network between sites
   sites can lag further behind than in the lab, which widens what a failover
   can lose (C4). Measure lag over the real link, check that the RPO target of
   30 seconds holds, and that timeouts (SSH, `connect_timeout`) suit it.
+- **T3. Fencing when the other site does not answer.** Acceptance fences the
+  old primary through the Proxmox API (power off, links down, ports checked),
+  which needs access to the failed site's hypervisor. With a whole site gone
+  or cut off, that access may be missing, and an isolated old primary could go
+  on accepting writes (split-brain). Write a procedure for how the operator
+  *knows* the old site is fenced (confirmation from someone on site, power
+  removed, the network closed from the surviving side), and for what to do when
+  that site comes back with its old primary. The quarantine covers the return
+  only when the hypervisor is reachable.
+- **T4. One CA for both sites.** The promoted host creates its own CA, so
+  after a failover every user's browser shows certificate errors until the new
+  CA is rolled out (acceptance trusted the new CA on its one client by hand).
+  Share one CA between the sites, synchronised like the other DR secrets over
+  an encrypted link (T1), or use certificates from an existing PKI.
+- **T5. Pointing users at the other site.** Clients use `todo.test` and
+  `notes.test`; acceptance edits `/etc/hosts` on one client. Write down how the
+  names move to the surviving site in the real setup (a DNS change with a
+  short TTL, a floating address or similar), who does it, and how long it
+  takes. Without it, failover is done but nobody reaches the service.
 
 ## Updates and time
 

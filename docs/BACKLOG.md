@@ -4,6 +4,24 @@ Agreed work that waits until the two-VM acceptance run with app-ops has finished
 Changing checked code during a run would test a different revision from the one
 in the kickoff message. Remove an item when its change is merged.
 
+## Order
+
+1. The acceptance run on `1b1d345` for a CLEAN PASS: a clean baseline to
+   compare against.
+2. Small, high-value security: H1 (Keycloak brute force) and H2 (security
+   headers).
+3. What operation needs: U1 (updating a replicated pair), M1 and M2 (alerts,
+   scheduled backups with pruning), L1 and L2 (command logging, failure
+   reasons).
+4. Retire Ansible (R0, R0b, 3-6) once there is a CLEAN PASS.
+5. fapolicyd (F), firewalls (W) and data checks (C).
+6. DR code structure and the rest.
+
+The setup has two machines and no third. D2 and L6 are therefore designed for
+two hosts that keep copies for each other. Whether they protect against a
+hardware failure depends on the two machines running on separate hardware;
+see D2.
+
 ## Updates and time
 
 - **U1. An update path for a replicated pair.** The installer now refuses a
@@ -152,10 +170,12 @@ why. The seven workloads already log to journald (`LogDriver=journald`), and
 - **L5. `docs/LOGGING.md`.** One page with where each log lives and ready
   commands per workload and tool, including the rootless
   `journalctl _SYSTEMD_USER_UNIT=...` form (`journalctl --user` can show nothing).
-- **L6. Logs across hosts** (decision needed). Each VM keeps its own journal, so
-  after a failover the history is split, and in a real disaster one host may be
-  gone. Forward to a log host (`systemd-journal-upload`/`-remote`), or decide to
-  fetch from both hosts by hand and document that.
+- **L6. Logs across the two hosts.** Each VM keeps its own journal, so after
+  a failover the history is split, and in a real disaster one host may be
+  gone with its logs. With two machines and no third: let each host forward its
+  journal to the other (for example `systemd-journal-upload`/`-remote`), so the
+  surviving host also holds the lost host's logs up to the moment it was lost.
+  Testable in the lab with the two VMs.
 
 ## Monitoring and backup routine
 
@@ -211,10 +231,18 @@ promoted primary.
   dropped, add password support later by running every privileged command
   through `/bin/sh`, so a narrow NOPASSWD rule can never match it and a
   password line can never become a command's stdin.
-- **D2. Backup to another host** (decision needed). Base backups and WAL live on
-  the same VM as the database, so losing the VM loses its backups unless the
-  standby survives. Either copy them to another host, or keep the limit and
-  state it plainly as a design decision.
+- **D2. Backups that survive losing a machine.** Base backups and WAL live on
+  the same VM as the database. The standby holds today's data, but not the
+  history: a mistaken delete replicates within seconds, and only PITR from the
+  backup undoes it, from a backup that was on the machine that was lost. With
+  two machines and no third: copy the base backups and WAL archive from the
+  primary into a separate volume on the standby host, and reverse the
+  direction after a failover. This protects against losing one machine only
+  if the two run on separate hardware; two VMs on one physical host (as in the
+  lab) share its fate. Then only a copy off that hardware helps (for example a
+  regularly attached external disk or NAS), or the limit must be stated
+  plainly. Decision needed: are the two machines on separate hardware in the
+  real setup?
 - **D3. `deploy-promoted-application` runs only on the promoted host.** It
   refuses unless that host is the machine running app-ops. Either lift the
   limit or document it as deliberate in `deploy/ops/README.md`.

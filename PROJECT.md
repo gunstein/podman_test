@@ -31,11 +31,12 @@ The same topology then reached a REPAIRED FUNCTIONAL PASS on `f1f07b5` with
 app-ops in place of every Ansible playbook, in an autonomous agent run
 ([record](docs/history/ACCEPTANCE-f1f07b5.md)).
 
-With the defects from `f1f07b5` fixed, the topology achieved a CLEAN PASS on
-`1b1d345` in a supervised two-VM run with app-ops
-([record](docs/history/ACCEPTANCE-1b1d345.md)). All functional gates passed as
-written without retries, workarounds or deviations. Final topology: VM 108
-primary, VM 107 database-only standby; verify roles freshly before any operation.
+With the defects from `f1f07b5` fixed, a supervised two-VM run with app-ops
+passed every functional gate on `1b1d345` without retries or repairs
+([record](docs/history/ACCEPTANCE-1b1d345.md)). It is not a CLEAN PASS: part of
+the phase 6 fencing step was skipped (`onboot=0`, the HA check and some port
+tests), so a CLEAN PASS still needs a new run. Final topology: VM 108 primary,
+VM 107 database-only standby; verify roles freshly before any operation.
 
 ## Current work and limitations
 

@@ -24,6 +24,29 @@ in the kickoff message. Remove an item when its change is merged.
   correct clocks on both hosts. Check that chrony (or another time service) is
   active in the preflight and in acceptance phase 1, and document it.
 
+## Security hardening
+
+The containers already run as non-root users, with
+`allowPrivilegeEscalation: false` and every capability dropped, and TLS is
+limited to 1.2 and 1.3.
+
+- **H1. Brute-force protection in Keycloak.** `keycloak/todo-realm.json` sets
+  neither `bruteForceProtected` nor a password policy, and Keycloak leaves both
+  off by default, so anyone who reaches the login page can guess passwords
+  without limit. Turn on temporary lockout after repeated failures and set a
+  password policy in the realm import.
+- **H2. HTTP security headers.** The shared nginx sets only
+  `X-Content-Type-Options`. Add HSTS, a Content-Security-Policy and
+  `frame-ancestors` in `shared-proxy.yaml.j2`. The CSP must allow what the
+  Keycloak adapter needs, so run the browser tests afterwards.
+- **H3. Vulnerability scanning of images.** Dependabot (item 14) reports new
+  versions, not known vulnerabilities in the packages inside the base images.
+  Scan the built images in CI (for example with Trivy); a CI-only tool, never
+  installed on target hosts.
+- **H4. Optional: read-only root filesystems.** Set `readOnlyRootFilesystem`
+  where a container allows it, with writable volumes only where needed. Extra
+  hardening, not a gap.
+
 ## fapolicyd
 
 First check `grep -E '^\s*integrity' /etc/fapolicyd/fapolicyd.conf` on both

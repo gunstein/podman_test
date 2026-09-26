@@ -4,6 +4,26 @@ Agreed work that waits until the two-VM acceptance run with app-ops has finished
 Changing checked code during a run would test a different revision from the one
 in the kickoff message. Remove an item when its change is merged.
 
+## Updates and time
+
+- **U1. An update path for a replicated pair.** The installer now refuses a
+  host with replication, which is safer, but it leaves no supported way to roll
+  out new application images or configuration after DR is set up: `install.sh`
+  refuses on the primary, and `deploy-promoted-application` covers only a
+  promoted host. Updates from item 14 therefore have no way into operation.
+  Add an app-ops command that updates the application tier on the current
+  primary while keeping the LAN publication, a fixed order for PostgreSQL
+  minor updates (standby first), and a plan for major upgrades such as 17 to
+  18, which cannot stream between versions.
+- **U2. TLS renewal while running.** The server certificate lasts 397 days, and
+  `proxy-entrypoint.sh` issues a new one only when nginx starts with fewer than
+  30 days left. nginx running for over a year without a restart serves an
+  expired certificate, and nothing warns. Check the expiry in M1, and add a
+  renewal that does not need a full service restart.
+- **U3. Time synchronisation.** Token expiry, TLS and log timestamps depend on
+  correct clocks on both hosts. Check that chrony (or another time service) is
+  active in the preflight and in acceptance phase 1, and document it.
+
 ## fapolicyd
 
 First check `grep -E '^\s*integrity' /etc/fapolicyd/fapolicyd.conf` on both

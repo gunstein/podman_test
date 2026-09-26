@@ -10,6 +10,21 @@ from urllib.request import Request, urlopen
 from . import apps, settings
 
 BASE = f'http://127.0.0.1:{settings.LOCAL_HTTP_PORT}'
+# Login protection for the todo realm. After 5 failed logins an account is
+# locked for a minute, doubling up to 15 minutes; failures are forgotten after
+# 12 hours. Keycloak leaves both off by default. The realm import carries the
+# same values for a new installation (keycloak/todo-realm.json).
+REALM_SECURITY = {
+    'bruteForceProtected': True,
+    'permanentLockout': False,
+    'failureFactor': 5,
+    'waitIncrementSeconds': 60,
+    'maxFailureWaitSeconds': 900,
+    'maxDeltaTimeSeconds': 43200,
+    'quickLoginCheckMilliSeconds': 1000,
+    'minimumQuickLoginWaitSeconds': 60,
+    'passwordPolicy': 'length(12) and notUsername and notEmail',
+}
 
 
 def request(path, method='GET', data=None, token=None, form=False, hostname=None):
@@ -54,6 +69,20 @@ def wait(path, attempts, delay, status=None, hostname=None):
     raise RuntimeError(f'Readiness failed after {attempts} attempts: {hostname or BASE}{path}')
 
 
+def secure_realm(token):
+    """Give the todo realm REALM_SECURITY, also on an existing installation.
+
+    A realm is imported only on Keycloak's first start, so an installation
+    made before these settings, or a replicated Keycloak database, gets them
+    here. Returns True if the realm had to be changed.
+    """
+    realm = request('/auth/admin/realms/todo', token=token)
+    if all(realm.get(key) == value for key, value in REALM_SECURITY.items()):
+        return False
+    request('/auth/admin/realms/todo', 'PUT', dict(REALM_SECURITY), token)
+    return True
+
+
 def configure(admin_password, clients=None):
     """Make sure every app has a Keycloak client whose redirect and origin match its URL.
 
@@ -62,7 +91,8 @@ def configure(admin_password, clients=None):
     client comes with the realm import and serves as the template: another
     app's missing client is copied from it, with its own client ID,
     redirect URL and token audience. An existing client only gets its URLs
-    corrected. Returns True if anything changed.
+    corrected. The realm gets its login protection first (secure_realm).
+    Returns True if anything changed.
     """
     wait('/health', 30, 1, 'ok')
     wait('/ready', 30, 1, 'ready')
@@ -82,7 +112,7 @@ def configure(admin_password, clients=None):
         'password': admin_password,
     }, form=True)['access_token']
     parsed = urlsplit(issuer)
-    changed = False
+    changed = secure_realm(token)
     template = None
     for client_id, hostname in identities:
         # The shared-resource-owner app follows the environment's canonical issuer

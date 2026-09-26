@@ -312,7 +312,8 @@ class InstallTests(unittest.TestCase):
             with patch.object(keycloak, 'wait', side_effect=[{}, {}, {
                     'issuer': 'https://todo.test:8443/auth/realms/todo'}]), \
                     patch.object(keycloak, 'request', side_effect=[
-                        {'access_token': 'token'}, [{'id': 'client'}], client, None]) as request:
+                        {'access_token': 'token'}, dict(keycloak.REALM_SECURITY), [{'id': 'client'}],
+                        client, None]) as request:
                 self.assertEqual(keycloak.configure('password', [('todo-frontend', 'todo.test')]), not unchanged)
                 if not unchanged:
                     body = request.call_args.args[2]
@@ -326,7 +327,7 @@ class InstallTests(unittest.TestCase):
                 'protocolMappers': [{'id': 'mapper-id', 'config': {
                     'included.client.audience': 'todo-frontend'}}]}
         for missing in (False, True):
-            responses = [{'access_token': 'token'}, [{'id': 'todo-id'}], todo]
+            responses = [{'access_token': 'token'}, dict(keycloak.REALM_SECURITY), [{'id': 'todo-id'}], todo]
             responses += [[], None] if missing else [[{'id': 'notes-id'}], {
                 'id': 'notes-id', 'custom': True, 'redirectUris': [], 'webOrigins': []}, None]
             with patch.object(keycloak, 'wait', side_effect=[{}, {}, {
@@ -346,6 +347,21 @@ class InstallTests(unittest.TestCase):
                     self.assertEqual(mapper['config']['included.client.audience'], 'notes-frontend')
                 else:
                     self.assertTrue(call[2]['custom'])
+
+    def test_realm_login_protection_is_applied_once_and_kept(self):
+        with patch.object(keycloak, 'request', side_effect=[{'realm': 'todo', 'bruteForceProtected': False},
+                                                            None]) as request:
+            self.assertTrue(keycloak.secure_realm('token'))
+            path, method, body, token = request.call_args.args
+            self.assertEqual((path, method, token), ('/auth/admin/realms/todo', 'PUT', 'token'))
+            self.assertEqual(body, keycloak.REALM_SECURITY)
+        with patch.object(keycloak, 'request', return_value={'realm': 'todo', **keycloak.REALM_SECURITY}) as request:
+            self.assertFalse(keycloak.secure_realm('token'))
+            request.assert_called_once_with('/auth/admin/realms/todo', token='token')
+
+    def test_realm_import_carries_the_same_login_protection(self):
+        realm = json.loads((Path(__file__).resolve().parents[3] / 'keycloak/todo-realm.json').read_text())
+        self.assertEqual({key: realm.get(key) for key in keycloak.REALM_SECURITY}, keycloak.REALM_SECURITY)
 
     def test_readiness_retries_connection_reset_during_proxy_startup(self):
         with patch.object(keycloak, 'request', side_effect=[ConnectionResetError(), {'status': 'ok'}]), \

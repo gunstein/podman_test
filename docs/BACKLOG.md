@@ -45,7 +45,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
    pruning), L1 and L2 (command logging, failure reasons).
 5. Retire Ansible (R0, R0b, 3-6) once there is a CLEAN PASS. Then decide D4
    (one database server or one per app).
-6. fapolicyd (F), firewalls (W) and data checks (C).
+6. fapolicyd (F0 first, then what is left of F1-F6), firewalls (W) and data
+   checks (C).
 7. DR code structure and the rest.
 
 The real setup has two machines and no third, on separate hardware at separate
@@ -218,25 +219,42 @@ First check `grep -E '^\s*integrity' /etc/fapolicyd/fapolicyd.conf` on both
 VMs (read-only). With the default `integrity = none`, fapolicyd trusts a path
 whatever its current contents, which makes F2 and F4 real weaknesses.
 
+- **F0. Package the tools as one RPM.** *[simplify]* The usual way to run own
+  code under fapolicyd is an RPM installed with `dnf`: fapolicyd trusts the
+  RPM database, so the files are trusted with the right hash automatically,
+  and `dnf upgrade` refreshes that. Exact-file trust with `fapolicyd-cli
+  --file add` is Red Hat's documented way for a few local exceptions, which
+  is how this project started (`deploy/offline/FAPOLICYD.md` already
+  recommends an RPM beyond the lab). Build one `todo-tools` RPM with
+  `app_installer`, `app_ops`, `app_dr.py`, `app_backup.py` and
+  `app-quarantine.sh`, installed root-owned under `/opt/todo`, and ship it in
+  the offline bundle; install it with `dnf install ./todo-tools-<version>.rpm`,
+  never `rpm -i`, which bypasses the fapolicyd integration. That removes
+  `trust-files.sh`, the trust steps in the guides and the controller's sudo
+  password step, and most of F2-F5. Cost: a `.spec` file and `rpmbuild` in
+  the build step (CI only, no runtime dependency), and a GPG key to sign the
+  package so its origin is verified (fapolicyd trusts the RPM database
+  either way). Decide whether `install.sh` on a single host uses the RPM too
+  or keeps today's manual trust. A new acceptance run follows.
 - **F1. Correct the docs.** *[docs]* FAPOLICYD.md says trust is tied to path, size and
   hash. That only holds when `integrity` is `size`, `sha256` or `ima`; waiting
   for the exact `--dump-db` lines checks the database, not enforcement. Say
   what holds with and without an integrity check.
-- **F2. Never trust user-writable files.** *[simplify]* The controller runs app_ops and
+- **F2. Never trust user-writable files.** *[simplify]* (Gone with F0.) The controller runs app_ops and
   app_installer from `~/todo-operations`, `install_trusted` trusts those
   sources on the controller, and the offline install trusts the extracted
   bundle's Python in `$HOME`. Run all trusted Python from root-owned copies
   (install to `/opt/todo/lib` first, then run from there) on the controller
   and in the offline install too, so no trust entry points into a home
   directory.
-- **F3. A root-owned trust helper.** *[simplify]* `trust-files.sh` runs as text passed to
+- **F3. A root-owned trust helper.** *[simplify]* (Gone with F0.) `trust-files.sh` runs as text passed to
   `sh -c` from the user's operations package, so fapolicyd never checks it.
   Install it once as a root-owned file with its own trust, and run that.
-- **F4. Remove stale trust.** *[new]* Replacing, renaming or deleting a file leaves its
+- **F4. Remove stale trust.** *[new]* (Gone with F0.) Replacing, renaming or deleting a file leaves its
   trust entry behind (for example the old `todo_*` tools and old bundle
   extractions); cleanup is manual today. Remove entries when files are
   replaced or retired.
-- **F5. One trust file.** *[simplify]* The code and docs use `todo`, `app-installer` and
+- **F5. One trust file.** *[simplify]* (Gone with F0.) The code and docs use `todo`, `app-installer` and
   `todo-component`. Use one name, so it is clear what the project trusts.
 - **F6. State the lab limit.** *[docs]* With `NOPASSWD: ALL` the service user can do
   anything as root, so acceptance does not test fapolicyd as a barrier against

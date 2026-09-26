@@ -183,7 +183,7 @@ class PortsClosedTests(unittest.TestCase):
     def test_refused_ports_are_closed(self):
         result = self.run_script("127.0.0.1", self.free_port(), self.free_port())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("refused", result.stdout)
+        self.assertIn("closed (Connection refused)", result.stdout)
         self.assertIn("CLOSED: 127.0.0.1", result.stdout)
 
     def test_an_open_port_fails(self):

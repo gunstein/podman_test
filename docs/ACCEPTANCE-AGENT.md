@@ -414,7 +414,8 @@ finish: do not repeat it; poll
 `fence` is the whole fencing step in one command: it refuses if HA manages the
 VM, stops it, sets `onboot=0` and `link_down=1` on every `netN`, reads it all
 back and prints that as evidence; it fails unless the VM is fenced.
-`ports-closed.sh` prints each port as `open`, `refused` or `timeout` and exits
+`ports-closed.sh` prints each port as `open`, `timeout` or `closed` with the
+error (`Connection refused`, `No route to host`) and exits
 1 if any is open. It needs only bash, so it also runs on a VM through SSH.
 
 **Guests.** SSH as `gunstein` with host-key checking on. Use `sudo -n` for root

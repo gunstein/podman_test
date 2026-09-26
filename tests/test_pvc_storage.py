@@ -99,6 +99,7 @@ class PVCStorageTests(unittest.TestCase):
         from app_installer import uninstall
         for remove_data in (False, True):
             with tempfile.TemporaryDirectory() as directory, \
+                    patch("app_installer.install.exists", return_value=False), \
                     patch("app_installer.uninstall.exists",
                           side_effect=lambda kind, name: not name.endswith("-replicator-password")), \
                     patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run:

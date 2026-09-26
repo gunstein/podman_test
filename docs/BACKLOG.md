@@ -4,16 +4,6 @@ Agreed work that waits until the two-VM acceptance run with app-ops has finished
 Changing checked code during a run would test a different revision from the one
 in the kickoff message. Remove an item when its change is merged.
 
-## Safety
-
-1. **The installer refuses a replicated host.** `install.sh` and
-   `app_installer install` rewrite the database units without their LAN
-   publication, which silently cuts off the standby. Refuse on a host with
-   replication, promotion or backup state, as `uninstall` already does.
-2. **One standby gate.** `app_dr.py preflight` checks role, LSNs and lag
-   itself instead of calling `replication.require_standby`. Make it call the
-   shared check, so the rule that decides whether promotion is safe exists once.
-
 ## fapolicyd
 
 First check `grep -E '^\s*integrity' /etc/fapolicyd/fapolicyd.conf` on both
@@ -50,11 +40,6 @@ The guest firewalld rules and the Proxmox quarantine are both needed: the
 first lets only the client and the peer in, the second fences an old primary.
 What is weak is how they are checked and switched.
 
-- **W1. A firewall check that cannot pass wrongly.** app-ops
-  (`standby.require_firewall`) only queries the permanent configuration of zone
-  `public`. A rule added without `--reload`, or an interface in another zone,
-  still passes. Find the zone of the interface that holds the address, and
-  require the rule in both the runtime and the permanent configuration.
 - **W2. Quarantine as one tool.** The phase 5 rehearsal and phase 9 switch the
   Proxmox VM firewall, links and rules in many separate API calls; skipping
   one left VM 107 quarantined in run 2. Add one idempotent command that applies,
@@ -67,7 +52,8 @@ What is weak is how they are checked and switched.
   cover this state.
 - **W4. Tool-owned guest rules.** The firewalld rules are copy-and-paste
   commands in phases 3, 4, 7 and 9, tied to fixed addresses. Let a tool add
-  or at least verify them (with the W1 check) before each DR command.
+  or at least verify them (with the app-ops zone and runtime check) before each
+  DR command.
 - **W5. Note the node-wide effect.** VM rules need the datacenter and node
   firewall on, which also changes access to the Proxmox host itself. State this
   in the agent guide's preparation part.

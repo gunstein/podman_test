@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from . import apps, images, keycloak, quadlet, secrets, settings, workloads
-from .commands import run
+from .commands import exists, run
 
 LEGACY = tuple(app.resource(component) for app in apps.APPS
                for component in ('postgres', 'db-setup', 'migrate', 'db-grants', 'backend', 'frontend')) + (
@@ -32,6 +32,26 @@ def preflight(quadlet_dir):
             'Unsupported per-container Quadlets are installed. Stop and review the host '
             'separately; clean deploy requires a Kube-compatible baseline and does not '
             'migrate or remove existing runtime state.')
+
+
+def require_single_host(action):
+    """Refuse a host with replication, promotion or backup state; it is a DR node.
+
+    The single-host installer and uninstaller do not know about DR. Rerunning
+    install on a replicated primary rewrites its database units without the
+    LAN publication, which silently cuts off the standby; uninstall would
+    remove clustered state. A person has to decide what to do on such a host.
+    """
+    markers = (Path.home() / '.config/todo/todo-standby-entrypoint.sh',
+               Path('/opt/todo/bin/app_dr.py'), Path('/opt/todo/bin/app_backup.py'),
+               # Names installed before the tools were renamed still mark a clustered host.
+               Path('/opt/todo/bin/todo_dr.py'), Path('/opt/todo/bin/todo_backup.py'))
+    if any(exists('secret', d.secret('replicator')) for d in apps.REPLICATED_DATABASES) or any(
+            path.exists() for path in markers):
+        raise RuntimeError(
+            f'{action} only supports a single-host deployment. This host contains '
+            'clustered replication, promotion or backup state. Preserve it and '
+            'use the DR tools and runbooks instead (docs/ACCEPTANCE.md, deploy/ops).')
 
 
 def setup_roles(app: apps.App = apps.APPS[0]):
@@ -77,6 +97,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         deployment_mode == 'offline' and (not bundle_directory or refresh_images)
     ):
         raise ValueError('Offline deployment requires bundle_directory and forbids refresh_images.')
+    require_single_host('install')
     root = Path(project_root).resolve()
     directory = Path(quadlet_dir or settings.QUADLET_DIR).resolve()
     runtime = Path(kube_runtime_dir or directory / 'todo-kube-runtime').resolve()

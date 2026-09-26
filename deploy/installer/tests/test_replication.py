@@ -118,7 +118,7 @@ class ReplicationTests(unittest.TestCase):
             'in_recovery': True, 'transaction_read_only': True,
             'receive_lsn': '0/20', 'replay_lsn': '0/10', 'apply_lag_bytes': 16,
         }), patch.object(replication, 'run') as run:
-            with self.assertRaisesRegex(RuntimeError, 'not fully replayed'):
+            with self.assertRaisesRegex(RuntimeError, 'unreplayed local WAL: 16 bytes'):
                 replication.promote(apps.APPS[0])
             run.assert_not_called()
 

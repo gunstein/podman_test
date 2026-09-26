@@ -662,8 +662,10 @@ and `https://notes.test:8443/ready` **without** `-k`. Also save the public CA to
 #### C9.5 Phase 4 — Standby bootstrap
 
 Follow ACCEPTANCE.md. The firewalld rule on `.102` uses `port="5432-5434"`.
-Set up primary-to-standby SSH with C9.12 (`FROM=.102`, `TO=.108`); do not use
-`ssh-copy-id`, which would need a password. Record per-database
+Set up key-based SSH in both directions with C9.12 (`FROM=.102`, `TO=.108`,
+then `FROM=.108`, `TO=.102`); do not use `ssh-copy-id`, which would need a
+password. The phase 5 rehearsal checks SSH from `.108` to `.102`, so that host
+key must already be pinned then. Record per-database
 streaming/slot/lag evidence and read both markers on the standby. Reboot VM 108
 through the API and re-check.
 
@@ -802,16 +804,28 @@ restore commands. Record every backup name printed by `create`
 7. Key-based SSH from `.108` to `.102` with C9.12 (`FROM=.108`, `TO=.102`).
 8. Enable only the replication exception: read `get .../107/firewall/rules`,
    find the rule whose comment is `todo-quarantine-replication`, read its `pos`,
-   then `set /nodes/{node}/qemu/107/firewall/rules/<pos> enable=1`. Verify from
-   `.102`: `timeout 5 bash -c '</dev/tcp/192.168.0.108/5432'` (and 5433, 5434)
-   now succeed.
+   then `set /nodes/{node}/qemu/107/firewall/rules/<pos> enable=1`. Until the
+   rebuild publishes them, `.108` listens on 5432-5434 only on `127.0.0.1`, so
+   a connection cannot succeed yet. What this step proves is that nothing
+   blocks the path. From `.102`:
+
+   ```bash
+   for port in 5432 5433 5434; do
+     timeout 5 bash -c "</dev/tcp/192.168.0.108/$port"; echo "port=$port rc=$?"
+   done
+   ```
+
+   Require `Connection refused` (rc 1, at once) or a connection (rc 0) for
+   every port: the packets reach `.108`. rc 124 is a timeout: something still
+   drops them. STOP and record the firewall readings.
 9. On `.108`, the recovery inventory as in phase 7, then the read-only
    `preflight-standby-rebuild.yml` **without** `--ask-become-pass`. Every
    assertion must pass.
 10. `rebuild-standby.yml` once, **without** `--ask-become-pass`, in the
     background with a log (C5). Do not start it twice. Wait for `PLAY RECAP`.
     Any `failed=` other than 0: STOP; never rerun.
-11. `cluster-status.yml`: every database reports streaming, async, active slot,
+11. Repeat the loop from step 8 on `.102`: every port must now connect (rc 0).
+    `cluster-status.yml`: every database reports streaming, async, active slot,
     zero lag, and `.102` read-only. Create `phase9` markers and read them on `.102`.
 12. After phase 9 passes, lift the quarantine as the 12c3bef run did:
     `set .../107/firewall/options enable=0`, and restore VM 107 `onboot` to the

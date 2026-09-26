@@ -93,11 +93,11 @@ class RequireStandbyTests(unittest.TestCase):
         cases = [('f|on|0/1|0/1', 'expected a read-only standby'),
                  ('t|off|0/1|0/1', 'expected a read-only standby'),
                  ('f|off|0/1|0/1', 'expected a read-only standby'),
-                 ('t|on||0/1', 'not fully replayed'),
-                 ('t|on|0/1|', 'not fully replayed'),
-                 ('t|on||', 'not fully replayed'),
-                 ('t|on|0/2|0/1', 'not fully replayed'),
-                 ('t|on|0/3000060|0/3000000', 'not fully replayed')]
+                 ('t|on||0/1', 'LSN is unavailable'),
+                 ('t|on|0/1|', 'LSN is unavailable'),
+                 ('t|on||', 'LSN is unavailable'),
+                 ('t|on|0/2|0/1', 'unreplayed local WAL: 1 bytes'),
+                 ('t|on|0/3000060|0/3000000', 'unreplayed local WAL: 96 bytes')]
         for output, message in cases:
             with self.subTest(output=output), self.assertRaisesRegex(RuntimeError, message):
                 self.check(output)

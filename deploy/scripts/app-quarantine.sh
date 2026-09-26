@@ -20,6 +20,17 @@ test "$service_uid" -gt 0
 as_user() {
   runuser -u "$service_user" -- env XDG_RUNTIME_DIR="/run/user/$service_uid" "$@"
 }
+# Right after boot the service user's systemd manager may not accept
+# connections yet ("Failed to connect to bus"). Wait for it, within a bound.
+attempt=1
+until as_user systemctl --user show --property=Version --value > /dev/null 2>&1; do
+  test "$attempt" -lt "${MANAGER_ATTEMPTS:-60}" || {
+    echo "The user systemd manager of $service_user did not answer; nothing was stopped" >&2
+    exit 1
+  }
+  attempt=$((attempt + 1))
+  sleep "${MANAGER_DELAY:-1}"
+done
 # One trusted registry owns the complete group; never leave another app running.
 units=$(PYTHONPATH=/opt/todo/lib PYTHONDONTWRITEBYTECODE=1 python3 -c \
   'from app_installer.apps import services; print("\n".join(services()))')

@@ -39,6 +39,8 @@ class BuildInstallTests(unittest.TestCase):
                         rc = int(argv[3] not in known_images)
                     elif argv[:3] == ['podman', 'pod', 'exists']:
                         rc = 1
+                    elif argv[:3] == ['podman', 'secret', 'exists'] and argv[3].endswith('-replicator-password'):
+                        rc = 1  # a single host has no replication secret
                     elif argv[:2] == ['podman', 'build']:
                         known_images.add(argv[argv.index('--tag') + 1])
                     elif argv[:2] == ['podman', 'pull']:

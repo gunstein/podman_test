@@ -38,8 +38,10 @@ def spec(name, role, address, local=False):
 class World:
     """Every host answers healthily unless told otherwise; records (host, command) in order."""
 
-    def __init__(self, firewall_rule=True, stream_failures=0, writable_standby=False):
+    def __init__(self, firewall_rule=True, stream_failures=0, writable_standby=False,
+                 rule_in=("running", "permanent"), zone="public", rule_zone="public"):
         self.firewall_rule, self.stream_failures = firewall_rule, stream_failures
+        self.rule_in, self.zone, self.rule_zone = rule_in, zone, rule_zone
         self.writable_standby = writable_standby
         self.log = []
 
@@ -80,7 +82,11 @@ class World:
         if command[0] == "firewall-cmd":
             if command[1].startswith("--state"):
                 return ("firewall-state",), "", 0
-            return ("firewall-rule", command[-1]), "", 0 if self.firewall_rule else 1
+            if command[1] == "--get-zone-of-interface=eth0":
+                return ("firewall-zone",), self.zone + "\n", 0
+            where = "permanent" if "--permanent" in command else "running"
+            present = self.firewall_rule and where in self.rule_in and f"--zone={self.rule_zone}" in command
+            return ("firewall-rule", command[-1], where), "", 0 if present else 1
         if command[0] == "hostname":
             return ("hostname",), host + "\n", 0
         if command[0] == "ip":
@@ -105,9 +111,10 @@ class InitialTopologyTests(unittest.TestCase):
         order = [step for step in world.steps() if step[0] in (
             "node-facts", "firewall-rule", "check-standby-pair", "publish-primaries", "export-replication-secrets",
             "import-replication-secrets", "replicate-workload")]
-        self.assertEqual([step[0] for step in order[:5]], ["node-facts", "firewall-rule", "node-facts",
-                                                         "check-standby-pair", "publish-primaries"])
-        self.assertEqual(order[6], ("import-replication-secrets", "U0VDUkVU\n"))
+        self.assertEqual([step[0] for step in order[:6]], ["node-facts", "firewall-rule", "firewall-rule",
+                                                         "node-facts", "check-standby-pair", "publish-primaries"])
+        self.assertEqual([step[2] for step in order[1:3]], ["running", "permanent"])
+        self.assertEqual(order[7], ("import-replication-secrets", "U0VDUkVU\n"))
         self.assertEqual([step for step in order if step[:2] == ("replicate-workload", "standby")],
                          [("replicate-workload", "standby", name) for name in NAMES])
         self.assertEqual([step for step in order[-3:]], [("replicate-workload", "streaming", name) for name in NAMES])
@@ -126,6 +133,16 @@ class InitialTopologyTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "add-rich-rule="):
             standby.bootstrap(str(PROJECT), *self.hosts(world))
         self.assertFalse([step for step in world.steps() if step[0] in ("check-standby-pair", "publish-primaries")])
+
+    def test_the_firewall_rule_must_apply_now_and_after_a_reload(self):
+        # Checked in the zone of the primary's interface, running and permanent.
+        standby.require_firewall(*self.hosts(World(zone="internal", rule_zone="internal"))[1:])
+        for world, message in ((World(rule_in=("permanent",)), "running configuration"),
+                               (World(rule_in=("running",)), "permanent configuration"),
+                               (World(zone="internal", rule_zone="public"), "zone internal of eth0")):
+            with self.subTest(message=message), self.assertRaisesRegex(RuntimeError, message):
+                standby.bootstrap(str(PROJECT), *self.hosts(world))
+            self.assertFalse([step for step in world.steps() if step[0] == "publish-primaries"])
 
     def test_streaming_is_retried_and_a_writable_standby_fails_status(self):
         world = World(stream_failures=2)

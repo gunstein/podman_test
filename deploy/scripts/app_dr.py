@@ -240,13 +240,11 @@ class TodoDr:
                 raise DrError(f'{app.name}: PostgreSQL systemd service is not active')
             if self.container_health(app) != 'healthy':
                 raise DrError(f'{app.name}: PostgreSQL container is not healthy')
-            database = self.database_status(app)
-            if not database.in_recovery or not database.transaction_read_only:
-                raise DrError(f'{app.name}: local PostgreSQL is not a read-only standby')
-            if not database.receive_lsn or not database.replay_lsn:
-                raise DrError(f'{app.name}: standby receive or replay LSN is unavailable')
-            if database.apply_lag_bytes != 0:
-                raise DrError(f'{app.name}: standby has unreplayed local WAL: {database.apply_lag_bytes} bytes')
+            # The shared standby gate: read-only, both LSNs known, nothing left to replay.
+            try:
+                database = DatabaseStatus(**replication.require_standby(app, query=self._query))
+            except (ValueError, RuntimeError) as error:
+                raise DrError(str(error)) from error
             if self.primary_reachable(app):
                 raise DrError('Primary PostgreSQL still answers at '
                               f'{self.config.primary_address}:{app.replication_port}; fencing is not demonstrated')

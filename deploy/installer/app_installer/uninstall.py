@@ -2,7 +2,7 @@
 import shutil
 from pathlib import Path
 
-from . import apps, secrets, settings
+from . import apps, install, secrets, settings
 from .commands import exists, run
 from .quadlet import systemctl
 
@@ -58,16 +58,7 @@ def uninstall(remove_data=False, quadlet_dir=None):
     data and passwords. Returns True if anything was removed.
     """
     directory = Path(quadlet_dir or settings.QUADLET_DIR)
-    markers = (Path.home() / '.config/todo/todo-standby-entrypoint.sh',
-               Path('/opt/todo/bin/app_dr.py'), Path('/opt/todo/bin/app_backup.py'),
-               # Names installed before the tools were renamed still mark a clustered host.
-               Path('/opt/todo/bin/todo_dr.py'), Path('/opt/todo/bin/todo_backup.py'))
-    if any(exists('secret', d.secret('replicator')) for d in apps.REPLICATED_DATABASES) or any(
-            path.exists() for path in markers):
-        raise RuntimeError(
-            'uninstall.yml only supports a single-host deployment. This host contains '
-            'clustered replication, promotion or backup state. Preserve it and '
-            'review the recovery inventory and operational runbooks separately.')
+    install.require_single_host('uninstall')
     stopped = run('systemctl', '--user', 'stop', *(name + '.service' for name in SERVICES),
                   allowed=(0, 5)).returncode == 0
     changed = any([unlink(directory / name) for name in QUADLET_FILES]) or stopped

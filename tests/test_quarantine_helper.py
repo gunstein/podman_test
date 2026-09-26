@@ -34,6 +34,14 @@ elif name == 'runuser':
     if command[0] == 'podman':
         print(os.environ.get('CONTAINERS', ''), end='')
         sys.exit(int(os.environ.get('PODMAN_RC', '0')))
+    elif '--property=Version' in command:
+        counter = Path(os.environ['CALLS'] + '.manager')
+        seen = int(counter.read_text()) if counter.exists() else 0
+        counter.write_text(str(seen + 1))
+        if seen < int(os.environ.get('MANAGER_DOWN', '0')):
+            print('Failed to connect to bus: No such file or directory', file=sys.stderr)
+            sys.exit(1)
+        print('255')
     elif '--property=LoadState' in command:
         print(os.environ.get('LOAD_STATE', 'loaded'))
     elif '--property=ActiveState' in command:
@@ -56,7 +64,7 @@ else:
             result = subprocess.run(
                 ["sh", str(ROOT / "deploy/scripts/app-quarantine.sh"), action, expected, "gunstein"],
                 env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
-                     "CALLS": str(log), **settings},
+                     "CALLS": str(log), "MANAGER_DELAY": "0", **settings},
                 capture_output=True, text=True, check=False,
             )
             return result, log.read_text() if log.exists() else ""
@@ -106,6 +114,26 @@ else:
             result, _ = self.run_helper("stop", ACTIVE_STATE=state)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Not stopped:", result.stderr)
+
+    def test_waits_for_the_user_manager_after_boot(self):
+        result, calls = self.run_helper('stop', MANAGER_DOWN='3')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('STOPPED:', result.stdout)
+        manager = [line for line in calls.splitlines() if '--property=Version' in line]
+        self.assertEqual(len(manager), 4)
+        first_stop = next(i for i, line in enumerate(calls.splitlines()) if 'systemctl --user stop' in line)
+        self.assertGreater(first_stop, max(i for i, line in enumerate(calls.splitlines())
+                                           if '--property=Version' in line))
+
+    def test_a_manager_that_never_answers_stops_nothing(self):
+        for action in ('check', 'stop'):
+            with self.subTest(action=action):
+                result, calls = self.run_helper(action, MANAGER_DOWN='99', MANAGER_ATTEMPTS='3')
+                self.assertEqual(result.returncode, 1)
+                self.assertIn('did not answer; nothing was stopped', result.stderr)
+                self.assertEqual(calls.count('--property=Version'), 3)
+                self.assertNotIn('systemctl --user stop', calls)
+                self.assertNotIn('podman', calls)
 
     def test_notes_service_and_incomplete_registry_cannot_escape_quarantine(self):
         for settings in ({'BAD_UNIT': 'notes-postgres.service'},

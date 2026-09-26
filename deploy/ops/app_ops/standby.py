@@ -12,17 +12,43 @@ def firewall_rule(primary, standby):
             'protocol="tcp" accept')
 
 
+def interface_of(ip_output, address):
+    """The interface that holds address, from 'ip -4 -o address show' output; '' if none does."""
+    for line in ip_output.splitlines():
+        fields = line.split()
+        if 'inet' in fields[:-1] and fields[fields.index('inet') + 1].split('/')[0] == address:
+            return fields[1]
+    return ''
+
+
 def require_firewall(primary, standby):
-    """The primary publishes PostgreSQL on the LAN only behind the documented rich rule."""
+    """The primary publishes PostgreSQL on the LAN only behind the documented rich rule.
+
+    The rule must be in the zone of the interface that holds the primary's
+    address, and in both the running and the permanent configuration: a rule
+    only in the permanent configuration does not apply until a reload, and a
+    rule in another zone never applies to this interface.
+    """
     primary.run(['firewall-cmd', '--state'], sudo=True)
+    interface = interface_of(primary.run(['ip', '-4', '-o', 'address', 'show', 'scope', 'global']).stdout,
+                             primary.spec.address)
+    if not interface:
+        raise RuntimeError(f'{primary.name}: no interface holds {primary.spec.address}')
+    zone = primary.run(['firewall-cmd', f'--get-zone-of-interface={interface}'], sudo=True,
+                       allowed=(0, 2)).stdout.strip()
+    if not zone or ' ' in zone:
+        zone = primary.run(['firewall-cmd', '--get-default-zone'], sudo=True).stdout.strip()
     rule = firewall_rule(primary, standby)
-    query = primary.run(['firewall-cmd', '--permanent', '--zone=public', f'--query-rich-rule={rule}'],
-                        sudo=True, allowed=(0, 1))
-    if query.returncode:
+    missing = [where for where, flags in (('running', []), ('permanent', ['--permanent']))
+               if primary.run(['firewall-cmd', *flags, f'--zone={zone}', f'--query-rich-rule={rule}'],
+                              sudo=True, allowed=(0, 1)).returncode]
+    if missing:
         raise RuntimeError(
-            f'No firewalld rich rule on {primary.name} permits {standby.spec.address} to reach the PostgreSQL '
-            'replication ports. Add it before bootstrap publishes them on the LAN interface, then reload: '
-            f"sudo firewall-cmd --permanent --zone=public --add-rich-rule='{rule}' && sudo firewall-cmd --reload")
+            f'The firewalld zone {zone} of {interface} on {primary.name} has no rich rule in its '
+            f'{" and ".join(missing)} configuration that permits {standby.spec.address} to reach the '
+            'PostgreSQL replication ports. Add it before bootstrap publishes them on the LAN interface, '
+            f"then reload: sudo firewall-cmd --permanent --zone={zone} --add-rich-rule='{rule}' && "
+            'sudo firewall-cmd --reload')
 
 
 def preflight(project_root, controller, primary, standby):

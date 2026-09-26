@@ -106,8 +106,10 @@ def require_standby(app, query=None):
     state = status(app, query)
     if not state['in_recovery'] or not state['transaction_read_only']:
         raise RuntimeError(f'{app.name}: expected a read-only standby')
-    if not state['receive_lsn'] or not state['replay_lsn'] or state['apply_lag_bytes'] != 0:
-        raise RuntimeError(f'{app.name}: standby WAL is unavailable or not fully replayed')
+    if not state['receive_lsn'] or not state['replay_lsn']:
+        raise RuntimeError(f'{app.name}: standby receive or replay LSN is unavailable')
+    if state['apply_lag_bytes'] != 0:
+        raise RuntimeError(f"{app.name}: standby has unreplayed local WAL: {state['apply_lag_bytes']} bytes")
     return state
 
 

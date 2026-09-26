@@ -50,7 +50,8 @@ class InstallTests(unittest.TestCase):
                     stdout = 'fixture-password\n'
                 elif argv[:3] == ['systemctl', '--user', 'show']:
                     stdout = (source_override or str(runtime / argv[3].replace('.service', '.kube'))) + '\n'
-                rc = 1 if argv[:3] == ['podman', 'pod', 'exists'] else 0
+                rc = 1 if argv[:3] == ['podman', 'pod', 'exists'] or (
+                    argv[:3] == ['podman', 'secret', 'exists'] and argv[3].endswith('-replicator-password')) else 0
                 return subprocess.CompletedProcess(argv, rc, stdout, '')
 
             with patch('subprocess.run', side_effect=command), \
@@ -142,7 +143,8 @@ class InstallTests(unittest.TestCase):
                 elif argv[:3] == ['systemctl', '--user', 'show']:
                     stdout = str(directory / 'todo-kube-runtime'
                                 / argv[3].replace('.service', '.kube')) + '\n'
-                rc = 1 if argv[:3] == ['podman', 'pod', 'exists'] else 0
+                rc = 1 if argv[:3] == ['podman', 'pod', 'exists'] or (
+                    argv[:3] == ['podman', 'secret', 'exists'] and argv[3].endswith('-replicator-password')) else 0
                 return subprocess.CompletedProcess(argv, rc, stdout, '')
 
             with patch('subprocess.run', side_effect=command), \
@@ -361,7 +363,7 @@ class InstallTests(unittest.TestCase):
 
 class UninstallTests(unittest.TestCase):
     def test_refuses_dr_secret_before_any_mutation(self):
-        with patch('app_installer.uninstall.exists', return_value=True), \
+        with patch('app_installer.install.exists', return_value=True), \
                 patch('app_installer.uninstall.run') as run:
             with self.assertRaisesRegex(RuntimeError, 'single-host deployment'):
                 uninstall.uninstall()
@@ -370,6 +372,7 @@ class UninstallTests(unittest.TestCase):
     def test_data_and_secret_removal_requires_explicit_flag(self):
         for remove_data in (False, True):
             with tempfile.TemporaryDirectory() as temp, \
+                    patch('app_installer.install.exists', return_value=False), \
                     patch('app_installer.uninstall.exists',
                           side_effect=lambda kind, name: not name.endswith('-replicator-password')), \
                     patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run, \
@@ -396,6 +399,7 @@ class UninstallTests(unittest.TestCase):
             return subprocess.CompletedProcess(argv, rc, '', '')
 
         with tempfile.TemporaryDirectory() as temp, \
+                patch('app_installer.install.exists', return_value=False), \
                 patch('app_installer.uninstall.exists', return_value=False), \
                 patch('subprocess.run', side_effect=command), \
                 patch.object(settings, 'DEV_STATE_FILE', Path(temp) / '_unused' / 'dev.json'):
@@ -404,6 +408,7 @@ class UninstallTests(unittest.TestCase):
 
     def test_uninstall_removes_only_registered_pods_before_the_shared_network(self):
         with tempfile.TemporaryDirectory() as temp, \
+                patch('app_installer.install.exists', return_value=False), \
                 patch('app_installer.uninstall.exists',
                       side_effect=lambda kind, name: kind == 'network'), \
                 patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run, \
@@ -428,6 +433,7 @@ class UninstallTests(unittest.TestCase):
 
     def test_unexpected_stop_failure_preserves_files(self):
         with tempfile.TemporaryDirectory() as temp, \
+                patch('app_installer.install.exists', return_value=False), \
                 patch('app_installer.uninstall.exists', return_value=False), \
                 patch('subprocess.run', return_value=subprocess.CompletedProcess([], 1, '', '')):
             directory = Path(temp)
@@ -443,7 +449,7 @@ class FailureBoundaryTests(unittest.TestCase):
         for marker in ('.config/todo/todo-standby-entrypoint.sh',
                        '/opt/todo/bin/app_dr.py', '/opt/todo/bin/app_backup.py',
                        '/opt/todo/bin/todo_dr.py', '/opt/todo/bin/todo_backup.py'):
-            with patch('app_installer.uninstall.exists', return_value=False), \
+            with patch('app_installer.install.exists', return_value=False), \
                     patch.object(Path, 'exists', autospec=True,
                                  side_effect=lambda p: str(p).endswith(marker)), \
                     patch('app_installer.uninstall.run') as run:
@@ -451,13 +457,38 @@ class FailureBoundaryTests(unittest.TestCase):
                     uninstall.uninstall()
                 run.assert_not_called()
 
+    def test_install_refuses_a_replicated_host_before_any_command(self):
+        # Rerunning install on a replicated primary would drop the LAN publication
+        # of its databases and cut off the standby (seen in an acceptance run).
+        markers = ('.config/todo/todo-standby-entrypoint.sh', '/opt/todo/bin/app_dr.py',
+                   '/opt/todo/bin/app_backup.py', '/opt/todo/bin/todo_dr.py', '/opt/todo/bin/todo_backup.py')
+        cases = [(marker, lambda kind, name: False) for marker in markers]
+        cases += [(None, lambda kind, name, d=d: name == d.secret('replicator'))
+                  for d in apps.REPLICATED_DATABASES]
+        for marker, secret in cases:
+            with self.subTest(marker=marker), patch('app_installer.install.exists', side_effect=secret), \
+                    patch.object(Path, 'exists', autospec=True,
+                                 side_effect=lambda p, m=marker: bool(m) and str(p).endswith(m)), \
+                    patch('app_installer.install.run') as run, \
+                    patch('app_installer.install.secrets.provision') as provision:
+                with self.assertRaisesRegex(RuntimeError, 'install only supports a single-host deployment'):
+                    install.install('/nonexistent-project')
+                run.assert_not_called()
+                provision.assert_not_called()
+
+    def test_install_goes_ahead_on_a_single_host(self):
+        with patch('app_installer.install.exists', return_value=False), \
+                patch.object(Path, 'exists', autospec=True, return_value=False):
+            install.require_single_host('install')
+
     def test_legacy_quadlets_refused_before_writes(self):
         for name in install.LEGACY:
             with tempfile.TemporaryDirectory() as temp:
                 directory = Path(temp)
                 (directory / (name + '.container')).touch()
-                with patch('app_installer.install.run', return_value=
-                           subprocess.CompletedProcess([], 0, '--no-pod-prefix', '')) as run:
+                with patch('app_installer.install.exists', return_value=False), \
+                        patch('app_installer.install.run', return_value=
+                              subprocess.CompletedProcess([], 0, '--no-pod-prefix', '')) as run:
                     with self.assertRaisesRegex(RuntimeError, 'does not migrate'):
                         install.install(ROOT, quadlet_dir=directory)
                     self.assertEqual(run.call_count, 1)

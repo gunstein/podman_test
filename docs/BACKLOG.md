@@ -114,6 +114,28 @@ why. The seven workloads already log to journald (`LogDriver=journald`), and
   gone. Forward to a log host (`systemd-journal-upload`/`-remote`), or decide to
   fetch from both hosts by hand and document that.
 
+## Monitoring and backup routine
+
+WAL on the primary is bounded (`max_slot_wal_keep_size=1GB`): a standby that is
+down too long invalidates its slot, `cluster-status` reports it, and the standby
+is rebuilt. What is missing is anything that tells the operator.
+
+- **M1. Scheduled checks that alert.** Today an operator only learns that
+  replication stopped, a slot was invalidated, WAL archiving fails or a disk
+  fills up by running `app_dr.py status`, `app_backup.py status` or
+  `cluster-status` by hand; ARCHITECTURE.md says lag and invalidated slots need
+  monitoring. Add a systemd timer that runs these checks regularly, so a failed
+  check becomes a failed unit in the journal, with an optional `OnFailure=`
+  mail. No new dependency.
+- **M2. Scheduled backups and pruning.** Backups are taken only when someone
+  runs `app_backup.py create`, and the archive copies every WAL file into the
+  backup volume while nothing removes old base backups or WAL, so the primary's
+  disk slowly fills. Add a timer for backups on a fixed schedule, and pruning
+  that keeps the last N base backups and only the WAL they need.
+- **M3. Regular restore tests.** A backup that was never restored is not
+  proven. Run the existing disposable PITR restore on a schedule (for example
+  weekly) and compare it with a known point.
+
 ## Data checks in acceptance
 
 Acceptance proves replication state for all three databases (streaming, slot,

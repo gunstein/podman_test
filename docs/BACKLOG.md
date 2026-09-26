@@ -44,9 +44,10 @@ operator, not code.
 7. DR code structure and the rest.
 
 The real setup has two machines and no third, on separate hardware at separate
-physical sites. D2 and L6 are therefore designed for two hosts that keep copies
-for each other, and everything between them crosses a network between sites
-(T1).
+physical sites. D2 and L6 are therefore designed for two hosts that each keep
+what the other would lose: each host backs up its own database copy (D2), and
+each holds the other's logs (L6). Everything between them crosses a network
+between sites (T1).
 
 ## Goal: Trondheim running within 30 minutes
 
@@ -116,8 +117,8 @@ such as a small cloud VM. Without one, the safe design is one human decision
   databases, including Keycloak users and password hashes) travels in clear
   text. Acceptable inside one room; not between sites. Turn on TLS in
   PostgreSQL with certificates from a small project CA, require `hostssl` for
-  replication, and connect with `sslmode=verify-full`. The backup copy in D2
-  must be encrypted in transit too.
+  replication, and connect with `sslmode=verify-full`. D2 then needs nothing
+  of its own: the standby's backups are made from this replication stream.
 - **T2. Latency and bandwidth between sites.** *[docs]* Asynchronous replication across
   sites can lag further behind than in the lab, which widens what a failover
   can lose (C4). Measure lag over the real link, check that the RPO target of
@@ -333,9 +334,11 @@ is rebuilt. What is missing is anything that tells the operator.
   mail. No new dependency.
 - **M2. Scheduled backups and pruning.** *[new]* Backups are taken only when someone
   runs `app_backup.py create`, and the archive copies every WAL file into the
-  backup volume while nothing removes old base backups or WAL, so the primary's
-  disk slowly fills. Add a timer for backups on a fixed schedule, and pruning
-  that keeps the last N base backups and only the WAL they need.
+  backup volume while nothing removes old base backups or WAL, so the disk
+  slowly fills. Add a systemd timer on both hosts, whatever their role (D2):
+  a full base backup every night, and pruning that keeps the base backups of
+  the last 7 days and only the WAL they need. The same timer and code run on
+  the primary and on the standby.
 - **M3. Regular restore tests.** *[optional]* A backup that was never restored is not
   proven. Run the existing disposable PITR restore on a schedule (for example
   weekly) and compare it with a known point, or document a manual monthly
@@ -377,11 +380,32 @@ promoted primary.
   the same VM as the database. The standby holds today's data, but not the
   history: a mistaken delete replicates within seconds, and only PITR from the
   backup undoes it, from a backup that was on the machine that was lost.
-  Decided: the two machines are on separate hardware at separate sites, so the
-  two hosts keep copies for each other. Copy the base backups and WAL archive
-  from the primary into a separate volume on the standby host, encrypted in
-  transit (T1), and reverse the direction after a failover. Testable in the lab
-  with the two VMs, although they share one physical host there.
+  Decided: the two machines are on separate hardware at separate sites, so
+  each host backs up its own database copy, as with RMAN on an Oracle Data
+  Guard standby:
+  - *WAL archiving on both hosts.* The primary archives its WAL as today. The
+    standby runs with `archive_mode = always` and archives the WAL it receives
+    through replication, so its archive is as fresh as the primary's.
+  - *A full base backup every night on both hosts* (`pg_basebackup` works
+    against a standby), kept for 7 days with the WAL it needs (M2). The WAL
+    archive is the incremental part: restore the last full backup from before
+    the target time, then replay WAL up to it (`recovery_target_time`).
+  - *No copy job and nothing to reverse.* The standby's backups come from the
+    replication stream, which T1 encrypts. After a failover, both hosts go on
+    as before in their new roles.
+  - *Known limits.* If replication stops (for example an invalidated slot), the
+    standby's archive has a gap until the rebuild, which M1 must report. After
+    a rebuild, that host's history starts again from its first new base
+    backup; the other host still has its own.
+  - *Code.* `app_backup.py` assumes the primary today; let it configure
+    archiving and take base backups on a standby too. Acceptance phase 8
+    should restore from a backup taken on the standby, to prove it works.
+  - *Not now.* Incremental base backups (`pg_basebackup --incremental`,
+    PostgreSQL 17) add a chain that must be combined to restore; the
+    databases are small, so a nightly full backup costs little. Add them only
+    if a full backup one day takes too long.
+  Testable in the lab with the two VMs, although they share one physical host
+  there.
 - **D3. `deploy-promoted-application` runs only on the promoted host.** *[docs]* It
   refuses unless that host is the machine running app-ops. Either lift the
   limit or document it as deliberate in `deploy/ops/README.md`.

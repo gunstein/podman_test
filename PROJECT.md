@@ -27,6 +27,17 @@ defects that were worked around procedurally; a CLEAN PASS with
 final topology of that run is VM 108 primary and VM 107 database-only standby;
 verify roles freshly before any operation.
 
+The same topology then reached a REPAIRED FUNCTIONAL PASS on `f1f07b5` with
+app-ops in place of every Ansible playbook, in an autonomous agent run
+([record](docs/history/ACCEPTANCE-f1f07b5.md)). No source changed. Three steps
+did not pass as written and needed operator decisions: two guide ordering
+defects (SSH host key pinned after the quarantine test uses it; the rebuild
+host cannot reach the current primary's replication ports before
+`rebuild-standby` publishes them) and a Guest Agent stop that ran before the
+user manager's bus existed and succeeded on one retry. A CLEAN PASS still
+needs these fixed and a new run. Final topology: VM 108 primary, VM 107
+database-only standby.
+
 ## Current work and limitations
 
 Legacy runtime and migration tooling are retired after that gate. Active runtime

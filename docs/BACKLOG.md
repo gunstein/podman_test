@@ -17,7 +17,7 @@ turn it into a monster in code, maintenance or operation.
    only.
 3. **Reuse before new.** Build on what exists (app-ops commands, systemd
    timers, the DR secret synchronisation), not on new services.
-4. **Less code in total.** Once Ansible and the duplication are gone, the
+4. **Less code in total.** With Ansible gone, and once the duplication is gone, the
    project should have less code than today, new features included.
 5. **Optional means optional.** Drop an optional item without regret when it
    costs more than it gives.
@@ -39,8 +39,7 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 3. What operation needs: U1 (updating a replicated pair), T6 (planned
    switchover), M4 (a durable WAL archive), M2 (scheduled backups with
    pruning), L1 and L2 (command logging, failure reasons).
-4. Retire Ansible (R0b, 3-6), now that app-ops has a CLEAN PASS. Then decide
-   D4 (one database server or one per app).
+4. Decide D4 (one database server or one per app).
 5. fapolicyd (F0 first, then what is left of F1-F6), firewalls (W) and data
    checks (C).
 6. DR code structure and the rest.
@@ -280,22 +279,6 @@ What is weak is how they are checked and switched.
   firewall on, which also changes access to the Proxmox host itself. State this
   in the agent guide's preparation part.
 
-## After a CLEAN PASS with app-ops: retire Ansible
-
-- **R0b. Replace `deploy.yml` and `uninstall.yml`.** *[docs]* They were never ported to
-  app-ops because they only wrap `app_installer install` and `uninstall`. Show
-  those direct commands in the guides before the playbooks go.
-
-3. *[simplify]* Delete `deploy/ansible` and `ansible.cfg`, and take them out of the
-   operations package.
-4. *[simplify]* Remove the Ansible CI jobs and the tests that run playbooks.
-5. *[simplify]* Rewrite `ACCEPTANCE.md`, `PROXMOX-QUARANTINE.md` and
-   `ACCEPTANCE-TROUBLESHOOTING.md` for app-ops, then merge
-   `ACCEPTANCE-APP-OPS.md` into `ACCEPTANCE.md`, so that one guide remains.
-6. *[docs]* Update AGENTS.md: "Python installer for single-host, app-ops (plain SSH) for
-   DR/multi-host", and the rule that DR installs workloads through
-   `install-workload.yml`.
-
 ## Logging
 
 Without an assistant, the logs must tell an operator what happened, where and
@@ -447,7 +430,7 @@ promoted primary.
   (including major versions), restarts and settings, one failure affecting
   every app and the login, PITR only for all databases at once, and a change
   to the accepted architecture (AGENTS.md: each app has its own PostgreSQL
-  pod). Decide after Ansible is retired, with numbers: how much code and how
+  pod). Decide now that Ansible is retired, with numbers: how much code and how
   many operating steps would go, and what would be lost. Choosing the shared
   server means a new acceptance run.
 

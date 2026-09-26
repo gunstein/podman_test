@@ -28,7 +28,7 @@ deletion of database data:
 
 A mistake in these checks can delete data or promote a database that is behind,
 and their tests run in under a second. Orchestration code tested with fake
-hosts, Jinja2 templates, Ansible and shell scripts are left out. There,
+hosts, Jinja2 templates and shell scripts are left out. There,
 surviving mutants mostly show how loose a fake is, not real bugs.
 
 ## Running it

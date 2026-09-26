@@ -35,12 +35,13 @@ Constraints:
 - Production lifecycle: .kube Quadlet units managed by user systemd.
 - Workload boundary: group containers in one pod only when they share a
   lifecycle; connect independent workloads through a user-defined network.
-- Deployment: Python installer for single-host, Ansible for DR/multi-host.
-- Shared workload installation lives in deploy/installer/app_installer; DR calls
-  it through deploy/ansible/tasks/install-workload.yml. Keep one implementation.
+- Deployment: Python installer for single-host, app-ops (deploy/ops, plain SSH)
+  for DR/multi-host. Ansible is retired; Git history keeps its playbooks.
+- Shared workload installation lives in deploy/installer/app_installer; app-ops
+  calls it on each host through the app_installer CLI. Keep one implementation.
 - Reverse proxy: nginx.
 - Offline delivery: rendered YAML and OCI images in the offline bundle;
-  separate operations package contains tools/playbooks, not image archives.
+  separate operations package contains tools and docs, not image archives.
 - Authentication: Keycloak is implemented behind each app's auth.js
   (todo-frontend/, notes-frontend/) and its
   provider adapter. Other IdPs require implementation and integration testing.

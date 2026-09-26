@@ -4,8 +4,8 @@ This document lets a coding agent run the full two-VM acceptance in
 [ACCEPTANCE.md](ACCEPTANCE.md) with as little operator typing as possible.
 It adds **how** the agent operates (Proxmox API token, passwordless lab sudo,
 evidence, stop rules) on top of the canonical **what** in ACCEPTANCE.md.
-The kickoff chooses the operations tool: the Ansible playbooks, or `app-ops`
-as in [ACCEPTANCE-APP-OPS.md](ACCEPTANCE-APP-OPS.md) (see C9.13).
+The operations tool is `app-ops` (plain SSH, [deploy/ops](../deploy/ops/README.md));
+C9.13 says how the agent handles its sudo, trust and inventories.
 
 - Part A: one-time operator preparation.
 - Part B: the kickoff message the operator pastes to the agent.
@@ -163,7 +163,6 @@ Run the Todo/Notes two-VM acceptance. Follow docs/ACCEPTANCE-AGENT.md Part C
 exactly, with docs/ACCEPTANCE.md as the phase sequence.
 
 Mode: NEW clean run
-Operations tool: <ansible | app-ops>
 Revision to test: <full 40-char commit SHA on feature/podman-kube>
 CI on that revision: <green | red | unknown>
 Run ID: <e.g. 2026-09-25-agent-1>
@@ -277,7 +276,7 @@ echo "Wrote $dir/pve.env"
    the Proxmox token, the Keycloak admin password, the testuser password and any
    `podman secret` value. Never run `set -x`. Never `cat` `pve.env`.
 3. **Never** retry a destructive or one-shot command after it failed or timed
-   out: `app_dr.py promote`, `rebuild-standby.yml`, snapshot rollback, volume
+   out: `app_dr.py promote`, `rebuild-standby`, snapshot rollback, volume
    deletion, `app_backup.py restore --replace`, `cleanup-restore`. Inspect state
    instead (C8).
 4. **Never** disable or weaken SELinux, fapolicyd, firewalld, SSH host-key
@@ -291,7 +290,7 @@ echo "Wrote $dir/pve.env"
    change or delete it; never act on a rule position alone.
 8. A failed check means **STOP** (C3). A passing command exit code alone is not
    a passing check: compare the output with the expected values.
-9. **Never** run `install.sh`, `app_installer install` or `deploy.yml` after
+9. **Never** run `install.sh` or `app_installer install` after
    phase 3. On a host with replication, a new install rewrites the database
    units without their LAN publication and silently cuts off the standby.
 10. **Never** start, stop or restart services or pods by hand
@@ -420,18 +419,14 @@ error (`Connection refused`, `No route to host`) and exits
 
 **Guests.** SSH as `gunstein` with host-key checking on. Use `sudo -n` for root
 commands inside the VMs so a missing sudo rule fails immediately instead of
-hanging. Run Ansible **without** `--ask-become-pass`; passwordless sudo
-replaces it. With `Operations tool: app-ops`, use app-ops instead of every
-playbook as C9.13 says; it never asks for a password. Everything else in
-ACCEPTANCE.md stays the same.
+hanging. Run app-ops as C9.13 says; it uses `sudo -n` only and never asks
+for a password. Never run `ansible` or `ansible-playbook`: Ansible is retired.
 
-**Long commands.** Bundle builds, `bootstrap-standby.yml` and
-`rebuild-standby.yml` can take more than ten minutes. Start them in the
-background with output to a log file, for example
-`nohup ssh ... 'cd ~/todo-operations && ansible-playbook ...' > logs/09-rebuild.log 2>&1 &`,
-then read the log until `PLAY RECAP` appears. For app-ops, end the remote
-command with `; echo "exit=$?"` and read the log until that line appears. If
-your tool times out, the
+**Long commands.** Bundle builds, `bootstrap-standby` and `rebuild-standby`
+can take more than ten minutes. Start them in the background with output to a
+log file, for example
+`nohup ssh ... 'cd ~/todo-operations && ... python3 -m app_ops ... rebuild-standby ...; echo "exit=$?"' > logs/09-rebuild.log 2>&1 &`,
+then read the log until the `exit=` line appears. If your tool times out, the
 command may still be running: read the log and `ps`; never start it a second time.
 
 **Interactive prompts in ACCEPTANCE.md.** Replace `read -rp "Client IPv4..."`
@@ -473,8 +468,7 @@ every 10 seconds for up to 10 minutes until the boot ID differs.
 
 For every phase, write into `run-record.md`:
 
-- Ansible `PLAY RECAP` lines (ok/changed/failed counts) and for repeats `changed=0`;
-  with app-ops, each command's JSON line and exit code, and for repeats
+- Each app-ops command's JSON line and exit code, and for repeats
   `{"changed": false}`.
 - `hostname`, boot ID before and after each reboot.
 - Per database (todo, notes, keycloak): role (`pg_is_in_recovery`,
@@ -487,12 +481,11 @@ For every phase, write into `run-record.md`:
 - Every deviation from ACCEPTANCE.md and why.
 
 Environment deviations that are expected in an agent run and must be recorded,
-but do not by themselves downgrade the verdict: passwordless sudo instead of
-`--ask-become-pass`; Proxmox API token instead of the node Shell; the testuser
-password in a tmpfs file; firewall evidence from API rule listings plus
-connection tests instead of `pve-firewall` output. With app-ops, also the
-lab sudoers file from A3 instead of the run-only file in ACCEPTANCE-APP-OPS.md,
-and the skipped refusal check that needs sudo without NOPASSWD (C9.13).
+but do not by themselves downgrade the verdict: the lab sudoers file from A3
+instead of the run-only file in ACCEPTANCE.md, and the skipped refusal check
+that needs sudo without NOPASSWD (C9.13); Proxmox API token instead of the node
+Shell; the testuser password in a tmpfs file; firewall evidence from API rule
+listings plus connection tests instead of `pve-firewall` output.
 
 ### C8. If a command fails or times out
 
@@ -513,27 +506,23 @@ Execute the phases of `docs/ACCEPTANCE.md` in order. Read each phase completely
 before starting it. The notes below tell you how to perform the steps that
 normally need the operator, and what extra checks are required. Values below
 use the lab defaults (`.102` = VM 107 = `todo-primary`, `.108` = VM 108 =
-`todo-standby`, client `.100`); use the kickoff values. With
-`Operations tool: app-ops`, C9.13 replaces every Ansible command below.
+`todo-standby`, client `.100`); use the kickoff values. Run every app-ops
+command as C9.13 shows.
 
 #### C9.0 Before phase 1
 
 1. Read `AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/ACCEPTANCE.md`,
-   `docs/PROXMOX-QUARANTINE.md` and `docs/ACCEPTANCE-TROUBLESHOOTING.md`; with
-   `Operations tool: app-ops`, also `docs/ACCEPTANCE-APP-OPS.md` and C9.13.
+   `docs/PROXMOX-QUARANTINE.md`, `docs/ACCEPTANCE-TROUBLESHOOTING.md`,
+   `deploy/ops/README.md` and C9.13.
 2. `git status --porcelain` must be empty and `git rev-parse HEAD` must equal the
    kickoff revision. Otherwise STOP.
 3. If CI is not `green`, run the local suite and record the result; STOP on failure:
 
    ```bash
    python3 -m venv ~/todo-acceptance-runs/$RUN_ID/venv
-   ~/todo-acceptance-runs/$RUN_ID/venv/bin/pip install -r deploy/ansible/requirements.txt jinja2 PyYAML || \
-     ~/todo-acceptance-runs/$RUN_ID/venv/bin/pip install ansible-core==2.14.18 jinja2 PyYAML
+   ~/todo-acceptance-runs/$RUN_ID/venv/bin/pip install jinja2 PyYAML
    PATH=~/todo-acceptance-runs/$RUN_ID/venv/bin:$PATH python -m unittest discover --start-directory tests
    ```
-
-   (`ansible-core` 2.20 needs Python 3.12 or newer; the fallback is the Oracle
-   Linux baseline version, which CI also tests.)
 
 4. Print the registry and compare it with the table in ACCEPTANCE.md
    ("Registered workload group"); record any drift:
@@ -670,7 +659,8 @@ and `https://notes.test:8443/ready` **without** `-k`. Also save the public CA to
 
 #### C9.5 Phase 4 — Standby bootstrap
 
-Follow ACCEPTANCE.md. The firewalld rule on `.102` uses `port="5432-5434"`.
+Follow ACCEPTANCE.md, with app-ops trust and `initial.yaml` on `.102` first
+(C9.13). The firewalld rule on `.102` uses `port="5432-5434"`.
 Set up key-based SSH in both directions with C9.12 (`FROM=.102`, `TO=.108`,
 then `FROM=.108`, `TO=.102`); do not use `ssh-copy-id`, which would need a
 password. The phase 5 rehearsal checks SSH from `.108` to `.102`, so that host
@@ -680,15 +670,11 @@ through the API and re-check.
 
 #### C9.6 Phase 5 — DR tool and quarantine rehearsal (pre-approved outage)
 
-1. `install-dr-tool.yml`, then `app_dr.py status` on `.108`, then the repeat
-   (`changed=0`).
-2. On `.102`, install the quarantine helper with both pre-approved opt-ins:
-
-   ```bash
-   ansible-playbook --inventory deploy/ansible/inventories/initial/hosts.ini \
-     deploy/ansible/playbooks/install-quarantine-tool.yml \
-     -e todo_quarantine_enable_guest_exec=true -e todo_quarantine_enable_selinux_entrypoint=true
-   ```
+1. `install-dr-tool` on `.102`, then `app_dr.py status` on `.108`, then the
+   repeat (`{"changed": false}`).
+2. On `.102`, install the quarantine helper with both pre-approved opt-ins, then
+   run the same command once more and require `{"changed": false}`:
+   `install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint`.
 
 3. `pve_lab.py exec 107 -- /opt/todo/bin/app-quarantine.sh check todo-primary gunstein`
    must exit 0 and print `READY`.
@@ -787,10 +773,11 @@ through the API and re-check.
 
 #### C9.8 Phase 7 — Application failover
 
-Follow ACCEPTANCE.md on `.108`. Then C9.4 with `<IP>` = `.108` (a new CA is
-expected). Do not re-provision `testuser`. Run the browser tests and create
-`phase7` markers. Repeat run `changed=0`, reboot VM 108 through the API,
-re-check.
+Follow ACCEPTANCE.md on `.108`, with app-ops trust and `recovery.yaml` on
+`.108` first (C9.13). Then C9.4 with `<IP>` = `.108` (a new CA is expected). Do
+not re-provision `testuser`. Run the browser tests and create `phase7` markers.
+Repeat `deploy-promoted-application` (`{"changed": false}`), reboot VM 108
+through the API, re-check.
 
 #### C9.9 Phase 8 — Backup and isolated PITR (cleanup pre-approved)
 
@@ -827,16 +814,14 @@ restore commands. Record every backup name printed by `create`
    the quarantine firewall can drop the refusal, so an open path and a
    blocked one both time out. `rebuild-standby` checks the path itself once
    the ports are published (step 10).
-9. On `.108`, the recovery inventory as in phase 7, then the read-only
-   `preflight-standby-rebuild.yml` **without** `--ask-become-pass`. Every
-   assertion must pass. It is read-only and does not test the replication
-   path (see step 8).
-10. `rebuild-standby.yml` once, **without** `--ask-become-pass`, in the
-    background with a log (C5). Do not start it twice. Wait for `PLAY RECAP`.
-    Any `failed=` other than 0: STOP; never rerun. With app-ops, right after
-    publishing it requires a connection from `.102` to every replication port;
-    `replication port ... is not reachable` means a firewall step is missing,
-    and nothing was deleted: STOP, never rerun.
+9. On `.108`: the wrong-confirmation check from ACCEPTANCE.md, then the
+   read-only `preflight-standby-rebuild`, which must report
+   `{"changed": false}`. It does not test the replication path (see step 8).
+10. `rebuild-standby` once, in the background with a log (C5). Do not start it
+    twice. Wait for the `exit=` line. Any non-zero exit: STOP; never rerun.
+    Right after publishing, it requires a connection from `.102` to every
+    replication port; `replication port ... is not reachable` means a firewall
+    step is missing, and nothing was deleted: STOP, never rerun.
 11. On `.102`, every port must now connect (rc 0):
 
     ```bash
@@ -845,7 +830,7 @@ restore commands. Record every backup name printed by `create`
     done
     ```
 
-    `cluster-status.yml`: every database reports streaming, async, active slot,
+    `cluster-status`: every database reports streaming, async, active slot,
     zero lag, and `.102` read-only. Create `phase9` markers and read them on `.102`.
 12. After phase 9 passes, lift the quarantine as the 12c3bef run did:
     `set .../107/firewall/options enable=0`, and restore VM 107 `onboot` to the
@@ -853,8 +838,8 @@ restore commands. Record every backup name printed by `create`
 
 #### C9.11 Phase 10 and 11 — Final reboots and verdict
 
-1. Reboot VM 107 only, verify, run `cluster-status.yml`. Then reboot VM 108
-   only, verify, run `cluster-status.yml` again. Never both at once.
+1. Reboot VM 107 only, verify, run `cluster-status`. Then reboot VM 108
+   only, verify, run `cluster-status` again. Never both at once.
 2. Final browser tests from the client (0 skipped), all markers, CA fingerprint,
    `NRestarts=0` for `todo-app.service`, `notes-app.service`,
    `shared-proxy.service`, no failed user units on either VM.
@@ -874,14 +859,14 @@ restore commands. Record every backup name printed by `create`
 
 #### C9.12 Key-based SSH between the VMs (no password needed)
 
-Ansible or app-ops on `FROM` must reach `TO` with a key, and `FROM` must know `TO`'s host
+app-ops on `FROM` must reach `TO` with a key, and `FROM` must know `TO`'s host
 key through an independently verified fingerprint. Your own SSH connections
 from the client are the trusted path. Run from the client (example
 `FROM=192.168.0.102`, `TO=192.168.0.108`):
 
 ```bash
 FROM=192.168.0.102 TO=192.168.0.108
-ssh gunstein@$FROM "test -f ~/.ssh/id_rsa || ssh-keygen -q -t rsa -b 3072 -N '' -C todo-ansible-control -f ~/.ssh/id_rsa"
+ssh gunstein@$FROM "test -f ~/.ssh/id_rsa || ssh-keygen -q -t rsa -b 3072 -N '' -C todo-ops-control -f ~/.ssh/id_rsa"
 ssh gunstein@$FROM 'cat ~/.ssh/id_rsa.pub' |
   ssh gunstein@$TO 'umask 077; mkdir -p ~/.ssh; read -r key; grep -qxF "$key" ~/.ssh/authorized_keys 2>/dev/null || printf "%s\n" "$key" >> ~/.ssh/authorized_keys'
 FP=$(ssh gunstein@$TO 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub' | awk '{print $2}')
@@ -899,18 +884,18 @@ ssh gunstein@$FROM "ssh -o BatchMode=yes gunstein@$TO hostname"
 
 A fingerprint mismatch is a STOP. The last command must print `TO`'s hostname.
 
-#### C9.13 With `Operations tool: app-ops`
+#### C9.13 app-ops in an agent run
 
-Follow [ACCEPTANCE-APP-OPS.md](ACCEPTANCE-APP-OPS.md) wherever a C9 step runs
-a playbook. Do not run `ansible` or `ansible-playbook` at all; the verdict
-requires that. Run every app-ops command on the controller VM over SSH, from
-the package directory:
+Do not run `ansible` or `ansible-playbook` at all. Run every app-ops command on
+the controller VM over SSH, from the package directory, and end it with the
+exit code:
 
 ```bash
 ssh gunstein@192.168.0.102 'cd ~/todo-operations && PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops --inventory initial.yaml replication-status; echo "exit=$?"'
 ```
 
-Differences from ACCEPTANCE-APP-OPS.md in an agent run:
+The controller is `.102` with `initial.yaml` for phases 4-5, and `.108` with
+`recovery.yaml` from phase 7. Differences from ACCEPTANCE.md in an agent run:
 
 1. Sudo. The A3 lab sudoers file already grants passwordless sudo, so do not
    create or remove `90-app-ops-acceptance`. Skip the first refusal check
@@ -923,18 +908,5 @@ Differences from ACCEPTANCE-APP-OPS.md in an agent run:
    on `.108` before C9.8, with the kickoff names and addresses, using a
    heredoc over SSH. Save both in the run folder; they hold no secrets.
 
-Substitutions:
-
-| Step | Instead of | Run on | app-ops |
-|---|---|---|---|
-| C9.5 | preflight, bootstrap, status playbooks | `.102` | `preflight-standby`, `bootstrap-standby` (background, C5), `replication-status` twice |
-| C9.6 step 1 | `install-dr-tool.yml` and its repeat | `.102` | `install-dr-tool` twice |
-| C9.6 step 2 | `install-quarantine-tool.yml -e ...` | `.102` | `install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint`, then once more |
-| C9.8 | `deploy-promoted-application.yml` and its repeat | `.108` | `deploy-promoted-application` twice |
-| C9.9 | `configure-backup.yml` and its repeat | `.108` | `configure-backup` twice |
-| C9.10 step 9 | `preflight-standby-rebuild.yml` | `.108` | the wrong-confirmation check, then `preflight-standby-rebuild` |
-| C9.10 step 10 | `rebuild-standby.yml` | `.108` | `rebuild-standby` once, in the background (C5); a non-zero exit is a STOP, never rerun |
-| C9.10 step 11, C9.11 | `cluster-status.yml` | `.108` | `cluster-status` |
-
-The confirmations are the ones in ACCEPTANCE-APP-OPS.md. Each repeat must
-print `{"changed": false}`. Anything else is a failed gate (C3).
+The confirmations are the ones in ACCEPTANCE.md. Each repeat must print
+`{"changed": false}`. Anything else is a failed gate (C3).

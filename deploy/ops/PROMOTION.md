@@ -1,8 +1,8 @@
 # Controlled PostgreSQL promotion
 
-The operations package installs a small Python tool on standby. Ansible provisions the file and
-host-specific configuration, but status, preflight and promotion run locally on
-standby. A disaster operation therefore does not depend on primary or SSH.
+The operations package installs a small Python tool on standby. app-ops
+provisions the file and host-specific configuration, but status, preflight and
+promotion run locally on standby. A disaster operation therefore does not depend on primary or SSH.
 
 The operational targets for this demo are:
 
@@ -24,22 +24,19 @@ Use the verified artifacts and inventory prepared in
 packages on both hosts before an incident; verify checksums and matching clean
 VERSION values before running extracted code.
 
-The installer uses the central `todo_fapolicyd` role. With normal Ansible
-become credentials it refreshes exact source-file trust on the controller,
+With `sudo -n`, app-ops refreshes exact source-file trust on the controller,
 installs root-owned `/opt/todo/bin/app_dr.py` on the standby, registers only
-that exact target file, and reloads the policy. It never trusts the operations
-directory or disables `fapolicyd`.
+that exact target file, and waits until fapolicyd serves it. It never trusts
+the operations directory or disables `fapolicyd`.
 
-Run this from primary while primary is still the Ansible controller:
+Run this from primary while primary is still the app-ops controller:
 
 ```bash
-ansible-playbook --ask-become-pass \
-  --inventory deploy/ansible/inventories/initial/hosts.ini \
-  deploy/ansible/playbooks/install-dr-tool.yml
+python3 -m app_ops --inventory initial.yaml install-dr-tool
 ```
 
 The non-secret DR configuration remains
-`~/.config/todo/todo-dr.json`. The playbook writes it with
+`~/.config/todo/todo-dr.json`. app-ops writes it with
 `app_dr.py configure`, so the same tool writes and reads it; the primary
 address must be a literal IPv4 address. See
 [../offline/FAPOLICYD.md](../offline/FAPOLICYD.md) for denial diagnosis and

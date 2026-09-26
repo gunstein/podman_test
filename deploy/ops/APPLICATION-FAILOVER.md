@@ -32,10 +32,10 @@ VERSION values before running extracted code.
 
 Follow [application failover](../../docs/ACCEPTANCE.md#7-application-failover)
 for recovery inventory, client-scoped HTTPS firewall, deployment, DNS and trust.
-The playbook publishes HTTPS on the promoted host, with HTTP health access on
+`deploy-promoted-application` publishes HTTPS on the promoted host, with HTTP health access on
 loopback. PostgreSQL and internal backend/Keycloak ports are not opened to clients.
 
-The playbook runs `app_installer deploy-promoted` on the promoted host itself;
+It runs `app_installer deploy-promoted` on the promoted host itself;
 that command owns every gate and step below. It fails before changing
 application state unless:
 

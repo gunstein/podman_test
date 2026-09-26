@@ -103,7 +103,7 @@ serial state, policy, renewal process, revocation data, protected backup and
 audit trail are separate security responsibilities. Do not copy either CA
 private key to an application node.
 
-Ansible should consume already issued artifacts:
+The deployment tooling should consume already issued artifacts:
 
 - install the public certificate/full chain as a normal reviewed file;
 - deliver the node-specific private key through a controlled deployment process

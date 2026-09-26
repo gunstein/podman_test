@@ -1,6 +1,5 @@
 # Restore database redundancy after failover
 
-
 Standby rebuild restores a second database copy after database promotion and application
 failover. It does not move service back to the machine that was originally
 primary. The promoted host remains primary; the old primary is destroyed and
@@ -23,7 +22,7 @@ to serve clients or replicate as primary. Keep it fenced at the Proxmox layer.
 Powering it on is safe only with client/database traffic still blocked and for
 the purpose of stopping its services and rebuilding it.
 
-The rebuild playbook permanently deletes `todo-postgres-data`,
+`rebuild-standby` permanently deletes `todo-postgres-data`,
 `notes-postgres-data` and `keycloak-postgres-data` on the old primary.
 It requires both exact values:
 
@@ -54,23 +53,28 @@ VERSION values before running extracted code.
 ## Rebuild contract
 
 Use [the rebuild phase](../../docs/ACCEPTANCE.md#9-rebuild-old-primary-as-standby)
-for commands and firewall preparation. The current primary controls Ansible;
-`inventories/recovery/hosts.ini` states the reversed roles. The initial inventory is
-only for initial bootstrap. Hostnames continue to identify the same machines.
+for commands and firewall preparation. The current primary is the app-ops
+controller; its recovery inventory states the reversed roles
+(`current_primary` and `rebuild_standby`). The initial inventory is only for
+initial bootstrap. Hostnames continue to identify the same machines.
 
 Preflight requires one current primary and one rebuild target with distinct
 addresses, expected host identities, a writable current primary, replication
 role and secrets, identical replication credentials on both hosts, an existing
 backup volume, an absent new slot, existing old data, stopped old services and
-both exact operator confirmations. Secret values remain under `no_log`.
+both exact operator confirmations. Secret values are never printed.
+`preflight-standby-rebuild` is read-only and does not contact the current
+primary's replication port, which is published only inside the rebuild.
 
-The rebuild playbook imports preflight again. It preserves archiving while
+`rebuild-standby` runs every preflight gate again. It preserves archiving while
 publishing a narrowly firewalled replication endpoint through
 `app_installer publish-primaries redundancy`. That command refreshes replication
 access for the current rootless subnet and restarts the application tier at
-most once for the whole group. Before deleting old data,
-the target requires its PostgreSQL image, TCP connectivity and authenticated
-physical replication via `IDENTIFY_SYSTEM`. TCP connectivity alone is insufficient.
+most once for the whole group. Right after that, the rebuild target must open
+a TCP connection to every replication port (`replication port ... is not
+reachable` names a missing firewall step). Before deleting old data, the target
+also requires its PostgreSQL image and authenticated physical replication via
+`IDENTIFY_SYSTEM`. TCP connectivity alone is insufficient.
 Rootless port forwarding hides the original peer address from PostgreSQL;
 firewalld and hypervisor quarantine enforce the real machine boundary.
 
@@ -92,7 +96,7 @@ any partial failure, inspect both roles, slot, volume, logs and quarantine, and
 review recovery explicitly. Never repeat destructive rebuild to finish a failed
 DR-tool installation; use [troubleshooting](../../docs/ACCEPTANCE-TROUBLESHOOTING.md).
 
-`cluster-status.yml` runs `app_installer cluster-status` on each host. For every
+`cluster-status` runs `app_installer cluster-status` on each host. For every
 database it checks a writable primary, an active usable asynchronous streaming
 slot, a read-only recovering standby and archive health after the latest
 failure, then reports every failing database together. Read the

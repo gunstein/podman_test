@@ -3,8 +3,8 @@
 This is the canonical normal execution sequence for full two-VM acceptance of
 the seven-pod, two-application Podman Kube architecture: Todo and Notes, shared
 Keycloak and shared nginx, with three independently replicated PostgreSQL
-databases (Todo, Notes and Keycloak). Use direct DR tools and Ansible
-playbooks below. The final rebuild permanently replaces old-primary database
+databases (Todo, Notes and Keycloak). Use the direct DR tools and the
+plain-SSH `app-ops` commands below ([app-ops](../deploy/ops/README.md)). The final rebuild permanently replaces old-primary database
 data; use disposable lab hosts and explicit infrastructure fencing.
 
 [688a0f6](history/ACCEPTANCE-688a0f6.md), [12c3bef](history/ACCEPTANCE-12c3bef.md),
@@ -14,10 +14,9 @@ state or authorization. A NEW run evaluates its own clean revision. Use
 [Proxmox quarantine](PROXMOX-QUARANTINE.md) supplies the specialized
 infrastructure procedure. An autonomous agent run additionally follows
 [ACCEPTANCE-AGENT.md](ACCEPTANCE-AGENT.md) for Proxmox API, sudo, secret and
-evidence handling. [ACCEPTANCE-APP-OPS.md](ACCEPTANCE-APP-OPS.md) runs these
-same phases with the plain-SSH `app-ops` tool in place of the Ansible
-playbooks. Operation references describe contracts, not another acceptance
-sequence.
+evidence handling. The pages under [deploy/ops](../deploy/ops/README.md#the-workflows)
+describe each operation's contract, not another acceptance sequence. Ansible is
+retired; runs before `f1f07b5` used its playbooks.
 
 ## Entry, approvals and evidence
 
@@ -45,7 +44,7 @@ sequence.
 |---|---|
 | Client/build terminal (ThinkPad in this lab) | Build, transfer, run guest commands through SSH, configure client DNS/CA and execute browser tests. An agent with access can do scoped checks here. |
 | Proxmox **node Shell** | Operator pastes reviewed `qm`/`pvesh` commands. No SSH to the hypervisor and no typing in the guest console are required by this procedure. |
-| Guest, reached through SSH | Ansible and rootless Podman run as the service user. Use `ssh -t` and `--ask-become-pass` for privileged installation, including rebuild. Never send sudo passwords to an agent. |
+| Guest, reached through SSH | app-ops and rootless Podman run as the service user. app-ops uses `sudo -n` only (see [before phase 4](#before-phase-4-trust-inventories-and-sudo)). Never send sudo passwords to an agent. |
 
 Paste only the command block, not prompts such as `root@proxmox:~#`.
 After each operator action, inspect its result before giving the next mutation.
@@ -69,22 +68,23 @@ Git revision / both VERSION values / archive checksums:
 Topology: initial primary hostname/IP/VMID/NIC; initial standby equivalents;
           client source IP; Proxmox node; actual clean snapshot names:
 Current roles and fencing: which DB is writable, VM power/link/firewall state:
-Last completed phase / exact command / recap and evidence:
+Last completed phase / exact command / result and evidence:
 Next phase / where to run it / approval still required:
 Markers: original Todo and Notes ID/title; final authenticated Todo and Notes ID/title:
 Backup name per database / restore-point name / isolated comparisons / cleanup:
 Boot IDs before/after / TLS CA fingerprint / browser tests (no skips):
+Operations tool: app-ops (deploy/ops)
 Deviations and repairs (keep original failure evidence):
 Verdict: IN PROGRESS | BLOCKED | REPAIRED FUNCTIONAL PASS | CLEAN PASS
 ```
 
 Before a NEW run, verify the selected clean commit and CI result, and check
-client/build, SSH, Ansible and Chromium tools. Read AGENTS.md and ARCHITECTURE.md.
+client/build, SSH and Chromium tools. Read AGENTS.md and ARCHITECTURE.md.
 Start with observations and a plan; obtain separate explicit approvals for reset,
 Guest Agent security opt-ins, fencing/promotion, destructive reseed and disposable
 restore cleanup. No source edits, commits, pushes or automatic reset follow a
 verdict. CONTINUATION uses the existing run record plus fresh observations.
-For a previously failed operation, obtain fresh database role and Ansible task
+For a previously failed operation, obtain fresh database role and command
 evidence before acting; never blindly retry a refused destructive stage.
 
 ## Tested topology
@@ -103,7 +103,7 @@ After promotion and rebuild, machine names stay fixed while roles reverse:
 | Database-only standby | `todo-primary` | `192.168.0.102` |
 
 Both runtimes use Oracle Linux 9.8, SELinux enforcing, active `fapolicyd` and
-firewalld, RPM-managed Ansible Core 2.14.18, user lingering, 4 GiB memory and
+firewalld, the system Python 3.9 with Jinja2 and PyYAML, user lingering, 4 GiB memory and
 an 18 GiB home filesystem per VM.
 
 These values describe the lab used for the earlier four-pod runs. The
@@ -111,7 +111,7 @@ seven-pod topology runs three PostgreSQL instances plus Keycloak per host; recor
 free memory (`free -m`) in phase 1 and STOP if the hosts swap heavily after
 phase 3.
 
-The tested Kube baseline is rootless Podman 5.8.2. Ansible verifies the required
+The tested Kube baseline is rootless Podman 5.8.2. The installer verifies the required
 `podman kube play --no-pod-prefix` capability to preserve operational container
 names; this does not claim a minimum supported Podman version.
 
@@ -174,8 +174,8 @@ require changing the realm, frontend, certificate hostname or manifest templates
 |---|---|---|
 | VM network | Guest OS or DHCP reservation | Fixed address per VM; verify with `ip -brief -4 address` |
 | Initial HTTPS binding | Primary: `sh ./install.sh --publish-address PRIMARY_IP` | Primary's own IPv4, on every install/rerun |
-| Replication and SSH | Primary's `todo-operations/deploy/ansible/inventories/initial/hosts.ini` | Replace example IPs `192.0.2.10` and `192.0.2.11`; standby needs both `ansible_host` and `todo_node_address` |
-| Recovery/rebuild | Promoted host's `todo-operations/deploy/ansible/inventories/recovery/hosts.ini` | Same machine IPs, new role groups; rebuild target needs both address fields |
+| Replication and SSH | Primary's `todo-operations/initial.yaml` | Each host's own IPv4 (`address`), matching `ip -4 address` on that host |
+| Recovery/rebuild | Promoted host's `todo-operations/recovery.yaml` | Same machine IPs, reversed roles (`current_primary`, `rebuild_standby`) |
 | Browser destination | Client DNS or `/etc/hosts` | `PRIMARY_IP todo.test notes.test`; change to promoted host after failover |
 | Firewall | VM firewalld and manual hypervisor fencing/quarantine | Replace source/destination IPs in the rules; HTTPS 8443 from client, replication 5432-5434 from peer |
 
@@ -208,7 +208,6 @@ systemctl is-active sshd firewalld fapolicyd qemu-guest-agent
 loginctl show-user "$USER" -p Linger
 podman info --format 'Rootless={{.Host.Security.Rootless}} GraphRoot={{.Store.GraphRoot}}'
 python3 -c 'import jinja2, yaml; print("jinja2/pyyaml ok")'
-ansible-playbook --version | head -1
 df -h "$HOME"
 free -m
 podman ps -a
@@ -297,7 +296,7 @@ Stop if an extracted package and its archive identify different revisions.
 - **Where:** Initial primary via SSH; client/build host for trust and browser tests; Proxmox node Shell for reboot.
 - **Preconditions:** Phase 2 passed; initial primary identity confirmed; client source IP known.
 - **PASS:** Healthy app/identity/database, trusted HTTPS and real authenticated browser flow; marker/CA survive reboot; repeat preserves definitions, credentials and running containers.
-- **Evidence:** Recaps, browser results with no skips or TLS bypass, Todo ID/title, CA fingerprint and boot IDs.
+- **Evidence:** Installer results, browser results with no skips or TLS bypass, Todo ID/title, CA fingerprint and boot IDs.
 - **STOP if:** Skipped login test, TLS error, missing marker, failed services or non-idempotent repeat.
 
 On `todo-primary`:
@@ -458,30 +457,118 @@ Reboot the VM. Repeat the seven-service and nginx configuration checks above;
 verify both markers and unchanged TLS CA fingerprint in `todo-nginx-data`, then rerun
 `sh ./install.sh --publish-address 192.168.0.102`. Pass when the second
 deployment preserves the rendered definitions, secret IDs, container IDs and CA.
-Record their before/after values; the Python CLI does not emit an Ansible recap.
+Record their before/after values; the Python CLI prints one JSON result.
 
-## 4. Initial standby bootstrap
+## Before phase 4: trust, inventories and sudo
 
-- **Where:** Initial primary is Ansible controller; standby is remote target; Proxmox node Shell reboots standby.
-- **Preconditions:** Phase 3 passed; verified controller-to-standby SSH; dedicated guest replication firewall rule.
-- **PASS:** For each of the three databases: streaming async, zero lag, active usable slot, read-only standby; both markers persist.
-- **Evidence:** Role/LSN outputs and slot state per database, marker queries, bootstrap recap and standby boot IDs.
-- **STOP if:** Failed preflight, role mismatch, unusable slot, lag or absent marker.
+- **Where:** Both VMs through SSH from the client/build host.
+- **Preconditions:** Phases 1-3 passed. Explicit operator approval for passwordless sudo during the run.
+- **PASS:** app-ops is trusted on the controller, both inventories match the hosts, `sudo -n true` works on both VMs, and app-ops refused cleanly before the approval took effect.
+- **Evidence:** Trust output, both inventories, the refusal output, the sudoers file and `sudo -n true` on both VMs.
+- **STOP if:** A password prompt appears anywhere, or the refusal changed anything.
 
-On `todo-primary`:
+The controller is the VM that runs app-ops, marked `local: true` in the
+inventory; it reaches the other VM over SSH with `BatchMode=yes` and
+`StrictHostKeyChecking=yes`. The initial primary is the controller until
+promotion; the promoted host is the controller from phase 7.
+
+**Trust app-ops on each controller.** With fapolicyd active, app-ops is project
+Python that must be trusted before it runs. On the initial primary now, and on
+the initial standby before phase 7:
 
 ```bash
 cd "$HOME/todo-operations"
-cp deploy/ansible/inventories/initial/hosts.example.ini deploy/ansible/inventories/initial/hosts.ini
-sed -i \
-  -e 's/192\.0\.2\.10/192.168.0.102/g' \
-  -e 's/192\.0\.2\.11/192.168.0.108/g' \
-  deploy/ansible/inventories/initial/hosts.ini
-ansible-inventory --inventory deploy/ansible/inventories/initial/hosts.ini --graph
-ansible --inventory deploy/ansible/inventories/initial/hosts.ini todo_cluster -m ping
+sha256sum -c SHA256SUMS
+sudo sh deploy/scripts/trust-files.sh trust todo \
+  "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py
 ```
 
-Before these Ansible commands, require passwordless primary-to-standby SSH:
+This is the one step where sudo still asks for a password, typed by the
+operator. Require `changed` the first time and `unchanged` when repeated. The
+trust applies to these exact files; repeat it after replacing the package.
+
+**Inventories.** Two small YAML files in `$HOME/todo-operations`. Host names must
+match `hostname` on each VM exactly, and addresses must match `ip -4 address`;
+app-ops checks both and refuses a mismatch. `initial.yaml` on the initial
+primary:
+
+```yaml
+user: gunstein
+hosts:
+  todo-primary: {role: primary, address: 192.168.0.102, local: true}
+  todo-standby: {role: standby, address: 192.168.0.108}
+```
+
+`recovery.yaml` on the promoted host, before phase 7. The machines keep their
+names, but their roles reverse:
+
+```yaml
+user: gunstein
+hosts:
+  todo-standby: {role: current_primary, address: 192.168.0.108, local: true}
+  todo-primary: {role: rebuild_standby, address: 192.168.0.102}
+```
+
+Home and bundle default to `/home/<user>` and `<home>/todo-offline-m12`, as in
+phase 2. Every app-ops command below starts from the package directory with:
+
+```bash
+cd "$HOME/todo-operations"
+export PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1
+```
+
+Each command prints one JSON line on success, and one `app-ops:` error line on
+stderr with exit 1 on failure. Record both.
+
+**Passwordless sudo, and why it needs approval.** app-ops runs privileged steps
+as `sudo -n`; it never reads, sends or stores a password. Both VMs need
+passwordless sudo for the service user: the controller trusts and stages files
+locally, and the other VM installs them. That gives the service user root
+without a password, so whoever can run commands as that user, an agent
+included, can do anything as root on that VM. Approving it is the operator's
+access decision. Grant it for the run only, as a separate file that is easy to
+see and remove.
+
+First prove the refusal. On the initial primary, before any sudoers change,
+with the trust and `initial.yaml` in place:
+
+```bash
+sudo -k
+python3 -m app_ops --inventory initial.yaml preflight-standby; echo "exit=$?"
+```
+
+Require exit 1 and a message naming passwordless sudo (NOPASSWD) for the
+user, and no password prompt. Nothing changed: the first privileged step was
+refused. After approval, on each VM, as the operator who knows the sudo
+password:
+
+```bash
+sudo visudo -f /etc/sudoers.d/90-app-ops-acceptance
+```
+
+Enter exactly one line, with the real service user:
+
+```text
+gunstein ALL=(root) NOPASSWD: ALL
+```
+
+Then check, and remove the file again at the end of phase 11:
+
+```bash
+sudo cat /etc/sudoers.d/90-app-ops-acceptance
+sudo -k
+sudo -n true && echo "passwordless sudo ok"
+```
+
+## 4. Initial standby bootstrap
+
+- **Where:** Initial primary is the app-ops controller; standby is remote target; Proxmox node Shell reboots standby.
+- **Preconditions:** Phase 3 passed; verified controller-to-standby SSH; dedicated guest replication firewall rule.
+- **PASS:** For each of the three databases: streaming async, zero lag, active usable slot, read-only standby; both markers persist.
+- **Evidence:** Role/LSN outputs and slot state per database, marker queries, app-ops JSON results and standby boot IDs.
+- **STOP if:** Failed preflight, role mismatch, unusable slot, lag or absent marker.
+
+On `todo-primary`, require passwordless primary-to-standby SSH:
 
 ```bash
 ssh -o BatchMode=yes gunstein@192.168.0.108 hostname
@@ -490,10 +577,18 @@ ssh -o BatchMode=yes gunstein@192.168.0.108 hostname
 If a snapshot restore changed or removed SSH state, verify the standby host-key
 fingerprint through an independently verified connection (for example the
 client/build host's already trusted SSH connection), then follow
-`deploy/ansible/STANDBY-ARCHITECTURE.md` to
+[STANDBY-ARCHITECTURE.md](../deploy/ops/STANDBY-ARCHITECTURE.md) to
 install primary's public automation key. Do not weaken host-key checking.
 
-Allow only standby to reach the three initial replication endpoints:
+Prove that the preflight refuses without the replication firewall rule, and
+names it:
+
+```bash
+python3 -m app_ops --inventory initial.yaml preflight-standby; echo "exit=$?"
+```
+
+Require exit 1 and a message naming the missing rule. Then allow only standby
+to reach the three initial replication endpoints:
 
 ```bash
 sudo firewall-cmd --permanent --zone=public \
@@ -504,15 +599,16 @@ sudo firewall-cmd --reload
 Run:
 
 ```bash
-ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/initial/hosts.ini \
-  deploy/ansible/playbooks/preflight-standby.yml
-ansible-playbook --inventory deploy/ansible/inventories/initial/hosts.ini \
-  deploy/ansible/playbooks/bootstrap-standby.yml
-ansible-playbook --inventory deploy/ansible/inventories/initial/hosts.ini \
-  deploy/ansible/playbooks/replication-status.yml
+python3 -m app_ops --inventory initial.yaml preflight-standby
+python3 -m app_ops --inventory initial.yaml bootstrap-standby
+python3 -m app_ops --inventory initial.yaml replication-status
+python3 -m app_ops --inventory initial.yaml replication-status
 ```
 
-Pass when, for every database, primary reports `streaming|async`, the slot is
+`replication-status` must report `{"changed": false}` both times. The standby
+secrets travel stdin to stdin and are never written on the controller:
+`find "$HOME/todo-operations" -newer SHA256SUMS -type f` lists only the two
+inventory files. Pass when, for every database, primary reports `streaming|async`, the slot is
 active and usable, measured lag is zero, and standby reports recovery with
 matching receive/replay LSNs. Verify both markers directly on the standby
 databases, for example:
@@ -526,22 +622,22 @@ Reboot standby and require recovery plus streaming to resume for all three.
 
 ## 5. Local DR tool
 
-- **Where:** Initial primary for Ansible; standby for local DR status; Proxmox node Shell for quarantine rehearsal.
+- **Where:** Initial primary for app-ops; standby for local DR status; Proxmox node Shell for quarantine rehearsal.
 - **Preconditions:** Phase 4 passed; explicit approval before Guest Agent/security opt-ins.
-- **PASS:** Correct DR config, read-only healthy standby, zero apply lag; installer repeat changed=0; quarantine tested and normal operation restored.
+- **PASS:** Correct DR config, read-only healthy standby, zero apply lag; installer repeat `{"changed": false}`; quarantine tested and normal operation restored.
 - **Evidence:** Install/status output and quarantine stop, IPv4/IPv6, restricted SSH and restoration evidence.
 - **STOP if:** Trust/policy error, untested quarantine, failed stop or inability to restore initial healthy replication.
 
-Install both DR tools and exact-file trust through Ansible:
+Install the DR tool and its exact-file trust, twice:
 
 ```bash
-ansible-playbook --ask-become-pass \
-  --inventory deploy/ansible/inventories/initial/hosts.ini \
-  deploy/ansible/playbooks/install-dr-tool.yml
+python3 -m app_ops --inventory initial.yaml install-dr-tool
+python3 -m app_ops --inventory initial.yaml install-dr-tool
 ```
 
-The central role keeps `fapolicyd` active, trusts only the verified source and
-the two root-owned files under `/opt/todo/bin`, and keeps the non-secret
+Require `{"changed": true}` and then `{"changed": false}`. app-ops keeps
+`fapolicyd` active, trusts only the verified source and the root-owned file
+under `/opt/todo/bin`, and keeps the non-secret
 configuration under `~/.config/todo`. Require, for each database, healthy
 standby, read-only database, reachable primary and zero local apply lag:
 
@@ -554,7 +650,6 @@ standby restart the receive LSN can be *behind* the replay LSN, because
 PostgreSQL restarts the walreceiver at the start of the current WAL segment;
 `app_dr.py status` then reports 0 bytes with a note. That is expected.
 
-Rerun the installer and require no file or trust changes.
 Prepare and rehearse [Proxmox quarantine](PROXMOX-QUARANTINE.md) now, while
 initial primary is still the authorized writable node. Verify restored normal
 operation and streaming before proceeding to fencing.
@@ -600,32 +695,29 @@ markers remain. Keep old primary fenced.
 
 - **Where:** Promoted host for deployment; client/build host for routing/trust/browser; Proxmox node Shell for reboot.
 - **Preconditions:** Phase 6 passed; old primary fenced; existing secrets and matching image archives available.
-- **PASS:** Healthy application, stable production issuer, real login and persistent marker; changed=0 repeat; reboot preserves CA/data.
-- **Evidence:** Recaps, trusted browser results, marker/CA and boot IDs.
+- **PASS:** Healthy application, stable production issuer, real login and persistent marker; `{"changed": false}` repeat; reboot preserves CA/data.
+- **Evidence:** app-ops JSON results, trusted browser results, marker/CA and boot IDs.
 - **STOP if:** Missing secrets/images, TLS or login failure, unexpected role/bootstrap activity or marker loss.
 
-On the promoted host:
+On the promoted host, trust app-ops and write `recovery.yaml` as described
+[before phase 4](#before-phase-4-trust-inventories-and-sudo). Then:
 
 ```bash
-cd "$HOME/todo-operations"
-cp deploy/ansible/inventories/recovery/hosts.example.ini deploy/ansible/inventories/recovery/hosts.ini
-sed -i \
-  -e 's/192\.0\.2\.11/192.168.0.108/g' \
-  -e 's/192\.0\.2\.10/192.168.0.102/g' \
-  deploy/ansible/inventories/recovery/hosts.ini
 sudo firewall-cmd --permanent --zone=public \
   --add-rich-rule='rule family="ipv4" source address="192.168.0.100/32" destination address="192.168.0.108" port port="8443" protocol="tcp" accept'
 sudo firewall-cmd --reload
-ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/recovery/hosts.ini \
-  deploy/ansible/playbooks/deploy-promoted-application.yml
+python3 -m app_ops --inventory recovery.yaml deploy-promoted-application
 ```
+
+This command runs only on the promoted host itself; from any other controller
+it refuses before it changes anything.
 
 Map `todo.test` and `notes.test` to `.108` on the client and install the exported public nginx
 root. Require system-trust HTTPS, health/readiness, stable issuer
 `https://todo.test:8443/auth/realms/todo`, replicated data, browser login and
 SSO tests, and a persistent authenticated failover marker in each app.
 
-Rerun the playbook and require `changed=0`. Reboot promoted host and verify all
+Rerun `deploy-promoted-application` and require `{"changed": false}`. Reboot promoted host and verify all
 seven workload services listed in phase 3, writable PostgreSQL,
 `podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf`, marker data
 and unchanged CA hash. Each app pod shares loopback between frontend and backend,
@@ -639,12 +731,10 @@ but the proxy reaches both over DNS; frontend serves HTTP only and holds no TLS 
 - **Evidence:** Backup and restore-point names, comparison, cleanup output, archive counters, capacity and boot IDs.
 - **STOP if:** Unverified backup, missing WAL, wrong restore target, archive failure or low space.
 
-Install the tool and its exact-file trust through the playbook:
+Install the tool and its exact-file trust, and configure archiving:
 
 ```bash
-cd "$HOME/todo-operations"
-ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/recovery/hosts.ini \
-  deploy/ansible/playbooks/configure-backup.yml
+python3 -m app_ops --inventory recovery.yaml configure-backup
 ```
 
 Without `--app`, `status`, `create` and `mark` act on all three databases and
@@ -708,16 +798,16 @@ Verify that only disposable restore resources disappeared; live data and all
 three backup volumes must remain. Record the comparison and cleanup evidence. The
 backup is on the same VM and does not protect against VM/host loss.
 
-Rerun configuration and require `changed=0`. Reboot current primary and verify
+Rerun `configure-backup` and require `{"changed": false}`. Reboot current primary and verify
 application readiness, writable database, backup persistence, zero archive
 failures and bounded WAL use.
 
 ## 9. Rebuild old primary as standby
 
-- **Where:** Proxmox node Shell for isolated boot/quarantine; current primary controls guest Ansible tasks.
+- **Where:** Proxmox node Shell for isolated boot/quarantine; current primary runs app-ops.
 - **Preconditions:** Phase 8 passed; reviewed backup/PITR evidence; old primary remains fenced; explicit reseed approval.
 - **PASS:** Authenticated replication check precedes deletion for every database; all three rebuilt databases are read-only and streaming with zero lag; new authenticated markers replicate.
-- **Evidence:** Approvals, STOPPED and active firewall rules, full recap, slot/role checks and marker ID.
+- **Evidence:** Approvals, STOPPED and active firewall rules, app-ops JSON results, slot/role checks and marker ID.
 - **STOP if:** Any failed gate or partial rebuild: preserve state, diagnose, never repeat destructive reseed blindly.
 
 Use the quarantine route already prepared and rehearsed in phase 5:
@@ -733,34 +823,42 @@ inbound replication rule on .102. On current primary allow only .102 to reach
 .108:5432-5434. Establish verified key-based SSH from current primary to rebuild
 host. Enable only the inspected Proxmox outbound replication exception.
 
-Run read-only preflight:
+First prove the confirmation gate. Wrong confirmations must refuse before
+anything on the rebuild host changes:
 
 ```bash
-cd "$HOME/todo-operations"
-ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/recovery/hosts.ini \
-  deploy/ansible/playbooks/preflight-standby-rebuild.yml \
-  --extra-vars \
-  '{"todo_confirm_old_primary_fenced":"todo-primary is fenced","todo_confirm_reseed":"todo-primary"}'
+python3 -m app_ops --inventory recovery.yaml preflight-standby-rebuild \
+  --confirm-fenced todo-primary --confirm-reseed todo-primary; echo "exit=$?"
 ```
 
-Only after every assertion passes, run. Keep `--ask-become-pass`: the rebuild
-first verifies root access on both the Ansible controller and the rebuild host.
-Missing sudo access stops the entire run before primary configuration changes
-or deletion of the old database. The credentials must remain valid for the later
-DR-tool installation as well.
+Require exit 1 and a message saying both exact confirmations are required.
+Then run the real read-only preflight. It does not test the replication path:
+until the rebuild publishes the primary's ports, the quarantine firewall can
+drop the refusal, so an open path and a blocked one look the same.
 
 ```bash
-ansible-playbook --ask-become-pass --inventory deploy/ansible/inventories/recovery/hosts.ini \
-  deploy/ansible/playbooks/rebuild-standby.yml \
-  --extra-vars \
-  '{"todo_confirm_old_primary_fenced":"todo-primary is fenced","todo_confirm_reseed":"todo-primary"}'
+python3 -m app_ops --inventory recovery.yaml preflight-standby-rebuild \
+  --confirm-fenced "todo-primary is fenced" --confirm-reseed todo-primary
 ```
 
-Pass when, for every database, authenticated `IDENTIFY_SYSTEM` precedes volume
-deletion, a fresh base backup initializes `.102`, and final state is
-`streaming|async`.
+Only after it reports `{"changed": false}`, run the rebuild once:
 
-Run `deploy/ansible/playbooks/cluster-status.yml`; it reports every registered
+```bash
+python3 -m app_ops --inventory recovery.yaml rebuild-standby \
+  --confirm-fenced "todo-primary is fenced" --confirm-reseed todo-primary
+```
+
+It first checks `sudo -n` on both VMs, so missing sudo stops the run before
+primary configuration changes or deletion of the old database. It repeats
+every preflight gate, publishes the redundancy configuration on the current
+primary, and then requires a TCP connection from `.102` to every replication
+port; `replication port ... is not reachable` means a firewall step above is
+missing, and nothing was deleted. Never rerun it after a failure. Pass when,
+for every database, authenticated `IDENTIFY_SYSTEM` precedes volume deletion,
+a fresh base backup initializes `.102`, and final state is `streaming|async`;
+from `.102`, ports 5432-5434 on `.108` now connect.
+
+Run `python3 -m app_ops --inventory recovery.yaml cluster-status`; it reports every registered
 database. Create an authenticated Todo through `todo.test` and an authenticated
 Note through `notes.test`, and verify both directly on rebuilt standby.
 
@@ -774,12 +872,12 @@ Note through `notes.test`, and verify both directly on rebuilt standby.
 
 1. Reboot only rebuilt standby.
 2. Require `t|on` for all three databases, only the three PostgreSQL services and resumed streaming.
-3. Run `cluster-status.yml`.
+3. Run `cluster-status`.
 4. Reboot only current primary.
 5. Require all seven workload services from phase 3,
    `podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf`, `f|off|on|1h` for
    every database, persistent backups, unchanged TLS CA and readiness of both apps.
-6. Run `cluster-status.yml` again.
+6. Run `cluster-status` again.
 7. Verify trusted HTTPS for both hostnames, stable issuer and all markers from the client.
 8. Record backup/WAL size and free disk.
 
@@ -812,11 +910,11 @@ keycloak-postgres.service  keycloak-postgres pod
 Always obtain fresh cluster evidence directly:
 
 ```bash
-ansible-playbook --inventory deploy/ansible/inventories/recovery/hosts.ini deploy/ansible/playbooks/cluster-status.yml
+python3 -m app_ops --inventory recovery.yaml cluster-status
 ```
 
-Inspect reported lag and LSNs for every database as well as the recap; a
-successful playbook exit alone does not prove zero lag or complete acceptance.
+Inspect reported lag and LSNs for every database in the JSON; exit 0 alone
+does not prove zero lag or complete acceptance.
 Require schema migrations applied by both init containers, healthy
 backends/frontends, proxy DNS routing to `todo-app:8080`/`todo-app:8000` and
 `notes-app:8080`/`notes-app:8000`, proxy-to-Keycloak DNS routing to
@@ -834,4 +932,17 @@ rebuilt standby.
 Record repairs as REPAIRED FUNCTIONAL PASS, preserving original failures.
 Keep quarantine through verification. The stop helper is not a rebuilt-standby
 management tool: it expects all seven registered workload units (including `shared-proxy.service`).
+
+Finally remove the run's passwordless sudo on both VMs, and require a non-zero
+exit; a run that leaves the file in place is not complete:
+
+```bash
+sudo rm /etc/sudoers.d/90-app-ops-acceptance
+sudo -k
+sudo -n true; echo "exit=$?"
+```
+
+CLEAN PASS also requires that no Ansible command was run, that no password was
+typed into or read by app-ops, that every refusal check failed as described and
+changed nothing, and that every repeat reported `{"changed": false}`.
 Do not reset the working pair or repeat promotion/rebuild after the verdict.

@@ -18,7 +18,6 @@ sudo dnf update -y
 
 sudo dnf install -y \
   podman \
-  ansible-core \
   python3 \
   python3-jinja2 \
   python3-pyyaml \
@@ -37,8 +36,8 @@ sudo reboot
 ```
 
 `fapolicyd` is optional for the application itself (the installer detects and
-adapts if it is absent), but it is part of the tested lab baseline and several
-DR/backup playbooks install exact-file trust through it. Installing and
+adapts if it is absent), but it is part of the tested lab baseline and the
+DR/backup tools install exact-file trust through it. Installing and
 enabling it now avoids a behavior difference later.
 
 `python3-jinja2` renders the target's `.kube` units during installation;
@@ -51,11 +50,11 @@ After reboot, check versions:
 ```bash
 podman --version
 systemctl --version | head -1
-ansible-playbook --version | head -1
+python3 --version
 ```
 
 The repository's current Kube runtime is tested against Podman 5.8.2, systemd
-255 and ansible-core 2.14.18 or newer (see `deploy/offline/README.md`). If your
+255 and the system Python 3.9 (see `deploy/offline/README.md`). If your
 packages are older, get compatible versions before continuing.
 
 ## 2. Create a dedicated service user

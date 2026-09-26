@@ -18,7 +18,7 @@ identity, rootless execution, offline delivery and recovery.
 
 The supported Kubernetes YAML subset is a **Podman workload format**.
 There is no Kubernetes cluster, scheduler, cross-runtime portability promise,
-Docker Compose, Node.js frontend framework or resident Ansible agent.
+Docker Compose, Node.js frontend framework or configuration-management agent.
 The system does not implement automatic HA, seamless failover, multi-tenant
 authorization, managed PKI or an off-host backup service.
 
@@ -111,7 +111,7 @@ This is a tested baseline, not a claim about the capability's minimum version.
 | .kube Quadlet | Binding a workload to user systemd, published ports and dependencies | Database failover decisions |
 | systemd | Service ordering, restart, shutdown and boot behavior | PostgreSQL replication correctness |
 | Python installer | Single-host dev/server lifecycle and shared workload installation | DR decisions or remote transport |
-| Ansible | Multi-host DR, security integration, transport and assertions | A separate workload installer |
+| app-ops | Multi-host DR over plain SSH: transport, security integration and assertions | A separate workload installer |
 | Python tools | Guarded DR, backup and resumable operator stages | A second configuration-management system |
 | Podman | Rootless pods, containers, networks, volumes and secrets | Cluster scheduling |
 
@@ -124,7 +124,7 @@ depends on `keycloak-postgres.service`; each PostgreSQL also has
 its own boot entrypoint to support a database-only host.
 
 Ordering is not readiness. Init-container success, health checks, systemd
-restart and installer/Ansible readiness assertions address different conditions.
+restart and installer/app-ops readiness assertions address different conditions.
 The PostgreSQL unit applies health-on-failure kill so unhealthy database
 containers are replaced through the systemd lifecycle.
 
@@ -140,13 +140,13 @@ Both bundles: VERSION + archive checksums
     │
     ▼
 Python installer for local clean installation
-  Ansible controller and the same Python workload functions for DR
+  app-ops controller and the same Python workload functions for DR
     │
     ▼
 Target host(s) ──► .kube ──► systemd ──► Podman
 ```
 
-The operations package contains playbooks, roles, runtime definitions, Python
+The operations package contains app-ops, the installer module, runtime definitions, Python
 and quarantine tools, and runbooks; it contains no OCI image archives.
 YAML is rendered into a temporary build directory and packaged. Source checkout
 `deploy/runtime/` contains guides; shared `deploy/quadlet/` templates produce target-specific
@@ -165,9 +165,9 @@ using one environment values file, then renders Keycloak and shared-proxy once.
 Adding an App entry activates the already-shared template set with no new
 files. Its shared workload functions install files
 and reload systemd; callers retain responsibility for safe stop/start ordering.
-DR Ansible tasks stage controller-side templates/manifests on the target, call
-`install-workload`, and preserve the existing change facts. Hardened DR targets
-use the existing exact-file trust role for the Python sources.
+app-ops stages controller-side templates/manifests on the target, calls
+`install-workload`, and reports its change result. Hardened DR targets get the
+Python sources as root-owned copies with exact-file trust.
 
 Development uses the same manifest templates with development values and direct
 `podman kube play/down`. Production uses user systemd. These are different
@@ -284,7 +284,7 @@ a surviving database node and required credentials.
   UID/GID mappings, not a root-owned container daemon.
 - **SELinux:** enforcing labels constrain access; shared versus private volume
   labels differ from ownership adjustments.
-- **fapolicyd:** Ansible maintains exact file trust and waits boundedly for the
+- **fapolicyd:** app-ops maintains exact file trust and waits boundedly for the
   active database to match canonical path, size and SHA-256.
 - **firewalld:** guest rules restrict client HTTPS and peer replication.
   Proxmox quarantine is a separate host-external boundary.
@@ -302,7 +302,7 @@ Do not disable SELinux or fapolicyd to repair application failures.
 
 The DR flow covers one group of three databases: Todo, Notes and Keycloak
 (`apps.REPLICATED_DATABASES`). Bootstrap, promotion, backup, rebuild and status
-always act on the complete group; Ansible refuses a partial application
+always act on the complete group; app-ops refuses a partial application
 override. Each database has its own replication port, slot, replication
 credential, WAL archive and backup volume. Promotion first checks every
 database and records a durable decision; a failure after the first database is
@@ -352,9 +352,9 @@ retention, off-host copying, encryption and alerts remain production work.
 
 See [Project status](../PROJECT.md#acceptance) for the current acceptance
 verdict, its scope and every run record. Static tests or a green CI run do not
-replace the full two-VM test. The Python installer extraction has unit, real
-rendering, package and Ansible transport coverage; it still requires a new
-unchanged-revision Oracle Linux DR acceptance run. The multi-app single-host
+replace the full two-VM test. The installer and app-ops have unit, real
+rendering, package and fake-host transport coverage; only the two-VM run shows
+real behaviour. The multi-app single-host
 implementation was separately exercised in a disposable Fedora 44 VM, Podman
 5.8.1, rootless and SELinux enforcing: dev/server, actual offline OCI loading
 without Helm, persistence, unchanged repeats, exact systemd SourcePaths,
@@ -375,10 +375,10 @@ outside the demonstrated recovery scope.
 | How do I learn it? | [Learning Guide](LEARNING-GUIDE.md) |
 | What is demonstrated versus simplified? | [Concept coverage](WHAT-YOU-LEARN.md) |
 | Which definitions implement the pods? | [Kube runtime](../deploy/runtime/README.md) |
-| How is replication arranged? | [Standby architecture](../deploy/ansible/STANDBY-ARCHITECTURE.md) |
+| How is replication arranged? | [Standby architecture](../deploy/ops/STANDBY-ARCHITECTURE.md) |
 | How do I run acceptance safely? | [Acceptance sequence and criteria](ACCEPTANCE.md) |
 | How does old-primary isolation work? | [Quarantine](PROXMOX-QUARANTINE.md) |
-| How do backup and reseeding work? | [Backup/PITR](../deploy/ansible/BACKUP-PITR.md), [restore redundancy](../deploy/ansible/RESTORE-REDUNDANCY.md) |
+| How do backup and reseeding work? | [Backup/PITR](../deploy/ops/BACKUP-PITR.md), [restore redundancy](../deploy/ops/RESTORE-REDUNDANCY.md) |
 | How are security details handled? | [SELinux](SELINUX.md), [secrets](SECRETS.md), [TLS](TLS.md) |
 
 Source paths identify implementation, not a second source of configuration.

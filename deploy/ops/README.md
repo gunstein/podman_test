@@ -1,12 +1,29 @@
 # app-ops: DR operations over plain SSH
 
 `app-ops` runs the DR and multi-host operations over plain `ssh` from the
-controller, without Ansible. Each command has the same name, host roles and
-order as the Ansible playbook it replaces. The hosts still run the same
-`app_installer` commands, `app_dr.py`, `app_backup.py` and
-`deploy/scripts/trust-files.sh`. The Ansible playbooks remain supported until
-a full two-VM acceptance run has verified `app-ops`; the operations package
-has that run in `docs/ACCEPTANCE-APP-OPS.md`.
+controller. It is the only DR tool: the Ansible playbooks it replaced were
+retired after its CLEAN PASS on `2165933`
+([PROJECT.md](../../PROJECT.md#acceptance)); Git history keeps them. The hosts
+run the same `app_installer` commands, `app_dr.py`, `app_backup.py` and
+`deploy/scripts/trust-files.sh` that the playbooks ran.
+
+These operations protect one group of three databases: Todo, Notes and the
+shared Keycloak database (`apps.REPLICATED_DATABASES`). Each has its own host
+replication port (5432, 5433, 5434), slot, credential, WAL archive and backup
+volume. Every command refuses a partial group. Promoted application recovery
+deploys both apps, Keycloak and the shared proxy.
+
+Single-host installation and removal use the
+[Python installer](../installer/README.md) directly, with no DR tool:
+
+```bash
+PYTHONPATH=deploy/installer python3 -m app_installer install --mode server
+PYTHONPATH=deploy/installer python3 -m app_installer uninstall
+# Only when permanently deleting the single-host database is intended:
+PYTHONPATH=deploy/installer python3 -m app_installer uninstall --remove-data
+```
+
+Both refuse a host with replication, promotion or backup state.
 
 ## Requirements
 
@@ -67,6 +84,38 @@ python3 -m app_ops --inventory recovery.yaml cluster-status
 their own. Every command prints one JSON result: `changed`, or the status
 report. `deploy-promoted-application` must run on the promoted host itself,
 marked `local: true`.
+
+## Operations package
+
+Build one source-only package with app-ops, the installer module, the host
+tools and the rendered manifests:
+
+```bash
+deploy/scripts/build-operations-package.sh
+```
+
+Its `VERSION` file records the source Git revision and whether source changes
+were present while it was built. Deploy only a reviewed `clean` artifact;
+`dirty` is diagnostic provenance, not a release identifier.
+
+## The workflows
+
+Each page says what a command does, what it refuses and what evidence
+acceptance records:
+
+1. [Preparing the two hosts](STANDBY-ARCHITECTURE.md): accounts, SSH keys and
+   the firewall rule.
+2. [Standby bootstrap](STANDBY-BOOTSTRAP.md): `preflight-standby`,
+   `bootstrap-standby`, `replication-status`.
+3. [Promotion](PROMOTION.md): `install-dr-tool`, then the local `app_dr.py`.
+4. [Application failover](APPLICATION-FAILOVER.md):
+   `deploy-promoted-application`.
+5. [Backup and PITR](BACKUP-PITR.md): `configure-backup`, then the local
+   `app_backup.py`.
+6. [Restoring redundancy](RESTORE-REDUNDANCY.md): `preflight-standby-rebuild`,
+   `rebuild-standby`, `cluster-status`.
+
+For full validation, follow [ACCEPTANCE.md](../../docs/ACCEPTANCE.md).
 
 ## Hosts installed before the tool rename
 

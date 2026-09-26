@@ -1,4 +1,4 @@
-# Backup and PITR on one VM
+# Backup and PITR on the promoted VM
 
 This demonstrates a base backup plus WAL replay into a separate, read-only
 restore container. Build on the laptop; run the remaining commands as the
@@ -7,11 +7,13 @@ roles, and no existing disposable restore state. Configuration can restart the
 application, so obtain a maintenance window on an existing installation.
 Status and SELECT are observations; marker rows are lab writes. Never substitute
 a live volume as the restore target. If backup verification, archiving or restore
-fails, stop and use [backup/PITR](../../deploy/ansible/BACKUP-PITR.md) and
+fails, stop and use [backup/PITR](../../deploy/ops/BACKUP-PITR.md) and
 [troubleshooting](../ACCEPTANCE-TROUBLESHOOTING.md).
 
-This builds on [Offline install on one VM](02-OFFLINE-INSTALL.md). You should
-already have a working Todo installation on one VM.
+This builds on [the two-VM DR walkthrough](03-DR-TWO-VM.md): run it on VM2
+after promotion and application failover. Backup configuration refuses a host
+without a completed group promotion, because only the current primary archives
+WAL.
 
 The goal is simple:
 
@@ -34,90 +36,24 @@ verify the result
 The repository restores into an isolated, separate PostgreSQL container. The
 live database is never overwritten.
 
-## 1. Build the operations package on the laptop
+## 1–3. Use VM2 from recipe 3
 
-From the repository:
-
-```bash
-git switch feature/podman-kube
-
-deploy/scripts/build-operations-package.sh
-
-cd dist
-sha256sum -c todo-operations.tar.gz.sha256
-```
-
-Copy the package to the VM:
+VM2 already has the operations package, trusts app-ops and has
+`recovery.yaml` (recipe 3, steps 5 and 16), and the run-only passwordless sudo
+from recipe 3 step 7 is still in place. On VM2:
 
 ```bash
-scp todo-operations.tar.gz \
-    todo-operations.tar.gz.sha256 \
-    todo@192.168.1.50:
+cd ~/todo-operations
+export PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1
+cat recovery.yaml
 ```
-
-## 2. Extract on the VM
-
-On the VM:
-
-```bash
-cd ~
-
-sha256sum -c todo-operations.tar.gz.sha256
-
-mkdir -p todo-operations
-
-tar -xzf todo-operations.tar.gz \
-  --strip-components=1 \
-  --directory todo-operations
-
-cd todo-operations
-```
-
-## 3. Build a simple inventory
-
-Copy the recovery example:
-
-```bash
-cp deploy/ansible/inventories/recovery/hosts.example.ini \
-   deploy/ansible/inventories/recovery/hosts.ini
-```
-
-For a single-VM lab, we can use the VM as `todo_current_primary`.
-
-Example with:
-
-```text
-VM = 192.168.1.50
-user = todo
-```
-
-Substitute the values:
-
-```bash
-sed -i \
-  -e 's/192\.0\.2\.11/192.168.1.50/g' \
-  deploy/ansible/inventories/recovery/hosts.ini
-
-sed -i \
-  -e 's/ansible_user: gunstein/ansible_user: todo/' \
-  -e 's#/home/gunstein#/home/todo#g' \
-  deploy/ansible/inventories/recovery/group_vars/all.yaml \
-  deploy/ansible/inventories/recovery/group_vars/todo_promoted.yaml
-```
-
-Host addresses live in `hosts.ini`; the SSH account and account-specific paths live
-in the adjacent `group_vars/` files. Apply both edits in the extracted operations
-package. These YAML files contain configuration, not secrets.
 
 ## 4. Install and configure the backup feature
 
 Run:
 
 ```bash
-ansible-playbook \
-  --ask-become-pass \
-  --inventory deploy/ansible/inventories/recovery/hosts.ini \
-  deploy/ansible/playbooks/configure-backup.yml
+python3 -m app_ops --inventory recovery.yaml configure-backup
 ```
 
 This installs:
@@ -134,7 +70,7 @@ todo-postgres-backup
 └── wal/
 ```
 
-The playbook enables PostgreSQL WAL archiving and checks that WAL actually
+It enables PostgreSQL WAL archiving and checks that WAL actually
 lands in the backup volume.
 
 ## 5. Check backup status

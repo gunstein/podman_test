@@ -32,11 +32,9 @@ already installs them:
 deploy/offline/build-bundle.sh
 ```
 
-Building the bundle does not need `ansible-core` or a Python virtualenv on the
-laptop; that is only needed if you also want to run `ansible-playbook`
-directly from the laptop (see the [DR walkthrough](03-DR-TWO-VM.md)). The
-target VM uses its own RPM-installed `ansible-core`, not anything from the
-laptop.
+Building the bundle needs no Python virtualenv on the laptop. The DR tools
+run on the VMs themselves (see the [DR walkthrough](03-DR-TWO-VM.md)), with
+their own RPM-installed Python, not anything from the laptop.
 
 The build produces:
 
@@ -99,7 +97,7 @@ ever prompted for or printed. All values are stored as host-local Podman
 secrets.
 
 The installer verifies the bundle, loads container images and installs the
-workload itself; it does not invoke Ansible (that is DR/multi-host only, see
+workload itself; it does not run the DR tools (that is DR/multi-host only, see
 the [DR walkthrough](03-DR-TWO-VM.md)) or contact a container registry or the
 Python package index.
 

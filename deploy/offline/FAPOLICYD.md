@@ -22,22 +22,16 @@ Before running the installer on an enforcing host, trust only the verified
 `deploy/installer/app_installer/*.py` files using the exact-file recipe in
 [offline installation](README.md#oracle-linux-9-with-fapolicyd). Replacing or
 moving the extraction requires refreshing those paths and hashes. The wrapper
-checks the internal manifest before importing the Python module. This differs
-from the historical Ansible-only single-host installer, which needed no project
-Python trust entries.
+checks the internal manifest before importing the Python module.
 
-The package-level `ansible.cfg` retains pipelining for local and SSH DR
-connections, avoiding transient Ansible Python modules under `~/.ansible/tmp`.
-The shared workload transport reuses `todo_fapolicyd` on active hardened
-targets to install root-owned modules under `/opt/todo/lib/app_installer` and
-wait for exact source/target trust. It does not duplicate that role's trust logic.
-
-The DR and backup workflows add project-owned Python tools. Their shared
-`todo_fapolicyd` role refreshes exact source-file trust on the Ansible
-controller, transfers files through pipelined standard input, installs
-root-owned copies under `/opt/todo/bin`, and registers only those exact target
-files. Supply normal Ansible become credentials; no manual trust preparation is
-part of the supported workflow.
+app-ops, the DR tool, is itself project Python, so its files are trusted once
+on each controller ([deploy/ops/README.md](../ops/README.md)). On every
+hardened host it touches, it installs root-owned copies of the installer
+module under `/opt/todo/lib/app_installer` and of the DR and backup tools under
+`/opt/todo/bin`, and waits for exact source and target trust. It refreshes
+exact source-file trust on the controller, sends each file over SSH standard
+input, and registers only those exact target files, with `sudo -n`. No other
+manual trust preparation is part of the supported workflow.
 
 The trust logic lives in `deploy/scripts/trust-files.sh`, run through the
 RPM-trusted system shell. It cannot be project Python, because the files it
@@ -45,7 +39,7 @@ trusts are that Python. `install DEST MODE` writes one root-owned file
 atomically from base64 standard input. `trust TRUST_FILE PATH...` updates or
 adds exact trust, reloads the daemon, and then waits until
 `fapolicyd-cli --dump-db` shows every exact path, size and SHA-256 line. A
-stale hash or a path prefix does not count. The role passes the script text as
+stale hash or a path prefix does not count. app-ops passes the script text as
 an argument, so no helper file is written to the target.
 
 ## Diagnose a denial
@@ -115,23 +109,17 @@ or trusting an entire home, extraction or temporary directory.
   Run `sh ./install.sh`. The shell remains RPM-trusted and reads the extracted
   script as data.
 
-- **Ansible fails below `~/.ansible/tmp`:** Use the included installer or
-  playbooks. They enable pipelining or use pipelined standard input. Do not
-  create a bundle-local Python virtual environment on the hardened target.
+- **A bundle-local Python virtual environment fails:** Do not create one on
+  the hardened target. The installer and app-ops use the OS-managed Python.
 
 - **`sha256sum` cannot read a Python extension, executable or script:** This is
   a policy denial, not proof that the checksum is wrong. Inspect the `fanotify`
   audit event. The bundle uses the OS-managed runtime; its project Python sources require
   exact-file trust after archive verification as described above.
 
-- **Ansible reports a checksum mismatch while copying a Python tool:** The
-  target policy denied Ansible's temporary source file. Use the central `todo_fapolicyd` role. It refreshes exact source trust,
-  installs through pipelined standard input and verifies exact target trust.
-
-- **Ansible cannot read a role YAML file:** Use the current package and its
-  package-level pipelining configuration. The installer no longer embeds Python
-  in task YAML, so role files should remain data and should not need custom
-  trust. Diagnose any remaining `FANOTIFY` denial before adding trust.
+- **app-ops itself is denied on the controller:** Its files are not trusted
+  yet, or the package was replaced. Run the trust command from
+  [deploy/ops/README.md](../ops/README.md) again.
 
 - **A previously working tool fails after an update:** Its stored hash is stale.
   Run `--file update` for every registered copy and then
@@ -148,7 +136,7 @@ sudo fapolicyd-cli --file delete \
 sudo fapolicyd-cli --update
 ```
 
-The Ansible-managed tools use the dedicated `todo` trust source. Manual
+The app-ops-managed tools use the dedicated `todo` trust source. Manual
 single-host installer entries use `app-installer`. Remove an
 exact source entry on its controller and an exact installed entry on its target
 only when that tool is retired:

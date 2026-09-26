@@ -104,11 +104,9 @@ python3 -m unittest discover --start-directory deploy/installer/tests
 python3 -m unittest discover --start-directory tests
 ```
 
-Most tests mock only runtime commands and use scratch directories. Rendering
-parity tests require real Ansible and compare every Quadlet byte for
-external HTTPS, loopback with replication, and an unset PostgreSQL address.
-Project tests execute the actual Ansible staging bridge, verify repeat change
-facts, and build/examine both delivery archives. Real multi-app dev/server, offline loading, persistence, trusted browser SSO and
+Most tests mock only runtime commands and use scratch directories. Project
+tests run app-ops against fake hosts, verify repeat change facts, and
+build/examine both delivery archives. Real multi-app dev/server, offline loading, persistence, trusted browser SSO and
 idempotency were additionally tested in a separate Fedora 44 VM with rootless
 Podman 5.8.1 and SELinux enforcing; see [results](../../docs/history/RESULTS.md).
 This does not replace Oracle Linux/fapolicyd or two-host DR acceptance.

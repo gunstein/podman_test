@@ -17,7 +17,7 @@ deploy/manifests/*.yaml.j2 + apps.py/stack.py + values                build host
         ↓ render
 generated/kube-runtime/*.yaml            reviewed, packaged workload definitions
         ↓ referenced by
-Python installer renders deploy/quadlet/*.kube.j2 → *.kube     target-only, needs no Ansible
+Python installer renders deploy/quadlet/*.kube.j2 → *.kube     target-only, standard library + Jinja2
         ↓ generator
 systemd user services         ordering, restart, boot and stop
         ↓
@@ -85,7 +85,7 @@ loginctl show-user "$USER" -p Linger
 ```
 
 Ordering is not readiness. Init migration, container health checks, systemd
-restart and Ansible readiness checks have different responsibilities.
+restart and installer/app-ops readiness checks have different responsibilities.
 See `docs/history/RESULTS.md` for demonstrated behavior and revision-specific acceptance.
 
 ## 4. Images, rootless storage and external secrets
@@ -115,8 +115,9 @@ podman secret ls
 Read [SELinux](SELINUX.md) and [secrets](SECRETS.md).
 Secrets are external host-local Podman objects; workload YAML carries
 references, not plaintext values. Do not dump container environments or secret
-payloads into an ordinary transcript. Ansible transfers required values through
-protected memory/SSH with `no_log` and checks credential equality before reseed.
+payloads into an ordinary transcript. app-ops transfers required values from
+one command's stdout to the other's stdin over SSH, never logs them, and checks
+credential equality before reseed.
 
 ## 5. Database provisioning is not schema migration
 
@@ -155,15 +156,16 @@ Only Keycloak is implemented; another provider requires a new adapter,
 provider configuration and browser validation, not merely an issuer change.
 Backend validation uses configured issuer, JWKS and audience independently.
 
-## 7. Ansible, offline artifacts and host security
+## 7. app-ops, offline artifacts and host security
 
-Ansible installs and verifies state; systemd remains responsible afterwards.
+The installer and app-ops install and verify state; systemd remains responsible
+afterwards.
 Both offline bundles must identify one clean revision in VERSION and pass
 archive checksums before extraction. Targets consume rendered YAML and OCI
 archives without Helm or registry access. Read `deploy/offline/README.md`.
 
 SELinux, Unix ownership, user namespaces, fapolicyd and firewalld are independent
-layers. The exact-file trust role waits boundedly for canonical path, size and
+layers. The exact-file trust step waits boundedly for canonical path, size and
 SHA-256 in fapolicyd's active database. Quarantine installer restores existing
 SELinux policy after atomic file replacement; new QGA permissions need opt-in.
 

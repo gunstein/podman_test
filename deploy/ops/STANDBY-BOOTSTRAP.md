@@ -24,10 +24,10 @@ PostgreSQL saw `10.89.0.0/24`, not the standby LAN address; firewalld enforces
 the real machine boundary.
 
 The read-only preflight queries firewalld to confirm that rule is already in
-place before bootstrap runs, so it needs become privileges. It also requires
-the offline bundle already staged on standby, by default under
-`/home/<ansible_user>/todo-offline-m12` (set `todo_user_home` in the inventory
-for another remote home directory).
+place before bootstrap runs, in the running and the permanent configuration,
+so it needs `sudo -n`. It also requires the offline bundle already staged on
+standby, by default under `/home/<user>/todo-offline-m12` (set `home` or
+`bundle` in the inventory for another location).
 
 Before that, each host reports itself with `app_installer node-facts` and
 stops if its hostname, address or machine ID does not match the inventory.
@@ -45,19 +45,20 @@ network, before treating WAL traffic as confidential.
 ## Bootstrap and replication-status contract
 
 Use [the standby bootstrap phase](../../docs/ACCEPTANCE.md#4-initial-standby-bootstrap)
-for the exact firewall rule, preflight, `bootstrap-standby.yml` and
-`replication-status.yml` sequence.
+for the exact firewall rule, `preflight-standby`, `bootstrap-standby` and
+`replication-status` sequence.
 
-`bootstrap-standby.yml` verifies connectivity before creating the standby
+`bootstrap-standby` verifies connectivity before creating the standby
 volume, and is a one-time operation that refuses to overwrite an existing
 standby volume. If it fails after creating the volume or physical slot, do not
 rerun it blindly: inspect the partial state first. Dropping the slot or
 deleting the volume is an explicit destructive recovery operation, never an
-automatic playbook cleanup.
+automatic cleanup.
 
-`replication-status.yml` requires `streaming|async` on primary and recovery
-`t` on standby, plus an active, usable `todo_standby` slot; it also reports WAL
-status, remaining safe WAL bytes and any invalidation reason.
+`replication-status` requires `streaming|async` on primary and, on standby,
+recovery `t` and a read-only transaction for every database, plus an active,
+usable standby slot; it also reports WAL status, remaining safe WAL bytes and
+any invalidation reason.
 
 After replication is healthy, use
 [the local DR tool phase](../../docs/ACCEPTANCE.md#5-local-dr-tool) and

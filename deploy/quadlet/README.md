@@ -2,7 +2,7 @@
 
 This directory contains `app-network.network` and the six canonical `.kube.j2`
 templates. The Python installer renders these same files with Jinja2; there are no
-role-local copies. Ansible DR calls the same workload functions for Todo.
+role-local copies. app-ops DR calls the same workload functions on each host.
 Host-specific units live beside the rendered YAML in
 `~/.config/containers/systemd/todo-kube-runtime/`. See the [runtime guide](../runtime/README.md).
 

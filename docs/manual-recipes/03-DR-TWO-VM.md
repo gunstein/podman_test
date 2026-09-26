@@ -56,7 +56,7 @@ before running this on anything other than disposable lab VMs.
 
 Use [Prepare an Oracle Linux 9 VM](01-PREPARE-VM.md) on both.
 
-Also set distinct hostnames — several playbooks assert that the actual
+Also set distinct hostnames — app-ops checks that the actual
 hostname matches the inventory entry, so this is not just cosmetic:
 
 ```bash
@@ -72,7 +72,7 @@ Both should show:
 ```bash
 getenforce
 podman --version
-ansible-playbook --version | head -1
+python3 -c 'import jinja2, yaml; print("jinja2/pyyaml ok")'
 loginctl show-user todo -p Linger
 ```
 
@@ -121,7 +121,7 @@ todo-operations.tar.gz
 todo-operations.tar.gz.sha256
 ```
 
-The operations package contains the Ansible and DR tools; the offline bundle
+The operations package contains app-ops and the DR tools; the offline bundle
 contains the container images.
 
 ## 3. Copy the offline bundle to BOTH VMs
@@ -218,7 +218,7 @@ You should now have `~/todo-operations` on both machines.
 
 ## 6. Set up SSH from VM1 to VM2
 
-VM1 acts as the Ansible controller during normal operation.
+VM1 acts as the app-ops controller during normal operation.
 
 On VM1, as `todo`:
 
@@ -251,59 +251,54 @@ ssh-copy-id todo@192.168.1.50
 ssh -o BatchMode=yes todo@192.168.1.50 hostname
 ```
 
-## 7. Build the inventory on VM1
+## 7. Trust app-ops, write the inventory and allow sudo on VM1
 
-On VM1:
+app-ops is project Python. With fapolicyd active, trust its files once on the
+controller, from the extracted package (this asks for your sudo password):
 
 ```bash
 cd ~/todo-operations
-
-cp deploy/ansible/inventories/initial/hosts.example.ini \
-   deploy/ansible/inventories/initial/hosts.ini
+sha256sum -c SHA256SUMS
+sudo sh deploy/scripts/trust-files.sh trust todo \
+  "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py
 ```
 
-Replace the addresses and user:
+Write the inventory. Host names must match `hostname` on each VM, and the
+addresses must match `ip -4 address`; app-ops refuses a mismatch:
 
 ```bash
-sed -i \
-  -e 's/192\.0\.2\.10/192.168.1.50/g' \
-  -e 's/192\.0\.2\.11/192.168.1.51/g' \
-  deploy/ansible/inventories/initial/hosts.ini
-
-sed -i \
-  -e 's/ansible_user: gunstein/ansible_user: todo/' \
-  deploy/ansible/inventories/initial/group_vars/todo_cluster.yaml
-```
-
-Host addresses live in `hosts.ini`; the SSH account and account-specific paths live
-in the adjacent `group_vars/` files. Apply both edits in the extracted operations
-package. These YAML files contain configuration, not secrets.
-
-Check:
-
-```bash
-cat deploy/ansible/inventories/initial/hosts.ini
-```
-
-Test the inventory:
-
-```bash
-ansible-inventory \
-  --inventory deploy/ansible/inventories/initial/hosts.ini \
-  --graph
-```
-
-Test both machines:
-
-```bash
-ansible \
-  --inventory deploy/ansible/inventories/initial/hosts.ini \
-  todo_cluster \
-  -m ping
+cat > initial.yaml <<'EOF'
+user: todo
+hosts:
+  todo-primary: {role: primary, address: 192.168.1.50, local: true}
+  todo-standby: {role: standby, address: 192.168.1.51}
+EOF
 ```
 
 The inventory model is VM1 as the local primary and VM2 as the remote
-standby.
+standby. It contains configuration, not secrets.
+
+app-ops runs privileged steps with `sudo -n` and never asks for a password, so
+the `todo` user needs passwordless sudo on both VMs while you run it. That is
+root without a password for that user: grant it only for the DR work, as a
+separate file, and remove it afterwards (step 26). On both VMs:
+
+```bash
+sudo visudo -f /etc/sudoers.d/90-app-ops
+```
+
+Enter exactly one line:
+
+```text
+todo ALL=(root) NOPASSWD: ALL
+```
+
+Every app-ops command below starts from the package directory with:
+
+```bash
+cd ~/todo-operations
+export PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1
+```
 
 ## 8. Open PostgreSQL only between VM2 and VM1
 
@@ -324,24 +319,19 @@ VM1 on 5432 (todo), 5433 (notes) and 5434 (keycloak).
 Still on VM1:
 
 ```bash
-cd ~/todo-operations
-
-ansible-playbook --ask-become-pass \
-  --inventory deploy/ansible/inventories/initial/hosts.ini \
-  deploy/ansible/playbooks/preflight-standby.yml
+python3 -m app_ops --inventory initial.yaml preflight-standby
 ```
 
-This should be green before you continue. The preflight checks that the
-firewalld rule from step 8 is in place, which needs become privileges to query.
+It should print `{"changed": false}` before you continue. The preflight checks
+that the firewalld rule from step 8 is in place, in the running and the
+permanent configuration.
 
 ## 10. Build the PostgreSQL standby on VM2
 
 On VM1:
 
 ```bash
-ansible-playbook \
-  --inventory deploy/ansible/inventories/initial/hosts.ini \
-  deploy/ansible/playbooks/bootstrap-standby.yml
+python3 -m app_ops --inventory initial.yaml bootstrap-standby
 ```
 
 This, among other things:
@@ -371,29 +361,18 @@ one-shot operation; see
 On VM1:
 
 ```bash
-ansible-playbook \
-  --inventory deploy/ansible/inventories/initial/hosts.ini \
-  deploy/ansible/playbooks/replication-status.yml
+python3 -m app_ops --inventory initial.yaml replication-status
 ```
 
-You want, among other things:
-
-```text
-primary: streaming|async
-standby: recovery=t
-```
-
-and an active `todo_standby` replication slot.
+It prints `{"changed": false}` only when every database streams, asynchronously,
+with an active standby slot, and every standby database is read-only.
 
 ## 12. Install the DR tool on VM2
 
 While VM1 is still working:
 
 ```bash
-ansible-playbook \
-  --ask-become-pass \
-  --inventory deploy/ansible/inventories/initial/hosts.ini \
-  deploy/ansible/playbooks/install-dr-tool.yml
+python3 -m app_ops --inventory initial.yaml install-dr-tool
 ```
 
 VM2 should now have:
@@ -426,10 +405,7 @@ can no longer SSH in to install anything. Install the quarantine tool now,
 while VM1 is still reachable and healthy:
 
 ```bash
-ansible-playbook \
-  --ask-become-pass \
-  --inventory deploy/ansible/inventories/initial/hosts.ini \
-  deploy/ansible/playbooks/install-quarantine-tool.yml
+python3 -m app_ops --inventory initial.yaml install-quarantine-tool
 ```
 
 This installs one root-owned helper script on VM1 with exact `fapolicyd`
@@ -466,11 +442,7 @@ Check once more:
 
 ```bash
 # VM1
-cd ~/todo-operations
-
-ansible-playbook \
-  --inventory deploy/ansible/inventories/initial/hosts.ini \
-  deploy/ansible/playbooks/replication-status.yml
+python3 -m app_ops --inventory initial.yaml replication-status
 ```
 
 And confirm `DR test before failover` exists in the application.
@@ -567,35 +539,20 @@ That means: not in recovery, and writable.
 
 ## Bring the Todo application up on VM2
 
-## 16. Build the recovery inventory on VM2
+## 16. Trust app-ops and write the recovery inventory on VM2
 
-On VM2:
+VM2 is the controller from now on. Trust app-ops there as in step 7, then:
 
 ```bash
 cd ~/todo-operations
-
-cp deploy/ansible/inventories/recovery/hosts.example.ini \
-   deploy/ansible/inventories/recovery/hosts.ini
+cat > recovery.yaml <<'EOF'
+user: todo
+hosts:
+  todo-standby: {role: current_primary, address: 192.168.1.51, local: true}
+  todo-primary: {role: rebuild_standby, address: 192.168.1.50}
+EOF
+export PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1
 ```
-
-Set the addresses and user:
-
-```bash
-sed -i \
-  -e 's/192\.0\.2\.10/192.168.1.50/g' \
-  -e 's/192\.0\.2\.11/192.168.1.51/g' \
-  deploy/ansible/inventories/recovery/hosts.ini
-
-sed -i \
-  -e 's/ansible_user: gunstein/ansible_user: todo/' \
-  -e 's#/home/gunstein#/home/todo#g' \
-  deploy/ansible/inventories/recovery/group_vars/all.yaml \
-  deploy/ansible/inventories/recovery/group_vars/todo_promoted.yaml
-```
-
-Host addresses live in `hosts.ini`; the SSH account and account-specific paths live
-in the adjacent `group_vars/` files. Apply both edits in the extracted operations
-package. These YAML files contain configuration, not secrets.
 
 The roles now mean:
 
@@ -604,7 +561,7 @@ todo-standby = CURRENT PRIMARY
 todo-primary = old primary, to be rebuilt later
 ```
 
-The machine names do not change; the inventory groups describe the roles.
+The machine names do not change; the inventory roles describe the roles.
 
 ## 17. Open HTTPS on VM2
 
@@ -624,14 +581,10 @@ sudo firewall-cmd --reload
 On VM2:
 
 ```bash
-cd ~/todo-operations
-
-ansible-playbook \
-  --inventory deploy/ansible/inventories/recovery/hosts.ini \
-  deploy/ansible/playbooks/deploy-promoted-application.yml
+python3 -m app_ops --inventory recovery.yaml deploy-promoted-application
 ```
 
-The playbook first checks that PostgreSQL is actually promoted and writable,
+It first checks that PostgreSQL is actually promoted and writable,
 that the required secrets exist, and that container images can be loaded from
 the offline bundle.
 
@@ -724,7 +677,7 @@ approval. Keep VM1 fenced. Use the existing specialized procedure:
   pair is healthy; for recovery boot with every link disconnected, stop all seven
   registered services through Guest Agent, require completed `exitcode=0` and `STOPPED`,
   inspect IPv4/IPv6 rules before reconnecting restricted SSH.
-- [Restore redundancy](../../deploy/ansible/RESTORE-REDUNDANCY.md) and
+- [Restore redundancy](../../deploy/ops/RESTORE-REDUNDANCY.md) and
   [acceptance phase 9](../ACCEPTANCE.md#9-rebuild-old-primary-as-standby): verify
   reverse SSH/replication rules, run read-only preflight, then the separately
   approved reseed. Authenticated `IDENTIFY_SYSTEM` must precede deletion.
@@ -740,9 +693,13 @@ VM2 retains all seven workloads, and all three databases stream with zero lag.
 From VM2:
 
 ```bash
-ansible-playbook \
-  --inventory deploy/ansible/inventories/recovery/hosts.ini \
-  deploy/ansible/playbooks/cluster-status.yml
+python3 -m app_ops --inventory recovery.yaml cluster-status
+```
+
+When the DR work is done, remove the passwordless sudo from step 7 on both VMs:
+
+```bash
+sudo rm /etc/sudoers.d/90-app-ops
 ```
 
 You should end up with:
@@ -764,7 +721,7 @@ VM1 todo-primary
 
 This is a fully valid end state. You do not need to move the primary back to
 VM1. That would be a separate, planned failback/switchover operation;
-`rebuild-standby.yml` does not do this automatically.
+`rebuild-standby` does not do this automatically.
 
 ## Short version of the whole run
 
@@ -779,25 +736,26 @@ Recipe 2
 
 DR setup
   -> build operations package
-  -> inventory
-  -> bootstrap-standby.yml
-  -> replication-status.yml
-  -> install-dr-tool.yml
-  -> install-quarantine-tool.yml
+  -> trust app-ops, inventory, run-only sudo
+  -> bootstrap-standby
+  -> replication-status
+  -> install-dr-tool
+  -> install-quarantine-tool
 
 SIMULATE DISASTER
   -> fence VM1
   -> app_dr.py preflight
   -> app_dr.py promote
-  -> deploy-promoted-application.yml
+  -> deploy-promoted-application
   -> todo.test -> VM2
   -> test Todo
 
 RESTORE REDUNDANCY
   -> boot VM1 in quarantine, stop via app-quarantine.sh
-  -> preflight-standby-rebuild.yml
-  -> rebuild-standby.yml
-  -> cluster-status.yml
+  -> preflight-standby-rebuild
+  -> rebuild-standby
+  -> cluster-status
+  -> remove the run-only sudo
 ```
 
 This is the simplest complete path through the DR functionality that actually

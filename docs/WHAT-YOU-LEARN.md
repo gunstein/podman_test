@@ -19,9 +19,9 @@ its lifecycle. See [`deploy/runtime/README.md`](../deploy/runtime/README.md).
 | Rootless Podman | User namespaces, images, networks, volumes, ports and secrets | One service user and one application stack |
 | Quadlet/systemd | Generated user services, dependencies, health, restart and lingering | No cluster-level scheduler |
 | SELinux | Enforcing mode, `:Z`, `:z`, `:U`, labels and AVC troubleshooting | No custom SELinux policy module |
-| fapolicyd | RPM trust, exact project-file trust and update/delete lifecycle | Ansible refreshes exact path, size and SHA-256 trust with bounded polling; no blanket directory trust |
+| fapolicyd | RPM trust, exact project-file trust and update/delete lifecycle | app-ops refreshes exact path, size and SHA-256 trust with bounded polling; no blanket directory trust |
 | Offline delivery | OCI archives, internal manifest and pre-extraction archive checksum | Real releases should sign artifacts with an organizational identity |
-| Secrets | Local Podman secrets, direct Podman inspection, protected Ansible transfer and mismatch checks | Recovery assumes one database node survives; simultaneous loss of both nodes is outside scope |
+| Secrets | Local Podman secrets, direct Podman inspection, protected app-ops transfer and mismatch checks | Recovery assumes one database node survives; simultaneous loss of both nodes is outside scope |
 | PostgreSQL privilege | Separate bootstrap, migrator, application, Keycloak and replication roles | One PostgreSQL cluster |
 | Availability | Async physical streaming, slot health, lag and reboot recovery | One standby, no automatic HA manager and no archive-backed `restore_command`; an invalidated slot requires re-seeding |
 | RPO/RTO | Operational targets and measurable local replay state | Async RPO cannot be guaranteed after abrupt loss |
@@ -56,11 +56,11 @@ Jinja2        renders workload YAML at build time; absent from target hosts
 Kube YAML     defines seven workloads, init containers and runtime settings
 .kube Quadlet connects each workload to user systemd
 systemd       owns service lifecycle and boot behavior
-Ansible       provisions and verifies desired state
+app-ops       provisions and verifies desired state on the DR pair
 Python tools  perform guarded operational DR and backup workflows
 Podman        provides the rootless container runtime
 ```
 
 This separation is intentional. The Python tools do not become a second
-configuration-management system, and Ansible does not hide dangerous promotion
+configuration-management system, and app-ops does not hide dangerous promotion
 or destructive recovery choices inside an ordinary deployment.

@@ -34,7 +34,7 @@ All three PostgreSQL databases replicate to the standby as one DR group.
 - Separate shared nginx proxy for TLS and routing; HTTP-only frontends
 - Keycloak with Authorization Code and PKCE S256
 - Rootless Podman Kube pods managed by `.kube` Quadlet and user systemd
-- Python installer for single-host installation; Ansible for multi-host DR and verification
+- Python installer for single-host installation; app-ops (plain SSH) for multi-host DR
 - OCI archives and checksums for offline delivery
 
 Anyone can read Todos and Notes. A Keycloak login is required to create, update or delete
@@ -78,7 +78,7 @@ The deployed baseline requires:
 - Oracle Linux 9 or a compatible Linux host
 - rootless Podman with Quadlet support
 - user systemd and lingering for boot-before-login operation
-- Python 3.9+ and Jinja2; Ansible Core 2.14 or newer for DR
+- Python 3.9+ with Jinja2 and PyYAML (the Oracle Linux 9 system packages)
 - Bash, `tar` and `sha256sum`
 - configured `/etc/subuid` and `/etc/subgid` ranges
 
@@ -178,12 +178,12 @@ Build one source-only operations package:
 deploy/scripts/build-operations-package.sh
 ```
 
-It contains the two inventory templates, Ansible workflows, guarded DR/backup
-tools and operational documentation. It contains no images, credentials,
+It contains app-ops, the installer module, guarded DR/backup tools and
+operational documentation. It contains no images, credentials,
 site-specific inventory, SSH keys or database data.
 
 For a complete exercise, follow the single sequence in
-[Acceptance](docs/ACCEPTANCE.md). The [Ansible operation references](deploy/ansible/README.md)
+[Acceptance](docs/ACCEPTANCE.md). The [app-ops operation references](deploy/ops/README.md)
 explain each tool's scope and safety contracts. Use
 [Acceptance troubleshooting](docs/ACCEPTANCE-TROUBLESHOOTING.md) for failed gates.
 
@@ -240,9 +240,9 @@ creates or updates `testuser` without storing either password:
 deploy/scripts/run-e2e.sh
 ```
 
-CI runs backend tests, Python and shell lint, nginx runtime smoke tests, Ansible
-lint, safety regressions and syntax checks with both the Oracle Linux-compatible
-Ansible 2.14.18 baseline and the maintained development version. Rootless
+CI runs backend tests, Python and shell lint, nginx runtime smoke tests, and
+the DR tool and safety regressions on Python 3.9 (the Oracle Linux 9 system
+version) and 3.12. Rootless
 systemd, SELinux, `fapolicyd`, Keycloak and destructive DR are verified by the
 manual lab acceptance test.
 
@@ -255,7 +255,7 @@ manual lab acceptance test.
 | Learn the system in dependency order | [Learning guide](docs/LEARNING-GUIDE.md) |
 | Run or hand off acceptance; change VM IPs (humans and agents: start here) | [Acceptance sequence](docs/ACCEPTANCE.md) |
 | Check demonstrated versus simplified concepts | [What you learn](docs/WHAT-YOU-LEARN.md) |
-| Operate deployment and recovery | [Ansible operations](deploy/ansible/README.md) |
+| Operate deployment and recovery | [app-ops operations](deploy/ops/README.md) |
 | Understand SELinux and rootless ownership | [SELinux](docs/SELINUX.md) |
 | Understand runtime credentials | [Secrets](docs/SECRETS.md) |
 | Understand nginx and certificate trust | [TLS](docs/TLS.md) |

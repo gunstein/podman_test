@@ -15,7 +15,7 @@ firewalld or SSH/TLS verification to continue.
 | PostgreSQL failed on disconnected DHCP boot | Inspect the journal for `bind: cannot assign requested address`. The helper accepts inactive/failed only after stop, zero service PIDs and no running containers; it preserves the failure warning. Do not start the old database after promotion. |
 | Helper reports hostname missing after an update | Inspect `ls -lZ` through Guest Agent. Required label: `virt_qemu_ga_unconfined_exec_t`. The installer restores existing persistent policy after replacement. Do not disable SELinux or broadly enable Guest Agent commands. |
 | Direct Guest Agent diagnostic is denied | Do not keep guessing privileged commands. Use reviewed restricted SSH only after stop/process/container and active firewall evidence is available. Read `journalctl -b _SYSTEMD_USER_UNIT=todo-postgres.service` (likewise `notes-postgres.service` and `keycloak-postgres.service`); `--user` may see no journal here. |
-| fapolicyd trust task retries then succeeds | Normal asynchronous refresh; judge final recap. If exhausted, inspect exact path/size/hash trust, never trust whole directories or disable fapolicyd. |
+| fapolicyd trust step retries then succeeds | Normal asynchronous refresh; judge the final result. If exhausted, inspect exact path/size/hash trust, never trust whole directories or disable fapolicyd. |
 | A `podman healthcheck run` unit for Keycloak shows failed right after boot | Keycloak starts slower than its first health checks. Wait a minute and look again: a unit that clears itself is expected. One that stays failed, or a Keycloak container that is not healthy, is a real failure. |
 | `/ready` works but login is still 503 after boot | Wait for Keycloak/discovery and browser tests too. `/ready` alone is not whole-application acceptance. |
 | Standby logs `Connection timed out` to the primary after a quarantine rehearsal, while SSH to the primary works | The Proxmox VM firewall is probably still enabled: its quarantine profile drops everything but SSH. Read the VM's `firewall/options`; the rehearsal's own restore step sets `enable=0` and reboots. Never work around it inside the guest. |
@@ -26,23 +26,31 @@ firewalld or SSH/TLS verification to continue.
 
 ### Specific recovery: rebuild succeeded, only DR-tool installation failed
 
-This applies ONLY to the observed missing-become-password failure after base
-backup and recovery startup. First independently verify all three databases
+This applies ONLY to a failure in `rebuild-standby`'s last steps (installing
+`app_dr.py` on the rebuilt standby, for example because `sudo -n` stopped
+working) after base backup and recovery startup. First independently verify all three databases
 `.108` writable, `.102` read-only, `todo_rebuilt_standby`,
 `notes_rebuilt_standby` and `keycloak_rebuilt_standby` streaming, and
 quarantine intact.
-Then the operator may finish the non-destructive tail on the promoted host:
+Then the operator may finish the non-destructive tail on the promoted host,
+with a small inventory that names the promoted host as primary and the rebuilt
+host as standby:
 
 ```bash
 cd "$HOME/todo-operations"
-ansible-playbook --ask-become-pass \
-  --inventory deploy/ansible/inventories/recovery/hosts.ini deploy/ansible/playbooks/rebuild-standby.yml \
-  --start-at-task "Create the Todo DR configuration directory"
-ansible-playbook --inventory deploy/ansible/inventories/recovery/hosts.ini deploy/ansible/playbooks/cluster-status.yml
+cat > dr-tool.yaml <<'EOF'
+user: gunstein
+hosts:
+  todo-standby: {role: primary, address: 192.168.0.108, local: true}
+  todo-primary: {role: standby, address: 192.168.0.102}
+EOF
+export PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1
+python3 -m app_ops --inventory dr-tool.yaml install-dr-tool
+python3 -m app_ops --inventory recovery.yaml cluster-status
 ```
 
-This is an exceptional repair, NOT the normal rebuild command. If the task name
-or failure boundary differs, stop and inspect the current playbook. Preserve
+This is an exceptional repair, NOT the normal rebuild command. If the failure
+boundary differs, stop and inspect the current code. Preserve
 the original rebuild failure; there is no supported reconciliation command.
 Do not edit state to completed or rerun rebuild to turn it green. Record
 manual completion and direct verification in the run log.

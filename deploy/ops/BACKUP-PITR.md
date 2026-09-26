@@ -41,30 +41,19 @@ Use the verified artifacts and inventory prepared in
 packages on both hosts before an incident; verify checksums and matching clean
 VERSION values before running extracted code.
 
-The configure playbook uses the central `todo_fapolicyd` role to refresh
-exact source trust, install root-owned `/opt/todo/bin/app_backup.py`, and
-maintain its exact target trust entry. Supply normal Ansible become credentials;
-do not disable `fapolicyd` or trust the extracted directory.
+`configure-backup` refreshes exact source trust, installs root-owned
+`/opt/todo/bin/app_backup.py` and maintains its exact target trust entry,
+with `sudo -n`. It never disables `fapolicyd` or trusts the extracted
+directory.
 
-Reuse the recovery inventory created for application failover, or copy the
-included example:
-
-```bash
-read -rp "Promoted host IPv4 address: " TODO_PROMOTED_IP
-cp deploy/ansible/inventories/recovery/hosts.example.ini deploy/ansible/inventories/recovery/hosts.ini
-sed -i "s/192.0.2.11/${TODO_PROMOTED_IP}/" deploy/ansible/inventories/recovery/hosts.ini
-```
-
-Then:
+Run it on the promoted host with the recovery inventory created for
+application failover:
 
 ```bash
-ansible-playbook \
-  --ask-become-pass \
-  --inventory deploy/ansible/inventories/recovery/hosts.ini \
-  deploy/ansible/playbooks/configure-backup.yml
+python3 -m app_ops --inventory recovery.yaml configure-backup
 ```
 
-The playbook installs `app_backup.py` and runs its `configure` command, which
+It installs `app_backup.py` and runs its `configure` command, which
 covers the complete group. Before it changes anything, it requires a completed
 group promotion and, for every database, an active Kube-native PostgreSQL
 service reporting `f|off`, the replication credential and the PVC backup volume
@@ -87,7 +76,7 @@ verifying a replacement base backup, an operator must explicitly expire older
 base backups and WAL, or copy them to off-host storage. Monitoring free space is
 still required.
 
-The playbook verifies the exact installed trust entry before it returns. See
+It verifies the exact installed trust entry before it returns. See
 [../offline/FAPOLICYD.md](../offline/FAPOLICYD.md) for separate SELinux and
 fapolicyd diagnostics and trust-entry cleanup.
 

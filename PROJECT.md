@@ -46,8 +46,9 @@ How it got there, newest first:
 ## Current work and limitations
 
 Legacy runtime and migration tooling are retired. Active runtime and safety
-boundaries remain unchanged. app-ops (`deploy/ops`, plain SSH) is the accepted
-DR tool; the Ansible playbooks are next to be retired. Planned work, its order
+boundaries remain unchanged. app-ops (`deploy/ops`, plain SSH) is the only DR
+tool; the Ansible playbooks were retired after its CLEAN PASS, and Git history
+keeps them. Planned work, its order
 and its principles are in the [backlog](docs/BACKLOG.md), with a one-page
 [target picture](docs/TARGET-PICTURE.md). Off-host backup, automatic HA and
 other IdP adapters are not demonstrated production features.

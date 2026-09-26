@@ -21,13 +21,13 @@ The target machine must already provide:
 
 A target that will also run DR through the operations package (either host in
 the [two-VM walkthrough](../../docs/manual-recipes/03-DR-TWO-VM.md)) needs
-`python3-pyyaml` too: Ansible's replication tasks parse the canonical PVC YAML
+`python3-pyyaml` too: the replication commands parse the canonical PVC YAML
 for standby bootstrap, promotion and rebuild.
 [Prepare an Oracle Linux 9 VM](../../docs/manual-recipes/01-PREPARE-VM.md)
 installs both packages on every target so this does not need revisiting later.
 
 The Kube runtime requires the tested Podman 5.8.2 platform, systemd 255 and
-Python/Jinja2. Ansible is required separately for DR operations. Rendering is
+Python/Jinja2. DR operations use app-ops from the separate operations package. Rendering is
 not an offline target dependency. The
 bundle must be built on a machine compatible with the target's CPU architecture.
 
@@ -92,7 +92,7 @@ host-managed Python and Jinja2 are present.
 
 The installer verifies every bundled file, runs the same preflight
 automatically, loads missing container images and invokes the shared Python
-installer directly. No Ansible process is needed for single-host installation. On the first installation it asks
+installer directly. On the first installation it asks
 for the database password and an initial Keycloak administrator password.
 Neither secret is stored in the bundle.
 
@@ -118,11 +118,11 @@ sudo fapolicyd-cli --update
 
 Trust records must match the current resolved path, size and SHA-256 before
 running Python. Refresh them after replacing a bundle; never trust an entire
-home or temporary directory. SELinux and fapolicyd remain enabled. DR Ansible
-operations automate this through the existing exact-file trust role instead.
+home or temporary directory. SELinux and fapolicyd remain enabled. app-ops
+automates this for the DR operations with the same exact-file trust.
 
 See [FAPOLICYD.md](FAPOLICYD.md) for denial diagnostics, the difference
-between `add` and `update`, common Ansible symptoms and cleanup. Do not disable
+between `add` and `update`, common symptoms and cleanup. Do not disable
 `fapolicyd` or trust the complete extracted bundle.
 
 If existing Todo containers are found, preflight skips the clean-target port

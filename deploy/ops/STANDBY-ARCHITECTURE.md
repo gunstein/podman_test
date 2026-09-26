@@ -1,23 +1,26 @@
 # Initial primary and standby preparation
 
-The primary host is the Ansible controller during normal operation. The standby
-must nevertheless contain everything needed for local promotion; failover must
-not depend on the primary still being available.
+The primary host is the app-ops controller during normal operation. The
+standby must nevertheless contain everything needed for local promotion;
+failover must not depend on the primary still being available.
 
-Copy and edit the example inventory on primary:
+Write the initial inventory on primary, in the extracted operations package
+(see [the inventory format](README.md#inventory)):
 
-```bash
-cp deploy/ansible/inventories/initial/hosts.example.ini deploy/ansible/inventories/initial/hosts.ini
+```yaml
+user: gunstein
+hosts:
+  todo-primary: {role: primary, address: <primary-address>, local: true}
+  todo-standby: {role: standby, address: <standby-address>}
 ```
 
-Replace the example standby address in `hosts.ini` and adjust `ansible_user`
-in `inventories/initial/group_vars/todo_cluster.yaml` if necessary. The
-primary entry deliberately uses a local connection. Test SSH with host-key
-checking before running Ansible. After restoring a VM snapshot, verify the
+The primary entry is marked `local: true`, so app-ops runs its commands
+without SSH. Test SSH with host-key checking before running app-ops. After
+restoring a VM snapshot, verify the
 standby's current host-key fingerprint through an independently verified
 connection before accepting a new key on primary; do not use an unverified `ssh-keyscan` result as trust evidence.
 
-The primary also needs a non-interactive user key for Ansible. Re-create and
+The primary also needs a non-interactive user key for app-ops. Re-create and
 install it if the clean snapshot predates SSH setup:
 
 ```bash
@@ -43,22 +46,21 @@ Ensure the pinned PostgreSQL 17.11 image is available on both hosts. Then copy t
 existing credentials from primary to standby:
 
 ```bash
-ansible-playbook \
-  --inventory deploy/ansible/inventories/initial/hosts.ini \
-  deploy/ansible/playbooks/sync-standby-secrets.yml
+python3 -m app_ops --inventory initial.yaml sync-standby-secrets
 ```
 
-Ansible is only the transport here. On primary, `python3 -m app_installer
-export-replication-secrets` reads every credential of the complete replication
-group with `podman secret inspect --showsecret` and prints them as one opaque
-base64 value. Ansible keeps that value in memory with `no_log` and pipes it over
-SSH to `python3 -m app_installer import-replication-secrets` on standby. The
-project-level `ansible.cfg` enables pipelining, so Ansible does not need normal
-module transfer files or a helper image.
+`bootstrap-standby` runs the same step itself, so this is needed on its own
+only to check or refresh the copy. app-ops is only the transport here. On
+primary, `python3 -m app_installer export-replication-secrets` reads every
+credential of the complete replication group with `podman secret inspect
+--showsecret` and prints them as one opaque base64 value. app-ops keeps that
+value in memory, never logs it, and pipes it over SSH to `python3 -m
+app_installer import-replication-secrets` on standby. No file and no helper
+image is involved.
 
 The import checks every secret before it writes any. It refuses a transfer that
 is not exactly the complete group. If an existing standby secret has a different
-value, it names that secret, creates nothing and the playbook stops. Otherwise
+value, it names that secret, creates nothing and the command stops. Otherwise
 it creates only the missing secrets. No plaintext secret file or command-line
 password is created, and error messages name secrets without showing values. After provisioning, each host has its own
 local Podman secret objects, so standby does not need primary during failover.

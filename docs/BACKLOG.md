@@ -1,8 +1,10 @@
 # Backlog
 
-Agreed work that waits until the two-VM acceptance run with app-ops has finished.
-Changing checked code during a run would test a different revision from the one
-in the kickoff message. Remove an item when its change is merged.
+Agreed work after the CLEAN PASS with app-ops on `2165933`
+([record](history/ACCEPTANCE-2165933.md)), the baseline to compare against.
+Do not change checked code while an acceptance run is in progress: the run
+would then test a different revision from the one in its kickoff message.
+Remove an item when its change is merged.
 
 ## Principles
 
@@ -27,27 +29,21 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-1. A CLEAN PASS with app-ops: a clean baseline to compare against. Run 7 on
-   `0604c56` reached a REPAIRED FUNCTIONAL PASS (a rerun of `rebuild-standby`
-   started out of order). Run 8 on `3bc5924` was BLOCKED in phase 9: the new
-   preflight path check could not tell an open path from a blocked one under
-   the quarantine firewall. The check now runs inside the rebuild, after the
-   primary publishes its ports and before anything is deleted.
-2. Security: T1 (encrypted replication between the two sites), H1 (Keycloak
+1. Security: T1 (encrypted replication between the two sites), H1 (Keycloak
    brute force) and H2 (security headers).
-3. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
+2. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
    failover command), G2 (Trondheim is ready), G3 (time it in the drill), T3
    (fencing without the Oslo hypervisor), T4 (one CA), T5 (moving the names),
    M1 (alerts), O1 (incident runbooks), G4 (the disaster drill in the lab) and
    G5 (rebuilding Oslo on new hardware).
-4. What operation needs: U1 (updating a replicated pair), T6 (planned
+3. What operation needs: U1 (updating a replicated pair), T6 (planned
    switchover), M4 (a durable WAL archive), M2 (scheduled backups with
    pruning), L1 and L2 (command logging, failure reasons).
-5. Retire Ansible (R0, R0b, 3-6) once there is a CLEAN PASS. Then decide D4
-   (one database server or one per app).
-6. fapolicyd (F0 first, then what is left of F1-F6), firewalls (W) and data
+4. Retire Ansible (R0b, 3-6), now that app-ops has a CLEAN PASS. Then decide
+   D4 (one database server or one per app).
+5. fapolicyd (F0 first, then what is left of F1-F6), firewalls (W) and data
    checks (C).
-7. DR code structure and the rest.
+6. DR code structure and the rest.
 
 The real setup has two machines and no third, on separate hardware at separate
 physical sites. D2 and L6 are therefore designed for two hosts that each keep
@@ -286,13 +282,6 @@ What is weak is how they are checked and switched.
 
 ## After a CLEAN PASS with app-ops: retire Ansible
 
-- **R0. Record the result first.** *[docs]* Add the run's evidence as
-  `docs/history/ACCEPTANCE-<short-sha>.md`, as for earlier runs, and update the
-  verdict and run list in `PROJECT.md#acceptance`, which AGENTS.md points to.
-  Bring the rest of `PROJECT.md` up to date too: app-ops, the new runs and this
-  backlog. Check and state whether the two standby-rebuild defects that the
-  `3fb897f` record names are fixed. Move `docs/ACCEPTANCE-3fb897f.md` into
-  `docs/history/` with the other evidence, changing only the links to it.
 - **R0b. Replace `deploy.yml` and `uninstall.yml`.** *[docs]* They were never ported to
   app-ops because they only wrap `app_installer install` and `uninstall`. Show
   those direct commands in the guides before the playbooks go.

@@ -9,47 +9,48 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-Full unchanged-revision Oracle Linux acceptance of the prior three-pod
-architecture passed on `688a0f6` and again on `12c3bef`; see
-[688a0f6](docs/history/ACCEPTANCE-688a0f6.md) and [12c3bef](docs/history/ACCEPTANCE-12c3bef.md)
-for evidence and deviations. The later four-pod shared-proxy architecture
-passed a process-level, evidence-light two-agent acceptance on `9e54cfb`; see
-[the run record](docs/history/ACCEPTANCE-9e54cfb.md). That run exercised a destructive
-standby rebuild again, so the topology recorded in the older runs is stale.
-No topology was captured for `9e54cfb`; this is not a substitute for fresh
-checks before operations.
-
-The current seven-pod, three-database topology reached a REPAIRED FUNCTIONAL
-PASS on `3fb897f` in a full two-VM agent run
-([record](docs/ACCEPTANCE-3fb897f.md)). It found two standby-rebuild source
-defects that were worked around procedurally; a CLEAN PASS with
-[ACCEPTANCE.md](docs/ACCEPTANCE.md) requires fixing them and a new run. The
-final topology of that run is VM 108 primary and VM 107 database-only standby;
-verify roles freshly before any operation.
-
-The same topology then reached a REPAIRED FUNCTIONAL PASS on `f1f07b5` with
-app-ops in place of every Ansible playbook, in an autonomous agent run
-([record](docs/history/ACCEPTANCE-f1f07b5.md)).
-
-With the defects from `f1f07b5` fixed, a supervised two-VM run with app-ops
-passed every functional gate on `1b1d345` without retries or repairs
-([record](docs/history/ACCEPTANCE-1b1d345.md)). It is not a CLEAN PASS: part of
-the phase 6 fencing step was skipped (`onboot=0`, the HA check and some port
-tests), so a CLEAN PASS still needs a new run.
-
-With fencing as one command, run 7 on `0604c56` passed every functional gate
-with full phase 6 evidence and no source change, and reached a REPAIRED
-FUNCTIONAL PASS ([record](docs/history/ACCEPTANCE-0604c56.md)). The agent ran
-`rebuild-standby` before the firewall steps it depends on; it refused before
-deleting anything, and the agent reran it after those steps, which the guide
-forbids. Final topology: VM 108 primary, VM 107 database-only standby; verify
+**Current verdict: CLEAN PASS** on `2165933` for the seven-pod, three-database
+topology, with app-ops (plain SSH) in place of every Ansible playbook, in a
+full two-VM agent run ([record](docs/history/ACCEPTANCE-2165933.md)). Every
+phase and step passed as written on a clean revision, with no source change
+and no retry: install, standby bootstrap, quarantine rehearsal, fencing with
+`pve_lab.py fence`, group promotion, application failover, backup and isolated
+PITR, rebuild of the old primary and sequential reboots. Final topology: VM 108
+primary with application and backup, VM 107 database-only standby; verify
 roles freshly before any operation.
+
+How it got there, newest first:
+
+- `21659331` run 9: CLEAN PASS ([record](docs/history/ACCEPTANCE-2165933.md)).
+- `3bc5924` run 8: BLOCKED in phase 9. A new read-only rebuild preflight
+  check could not tell an open replication path from a blocked one under the
+  quarantine firewall; it now runs inside the rebuild after the primary
+  publishes its ports. Nothing was deleted. No separate record.
+- `0604c56` run 7: REPAIRED FUNCTIONAL PASS
+  ([record](docs/history/ACCEPTANCE-0604c56.md)); `rebuild-standby` was started
+  out of order, refused before deleting anything, and was rerun.
+- `1b1d345` run 6: functional pass, not clean
+  ([record](docs/history/ACCEPTANCE-1b1d345.md)); part of the fencing step was
+  skipped, which led to fencing as one command.
+- `f1f07b5`: REPAIRED FUNCTIONAL PASS, the first full app-ops run
+  ([record](docs/history/ACCEPTANCE-f1f07b5.md)).
+- `3fb897f`: REPAIRED FUNCTIONAL PASS with Ansible
+  ([record](docs/history/ACCEPTANCE-3fb897f.md)). Its two standby-rebuild
+  defects are fixed and were exercised by run 9.
+- `9e54cfb`: the earlier four-pod shared-proxy architecture, a process-level,
+  evidence-light two-agent run ([record](docs/history/ACCEPTANCE-9e54cfb.md)).
+- `688a0f6` and `12c3bef`: full unchanged-revision acceptance of the prior
+  three-pod architecture ([688a0f6](docs/history/ACCEPTANCE-688a0f6.md),
+  [12c3bef](docs/history/ACCEPTANCE-12c3bef.md)).
 
 ## Current work and limitations
 
-Legacy runtime and migration tooling are retired after that gate. Active runtime
-and safety boundaries remain unchanged. Off-host backup, automatic HA and other
-IdP adapters are not demonstrated production features.
+Legacy runtime and migration tooling are retired. Active runtime and safety
+boundaries remain unchanged. app-ops (`deploy/ops`, plain SSH) is the accepted
+DR tool; the Ansible playbooks are next to be retired. Planned work, its order
+and its principles are in the [backlog](docs/BACKLOG.md), with a one-page
+[target picture](docs/TARGET-PICTURE.md). Off-host backup, automatic HA and
+other IdP adapters are not demonstrated production features.
 
 The [Development journal](docs/history/DEVELOPMENT-JOURNAL.md) preserves earlier
 checkpoints; historical next steps are not current instructions.

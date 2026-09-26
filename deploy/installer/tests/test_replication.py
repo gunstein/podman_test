@@ -42,12 +42,25 @@ class ReplicationTests(unittest.TestCase):
                 output = '123|1|0/10|'
             return subprocess.CompletedProcess(argv, 0, output, '')
 
+        def install_tls(app, node_address):
+            calls.append((('install-tls', app.name, node_address), {}))
+            return False
+
         with patch.object(replication, 'run', side_effect=execute), \
                 patch.object(replication, 'exists', side_effect=lambda *_: state['secret']), \
+                patch.object(replication.replication_tls, 'install_server_tls', install_tls), \
                 patch.object(replication.secrets, 'read', return_value='A' * 32):
             self.assertTrue(replication.configure_primary(apps.APPS[0], '192.0.2.50'))
             self.assertFalse(replication.configure_primary(apps.APPS[0], '192.0.2.50'))
         self.assertTrue(any('--command=IDENTIFY_SYSTEM;' in argv for argv, _ in calls))
+        # TLS is on before the hostssl line and before the replication login is probed.
+        order = [argv[0] if argv[0] == 'install-tls' else 'hba' if kw.get('input') == replication.REFRESH_HBA_SCRIPT
+                 else 'probe' if '--command=IDENTIFY_SYSTEM;' in argv else None for argv, kw in calls]
+        order = [step for step in order if step]
+        self.assertLess(order.index('install-tls'), order.index('hba'))
+        self.assertLess(order.index('hba'), order.index('probe'))
+        probe = next(argv for argv, _ in calls if '--command=IDENTIFY_SYSTEM;' in argv)
+        self.assertIn('sslmode=verify-full sslrootcert=/run/secrets/replication-ca-cert', ' '.join(probe))
         self.assertTrue(all('A' * 32 not in ' '.join(map(str, argv)) for argv, _ in calls))
         self.assertEqual(sum('ALTER ROLE' in kw.get('input', '') for _, kw in calls), 1)
 
@@ -126,11 +139,11 @@ class ReplicationTests(unittest.TestCase):
         for app in apps.APPS:
             slot = app.replication_slot()
             with patch.object(replication, 'require_primary'), patch.object(replication, 'sql') as sql:
-                sql.side_effect = [f'{slot}|192.0.2.51|streaming|async|0', f'{slot}|t|reserved|1000|']
+                sql.side_effect = [f'{slot}|192.0.2.51|streaming|async|0|t', f'{slot}|t|reserved|1000|']
                 self.assertEqual(replication.streaming_status(app)['slot'][0], slot)
                 self.assertTrue(all(call.args[0] == app for call in sql.call_args_list))
                 for invalid in (f'{slot}|f|reserved|1000|', f'{slot}|t|lost||wal_removed'):
-                    sql.side_effect = [f'{slot}|192.0.2.51|streaming|async|0', invalid]
+                    sql.side_effect = [f'{slot}|192.0.2.51|streaming|async|0|t', invalid]
                     with self.assertRaisesRegex(RuntimeError, 'losing WAL or invalidated'):
                         replication.streaming_status(app)
 
@@ -147,7 +160,7 @@ class ReplicationTests(unittest.TestCase):
                         replication.require_promoted_group(journal)
                     run.assert_not_called()
 
-    def test_refresh_hba_replaces_inherited_subnet_only_for_the_selected_role(self):
+    def test_refresh_hba_replaces_an_old_line_with_hostssl_only_for_the_selected_role(self):
         with tempfile.TemporaryDirectory() as temp:
             hba = Path(temp) / 'pg_hba.conf'
             hba.write_text('host replication todo_replicator 10.88.0.0/24 scram-sha-256\n'
@@ -169,7 +182,7 @@ class ReplicationTests(unittest.TestCase):
             self.assertEqual(hba.read_text().splitlines(), [
                 'host replication notes_replicator 10.77.0.0/24 scram-sha-256',
                 'host all all 127.0.0.1/32 scram-sha-256',
-                'host replication todo_replicator 10.99.0.0/24 scram-sha-256'])
+                'hostssl replication todo_replicator 10.99.0.0/24 scram-sha-256'])
 
     def test_reseed_requires_exact_host_and_fencing_before_any_command(self):
         with patch.object(replication.socket, 'gethostname', return_value='old-primary'), \
@@ -318,6 +331,9 @@ class PublishPrimariesTests(unittest.TestCase):
                 patch.object(replication, 'require_primary', require_primary), \
                 patch.object(replication, 'configure_primary', identity('configure-primary')), \
                 patch.object(replication, 'refresh_hba', identity('refresh-hba')), \
+                patch.object(replication.replication_tls, 'ensure_ca',
+                             lambda: (steps.append(('ensure-ca',)), False)[1]), \
+                patch.object(replication.replication_tls, 'install_server_tls', identity('install-tls')), \
                 patch.object(replication.workloads, 'install_postgres', install), \
                 patch.object(replication.quadlet, 'systemctl', lambda *args: steps.append(('systemctl',) + args)), \
                 patch.object(replication.keycloak, 'wait',
@@ -336,8 +352,10 @@ class PublishPrimariesTests(unittest.TestCase):
                 _result, steps = self.publish(bootstrap)
                 gates = [i for i, step in enumerate(steps) if step[0] == 'require-primary']
                 self.assertEqual([steps[i][1] for i in gates], [d.name for d in self.DATABASES])
-                first_write = self.first(steps, lambda s: s[0] in ('configure-primary', 'refresh-hba', 'install'))
+                first_write = self.first(steps, lambda s: s[0] in (
+                    'ensure-ca', 'install-tls', 'configure-primary', 'refresh-hba', 'install'))
                 self.assertLess(max(gates), first_write)
+                self.assertEqual(steps[first_write], ('ensure-ca',))
                 self.assertEqual(steps[0], ('legacy-preflight',))
 
     def test_bootstrap_creates_identities_and_redundancy_only_refreshes_access(self):
@@ -345,8 +363,10 @@ class PublishPrimariesTests(unittest.TestCase):
         self.assertEqual([s for s in steps if s[0] in ('configure-primary', 'refresh-hba')],
                          [('configure-primary', d.name, '192.0.2.10') for d in self.DATABASES])
         _result, steps = self.publish(False)
-        self.assertEqual([s for s in steps if s[0] in ('configure-primary', 'refresh-hba')],
-                         [('refresh-hba', d.name) for d in self.DATABASES])
+        # Redundancy gives each primary its own certificate before the hostssl line.
+        self.assertEqual([s for s in steps if s[0] in ('configure-primary', 'install-tls', 'refresh-hba')],
+                         [step for d in self.DATABASES
+                          for step in (('install-tls', d.name, '192.0.2.10'), ('refresh-hba', d.name))])
 
     def test_every_database_is_published_on_the_node_address(self):
         _result, steps = self.publish(True)
@@ -387,7 +407,8 @@ class PublishPrimariesTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     self.publish(True, changed=[d.name for d in self.DATABASES], **options)
                 self.assertFalse([step for step in self.steps
-                                  if step[0] in ('configure-primary', 'refresh-hba', 'install', 'systemctl')])
+                                  if step[0] in ('ensure-ca', 'install-tls', 'configure-primary', 'refresh-hba',
+                                                 'install', 'systemctl')])
 
     def test_node_address_must_be_a_literal_ip(self):
         with patch.object(replication.install, 'preflight') as preflight:
@@ -508,7 +529,7 @@ class ReseedGroupTests(unittest.TestCase):
 
 class ClusterStatusTests(unittest.TestCase):
     HEALTHY_PRIMARY = {
-        'pg_stat_replication': '{slot}|192.0.2.10|streaming|async|0',
+        'pg_stat_replication': '{slot}|192.0.2.10|streaming|async|0|t',
         'pg_replication_slots': '{slot}|t|reserved|1024|',
         'pg_stat_archiver': 'f|off|on|000000010000000000000003|0|healthy',
     }
@@ -540,7 +561,7 @@ class ClusterStatusTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as refused:
             self.status('primary', **{
                 todo.name: {'pg_stat_archiver': 'f|off|on|000000010000000000000003|2|failed'},
-                keycloak.name: {'pg_stat_replication': '{slot}|192.0.2.10|streaming|sync|0'}})
+                keycloak.name: {'pg_stat_replication': '{slot}|192.0.2.10|streaming|sync|0|t'}})
         self.assertIn(f'{todo.name}: current primary is not writable, or WAL archiving', str(refused.exception))
         self.assertIn(f'{keycloak.name}: standby connection is not streaming asynchronously', str(refused.exception))
 

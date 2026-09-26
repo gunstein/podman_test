@@ -88,7 +88,10 @@ Only then is the old data volume removed, a replacement created, a physical slot
 created and a base backup streamed. Recovery settings and the private replication
 passfile live inside the volume. Application Kube units are removed from the
 rebuilt host; only PostgreSQL returns there. No app-role bootstrap is part of this
-operation. Replication remains SCRAM-authenticated on the trusted lab LAN.
+operation. Replication is SCRAM-authenticated and uses TLS with
+`sslmode=verify-full`; before publishing, the promoted host gets a certificate
+for its own address, and the rebuild copies the replication CA to the rebuild
+host if it is missing there (see [STANDBY-BOOTSTRAP.md](STANDBY-BOOTSTRAP.md)).
 
 This is one-shot work. An absent slot alone does not prove rebuild never started:
 a failure can occur after volume replacement and before slot creation. Stop on

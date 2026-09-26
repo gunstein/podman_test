@@ -139,7 +139,7 @@ class ReplicationPathTests(unittest.TestCase):
 
 
 class StreamingStatusTests(unittest.TestCase):
-    CONNECTION = 'notes_standby|192.0.2.11|streaming|async|0'
+    CONNECTION = 'notes_standby|192.0.2.11|streaming|async|0|t'
     SLOT = 'notes_standby|t|reserved|1024|'
 
     def run_check(self, connection=CONNECTION, slot=SLOT, **options):
@@ -170,10 +170,17 @@ class StreamingStatusTests(unittest.TestCase):
         self.assertEqual(result['slot'][2], 'extended')
 
     def test_each_unhealthy_connection_is_refused(self):
-        for connection in ('', 'notes_standby|192.0.2.11|streaming|async',
-                           'notes_standby|192.0.2.11|catchup|async|0', 'notes_standby|192.0.2.11|streaming|sync|0'):
+        for connection in ('', 'notes_standby|192.0.2.11|streaming|async|0',
+                           'notes_standby|192.0.2.11|catchup|async|0|t', 'notes_standby|192.0.2.11|streaming|sync|0|t'):
             with self.subTest(connection=connection), self.assertRaisesRegex(RuntimeError, 'not streaming'):
                 self.run_check(connection=connection)
+
+    def test_a_connection_without_tls_is_refused(self):
+        _, statements = self.run_check()
+        self.assertIn('LEFT JOIN pg_stat_ssl USING (pid)', statements[0])
+        for ssl in ('f', ''):
+            with self.subTest(ssl=ssl), self.assertRaisesRegex(RuntimeError, 'does not use TLS'):
+                self.run_check(connection=f'notes_standby|192.0.2.11|streaming|async|0|{ssl}')
 
     def test_each_unhealthy_slot_is_refused(self):
         for slot in ('', 'notes_standby|t|reserved|1024', 'notes_standby|f|reserved|1024|',

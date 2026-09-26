@@ -180,6 +180,11 @@ class RecoveryTests(unittest.TestCase):
         self.assertLess(max(i for i, k in enumerate(kinds) if k == ("replicate-workload", "reseed-check")),
                         first[("publish-primaries",)])
         self.assertLess(first[("publish-primaries",)], first[("replicate-workload", "replication-path")])
+        # The rebuild host gets the replication CA the primary may just have created.
+        steps_in_order = [step[0] for step in world.steps()]
+        self.assertLess(steps_in_order.index("publish-primaries"), steps_in_order.index("export-replication-secrets"))
+        self.assertLess(steps_in_order.index("import-replication-secrets"), steps_in_order.index("reseed-group"))
+        self.assertIn(("export-replication-secrets",), world.steps("todo-standby"))
         self.assertLess(max(i for i, k in enumerate(kinds) if k == ("replicate-workload", "replication-path")),
                         first[("reseed-group",)])
         self.assertEqual([step for step in world.steps("todo-primary") if step[:2] == ("replicate-workload",

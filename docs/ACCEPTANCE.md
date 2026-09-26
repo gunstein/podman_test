@@ -208,6 +208,7 @@ systemctl is-active sshd firewalld fapolicyd qemu-guest-agent
 loginctl show-user "$USER" -p Linger
 podman info --format 'Rootless={{.Host.Security.Rootless}} GraphRoot={{.Store.GraphRoot}}'
 python3 -c 'import jinja2, yaml; print("jinja2/pyyaml ok")'
+openssl version
 df -h "$HOME"
 free -m
 podman ps -a
@@ -565,7 +566,7 @@ sudo -n true && echo "passwordless sudo ok"
 
 - **Where:** Initial primary is the app-ops controller; standby is remote target; Proxmox node Shell reboots standby.
 - **Preconditions:** Phase 3 passed; verified controller-to-standby SSH; dedicated guest replication firewall rule.
-- **PASS:** For each of the three databases: streaming async, zero lag, active usable slot, read-only standby; both markers persist.
+- **PASS:** For each of the three databases: streaming async over TLS, zero lag, active usable slot, read-only standby; both markers persist.
 - **Evidence:** Role/LSN outputs and slot state per database, marker queries, app-ops JSON results and standby boot IDs.
 - **STOP if:** Failed preflight, role mismatch, unusable slot, lag or absent marker.
 

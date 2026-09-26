@@ -22,7 +22,8 @@ The target machine must already provide:
 A target that will also run DR through the operations package (either host in
 the [two-VM walkthrough](../../docs/manual-recipes/03-DR-TWO-VM.md)) needs
 `python3-pyyaml` too: the replication commands parse the canonical PVC YAML
-for standby bootstrap, promotion and rebuild.
+for standby bootstrap, promotion and rebuild. It also needs `openssl`, which
+issues the certificates that encrypt replication.
 [Prepare an Oracle Linux 9 VM](../../docs/manual-recipes/01-PREPARE-VM.md)
 installs both packages on every target so this does not need revisiting later.
 

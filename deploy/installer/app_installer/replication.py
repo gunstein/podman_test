@@ -13,7 +13,7 @@ import socket
 import string
 from pathlib import Path
 
-from . import apps, install, keycloak, quadlet, secrets, workloads
+from . import apps, install, keycloak, quadlet, replication_tls, secrets, workloads
 from .commands import exists, run
 
 DATA = '/var/lib/postgresql/data'
@@ -115,9 +115,9 @@ def require_standby(app, query=None):
 
 REFRESH_HBA_SCRIPT = """
 set -eu
-current=$(grep "^host replication $1 " "$PGDATA/pg_hba.conf" || true)
+current=$(grep -E "^(host|hostssl) replication $1 " "$PGDATA/pg_hba.conf" || true)
 if [ "$current" != "$2" ]; then
-    sed -i "/^host replication $1 /d" "$PGDATA/pg_hba.conf"
+    sed -i -E "/^(host|hostssl) replication $1 /d" "$PGDATA/pg_hba.conf"
     printf '%s\\n' "$2" >> "$PGDATA/pg_hba.conf"
     printf 'changed\\n'
 fi
@@ -125,16 +125,17 @@ fi
 
 
 def refresh_hba(app):
-    """Allow the replicator role to connect for replication from app-network only.
+    """Allow the replicator role to connect for replication from app-network only, over TLS.
 
-    Writes one pg_hba.conf line for the current app-network subnet, replacing
-    an older line for the same role, then reloads PostgreSQL. Returns True if
-    the line changed.
+    Writes one hostssl pg_hba.conf line for the current app-network subnet,
+    replacing an older host or hostssl line for the same role, then reloads
+    PostgreSQL. A connection without TLS then finds no matching line and is
+    refused. Returns True if the line changed.
     """
     role = identifier(app.database_role('replicator'))
     network = json.loads(run('podman', 'network', 'inspect', apps.NETWORK).stdout)
     subnet = str(ipaddress.ip_network(network[0]['subnets'][0]['subnet']))
-    rule = f'host replication {role} {subnet} scram-sha-256'
+    rule = f'hostssl replication {role} {subnet} scram-sha-256'
     result = run('podman', 'exec', '-i', app.resource('postgres'), 'sh', '-s', '--',
                  role, rule, input=REFRESH_HBA_SCRIPT)
     sql(app, 'SELECT pg_reload_conf();')
@@ -146,18 +147,22 @@ def replication_probe(app, primary_address, *, local=False):
 
     With local=True the probe connects to this host's own container over
     app-network. Otherwise it connects to primary_address on the app's
-    published replication port. The password comes from the Podman secret as
-    an environment variable, never from argv. Exit code 2 (connection
-    refused or login failed) is returned to the caller, not raised.
+    published replication port. Either way it requires TLS and checks the
+    server's certificate against the replication CA (verify-full). The
+    password comes from the Podman secret as an environment variable, never
+    from argv. Exit code 2 (connection refused, TLS or login failed) is
+    returned to the caller, not raised.
     """
     host = app.resource('postgres') if local else address(primary_address)
     port = 5432 if local else app.replication_port
     role = identifier(app.database_role('replicator'))
+    ca = apps.REPLICATION_CA_SECRETS[1]
     return run('podman', 'run', '--rm', '--network', apps.NETWORK if local else 'host',
                '--user', 'postgres', '--security-opt', 'no-new-privileges', '--cap-drop', 'all',
                '--pids-limit', '64', '--secret', app.secret('replicator') + ',type=env,target=PGPASSWORD',
-               app.image('postgres'), 'psql',
-               f'--dbname=host={host} port={port} user={role} replication=true connect_timeout=5',
+               '--secret', ca, app.image('postgres'), 'psql',
+               f'--dbname=host={host} port={port} user={role} replication=true connect_timeout=5 '
+               f'sslmode=verify-full sslrootcert=/run/secrets/{ca}',
                '--no-psqlrc', '--no-password', '--tuples-only', '--no-align',
                '--command=IDENTIFY_SYSTEM;', allowed=(0, 2))
 
@@ -197,8 +202,9 @@ def replication_path(app, primary_address, *, timeout=5, connect=socket.create_c
 def configure_primary(app, node_address):
     """Make a writable primary ready to serve one standby. Safe to run again.
 
-    Creates the replication secret if it is missing, allows replication
-    logins in pg_hba.conf, and creates or repairs the replicator role (login
+    Creates the replication secret if it is missing, turns on TLS with a
+    certificate for node_address, allows replication logins over TLS in
+    pg_hba.conf, and creates or repairs the replicator role (login
     and replication only, no other rights). It refuses an existing slot of
     the wrong type, but does not create the slot: pg_basebackup on the
     standby does. Returns True if anything changed.
@@ -215,6 +221,8 @@ def configure_primary(app, node_address):
     value = secrets.read(app.secret('replicator'))
     if not re.fullmatch('[A-Za-z0-9]{32}', value):
         raise RuntimeError('The replication secret must be a 32-character alphanumeric value.')
+    # TLS must be on before the hostssl line, or replication logins find no line.
+    changed = replication_tls.install_server_tls(app, node_address) or changed
     changed = refresh_hba(app) or changed
     flags = sql(app, 'SELECT rolcanlogin, rolreplication, rolsuper, rolcreatedb, rolcreaterole, '
                 f"rolinherit FROM pg_roles WHERE rolname = '{role}';")
@@ -236,14 +244,23 @@ def configure_primary(app, node_address):
 
 def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kube_runtime_dir,
                       rendered_manifest_dir):
-    """LAN-publish every primary, restarting the app tier at most once; bootstrap also creates the replicator."""
+    """LAN-publish every primary, restarting the app tier at most once; bootstrap also creates the replicator.
+
+    Both forms create the replication CA if this host has none, and give
+    every primary a TLS certificate for node_address before its hostssl line.
+    """
     node_address = address(node_address)
     install.preflight(quadlet_dir)
     for app in apps.REPLICATED_DATABASES:
         require_primary(app)
-    access_changed, restart = False, []
+    access_changed = replication_tls.ensure_ca()
+    restart = []
     for app in apps.REPLICATED_DATABASES:
-        changed = configure_primary(app, node_address) if bootstrap else refresh_hba(app)
+        if bootstrap:
+            changed = configure_primary(app, node_address)
+        else:
+            changed = replication_tls.install_server_tls(app, node_address)
+            changed = refresh_hba(app) or changed
         access_changed = changed or access_changed
         if workloads.install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                                       node_address, app=app):
@@ -279,21 +296,25 @@ def data_claim(app, rendered_manifest_dir):
 
 
 # $1 primary_address, $2 replication_port, $3 role, $4 slot, $5 passfile name,
-# $6 replication secret name. pg_basebackup already wrote a bare
-# primary_conninfo/primary_slot_name pair; this replaces both with values that
-# include the passfile, and writes that passfile from the mounted secret.
+# $6 replication secret name, $7 replication CA certificate secret name.
+# pg_basebackup already wrote a bare primary_conninfo/primary_slot_name pair;
+# this replaces both with values that include the passfile and require TLS
+# checked against the CA, and writes the passfile and CA copy from the
+# mounted secrets.
 WRITE_RECOVERY_CONF_SCRIPT = """
 set -eu
 data=/var/lib/postgresql/data
 passfile=$data/$5
+ca=$data/replication-ca.crt
 auto=$data/postgresql.auto.conf
 umask 077
 printf '%s:%s:replication:%s:' "$1" "$2" "$3" > "$passfile"
 cat "/run/secrets/$6" >> "$passfile"
 printf '\\n' >> "$passfile"
+cat "/run/secrets/$7" > "$ca"
 sed -i "/^primary_conninfo =/d; /^primary_slot_name =/d" "$auto"
-printf "primary_conninfo = 'host=%s port=%s user=%s application_name=%s passfile=%s'\\n" \\
-    "$1" "$2" "$3" "$4" "$passfile" >> "$auto"
+printf "primary_conninfo = 'host=%s port=%s user=%s application_name=%s passfile=%s sslmode=verify-full sslrootcert=%s'\\n" \\
+    "$1" "$2" "$3" "$4" "$passfile" "$ca" >> "$auto"
 printf "primary_slot_name = '%s'\\n" "$4" >> "$auto"
 """
 
@@ -304,9 +325,11 @@ def bootstrap_standby(app, primary_address, *, project_root, quadlet_dir,
 
     Refuses if the data volume already exists: bootstrap never overwrites
     data. Loads the PostgreSQL image from image_archive if it is missing,
-    checks the replication login, then runs pg_basebackup, which also creates
-    the replication slot on the primary. It then writes the recovery
-    settings and a passfile from the replication secret, installs the
+    checks the replication login, then runs pg_basebackup over TLS checked
+    against the replication CA, which also creates the replication slot on
+    the primary. It then writes the recovery settings (again with TLS and
+    verify-full), a passfile from the replication secret and a copy of the
+    CA certificate, installs the
     database unit, starts it, and checks that it came up as a standby.
     """
     primary_address = address(primary_address)
@@ -323,13 +346,17 @@ def bootstrap_standby(app, primary_address, *, project_root, quadlet_dir,
         run('podman', 'load', '--input', image_archive)
     if not exists('secret', app.secret('replicator')):
         raise RuntimeError(f'{app.name}: replication secret is missing')
+    ca = apps.REPLICATION_CA_SECRETS[1]
+    if not exists('secret', ca):
+        raise RuntimeError(f'{app.name}: replication CA certificate secret is missing')
     authenticate(app, primary_address)
     run('podman', 'kube', 'play', '-', input=claim)
     common = ('podman', 'run', '--rm', '--user', 'postgres', '--security-opt',
               'no-new-privileges', '--cap-drop', 'all')
     run(*common, '--network', 'host', '--pids-limit', '128', '--volume',
         f'{app.volume("data")}:{DATA}:U,Z', '--secret',
-        app.secret('replicator') + ',type=env,target=PGPASSWORD', app.image('postgres'),
+        app.secret('replicator') + ',type=env,target=PGPASSWORD', '--secret', ca,
+        '--env', 'PGSSLMODE=verify-full', '--env', f'PGSSLROOTCERT=/run/secrets/{ca}', app.image('postgres'),
         'pg_basebackup', f'--host={primary_address}', f'--port={app.replication_port}',
         f'--username={role}', f'--pgdata={DATA}', '--format=plain', '--wal-method=stream',
         '--write-recovery-conf', '--create-slot', f'--slot={slot}', '--progress')
@@ -337,9 +364,9 @@ def bootstrap_standby(app, primary_address, *, project_root, quadlet_dir,
         app.image('postgres'), '0700', DATA)
     # The final helper must leave the shared Kube SELinux label, not a private MCS label.
     run(*common, '-i', '--volume', f'{app.volume("data")}:{DATA}:z', '--secret', app.secret('replicator'),
-        '--entrypoint', '/bin/sh', app.image('postgres'), '-s', '--',
+        '--secret', ca, '--entrypoint', '/bin/sh', app.image('postgres'), '-s', '--',
         primary_address, str(app.replication_port), role, slot,
-        app.replication_passfile(), app.secret('replicator'), input=WRITE_RECOVERY_CONF_SCRIPT)
+        app.replication_passfile(), app.secret('replicator'), ca, input=WRITE_RECOVERY_CONF_SCRIPT)
     workloads.install_postgres(project_root, quadlet_dir, kube_runtime_dir,
                                rendered_manifest_dir, app=app)
     quadlet.systemctl('start', app.service('postgres'))
@@ -363,10 +390,13 @@ def streaming_status(app, *, rebuilt=False):
     require_primary(app)
     slot = identifier(app.replication_slot(rebuilt))
     fields = sql(app, "SELECT application_name, client_addr, state, sync_state, "
-                 "pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)::bigint "
-                 f"FROM pg_stat_replication WHERE application_name = '{slot}';").split('|')
-    if len(fields) != 5 or fields[2] != 'streaming' or fields[3] != 'async':
+                 "pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)::bigint, COALESCE(ssl, false) "
+                 "FROM pg_stat_replication LEFT JOIN pg_stat_ssl USING (pid) "
+                 f"WHERE application_name = '{slot}';").split('|')
+    if len(fields) != 6 or fields[2] != 'streaming' or fields[3] != 'async':
         raise RuntimeError(f'{app.name}: standby connection is not streaming asynchronously')
+    if fields[5] != 't':
+        raise RuntimeError(f'{app.name}: standby connection does not use TLS')
     health = sql(app, "SELECT slot_name, active, wal_status, safe_wal_size, "
                  "COALESCE(invalidation_reason, '') FROM pg_replication_slots "
                  f"WHERE slot_name = '{slot}';").split('|')

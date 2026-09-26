@@ -36,11 +36,31 @@ changes: roles, distinct names, machine IDs and addresses, every primary data
 volume present and no standby data volume present. It reports every problem
 at once.
 
-The demo authenticates replication with SCRAM-SHA-256 but does not configure or
-require encrypted PostgreSQL transport. It is intended for this isolated,
-trusted demo LAN. A networked deployment should add PostgreSQL TLS with
-`hostssl` and `sslmode=verify-full`, or use a separately protected replication
-network, before treating WAL traffic as confidential.
+Replication is authenticated with SCRAM-SHA-256 and encrypted with TLS, since
+the WAL stream carries every row of all three databases, Keycloak's password
+hashes included, and may cross a network between sites
+(`app_installer/replication_tls.py`):
+
+- `publish-primaries` creates a small replication CA as two Podman secrets
+  (`replication-ca-key`, `replication-ca-cert`) if the host has none, and
+  gives each primary a certificate for the host's own address (and the
+  database container names), signed by that CA. It turns `ssl` on (TLS 1.2 or
+  newer) with a reload, before it writes the replication line.
+- `pg_hba.conf` allows replication only as `hostssl`, so a connection without
+  TLS finds no matching line and is refused.
+- The standby's `pg_basebackup`, its replication login check and its
+  `primary_conninfo` use `sslmode=verify-full` with the CA, so a server
+  without a certificate for the primary's address is refused.
+- The DR secret copy carries the CA to the other host, which needs it to
+  check the primary and, after a promotion, to issue its own certificate.
+  Both hosts therefore hold the CA key.
+- `replication-status` and `cluster-status` refuse a replication connection
+  that does not use TLS.
+
+The host needs the `openssl` command for this. A pair set up before
+replication TLS keeps working: its standby connects with the default
+`sslmode=prefer`, which uses TLS without checking the certificate, until the
+standby is rebuilt.
 
 ## Bootstrap and replication-status contract
 

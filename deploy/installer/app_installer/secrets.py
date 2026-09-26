@@ -64,14 +64,23 @@ def replicated_names():
     return names
 
 
+def transfer_names():
+    """What the DR secret copy carries: the credentials plus the replication CA.
+
+    The CA is not in replicated_names(), which the promoted host requires:
+    a pair set up before replication TLS can still fail over without it.
+    """
+    return replicated_names() + list(apps.REPLICATION_CA_SECRETS)
+
+
 def export_replicated():
-    """Every credential the standby needs, as {name: value}; sent over stdin only."""
-    return {name: read(name) for name in replicated_names()}
+    """Every credential the standby needs and the replication CA, as {name: value}; sent over stdin only."""
+    return {name: read(name) for name in transfer_names()}
 
 
 def import_replicated(values):
     """Create missing credentials; refuse before any write if one differs. Errors name, never show, values."""
-    expected = replicated_names()
+    expected = transfer_names()
     if not isinstance(values, dict) or sorted(values) != sorted(expected):
         raise ValueError("The credential transfer must contain exactly the complete replication group.")
     if not all(isinstance(value, str) and value for value in values.values()):

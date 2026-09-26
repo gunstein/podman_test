@@ -67,7 +67,8 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
     """Rebuild the old primary as a standby of the current one. Deletes its database data.
 
     Order: check passwordless sudo on both hosts, run every preflight gate,
-    publish the current primary's databases for the rebuilt standby, require
+    publish the current primary's databases for the rebuilt standby, copy
+    missing DR secrets (the replication CA) to the rebuild host, require
     a connection from the rebuild host to every replication port, reseed
     every database on the rebuild host, install app_dr.py there, and wait
     until all of them stream. A failure stops the run where it is and is
@@ -79,6 +80,9 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
     current_path = steps.stage_postgres_group(project_root, controller, current)
     app_installer(current, current_path, 'publish-primaries', 'redundancy',
                   '--node-address', current.spec.address, *steps.group_paths(current))
+    # The rebuild host needs the replication CA that publishing may just have
+    # created (a pair set up before replication TLS); existing values must match.
+    standby.sync_secrets(project_root, controller, current, rebuild_host)
     for entry in steps.GROUP:
         app_installer(rebuild_host, rebuild_path, 'replicate-workload', 'replication-path', '--app', entry['name'],
                       '--primary-address', current.spec.address)

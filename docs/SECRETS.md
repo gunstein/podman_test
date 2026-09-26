@@ -24,7 +24,10 @@ command reads the complete group with `podman secret inspect --showsecret`, and
 its import command checks every standby secret before creating only the missing
 ones. A mismatched existing value stops the import before any secret is created.
 app-ops pipes the value from one command's stdout to the other's stdin, never
-logs it and never writes a plaintext transfer file.
+logs it and never writes a plaintext transfer file. The same copy carries the
+replication CA (`replication-ca-key`, `replication-ca-cert`) that protects the
+WAL stream with TLS; a promoted host does not need it to run the application,
+only to serve replication again.
 
 After promotion, the surviving node holds the values needed to rebuild the
 other node. Destructive rebuild preflight compares the replication secret on

@@ -90,6 +90,8 @@ PROXY_ARCHIVE = SHARED_RESOURCE_OWNER.image_archive("proxy")
 KEYCLOAK_DATABASE = stack.Database(name="keycloak", replication_port=5434)
 KEYCLOAK_KUBE_ADMIN_SECRET = "keycloak-kube-admin-secret"
 KEYCLOAK_ADMIN_SECRET = "keycloak-admin-password"
+# The replication CA (key, certificate), shared by both hosts; see replication_tls.py.
+REPLICATION_CA_SECRETS = ("replication-ca-key", "replication-ca-cert")
 # Keep todo/notes as Apps here, not Databases: describe() dispatches on
 # isinstance(workload, stack.Database), and App already forwards every
 # Database-shaped method a database-only consumer needs.

@@ -35,7 +35,7 @@ class FakeSecrets:
 
 
 def primary_values():
-    return {name: 'value-' + name for name in secrets.replicated_names()}
+    return {name: 'value-' + name for name in secrets.transfer_names()}
 
 
 class ReplicatedSecretTests(unittest.TestCase):
@@ -54,13 +54,18 @@ class ReplicatedSecretTests(unittest.TestCase):
         for database in apps.REPLICATED_DATABASES:
             self.assertIn(database.secret('replicator'), names)
 
+    def test_the_copy_also_carries_the_replication_ca_but_the_promoted_host_does_not_need_it(self):
+        self.assertEqual(secrets.transfer_names(), secrets.replicated_names() + list(apps.REPLICATION_CA_SECRETS))
+        for name in apps.REPLICATION_CA_SECRETS:
+            self.assertNotIn(name, secrets.replicated_names())
+
     def test_export_reads_every_group_credential(self):
         self.use(FakeSecrets(primary_values()))
         self.assertEqual(secrets.export_replicated(), primary_values())
 
     def test_import_creates_only_missing_and_is_idempotent(self):
         values = primary_values()
-        present = secrets.replicated_names()[0]
+        present = secrets.transfer_names()[0]
         store = FakeSecrets({present: values[present]})
         self.use(store)
         self.assertTrue(secrets.import_replicated(values))
@@ -72,7 +77,7 @@ class ReplicatedSecretTests(unittest.TestCase):
 
     def test_a_different_existing_value_refuses_before_any_create(self):
         values = primary_values()
-        different = secrets.replicated_names()[-1]
+        different = secrets.transfer_names()[-1]
         store = FakeSecrets({different: 'standby-only-value'})
         self.use(store)
         with self.assertRaises(RuntimeError) as refused:

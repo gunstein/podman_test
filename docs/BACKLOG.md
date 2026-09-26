@@ -29,25 +29,24 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-1. Security: T1 (encrypted replication between the two sites).
-2. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
+1. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
    failover command), G2 (Trondheim is ready), G3 (time it in the drill), T3
    (fencing without the Oslo hypervisor), T4 (one CA), T5 (moving the names),
    M1 (alerts), O1 (incident runbooks), G4 (the disaster drill in the lab) and
    G5 (rebuilding Oslo on new hardware).
-3. What operation needs: U1 (updating a replicated pair), T6 (planned
+2. What operation needs: U1 (updating a replicated pair), T6 (planned
    switchover), M4 (a durable WAL archive), M2 (scheduled backups with
    pruning), L1 and L2 (command logging, failure reasons).
-4. Decide D4 (one database server or one per app).
-5. fapolicyd (F0 first, then what is left of F1-F6), firewalls (W) and data
+3. Decide D4 (one database server or one per app).
+4. fapolicyd (F0 first, then what is left of F1-F6), firewalls (W) and data
    checks (C).
-6. DR code structure and the rest.
+5. DR code structure and the rest.
 
 The real setup has two machines and no third, on separate hardware at separate
 physical sites. D2 and L6 are therefore designed for two hosts that each keep
 what the other would lose: each host backs up its own database copy (D2), and
 each holds the other's logs (L6). Everything between them crosses a network
-between sites (T1).
+between sites, and replication across it uses TLS.
 
 ## Goal: Trondheim running within 30 minutes
 
@@ -111,14 +110,6 @@ such as a small cloud VM. Without one, the safe design is one human decision
 
 ## Between the two sites
 
-- **T1. Encrypt replication.** *[new]* `pg_hba.conf` uses `host`, not `hostssl`,
-  PostgreSQL has no TLS, and `primary_conninfo` sets no `sslmode`. SCRAM keeps
-  the password off the wire, but the WAL stream (all content of all three
-  databases, including Keycloak users and password hashes) travels in clear
-  text. Acceptable inside one room; not between sites. Turn on TLS in
-  PostgreSQL with certificates from a small project CA, require `hostssl` for
-  replication, and connect with `sslmode=verify-full`. D2 then needs nothing
-  of its own: the standby's backups are made from this replication stream.
 - **T2. Latency and bandwidth between sites.** *[docs]* Asynchronous replication across
   sites can lag further behind than in the lab, which widens what a failover
   can lose (C4). Measure lag over the real link, check that the RPO target of
@@ -135,8 +126,9 @@ such as a small cloud VM. Without one, the safe design is one human decision
 - **T4. One CA for both sites.** *[new]* The promoted host creates its own CA, so
   after a failover every user's browser shows certificate errors until the new
   CA is rolled out (acceptance trusted the new CA on its one client by hand).
-  Share one CA between the sites, synchronised like the other DR secrets over
-  an encrypted link (T1), or use certificates from an existing PKI.
+  Share one CA between the sites, synchronised like the other DR secrets (the
+  replication CA in replication_tls.py already is), or use certificates from an
+  existing PKI.
 - **T5. Pointing users at the other site.** *[docs]* Clients use `todo.test` and
   `notes.test`; acceptance edits `/etc/hosts` on one client. Write down how the
   names move to the surviving site in the real setup (a DNS change with a
@@ -390,7 +382,7 @@ promoted primary.
     archive is the incremental part: restore the last full backup from before
     the target time, then replay WAL up to it (`recovery_target_time`).
   - *No copy job and nothing to reverse.* The standby's backups come from the
-    replication stream, which T1 encrypts. After a failover, both hosts go on
+    replication stream, which is encrypted with TLS. After a failover, both hosts go on
     as before in their new roles.
   - *Known limits.* If replication stops (for example an invalidated slot), the
     standby's archive has a gap until the rebuild, which M1 must report. After

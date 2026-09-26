@@ -31,7 +31,7 @@ flowchart LR
   dns -.->|after failover| t_proxy
   o_proxy ~~~ t_proxy
   o_apps -.- t_apps
-  o_db ==>|"WAL stream, TLS (T1)"| t_db
+  o_db ==>|"WAL stream, TLS"| t_db
   o_bk ~~~ t_bk
   o_time <-->|"journal copy (L6)<br>secrets, CA (G2, T4)"| t_time
   dns ~~~ o_apps & o_db & o_bk
@@ -65,7 +65,7 @@ switchover with no data loss moves operation back (T6).
 |---|---|
 | On the hosts | Only Python's standard library, systemd, journald, Podman and PostgreSQL. No new services. |
 | Tools | `install.sh` for one host, app-ops over plain SSH for the pair: failover (G1), updates (U1), switchover (T6). Ansible is retired. |
-| Between the sites | Replication encrypted (T1); one CA (T4); DR secrets synchronised (G2). |
+| Between the sites | Replication encrypted with TLS and verify-full; one CA (T4); DR secrets synchronised (G2). |
 | Backups | Each host backs up its own copy: a full backup every night and the WAL archive, 7 days, so PITR works even if one site is lost (D2, M2). |
 | Security | Keycloak lockout and password policy, HTTP security headers, fapolicyd trusts only root-owned files (F), tool-owned firewall rules (W). |
 | Logs | Every tool command in journald with time, host and result (L1, L2), kept across reboots (L4), copied to the other site (L6), one page on where to look (L5). |

@@ -31,12 +31,13 @@ operator, not code.
    compare against.
 2. Security: T1 (encrypted replication between the two sites), H1 (Keycloak
    brute force) and H2 (security headers).
-3. A real failover between the sites: T3 (fencing without the failed site's
-   hypervisor), T4 (one CA for both sites), T5 (moving the names), T6 (planned
-   switchover) and O1 (incident runbooks).
-4. What operation needs: U1 (updating a replicated pair), M1 and M2 (alerts,
-   scheduled backups with pruning), L1 and L2 (command logging, failure
-   reasons).
+3. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
+   failover command), G2 (Trondheim is ready), G3 (time it in the drill), T3
+   (fencing without the Oslo hypervisor), T4 (one CA), T5 (moving the names),
+   M1 (alerts) and O1 (incident runbooks).
+4. What operation needs: U1 (updating a replicated pair), T6 (planned
+   switchover), M2 (scheduled backups with pruning), L1 and L2 (command
+   logging, failure reasons).
 5. Retire Ansible (R0, R0b, 3-6) once there is a CLEAN PASS.
 6. fapolicyd (F), firewalls (W) and data checks (C).
 7. DR code structure and the rest.
@@ -45,6 +46,33 @@ The real setup has two machines and no third, on separate hardware at separate
 physical sites. D2 and L6 are therefore designed for two hosts that keep copies
 for each other, and everything between them crosses a network between sites
 (T1).
+
+## Goal: Trondheim running within 30 minutes
+
+The point of the solution: if the Oslo site is lost (for example a fire), the
+service runs in Trondheim within about 30 minutes, with at most a few simple,
+well-described manual steps.
+
+With two sites and no third, failover must not start by itself. Trondheim
+cannot tell "Oslo is on fire" from "the link between the cities is down"; if it
+promoted itself on a broken link, both sites would take writes (split-brain),
+which loses and corrupts data. Fully automatic failover needs a third witness,
+such as a small cloud VM. Without one, the safe design is one human decision
+("Oslo is lost", T3), after which one command does the rest.
+
+- **G1. One failover command.** *[new]* Run in Trondheim after the decision:
+  preflight, group promotion, application tier, backup configuration, and a
+  final check that users can log in. Mostly a chain of existing steps
+  (`app_dr.py preflight/promote`, `deploy-promoted-application`,
+  `configure-backup`), stopping at the first failure. It changes DNS through
+  the provider's API if there is one (T5), or prints exactly what to do.
+- **G2. Trondheim is ready to take over.** *[new]* Part of the scheduled
+  checks (M1): the same bundle and operations package revision as Oslo, every
+  DR secret and the shared CA (T4) synchronised, the recovery inventory in
+  place, and enough disk. A missing piece found during a fire is found too late.
+- **G3. Time the failover in the drill.** *[new]* Acceptance measures the time
+  from "Oslo declared lost" to "users log in in Trondheim", and requires under
+  30 minutes. The goal is then shown, not only that failover works.
 
 ## Between the two sites
 

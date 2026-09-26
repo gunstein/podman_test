@@ -34,7 +34,7 @@ operator, not code.
 3. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
    failover command), G2 (Trondheim is ready), G3 (time it in the drill), T3
    (fencing without the Oslo hypervisor), T4 (one CA), T5 (moving the names),
-   M1 (alerts) and O1 (incident runbooks).
+   M1 (alerts), O1 (incident runbooks) and G4 (the disaster drill in the lab).
 4. What operation needs: U1 (updating a replicated pair), T6 (planned
    switchover), M2 (scheduled backups with pruning), L1 and L2 (command
    logging, failure reasons).
@@ -73,6 +73,27 @@ such as a small cloud VM. Without one, the safe design is one human decision
 - **G3. Time the failover in the drill.** *[new]* Acceptance measures the time
   from "Oslo declared lost" to "users log in in Trondheim", and requires under
   30 minutes. The goal is then shown, not only that failover works.
+- **G4. A disaster drill in the Proxmox lab.** *[new]* A separate, shorter
+  drill next to acceptance that simulates the Oslo fire realistically on the
+  two lab VMs, timed as in G3:
+  - *No access to Oslo after the fire.* VM 107 is killed hard (`qm stop`) while
+    running; after that, nothing may be done to it, so the fencing procedure
+    without the Oslo hypervisor (T3) is what gets tested.
+  - *Fire while writing.* A simple loop writes rows all the time and VM 107 is
+    killed in the middle; afterwards, count the rows missing in Trondheim. That
+    measures the real loss (C4, T2).
+  - *Distance between the cities.* `tc qdisc ... netem` on the VMs adds delay
+    (for example 10 ms) and limits bandwidth, so replication, lag and reseed
+    run over something like the real link. Commands only, no new software.
+  - *A broken link without a fire.* Block only the traffic between the VMs
+    with the Proxmox firewall while Oslo still answers a client. The procedure
+    must not promote Trondheim on that basis, or, if it does, the quarantine
+    must handle Oslo when the link returns.
+  - *A name change like DNS.* A small DNS with a short TTL in the lab (for
+    example dnsmasq on the client or the Proxmox host) that the failover
+    command or the operator updates, or `/etc/hosts` as a documented stand-in.
+  The lab cannot show that the sites are independent (the VMs share hardware,
+  power and storage) or the real link; both come from the real setup (T2).
 
 ## Between the two sites
 

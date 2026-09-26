@@ -8,8 +8,8 @@ in the kickoff message. Remove an item when its change is merged.
 
 1. The acceptance run on `1b1d345` for a CLEAN PASS: a clean baseline to
    compare against.
-2. Small, high-value security: H1 (Keycloak brute force) and H2 (security
-   headers).
+2. Security: T1 (encrypted replication between the two sites), H1 (Keycloak
+   brute force) and H2 (security headers).
 3. What operation needs: U1 (updating a replicated pair), M1 and M2 (alerts,
    scheduled backups with pruning), L1 and L2 (command logging, failure
    reasons).
@@ -17,10 +17,25 @@ in the kickoff message. Remove an item when its change is merged.
 5. fapolicyd (F), firewalls (W) and data checks (C).
 6. DR code structure and the rest.
 
-The setup has two machines and no third. D2 and L6 are therefore designed for
-two hosts that keep copies for each other. Whether they protect against a
-hardware failure depends on the two machines running on separate hardware;
-see D2.
+The real setup has two machines and no third, on separate hardware at separate
+physical sites. D2 and L6 are therefore designed for two hosts that keep copies
+for each other, and everything between them crosses a network between sites
+(T1).
+
+## Between the two sites
+
+- **T1. Encrypt replication.** `pg_hba.conf` uses `host`, not `hostssl`,
+  PostgreSQL has no TLS, and `primary_conninfo` sets no `sslmode`. SCRAM keeps
+  the password off the wire, but the WAL stream (all content of all three
+  databases, including Keycloak users and password hashes) travels in clear
+  text. Acceptable inside one room; not between sites. Turn on TLS in
+  PostgreSQL with certificates from a small project CA, require `hostssl` for
+  replication, and connect with `sslmode=verify-full`. The backup copy in D2
+  must be encrypted in transit too.
+- **T2. Latency and bandwidth between sites.** Asynchronous replication across
+  sites can lag further behind than in the lab, which widens what a failover
+  can lose (C4). Measure lag over the real link, check that the RPO target of
+  30 seconds holds, and that timeouts (SSH, `connect_timeout`) suit it.
 
 ## Updates and time
 
@@ -234,15 +249,12 @@ promoted primary.
 - **D2. Backups that survive losing a machine.** Base backups and WAL live on
   the same VM as the database. The standby holds today's data, but not the
   history: a mistaken delete replicates within seconds, and only PITR from the
-  backup undoes it, from a backup that was on the machine that was lost. With
-  two machines and no third: copy the base backups and WAL archive from the
-  primary into a separate volume on the standby host, and reverse the
-  direction after a failover. This protects against losing one machine only
-  if the two run on separate hardware; two VMs on one physical host (as in the
-  lab) share its fate. Then only a copy off that hardware helps (for example a
-  regularly attached external disk or NAS), or the limit must be stated
-  plainly. Decision needed: are the two machines on separate hardware in the
-  real setup?
+  backup undoes it, from a backup that was on the machine that was lost.
+  Decided: the two machines are on separate hardware at separate sites, so the
+  two hosts keep copies for each other. Copy the base backups and WAL archive
+  from the primary into a separate volume on the standby host, encrypted in
+  transit (T1), and reverse the direction after a failover. Testable in the lab
+  with the two VMs, although they share one physical host there.
 - **D3. `deploy-promoted-application` runs only on the promoted host.** It
   refuses unless that host is the machine running app-ops. Either lift the
   limit or document it as deliberate in `deploy/ops/README.md`.

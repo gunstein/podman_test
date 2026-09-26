@@ -19,6 +19,20 @@ kind: ConfigMap
 metadata:
   name: shared-nginx-config
 data:
+  # Headers for every response, Keycloak's pages included.
+  security-headers.conf: |
+    add_header X-Content-Type-Options nosniff always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+  # Headers for the apps' own pages and API. Keycloak under /auth/ sends its own
+  # Content-Security-Policy and a stricter Referrer-Policy (no-referrer) for its
+  # login pages, so these are not added there.
+  # nginx drops inherited add_header lines in a location that has its own, so
+  # this file repeats the shared ones.
+  app-headers.conf: |
+    include /etc/todo-nginx/security-headers.conf;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'" always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
   nginx.conf: |
     worker_processes auto;
     error_log /dev/stderr notice;
@@ -56,7 +70,7 @@ data:
             ssl_session_tickets off;
             root /usr/share/nginx/html;
             index index.html;
-            add_header X-Content-Type-Options nosniff always;
+            include /etc/todo-nginx/security-headers.conf;
 
             location /auth/ {
                 proxy_pass http://shared_keycloak;
@@ -65,18 +79,22 @@ data:
             location /api/ {
                 proxy_pass http://{{ app.name }}_backend;
                 include /etc/nginx/todo-proxy-headers.conf;
+                include /etc/todo-nginx/app-headers.conf;
             }
             location = /health {
                 proxy_pass http://{{ app.name }}_backend;
                 include /etc/nginx/todo-proxy-headers.conf;
+                include /etc/todo-nginx/app-headers.conf;
             }
             location = /ready {
                 proxy_pass http://{{ app.name }}_backend;
                 include /etc/nginx/todo-proxy-headers.conf;
+                include /etc/todo-nginx/app-headers.conf;
             }
             location / {
                 proxy_pass http://{{ app.name }}_frontend;
                 include /etc/nginx/todo-proxy-headers.conf;
+                include /etc/todo-nginx/app-headers.conf;
             }
         }
 {% endfor %}

@@ -423,7 +423,8 @@ On the client, use the selected source revision and an environment with
 `python3 -m venv todo-backend/.venv` followed by
 `todo-backend/.venv/bin/python -m pip install -r todo-backend/requirements-e2e.txt`. Provision `testuser` with
 its complete profile through the trusted Keycloak admin UI (email, first and last
-name, no required actions, non-temporary password), or use the existing
+name, no required actions, non-temporary password of at least 12 characters,
+the realm's password policy), or use the existing
 `e2e/provision_user.py` on the serving host with credentials supplied only in
 memory. The Keycloak administrator password is generated at install time; read
 it on the serving host only into a process environment with

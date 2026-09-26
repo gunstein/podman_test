@@ -12,8 +12,8 @@ flowchart LR
   op(["Operator<br>runbooks (O1)"])
 
   subgraph OSLO["Oslo: primary"]
-    o_proxy["nginx, TLS, shared CA (T4)<br>security headers (H2)"]
-    o_apps["Todo, Notes<br>Keycloak with lockout (H1)"]
+    o_proxy["nginx, TLS, shared CA (T4)<br>security headers"]
+    o_apps["Todo, Notes<br>Keycloak with lockout"]
     o_db[("PostgreSQL primary<br>todo, notes, keycloak")]
     o_bk[("Own backups: full every night<br>+ WAL archive, 7 days (M2)")]
     o_time["Timers: checks, alerts (M1)<br>journald logs (L1, L4)"]
@@ -67,7 +67,7 @@ switchover with no data loss moves operation back (T6).
 | Tools | `install.sh` for one host, app-ops over plain SSH for the pair: failover (G1), updates (U1), switchover (T6). Ansible is retired. |
 | Between the sites | Replication encrypted (T1); one CA (T4); DR secrets synchronised (G2). |
 | Backups | Each host backs up its own copy: a full backup every night and the WAL archive, 7 days, so PITR works even if one site is lost (D2, M2). |
-| Security | Keycloak lockout (H1), HTTP headers (H2), fapolicyd trusts only root-owned files (F), tool-owned firewall rules (W). |
+| Security | Keycloak lockout and password policy, HTTP security headers, fapolicyd trusts only root-owned files (F), tool-owned firewall rules (W). |
 | Logs | Every tool command in journald with time, host and result (L1, L2), kept across reboots (L4), copied to the other site (L6), one page on where to look (L5). |
 | Warnings | Timers turn replication, slot, archive, disk and certificate problems into failed units and optional mail (M1, U2). |
 | Proof | Acceptance with content fingerprints for all three databases (C1-C3), plus the timed disaster drill (G3, G4). |

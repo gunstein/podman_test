@@ -29,8 +29,7 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-1. Security: T1 (encrypted replication between the two sites), H1 (Keycloak
-   brute force) and H2 (security headers).
+1. Security: T1 (encrypted replication between the two sites).
 2. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
    failover command), G2 (Trondheim is ready), G3 (time it in the drill), T3
    (fencing without the Oslo hypervisor), T4 (one CA), T5 (moving the names),
@@ -191,15 +190,6 @@ The containers already run as non-root users, with
 `allowPrivilegeEscalation: false` and every capability dropped, and TLS is
 limited to 1.2 and 1.3.
 
-- **H1. Brute-force protection in Keycloak.** *[config]* `keycloak/todo-realm.json` sets
-  neither `bruteForceProtected` nor a password policy, and Keycloak leaves both
-  off by default, so anyone who reaches the login page can guess passwords
-  without limit. Turn on temporary lockout after repeated failures and set a
-  password policy in the realm import.
-- **H2. HTTP security headers.** *[config]* The shared nginx sets only
-  `X-Content-Type-Options`. Add HSTS, a Content-Security-Policy and
-  `frame-ancestors` in `shared-proxy.yaml.j2`. The CSP must allow what the
-  Keycloak adapter needs, so run the browser tests afterwards.
 - **H3. Vulnerability scanning of images.** *[optional]* Dependabot (item 14) reports new
   versions, not known vulnerabilities in the packages inside the base images.
   Scan the built images in CI (for example with Trivy); a CI-only tool, never

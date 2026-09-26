@@ -26,6 +26,34 @@ class ProxyConfigurationTests(unittest.TestCase):
 
         self.assertIn("COPY --chmod=0755 proxy/proxy-entrypoint.sh /usr/local/bin/", containerfile)
 
+    def test_security_headers_cover_every_response_and_csp_only_the_apps(self):
+        import re
+
+        import yaml
+        config = next(doc for doc in yaml.safe_load_all(read(RUNTIME / "shared-proxy.yaml"))
+                      if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "shared-nginx-config")["data"]
+        shared, app = config["security-headers.conf"], config["app-headers.conf"]
+        self.assertIn('Strict-Transport-Security "max-age=31536000" always', shared)
+        self.assertIn("X-Content-Type-Options nosniff always", shared)
+        self.assertIn("include /etc/todo-nginx/security-headers.conf;", app)
+        self.assertNotIn("Referrer-Policy", shared)
+        self.assertIn("Referrer-Policy strict-origin-when-cross-origin always", app)
+        csp = re.search(r'Content-Security-Policy "([^"]+)" always', app).group(1)
+        for directive in ("default-src 'self'", "script-src 'self'", "frame-ancestors 'none'",
+                          "object-src 'none'", "connect-src 'self'"):
+            self.assertIn(directive, csp)
+        self.assertNotIn("unsafe-inline", csp)
+        self.assertNotIn("unsafe-eval", csp)
+        servers = config["nginx.conf"].split("server {")[1:]
+        self.assertEqual(len(servers), 2)
+        for server in servers:
+            self.assertIn("include /etc/todo-nginx/security-headers.conf;", server.split("location")[0])
+            locations = dict(re.findall(r"location ([^{]+)\{([^}]*)\}", server))
+            self.assertEqual(set(locations), {"/auth/ ", "/api/ ", "= /health ", "= /ready ", "/ "})
+            for name, body in locations.items():
+                # Keycloak sends its own CSP for its login pages.
+                self.assertEqual("app-headers.conf" in body, name != "/auth/ ", name)
+
     def test_proxy_headers_include_oauth2_proxy_standards(self):
         headers = read("proxy/proxy-headers.conf")
 

@@ -19,7 +19,9 @@ import yaml
 root = Path(sys.argv[1])
 for doc in yaml.safe_load_all((root / "shared-proxy.yaml").read_text()):
     if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "shared-nginx-config":
-        (root / "nginx.conf").write_text(doc["data"]["nginx.conf"])
+        (root / "nginx-config").mkdir()
+        for name, text in doc["data"].items():
+            (root / "nginx-config" / name).write_text(text)
 PY
 podman build --file "$project_root/proxy/Containerfile" --tag "$image" "$project_root"
 podman volume create "$volume" >/dev/null
@@ -31,7 +33,7 @@ for attempt in 1 2 3; do
   podman run --rm \
     --env TODO_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=$hostnames" \
     --volume "$volume:/var/lib/todo-tls" \
-    --volume "$work_directory/nginx.conf:/etc/todo-nginx/nginx.conf:ro,Z" \
+    --volume "$work_directory/nginx-config:/etc/todo-nginx:ro,Z" \
     "$image" nginx -t -c /etc/todo-nginx/nginx.conf
   podman run --rm --env "APP_TLS_HOSTNAMES=$hostnames" \
     --volume "$volume:/var/lib/todo-tls:ro" --entrypoint sh "$image" -ec '

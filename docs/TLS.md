@@ -126,6 +126,20 @@ metadata to FastAPI and Keycloak:
 - `X-Forwarded-For`
 - `X-Real-IP`
 
+nginx also sets security headers (`deploy/manifests/shared-proxy.yaml.j2`):
+HSTS and `X-Content-Type-Options` on every response, and on the apps' own pages
+and API a strict Content-Security-Policy (only same-origin scripts, styles,
+requests and frames, no inline script), `frame-ancestors 'none'`,
+`X-Frame-Options: DENY` and a Referrer-Policy. Keycloak's pages under `/auth/`
+keep Keycloak's own Content-Security-Policy and Referrer-Policy.
+
+Keycloak locks an account for a minute after 5 failed logins, doubling up to
+15 minutes, and requires passwords of at least 12 characters that differ from
+the user name and email (`REALM_SECURITY` in
+`deploy/installer/app_installer/keycloak.py`). The installer applies these to
+the `todo` realm on every install and failover, so an existing realm gets them
+too.
+
 Application recovery must verify that Keycloak discovery still reports the stable external issuer
 `https://todo.test:8443/auth/realms/todo`. Health, readiness, public API,
 login redirect, token validation and logout/redirect behavior belong in proxy

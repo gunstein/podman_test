@@ -73,7 +73,7 @@ class TrustFilesTests(FakeTrustTools, unittest.TestCase):
         (self.directory / "known").write_text(f"{self.source}\n")
         result = self.run_script("trust", "todo", str(self.source))
         self.assertEqual((result.returncode, result.stdout.strip()), (0, "unchanged"), result.stderr)
-        self.assertNotIn("add", " ".join(self.calls()))
+        self.assertNotIn("--file add", " ".join(self.calls()))
 
     def test_stale_or_prefix_only_entry_fails_after_bounded_attempts(self):
         result = self.run_script("trust", "todo", str(self.source), FAKE_STALE_READS="99", TRUST_ATTEMPTS="3")

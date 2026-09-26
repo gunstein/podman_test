@@ -29,8 +29,10 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 1. A CLEAN PASS with app-ops: a clean baseline to compare against. Run 7 on
    `0604c56` reached a REPAIRED FUNCTIONAL PASS (a rerun of `rebuild-standby`
-   started out of order); the rebuild preflight now checks the replication
-   path, so that mistake stops in a read-only command.
+   started out of order). Run 8 on `3bc5924` was BLOCKED in phase 9: the new
+   preflight path check could not tell an open path from a blocked one under
+   the quarantine firewall. The check now runs inside the rebuild, after the
+   primary publishes its ports and before anything is deleted.
 2. Security: T1 (encrypted replication between the two sites), H1 (Keycloak
    brute force) and H2 (security headers).
 3. Failover to Trondheim within 30 minutes (see the goal below): G1 (one

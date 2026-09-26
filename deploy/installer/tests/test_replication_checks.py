@@ -106,7 +106,7 @@ class RequireStandbyTests(unittest.TestCase):
 
 
 class ReplicationPathTests(unittest.TestCase):
-    """The rebuild preflight's path check: packets must arrive, a port need not be open yet."""
+    """The rebuild's path check after publishing: only a real connection passes."""
 
     def check(self, outcome):
         calls = []
@@ -118,18 +118,19 @@ class ReplicationPathTests(unittest.TestCase):
             return socket.socket()
         return replication.replication_path(APP, '192.0.2.11', connect=connect), calls
 
-    def test_an_open_or_refused_port_passes(self):
+    def test_a_connection_passes(self):
         self.assertEqual(self.check(None), ('open', [(('192.0.2.11', APP.replication_port), 5)]))
-        self.assertEqual(self.check(ConnectionRefusedError(errno.ECONNREFUSED, 'Connection refused'))[0],
-                         'refused')
 
-    def test_a_dropped_or_rejected_path_fails_before_any_deletion(self):
+    def test_every_failure_stops_before_any_deletion(self):
         for outcome, reason in ((socket.timeout('timed out'), 'timed out'),
                                 (TimeoutError(), 'timed out'),
+                                (ConnectionRefusedError(errno.ECONNREFUSED, 'Connection refused'),
+                                 'Connection refused'),
                                 (OSError(errno.EHOSTUNREACH, 'No route to host'), 'No route to host')):
             with self.subTest(reason=reason), self.assertRaises(RuntimeError) as caught:
                 self.check(outcome)
-            self.assertIn(f'192.0.2.11:{APP.replication_port} is blocked ({reason})', str(caught.exception))
+            self.assertIn(f'192.0.2.11:{APP.replication_port} is not reachable ({reason})',
+                          str(caught.exception))
             self.assertIn('data was not removed', str(caught.exception))
 
     def test_the_address_must_be_ipv4(self):

@@ -60,11 +60,6 @@ def preflight_rebuild(project_root, controller, current, rebuild, confirm_fenced
         app_installer(rebuild, rebuild_path, 'replicate-workload', 'reseed-check', '--app', entry['name'],
                       '--primary-address', current.spec.address, '--confirm-fenced', confirm_fenced,
                       '--confirm-reseed', confirm_reseed, *steps.group_paths(rebuild))
-    # Nothing may block the rebuild host's path to the replication ports
-    # (C9.10 step 8); otherwise the reseed would fail after the gates above.
-    for entry in steps.GROUP:
-        app_installer(rebuild, rebuild_path, 'replicate-workload', 'replication-path', '--app', entry['name'],
-                      '--primary-address', current.spec.address)
     return rebuild_path
 
 
@@ -72,7 +67,8 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
     """Rebuild the old primary as a standby of the current one. Deletes its database data.
 
     Order: check passwordless sudo on both hosts, run every preflight gate,
-    publish the current primary's databases for the rebuilt standby, reseed
+    publish the current primary's databases for the rebuilt standby, require
+    a connection from the rebuild host to every replication port, reseed
     every database on the rebuild host, install app_dr.py there, and wait
     until all of them stream. A failure stops the run where it is and is
     never retried automatically.
@@ -83,6 +79,9 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
     current_path = steps.stage_postgres_group(project_root, controller, current)
     app_installer(current, current_path, 'publish-primaries', 'redundancy',
                   '--node-address', current.spec.address, *steps.group_paths(current))
+    for entry in steps.GROUP:
+        app_installer(rebuild_host, rebuild_path, 'replicate-workload', 'replication-path', '--app', entry['name'],
+                      '--primary-address', current.spec.address)
     app_installer(rebuild_host, rebuild_path, 'reseed-group', '--primary-address', current.spec.address,
                   '--confirm-fenced', confirm_fenced, '--confirm-reseed', confirm_reseed,
                   *steps.group_paths(rebuild_host))

@@ -178,9 +178,10 @@ class RecoveryTests(unittest.TestCase):
                         first[("replicate-workload", "quarantined")])
         self.assertLess(first[("replicate-workload", "quarantined")], first[("replicate-workload", "reseed-check")])
         self.assertLess(max(i for i, k in enumerate(kinds) if k == ("replicate-workload", "reseed-check")),
-                        first[("replicate-workload", "replication-path")])
-        self.assertLess(max(i for i, k in enumerate(kinds) if k == ("replicate-workload", "replication-path")),
                         first[("publish-primaries",)])
+        self.assertLess(first[("publish-primaries",)], first[("replicate-workload", "replication-path")])
+        self.assertLess(max(i for i, k in enumerate(kinds) if k == ("replicate-workload", "replication-path")),
+                        first[("reseed-group",)])
         self.assertEqual([step for step in world.steps("todo-primary") if step[:2] == ("replicate-workload",
                                                                                       "replication-path")],
                          [("replicate-workload", "replication-path", name) for name in NAMES])
@@ -189,14 +190,19 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(kinds[-3:], [("replicate-workload", "streaming")] * 3)
         self.assertIn(("reseed-group",), world.steps("todo-primary"))
 
-    def test_a_blocked_replication_path_stops_in_the_read_only_preflight(self):
+    def test_a_blocked_replication_path_stops_the_rebuild_before_the_reseed(self):
         world = World(blocked_path=True)
         with self.assertRaises(RuntimeError):
             recovery.rebuild(str(PROJECT), *self.hosts(world), "todo-primary is fenced", "todo-primary")
-        self.assertFalse([step for step in world.steps() if step[0] in ("reseed-group", "publish-primaries")])
-        with self.assertRaises(RuntimeError):
-            recovery.preflight_rebuild(str(PROJECT), *self.hosts(World(blocked_path=True)),
-                                       "todo-primary is fenced", "todo-primary")
+        self.assertIn(("publish-primaries",), world.steps())
+        self.assertFalse([step for step in world.steps() if step[0] == "reseed-group"])
+
+    def test_the_preflight_stays_read_only_and_does_not_probe_the_path(self):
+        world = World(blocked_path=True)
+        recovery.preflight_rebuild(str(PROJECT), *self.hosts(world), "todo-primary is fenced", "todo-primary")
+        self.assertFalse([step for step in world.steps()
+                          if step[0] == "publish-primaries" or step[:2] == ("replicate-workload",
+                                                                            "replication-path")])
 
     def test_wrong_confirmations_refuse_before_any_rebuild_host_change(self):
         world = World()

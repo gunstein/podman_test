@@ -175,24 +175,23 @@ def authenticate(app, primary_address):
 
 
 def replication_path(app, primary_address, *, timeout=5, connect=socket.create_connection):
-    """Check that nothing blocks this host's path to the primary's replication port.
+    """Require a TCP connection from this host to the primary's replication port.
 
-    A rebuild's read-only preflight runs this before the primary publishes
-    the port on its LAN address, so a refused connection passes: the packets
-    arrived. A timeout (a firewall drops them) or another error, such as No
-    route to host from a firewalld reject, fails before anything is deleted.
-    Returns 'open' or 'refused'.
+    The rebuild runs this after the primary has published the port on its
+    LAN address and before anything is deleted, so an error names the cause
+    (a firewall, or a port that is not published) instead of the later
+    authentication check. It cannot run earlier: before publishing, a
+    stateful firewall such as the Proxmox quarantine can drop the refusal,
+    so an open path and a blocked one both time out.
     """
     target = (address(primary_address), app.replication_port)
     try:
         connect(target, timeout=timeout).close()
-        return 'open'
-    except ConnectionRefusedError:
-        return 'refused'
     except OSError as error:
         reason = 'timed out' if isinstance(error, TimeoutError) else error.strerror or str(error)
-        raise RuntimeError(f'{app.name}: replication path to {target[0]}:{target[1]} is blocked ({reason}); '
-                           'open the firewalls on both hosts first; data was not removed') from None
+        raise RuntimeError(f'{app.name}: replication port {target[0]}:{target[1]} is not reachable ({reason}); '
+                           'check the firewalls on both hosts; data was not removed') from None
+    return 'open'
 
 
 def configure_primary(app, node_address):

@@ -400,6 +400,9 @@ python3 deploy/scripts/pve_lab.py get /nodes/{node}/qemu/107/firewall/options
 python3 deploy/scripts/pve_lab.py get /nodes/{node}/qemu/107/firewall/rules
 python3 deploy/scripts/pve_lab.py get /cluster/firewall/options
 python3 deploy/scripts/pve_lab.py get /cluster/ha/resources
+python3 deploy/scripts/pve_lab.py fence 107
+bash deploy/scripts/ports-closed.sh 192.168.0.102 22 5432 5433 5434 8443
+ssh gunstein@192.168.0.108 'bash -s' -- 192.168.0.102 22 5432 5433 5434 8443 < deploy/scripts/ports-closed.sh
 ```
 
 `exec` prints `exited`, `exitcode`, `out-data` and `err-data` and exits with the
@@ -408,6 +411,11 @@ finish: do not repeat it; poll
 `get "/nodes/{node}/qemu/107/agent/exec-status?pid=<PID>"` instead.
 `task` waits and fails unless the Proxmox task ends with `OK`.
 `nic` changes one flag on every network device and keeps MAC and bridge.
+`fence` is the whole fencing step in one command: it refuses if HA manages the
+VM, stops it, sets `onboot=0` and `link_down=1` on every `netN`, reads it all
+back and prints that as evidence; it fails unless the VM is fenced.
+`ports-closed.sh` prints each port as `open`, `refused` or `timeout` and exits
+1 if any is open. It needs only bash, so it also runs on a VM through SSH.
 
 **Guests.** SSH as `gunstein` with host-key checking on. Use `sudo -n` for root
 commands inside the VMs so a missing sudo rule fails immediately instead of
@@ -757,12 +765,20 @@ through the API and re-check.
 #### C9.7 Phase 6 — Fence and promote (pre-approved)
 
 1. Create the `phase6` markers and read them on `.108`.
-2. Fence VM 107:
-   `task .../107/status/stop`, `set .../107/config onboot=0`, `nic 107 link_down 1`.
-   `get /cluster/ha/resources` must not list `vm:107`.
-   Record `status/current` (`stopped`) and every `netN` (`link_down=1`).
-3. From `.108` and from the client: `.102` ports 22, 5432, 5433, 5434 and 8443
-   must be unreachable (`timeout 5 bash -c '</dev/tcp/...'` fails).
+2. Fence VM 107 with one command, and keep its full output in the log:
+   ```bash
+   python3 deploy/scripts/pve_lab.py fence 107 2>&1 | tee ~/todo-acceptance-runs/$RUN_ID/logs/06-fence.log
+   ```
+   PASS only if it exits 0 and prints `"status": "stopped"`, `"onboot": "0"`,
+   `"ha": "not managed"` and `link_down=1` in every `netN`. Do not replace it
+   with separate `task`, `set` or `nic` calls. If it fails: STOP (C8).
+3. Check the ports, from the client and from `.108`, with both outputs in one log:
+   ```bash
+   ( bash deploy/scripts/ports-closed.sh 192.168.0.102 22 5432 5433 5434 8443
+     ssh gunstein@192.168.0.108 'bash -s' -- 192.168.0.102 22 5432 5433 5434 8443 < deploy/scripts/ports-closed.sh
+   ) 2>&1 | tee ~/todo-acceptance-runs/$RUN_ID/logs/06-ports-closed.log
+   ```
+   PASS only if both print `CLOSED: 192.168.0.102`. `OPEN PORTS`: STOP.
 4. On `.108`: `app_dr.py preflight`, `promote`, `status` exactly as in
    ACCEPTANCE.md (the confirmation strings are fixed). Run `promote` once.
 5. Rolled-back write probes on Todo and Notes, markers present, all three

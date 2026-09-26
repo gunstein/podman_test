@@ -15,6 +15,9 @@ secret is sent only in the Authorization header and never printed.
                                         and exits with the command's exit code
   pve_lab.py nic VMID FLAG VALUE        set FLAG=VALUE on every netN device,
                                         keeping MAC, bridge and other options
+  pve_lab.py fence VMID                 refuse if HA manages the VM; stop it,
+                                        set onboot=0 and link_down=1 on every
+                                        netN; read it all back as evidence
 
 PATH starts with "/" and may contain {node}, replaced by PVE_NODE.
 Example: pve_lab.py get /nodes/{node}/qemu/107/status/current
@@ -146,6 +149,28 @@ class Client:
                 raise LabError(f'VM {vmid} {key} does not report {flag}={value}')
         return {key: after[key] for key in sorted(nics)}
 
+    def fence(self, vmid):
+        """Stop the VM and keep it from coming back: onboot=0 and every link down.
+
+        Refuses before changing anything if Proxmox HA manages the VM, since HA
+        would start it again. Stopping an already stopped VM is skipped, so the
+        command can be repeated. Reads everything back and raises unless the VM
+        is stopped, onboot is 0 and every netN reports link_down=1.
+        """
+        managed = [resource.get('sid') for resource in self.request('GET', '/cluster/ha/resources') or []]
+        if f'vm:{vmid}' in managed:
+            raise LabError(f'HA manages vm:{vmid} and would start it again; remove it from HA first')
+        if self.request('GET', f'/nodes/{{node}}/qemu/{vmid}/status/current').get('status') != 'stopped':
+            self.wait_task(self.request('POST', f'/nodes/{{node}}/qemu/{vmid}/status/stop'))
+        self.request('PUT', f'/nodes/{{node}}/qemu/{vmid}/config', form={'onboot': '0'})
+        nics = self.set_nic_flag(vmid, 'link_down', '1')
+        status = self.request('GET', f'/nodes/{{node}}/qemu/{vmid}/status/current').get('status')
+        onboot = self.request('GET', f'/nodes/{{node}}/qemu/{vmid}/config').get('onboot')
+        if status != 'stopped' or str(onboot) != '0':
+            raise LabError(f'VM {vmid} is not fenced: status={status} onboot={onboot}')
+        return {'vmid': str(vmid), 'status': status, 'onboot': str(onboot),
+                'ha': 'not managed', **nics}
+
 
 def pairs(arguments):
     """Turn key=value arguments into a form dict."""
@@ -187,6 +212,8 @@ def main(argv=None, client=None):
             return int(result.get('exitcode', 1))
         elif action == 'nic' and len(argv) == 4:
             result = client.set_nic_flag(argv[1], argv[2], argv[3])
+        elif action == 'fence' and len(argv) == 2:
+            result = client.fence(argv[1])
         else:
             print(__doc__, file=sys.stderr)
             return 2

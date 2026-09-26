@@ -11,7 +11,8 @@ in the kickoff message. Remove an item when its change is merged.
 2. Security: T1 (encrypted replication between the two sites), H1 (Keycloak
    brute force) and H2 (security headers).
 3. A real failover between the sites: T3 (fencing without the failed site's
-   hypervisor), T4 (one CA for both sites) and T5 (moving the names).
+   hypervisor), T4 (one CA for both sites), T5 (moving the names), T6 (planned
+   switchover) and O1 (incident runbooks).
 4. What operation needs: U1 (updating a replicated pair), M1 and M2 (alerts,
    scheduled backups with pruning), L1 and L2 (command logging, failure
    reasons).
@@ -57,6 +58,25 @@ for each other, and everything between them crosses a network between sites
   names move to the surviving site in the real setup (a DNS change with a
   short TTL, a floating address or similar), who does it, and how long it
   takes. Without it, failover is done but nobody reaches the service.
+- **T6. Planned switchover and switchback.** Today roles change only through a
+  disaster promotion: fence, promote, then rebuild the old primary with a full
+  copy of every database. For maintenance at one site, switch in a controlled
+  way instead: stop writes, wait for zero lag so nothing is lost, promote the
+  other site, and make the old primary a standby. Switching back then costs
+  another full reseed across the link between sites; `pg_rewind` can turn a
+  cleanly stopped old primary into a standby without a full copy. Add commands
+  for a controlled switchover and for switching back.
+
+## Operator runbooks
+
+- **O1. Short runbooks for real incidents.** ACCEPTANCE.md and the agent guide
+  are tests of over 800 lines that describe a drill, not an incident. An
+  operator without an assistant needs short pages with ready app-ops commands
+  for the common cases: the primary site is gone; the standby is down or lost
+  its slot; a disk is full; the certificate has expired; data was deleted by
+  mistake and needs PITR. Each says how to notice it, what to check first,
+  what to do and what never to do. `docs/manual-recipes/` is a starting point
+  but does not cover these.
 
 ## Updates and time
 

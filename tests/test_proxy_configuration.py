@@ -40,8 +40,13 @@ class ProxyConfigurationTests(unittest.TestCase):
         self.assertIn("Referrer-Policy strict-origin-when-cross-origin always", app)
         csp = re.search(r'Content-Security-Policy "([^"]+)" always', app).group(1)
         for directive in ("default-src 'self'", "script-src 'self'", "frame-ancestors 'none'",
-                          "object-src 'none'", "connect-src 'self'"):
+                          "object-src 'none'"):
             self.assertIn(directive, csp)
+        # Notes logs in at Keycloak's canonical origin; nothing else may be reached.
+        connect = re.search(r"connect-src ([^;]+);", csp).group(1).split()
+        self.assertEqual(connect[0], "'self'")
+        self.assertEqual(len(connect), 2)
+        self.assertRegex(connect[1], r"^https://[a-z0-9.-]+:\d+$")
         self.assertNotIn("unsafe-inline", csp)
         self.assertNotIn("unsafe-eval", csp)
         servers = config["nginx.conf"].split("server {")[1:]

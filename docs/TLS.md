@@ -128,8 +128,9 @@ metadata to FastAPI and Keycloak:
 
 nginx also sets security headers (`deploy/manifests/shared-proxy.yaml.j2`):
 HSTS and `X-Content-Type-Options` on every response, and on the apps' own pages
-and API a strict Content-Security-Policy (only same-origin scripts, styles,
-requests and frames, no inline script), `frame-ancestors 'none'`,
+and API a strict Content-Security-Policy (only same-origin scripts, styles
+and frames, no inline script; requests to the same origin and to Keycloak's
+canonical origin, where Notes fetches its tokens), `frame-ancestors 'none'`,
 `X-Frame-Options: DENY` and a Referrer-Policy. Keycloak's pages under `/auth/`
 keep Keycloak's own Content-Security-Policy and Referrer-Policy.
 

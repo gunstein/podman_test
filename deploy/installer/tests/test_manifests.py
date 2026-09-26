@@ -67,10 +67,12 @@ class ManifestFunctionTests(unittest.TestCase):
     def test_render_shared_proxy_resolves_the_identity_hostname(self):
         widget, gadget = _app("widget"), _app("gadget")
         docs = list(yaml.safe_load_all(manifests.render_shared_proxy(
-            ROOT, [widget, gadget], widget, "shared.test", "localhost/todo-proxy:m12")))
-        config = next(d["data"]["nginx.conf"] for d in docs if d["metadata"]["name"] == "shared-nginx-config")
-        self.assertIn("server_name shared.test;", config)
-        self.assertIn("server_name gadget.test;", config)
+            ROOT, [widget, gadget], widget, "shared.test", 8443, "localhost/todo-proxy:m12")))
+        data = next(d["data"] for d in docs if d["metadata"]["name"] == "shared-nginx-config")
+        self.assertIn("server_name shared.test;", data["nginx.conf"])
+        self.assertIn("server_name gadget.test;", data["nginx.conf"])
+        # gadget.test logs in at the identity origin, so its pages may fetch tokens there.
+        self.assertIn("connect-src 'self' https://shared.test:8443;", data["app-headers.conf"])
 
 
 class TemplateSafetyTests(unittest.TestCase):
@@ -110,13 +112,13 @@ class TemplateSafetyTests(unittest.TestCase):
         for value in self.ADVERSARIAL:
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
-                    manifests.render_shared_proxy(ROOT, [app], app, value, "localhost/todo-proxy:m12")
+                    manifests.render_shared_proxy(ROOT, [app], app, value, 8443, "localhost/todo-proxy:m12")
 
     def test_shared_proxy_rejects_an_unsafe_non_identity_app_hostname_too(self):
         identity, other = _app("identity"), apps.App(
             "other", "evil.test; return 200 pwned", "other-frontend")
         with self.assertRaises(ValueError):
-            manifests.render_shared_proxy(ROOT, [identity, other], identity, "identity.test",
+            manifests.render_shared_proxy(ROOT, [identity, other], identity, "identity.test", 8443,
                                           "localhost/todo-proxy:m12")
 
 

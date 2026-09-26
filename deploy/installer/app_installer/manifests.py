@@ -68,12 +68,13 @@ def render_keycloak(project_root, database, admin_secret, hostname, port, image)
                    hostname=hostname, port=port, image=image)
 
 
-def render_shared_proxy(project_root, applications, identity_app, hostname, image):
+def render_shared_proxy(project_root, applications, identity_app, hostname, port, image):
     """The nginx pod that terminates TLS and routes each hostname to its app.
 
     The app that owns shared resources is served on the public hostname from
     values.yaml; the others on their registry hostname. Every hostname is
-    checked before it is written into nginx.conf.
+    checked before it is written into nginx.conf. The identity origin, where
+    Keycloak serves every app's login and tokens, goes into the CSP.
     """
     context = [{
         "name": app.name,
@@ -83,4 +84,5 @@ def render_shared_proxy(project_root, applications, identity_app, hostname, imag
     } for app in applications]
     for entry in context:
         validate_hostname(entry["hostname"])
-    return _render(project_root, "shared-proxy.yaml.j2", applications=context, hostname=hostname, image=image)
+    return _render(project_root, "shared-proxy.yaml.j2", applications=context, hostname=hostname,
+                   identity_origin=f"https://{hostname}:{int(port)}", image=image)

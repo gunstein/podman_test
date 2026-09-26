@@ -46,7 +46,7 @@ def render(project_root, values_file, output_directory, application_names=()):
         root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_DATABASE.image('postgres'))
     files[apps.KEYCLOAK_DATABASE.manifest('config')] = manifests.render_postgres_config(root, apps.KEYCLOAK_DATABASE)
     files['shared-proxy.yaml'] = manifests.render_shared_proxy(
-        root, selected, apps.SHARED_RESOURCE_OWNER, hostname, apps.PROXY_IMAGE)
+        root, selected, apps.SHARED_RESOURCE_OWNER, hostname, port, apps.PROXY_IMAGE)
 
     for name, content in files.items():
         _validate(name, content)

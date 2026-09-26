@@ -21,6 +21,12 @@ roles freshly before any operation.
 
 How it got there, newest first:
 
+- `d1c04a4` run 10: BLOCKED in phase 3, step 7. The new Content-Security-Policy
+  allowed only same-origin requests, so the browser blocked Notes' token
+  request to Keycloak's canonical origin (`https://todo.test:8443`) and Notes
+  login failed. `connect-src` now names the identity origin. Replication TLS,
+  Keycloak lockout and the security headers are not yet accepted on real VMs.
+  No separate record.
 - `21659331` run 9: CLEAN PASS ([record](docs/history/ACCEPTANCE-2165933.md)).
 - `3bc5924` run 8: BLOCKED in phase 9. A new read-only rebuild preflight
   check could not tell an open replication path from a blocked one under the

@@ -29,14 +29,13 @@ verify roles freshly before any operation.
 
 The same topology then reached a REPAIRED FUNCTIONAL PASS on `f1f07b5` with
 app-ops in place of every Ansible playbook, in an autonomous agent run
-([record](docs/history/ACCEPTANCE-f1f07b5.md)). No source changed. Three steps
-did not pass as written and needed operator decisions: two guide ordering
-defects (SSH host key pinned after the quarantine test uses it; the rebuild
-host cannot reach the current primary's replication ports before
-`rebuild-standby` publishes them) and a Guest Agent stop that ran before the
-user manager's bus existed and succeeded on one retry. A CLEAN PASS still
-needs these fixed and a new run. Final topology: VM 108 primary, VM 107
-database-only standby.
+([record](docs/history/ACCEPTANCE-f1f07b5.md)).
+
+With the defects from `f1f07b5` fixed, the topology achieved a CLEAN PASS on
+`1b1d345` in a supervised two-VM run with app-ops
+([record](docs/history/ACCEPTANCE-1b1d345.md)). All functional gates passed as
+written without retries, workarounds or deviations. Final topology: VM 108
+primary, VM 107 database-only standby; verify roles freshly before any operation.
 
 ## Current work and limitations
 

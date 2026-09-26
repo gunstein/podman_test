@@ -34,7 +34,8 @@ operator, not code.
 3. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
    failover command), G2 (Trondheim is ready), G3 (time it in the drill), T3
    (fencing without the Oslo hypervisor), T4 (one CA), T5 (moving the names),
-   M1 (alerts), O1 (incident runbooks) and G4 (the disaster drill in the lab).
+   M1 (alerts), O1 (incident runbooks), G4 (the disaster drill in the lab) and
+   G5 (rebuilding Oslo on new hardware).
 4. What operation needs: U1 (updating a replicated pair), T6 (planned
    switchover), M2 (scheduled backups with pruning), L1 and L2 (command
    logging, failure reasons).
@@ -94,6 +95,17 @@ such as a small cloud VM. Without one, the safe design is one human decision
     command or the operator updates, or `/etc/hosts` as a documented stand-in.
   The lab cannot show that the sites are independent (the VMs share hardware,
   power and storage) or the real link; both come from the real setup (T2).
+- **G5. Rebuild Oslo on new hardware, then move back.** *[new]* After a fire
+  the old Oslo machine is gone; a new one arrives with a clean install.
+  Acceptance only rebuilds the *old* primary, with its install and data, into
+  a standby (phase 9). Turning a brand-new host into a standby of a promoted
+  Trondheim (install from the bundle, synchronise secrets and the CA,
+  replicate from Trondheim, install the DR tools) is untested. The commands
+  exist (`bootstrap-standby` with Trondheim as primary), but were made for the
+  first setup, whose primary was never promoted. Then move operation back to
+  Oslo with a planned switchover (T6). Cover the whole path in the runbook and
+  the drill: fire, Trondheim, new Oslo, back to Oslo. In the lab, roll VM 107
+  back to `clean-agent` after the disaster drill, so it is a new machine.
 
 ## Between the two sites
 

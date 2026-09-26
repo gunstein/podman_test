@@ -81,6 +81,39 @@ What is weak is how they are checked and switched.
    DR/multi-host", and the rule that DR installs workloads through
    `install-workload.yml`.
 
+## Logging
+
+Without an assistant, the logs must tell an operator what happened, where and
+why. The seven workloads already log to journald (`LogDriver=journald`), and
+`promotion.json` records promotions. The Python tools and backends do not log.
+
+- **L1. Log every operations and DR command.** No Python code uses `logging`;
+  the installer, `app_dr.py`, `app_backup.py` and app-ops print to the terminal
+  only, without timestamps, and keep nothing. Add one small shared helper on
+  the standard library that writes to journald (for example through
+  `logger -t app-ops`): timestamp, host, command, database, result and duration,
+  never a secret. app-ops also keeps one log file per run on the controller.
+- **L2. Keep the failure reason in the installer.** `commands.run` reports only
+  `podman secret failed (exit 1)` and drops stderr, so the command must be rerun
+  by hand to see why. Include the stderr tail, except for commands that can
+  print secrets (such as `podman secret inspect`), as app-ops and `app_dr.py`
+  already do.
+- **L3. Backend logging.** The backends log almost nothing themselves, and
+  `LOG_LEVEL` from `values.yaml` is set but never used (uvicorn runs at its
+  default). Use it, and log rejected tokens with the reason (never the token),
+  database errors with context, and changes with the user's `sub`.
+- **L4. Persistent, bounded journald.** Whether logs survive a reboot depends
+  on journald storage on the hosts, which is neither set nor documented, and
+  nothing bounds size or age. Configure persistent storage with limits, and
+  document it.
+- **L5. `docs/LOGGING.md`.** One page with where each log lives and ready
+  commands per workload and tool, including the rootless
+  `journalctl _SYSTEMD_USER_UNIT=...` form (`journalctl --user` can show nothing).
+- **L6. Logs across hosts** (decision needed). Each VM keeps its own journal, so
+  after a failover the history is split, and in a real disaster one host may be
+  gone. Forward to a log host (`systemd-journal-upload`/`-remote`), or decide to
+  fetch from both hosts by hand and document that.
+
 ## Data checks in acceptance
 
 Acceptance proves replication state for all three databases (streaming, slot,

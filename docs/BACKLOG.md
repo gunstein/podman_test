@@ -53,6 +53,7 @@ for each other, and everything between them crosses a network between sites
 The point of the solution: if the Oslo site is lost (for example a fire), the
 service runs in Trondheim within about 30 minutes, with at most a few simple,
 well-described manual steps.
+[TARGET-PICTURE.md](TARGET-PICTURE.md) shows the result on one page.
 
 With two sites and no third, failover must not start by itself. Trondheim
 cannot tell "Oslo is on fire" from "the link between the cities is down"; if it

@@ -40,7 +40,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
    G5 (rebuilding Oslo on new hardware).
 4. What operation needs: U1 (updating a replicated pair), T6 (planned
    switchover), M2 (scheduled backups with pruning), L1 and L2 (command
-   logging, failure reasons).
+   logging, failure reasons). Decide D5 (pgBackRest) before building M2 and
+   D2, since it would replace both.
 5. Retire Ansible (R0, R0b, 3-6) once there is a CLEAN PASS. Then decide D4
    (one database server or one per app).
 6. fapolicyd (F), firewalls (W) and data checks (C).
@@ -379,7 +380,7 @@ promoted primary.
   dropped, add password support later by running every privileged command
   through `/bin/sh`, so a narrow NOPASSWD rule can never match it and a
   password line can never become a command's stdin.
-- **D2. Backups that survive losing a machine.** *[new]* Base backups and WAL live on
+- **D2. Backups that survive losing a machine.** *[new]* (Decide D5 first.) Base backups and WAL live on
   the same VM as the database. The standby holds today's data, but not the
   history: a mistaken delete replicates within seconds, and only PITR from the
   backup undoes it, from a backup that was on the machine that was lost.
@@ -427,6 +428,23 @@ promoted primary.
   pod). Decide after Ansible is retired, with numbers: how much code and how
   many operating steps would go, and what would be lost. Choosing the shared
   server means a new acceptance run.
+
+- **D5. pgBackRest instead of our own backup code?** *[decision]* Backup, WAL
+  archiving and PITR are where our own code is riskiest, and a mature open
+  source tool already does them: pgBackRest takes full, differential and
+  incremental backups (also from a standby), archives WAL, applies retention,
+  can encrypt the repository, and restores to a time or a named point. It
+  would replace most of `app_backup.py` and what D2 and M2 would add, likely
+  with less code in total. The cost breaks principle 2 (no new runtime
+  dependencies): the official `postgres` image does not include it, so it
+  needs our own image or a helper container with the data volume, it must go
+  into the offline bundle, and operators must learn it. Barman and WAL-G are
+  alternatives. Failover stays our own code: no ready tool fits two sites
+  without a third machine together with the application tier, Keycloak and
+  the quarantine (Patroni and pg_auto_failover need a quorum or monitor node,
+  Pacemaker needs fencing and in practice a quorum device, CloudNativePG needs
+  Kubernetes). Decide before building D2 and M2; choosing pgBackRest means a
+  new acceptance run.
 
 ## DR code structure
 

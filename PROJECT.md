@@ -35,8 +35,15 @@ With the defects from `f1f07b5` fixed, a supervised two-VM run with app-ops
 passed every functional gate on `1b1d345` without retries or repairs
 ([record](docs/history/ACCEPTANCE-1b1d345.md)). It is not a CLEAN PASS: part of
 the phase 6 fencing step was skipped (`onboot=0`, the HA check and some port
-tests), so a CLEAN PASS still needs a new run. Final topology: VM 108 primary,
-VM 107 database-only standby; verify roles freshly before any operation.
+tests), so a CLEAN PASS still needs a new run.
+
+With fencing as one command, run 7 on `0604c56` passed every functional gate
+with full phase 6 evidence and no source change, and reached a REPAIRED
+FUNCTIONAL PASS ([record](docs/history/ACCEPTANCE-0604c56.md)). The agent ran
+`rebuild-standby` before the firewall steps it depends on; it refused before
+deleting anything, and the agent reran it after those steps, which the guide
+forbids. Final topology: VM 108 primary, VM 107 database-only standby; verify
+roles freshly before any operation.
 
 ## Current work and limitations
 

@@ -8,7 +8,7 @@ playbooks below. The final rebuild permanently replaces old-primary database
 data; use disposable lab hosts and explicit infrastructure fencing.
 
 [688a0f6](history/ACCEPTANCE-688a0f6.md), [12c3bef](history/ACCEPTANCE-12c3bef.md),
-[9e54cfb](history/ACCEPTANCE-9e54cfb.md), [3fb897f](ACCEPTANCE-3fb897f.md), [f1f07b5](history/ACCEPTANCE-f1f07b5.md) and [1b1d345](history/ACCEPTANCE-1b1d345.md) are historical evidence, not current machine
+[9e54cfb](history/ACCEPTANCE-9e54cfb.md), [3fb897f](ACCEPTANCE-3fb897f.md), [f1f07b5](history/ACCEPTANCE-f1f07b5.md), [1b1d345](history/ACCEPTANCE-1b1d345.md) and [0604c56](history/ACCEPTANCE-0604c56.md) are historical evidence, not current machine
 state or authorization. A NEW run evaluates its own clean revision. Use
 [troubleshooting](ACCEPTANCE-TROUBLESHOOTING.md) only when a gate fails;
 [Proxmox quarantine](PROXMOX-QUARANTINE.md) supplies the specialized

@@ -27,8 +27,10 @@ operator, not code.
 
 ## Order
 
-1. The acceptance run on `1b1d345` for a CLEAN PASS: a clean baseline to
-   compare against.
+1. A CLEAN PASS with app-ops: a clean baseline to compare against. Run 7 on
+   `0604c56` reached a REPAIRED FUNCTIONAL PASS (a rerun of `rebuild-standby`
+   started out of order). A0 below makes that mistake stop in a read-only
+   preflight instead.
 2. Security: T1 (encrypted replication between the two sites), H1 (Keycloak
    brute force) and H2 (security headers).
 3. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
@@ -48,6 +50,21 @@ physical sites. D2 and L6 are therefore designed for two hosts that each keep
 what the other would lose: each host backs up its own database copy (D2), and
 each holds the other's logs (L6). Everything between them crosses a network
 between sites (T1).
+
+## Before the next acceptance run
+
+- **A0. The rebuild preflight checks the replication path.** *[new]* In run 7 the
+  agent started `rebuild-standby` before the firewall steps in C9.10 (4-8). The
+  read-only `preflight-standby-rebuild` passed, because it never contacts the
+  current primary; the rebuild then refused at its authentication check,
+  before deleting anything, and was run a second time. Let the preflight run
+  C9.10 step 8 itself: from the rebuild host, connect to the current primary's
+  replication ports 5432-5434 with a short timeout, and pass only on a
+  connection or `Connection refused` (the packets arrive; the primary
+  publishes the ports later, inside the rebuild). A timeout or `No route to
+  host` (a firewalld reject) fails with the firewall steps to check. Standard
+  library only. A rebuild started out of order then stops in the read-only
+  preflight, and the destructive command runs once.
 
 ## Goal: Trondheim running within 30 minutes
 

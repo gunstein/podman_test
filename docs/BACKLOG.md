@@ -39,9 +39,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
    M1 (alerts), O1 (incident runbooks), G4 (the disaster drill in the lab) and
    G5 (rebuilding Oslo on new hardware).
 4. What operation needs: U1 (updating a replicated pair), T6 (planned
-   switchover), M2 (scheduled backups with pruning), L1 and L2 (command
-   logging, failure reasons). Decide D5 (pgBackRest) before building M2 and
-   D2, since it would replace both.
+   switchover), M4 (a durable WAL archive), M2 (scheduled backups with
+   pruning), L1 and L2 (command logging, failure reasons).
 5. Retire Ansible (R0, R0b, 3-6) once there is a CLEAN PASS. Then decide D4
    (one database server or one per app).
 6. fapolicyd (F), firewalls (W) and data checks (C).
@@ -342,11 +341,25 @@ is rebuilt. What is missing is anything that tells the operator.
   slowly fills. Add a systemd timer on both hosts, whatever their role (D2):
   a full base backup every night, and pruning that keeps the base backups of
   the last 7 days and only the WAL they need. The same timer and code run on
-  the primary and on the standby.
+  the primary and on the standby. Standard tools only: delete the old
+  `base-*` directories, then `pg_archivecleanup` (shipped with PostgreSQL)
+  removes the WAL older than the oldest kept backup.
 - **M3. Regular restore tests.** *[optional]* A backup that was never restored is not
   proven. Run the existing disposable PITR restore on a schedule (for example
   weekly) and compare it with a known point, or document a manual monthly
   restore test instead.
+
+- **M4. A durable WAL archive.** *[new]* `ARCHIVE_COMMAND` in `app_backup.py`
+  copies each WAL file with `cp`, which does not fsync. PostgreSQL treats the
+  file as archived as soon as the command returns and may then recycle the
+  original; a power loss right after can lose the copy, which leaves a hole in
+  the archive, and PITR past a hole is impossible. The PostgreSQL docs warn
+  about this. Copy to a temporary name, `sync` that file, then `mv` it into
+  place, keeping the existing checksum check for a file that already exists.
+  Standard tools only. The code notes that the command must stay
+  byte-identical on running hosts, or every run restarts them: roll the new
+  command out deliberately on both hosts (the standby uses it too after D2),
+  and let acceptance check the archive after a reboot as today.
 
 ## Data checks in acceptance
 
@@ -380,7 +393,7 @@ promoted primary.
   dropped, add password support later by running every privileged command
   through `/bin/sh`, so a narrow NOPASSWD rule can never match it and a
   password line can never become a command's stdin.
-- **D2. Backups that survive losing a machine.** *[new]* (Decide D5 first.) Base backups and WAL live on
+- **D2. Backups that survive losing a machine.** *[new]* Base backups and WAL live on
   the same VM as the database. The standby holds today's data, but not the
   history: a mistaken delete replicates within seconds, and only PITR from the
   backup undoes it, from a backup that was on the machine that was lost.
@@ -429,22 +442,17 @@ promoted primary.
   many operating steps would go, and what would be lost. Choosing the shared
   server means a new acceptance run.
 
-- **D5. pgBackRest instead of our own backup code?** *[decision]* Backup, WAL
-  archiving and PITR are where our own code is riskiest, and a mature open
-  source tool already does them: pgBackRest takes full, differential and
-  incremental backups (also from a standby), archives WAL, applies retention,
-  can encrypt the repository, and restores to a time or a named point. It
-  would replace most of `app_backup.py` and what D2 and M2 would add, likely
-  with less code in total. The cost breaks principle 2 (no new runtime
-  dependencies): the official `postgres` image does not include it, so it
-  needs our own image or a helper container with the data volume, it must go
-  into the offline bundle, and operators must learn it. Barman and WAL-G are
-  alternatives. Failover stays our own code: no ready tool fits two sites
-  without a third machine together with the application tier, Keycloak and
-  the quarantine (Patroni and pg_auto_failover need a quorum or monitor node,
-  Pacemaker needs fencing and in practice a quorum device, CloudNativePG needs
-  Kubernetes). Decide before building D2 and M2; choosing pgBackRest means a
-  new acceptance run.
+- **D5. pgBackRest only if the needs grow.** *[optional]* `app_backup.py` uses
+  PostgreSQL's standard methods (`archive_command`, `pg_basebackup`,
+  `pg_verifybackup`, `restore_command` with a recovery target), and D2, M2
+  and M4 need only standard tools too. pgBackRest (or Barman, WAL-G) adds
+  parallel, differential and incremental backups, compression, an encrypted
+  repository and faster restores, which matter for large databases. It would
+  break principle 2 (own image or helper container, offline bundle). Consider
+  it only if the databases grow large, restores become too slow, or backups
+  must be encrypted at rest. Failover stays our own code either way: no ready
+  tool fits two sites without a third machine together with the application
+  tier, Keycloak and the quarantine.
 
 ## DR code structure
 

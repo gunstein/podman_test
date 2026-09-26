@@ -39,8 +39,9 @@ class World:
     """Every host answers healthily unless told otherwise; records (host, command) in order."""
 
     def __init__(self, firewall_rule=True, stream_failures=0, writable_standby=False,
-                 rule_in=("running", "permanent"), zone="public", rule_zone="public"):
+                 rule_in=("running", "permanent"), zone="public", rule_zone="public", blocked_path=False):
         self.firewall_rule, self.stream_failures = firewall_rule, stream_failures
+        self.blocked_path = blocked_path
         self.rule_in, self.zone, self.rule_zone = rule_in, zone, rule_zone
         self.writable_standby = writable_standby
         self.log = []
@@ -67,6 +68,8 @@ class World:
                 return step + (stdin,), '{"changed": true}', 0
             if sub[:2] == ["replicate-workload", "streaming"] and self.stream_failures:
                 self.stream_failures -= 1
+                return step, "", 1
+            if sub[:2] == ["replicate-workload", "replication-path"] and self.blocked_path:
                 return step, "", 1
             if sub[:2] == ["replicate-workload", "status"]:
                 writable = self.writable_standby
@@ -175,11 +178,25 @@ class RecoveryTests(unittest.TestCase):
                         first[("replicate-workload", "quarantined")])
         self.assertLess(first[("replicate-workload", "quarantined")], first[("replicate-workload", "reseed-check")])
         self.assertLess(max(i for i, k in enumerate(kinds) if k == ("replicate-workload", "reseed-check")),
+                        first[("replicate-workload", "replication-path")])
+        self.assertLess(max(i for i, k in enumerate(kinds) if k == ("replicate-workload", "replication-path")),
                         first[("publish-primaries",)])
+        self.assertEqual([step for step in world.steps("todo-primary") if step[:2] == ("replicate-workload",
+                                                                                      "replication-path")],
+                         [("replicate-workload", "replication-path", name) for name in NAMES])
         self.assertLess(first[("publish-primaries",)], first[("reseed-group",)])
         self.assertLess(first[("reseed-group",)], first[("app_dr.py",)])
         self.assertEqual(kinds[-3:], [("replicate-workload", "streaming")] * 3)
         self.assertIn(("reseed-group",), world.steps("todo-primary"))
+
+    def test_a_blocked_replication_path_stops_in_the_read_only_preflight(self):
+        world = World(blocked_path=True)
+        with self.assertRaises(RuntimeError):
+            recovery.rebuild(str(PROJECT), *self.hosts(world), "todo-primary is fenced", "todo-primary")
+        self.assertFalse([step for step in world.steps() if step[0] in ("reseed-group", "publish-primaries")])
+        with self.assertRaises(RuntimeError):
+            recovery.preflight_rebuild(str(PROJECT), *self.hosts(World(blocked_path=True)),
+                                       "todo-primary is fenced", "todo-primary")
 
     def test_wrong_confirmations_refuse_before_any_rebuild_host_change(self):
         world = World()

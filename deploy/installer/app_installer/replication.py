@@ -174,6 +174,27 @@ def authenticate(app, primary_address):
     return result.stdout.strip().split('|')[0]
 
 
+def replication_path(app, primary_address, *, timeout=5, connect=socket.create_connection):
+    """Check that nothing blocks this host's path to the primary's replication port.
+
+    A rebuild's read-only preflight runs this before the primary publishes
+    the port on its LAN address, so a refused connection passes: the packets
+    arrived. A timeout (a firewall drops them) or another error, such as No
+    route to host from a firewalld reject, fails before anything is deleted.
+    Returns 'open' or 'refused'.
+    """
+    target = (address(primary_address), app.replication_port)
+    try:
+        connect(target, timeout=timeout).close()
+        return 'open'
+    except ConnectionRefusedError:
+        return 'refused'
+    except OSError as error:
+        reason = 'timed out' if isinstance(error, TimeoutError) else error.strerror or str(error)
+        raise RuntimeError(f'{app.name}: replication path to {target[0]}:{target[1]} is blocked ({reason}); '
+                           'open the firewalls on both hosts first; data was not removed') from None
+
+
 def configure_primary(app, node_address):
     """Make a writable primary ready to serve one standby. Safe to run again.
 

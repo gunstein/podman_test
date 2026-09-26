@@ -837,7 +837,9 @@ restore commands. Record every backup name printed by `create`
    drops them. STOP and record the firewall readings.
 9. On `.108`, the recovery inventory as in phase 7, then the read-only
    `preflight-standby-rebuild.yml` **without** `--ask-become-pass`. Every
-   assertion must pass.
+   assertion must pass. With app-ops it also repeats the step 8 check from
+   `.102`; `replication path ... is blocked` means steps 4-8 are not done:
+   STOP, and never start `rebuild-standby` to find out.
 10. `rebuild-standby.yml` once, **without** `--ask-become-pass`, in the
     background with a log (C5). Do not start it twice. Wait for `PLAY RECAP`.
     Any `failed=` other than 0: STOP; never rerun.

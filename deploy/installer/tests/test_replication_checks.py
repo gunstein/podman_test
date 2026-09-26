@@ -4,7 +4,9 @@ These close gaps that mutation testing found (docs/MUTATION-TESTING.md): a
 check that looked at the wrong slot, accepted one byte of lag, or ran a
 slightly different command would otherwise still pass every test.
 """
+import errno
 import json
+import socket
 import subprocess
 import tempfile
 import unittest
@@ -101,6 +103,38 @@ class RequireStandbyTests(unittest.TestCase):
         for output, message in cases:
             with self.subTest(output=output), self.assertRaisesRegex(RuntimeError, message):
                 self.check(output)
+
+
+class ReplicationPathTests(unittest.TestCase):
+    """The rebuild preflight's path check: packets must arrive, a port need not be open yet."""
+
+    def check(self, outcome):
+        calls = []
+
+        def connect(target, timeout):
+            calls.append((target, timeout))
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return socket.socket()
+        return replication.replication_path(APP, '192.0.2.11', connect=connect), calls
+
+    def test_an_open_or_refused_port_passes(self):
+        self.assertEqual(self.check(None), ('open', [(('192.0.2.11', APP.replication_port), 5)]))
+        self.assertEqual(self.check(ConnectionRefusedError(errno.ECONNREFUSED, 'Connection refused'))[0],
+                         'refused')
+
+    def test_a_dropped_or_rejected_path_fails_before_any_deletion(self):
+        for outcome, reason in ((socket.timeout('timed out'), 'timed out'),
+                                (TimeoutError(), 'timed out'),
+                                (OSError(errno.EHOSTUNREACH, 'No route to host'), 'No route to host')):
+            with self.subTest(reason=reason), self.assertRaises(RuntimeError) as caught:
+                self.check(outcome)
+            self.assertIn(f'192.0.2.11:{APP.replication_port} is blocked ({reason})', str(caught.exception))
+            self.assertIn('data was not removed', str(caught.exception))
+
+    def test_the_address_must_be_ipv4(self):
+        with self.assertRaises(ValueError):
+            replication.replication_path(APP, 'primary.example', connect=None)
 
 
 class StreamingStatusTests(unittest.TestCase):

@@ -60,6 +60,11 @@ def preflight_rebuild(project_root, controller, current, rebuild, confirm_fenced
         app_installer(rebuild, rebuild_path, 'replicate-workload', 'reseed-check', '--app', entry['name'],
                       '--primary-address', current.spec.address, '--confirm-fenced', confirm_fenced,
                       '--confirm-reseed', confirm_reseed, *steps.group_paths(rebuild))
+    # Nothing may block the rebuild host's path to the replication ports
+    # (C9.10 step 8); otherwise the reseed would fail after the gates above.
+    for entry in steps.GROUP:
+        app_installer(rebuild, rebuild_path, 'replicate-workload', 'replication-path', '--app', entry['name'],
+                      '--primary-address', current.spec.address)
     return rebuild_path
 
 

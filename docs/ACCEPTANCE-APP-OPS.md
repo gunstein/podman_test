@@ -262,7 +262,12 @@ python3 -m app_ops --inventory recovery.yaml preflight-standby-rebuild \
   --confirm-fenced "todo-primary is fenced" --confirm-reseed todo-primary
 ```
 
-Require `{"changed": false}`. Only after that, with explicit reseed approval:
+Require `{"changed": false}`. Its last gate checks, from the rebuild host,
+that nothing blocks the path to the current primary's replication ports
+5432-5434: a connection or `Connection refused` passes, because the primary
+publishes these ports only inside the rebuild. A timeout or `No route to host`
+fails with `replication path ... is blocked`: the firewall steps above are not
+done. Only after that, with explicit reseed approval:
 
 ```bash
 python3 -m app_ops --inventory recovery.yaml rebuild-standby \

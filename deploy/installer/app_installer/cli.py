@@ -54,7 +54,8 @@ def main(argv=None):
     replicate = subcommands.add_parser('replicate-workload')
     paths(replicate)
     replicate.add_argument('operation', choices=('primary', 'standby', 'status', 'authenticate', 'streaming', 'hba',
-                                                   'rebuild-primary-check', 'quarantined', 'reseed-check'))
+                                                   'rebuild-primary-check', 'quarantined', 'reseed-check',
+                                                   'replication-path'))
     replicate.add_argument('--app', choices=[d.name for d in apps.REPLICATED_DATABASES],
                            default=apps.SHARED_RESOURCE_OWNER.name)
     replicate.add_argument('--node-address', default='')
@@ -145,6 +146,8 @@ def main(argv=None):
                 result['changed'] = replication.refresh_hba(app)
             elif args.operation == 'streaming':
                 result['status'] = replication.streaming_status(app, rebuilt=args.rebuilt)
+            elif args.operation == 'replication-path':
+                result['path'] = replication.replication_path(app, args.primary_address)
             elif args.operation == 'authenticate':
                 result['system_identifier'] = replication.authenticate(app, args.primary_address)
             else:

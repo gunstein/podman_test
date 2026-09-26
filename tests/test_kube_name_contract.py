@@ -33,13 +33,7 @@ class KubeNameContractTests(unittest.TestCase):
 
     def test_legacy_runtime_and_transition_roles_stay_retired(self):
         self.assertFalse(list((ROOT / "deploy/quadlet").glob("*.container")))
-        for name in (
-            "kube_application_migration",
-            "kube_application_rollback",
-            "kube_postgres_primary_migration",
-            "kube_postgres_primary_rollback",
-        ):
-            self.assertFalse((ROOT / "deploy/ansible" / "roles" / name).exists())
+        self.assertFalse((ROOT / "deploy/ansible").exists())
         self.assertFalse((ROOT / "kube").exists())
 
 

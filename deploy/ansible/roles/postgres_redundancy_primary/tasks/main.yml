@@ -1,5 +1,0 @@
----
-- name: Refresh replication access and publish every promoted primary on the LAN
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/publish-primaries.yml"
-  vars:
-    todo_publish_primaries_mode: redundancy

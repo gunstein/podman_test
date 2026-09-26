@@ -1,7 +1,5 @@
 import base64
 import json
-import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -143,41 +141,3 @@ class WorkloadsTests(unittest.TestCase):
                 elif not present or refresh:
                     self.assertEqual(sum(a[1] == 'build' for a in calls), 4)
                     self.assertIn(['podman', 'pull', 'docker.io/library/postgres:17.11'], calls)
-
-
-class RenderingIntegrationTests(unittest.TestCase):
-    def test_real_ansible_template_and_kube_runtime_outputs_match(self):
-        executable = os.environ.get('ANSIBLE_PLAYBOOK_COMMAND', 'ansible-playbook')
-        self.assertIsNotNone(shutil.which(executable), 'Ansible is required for parity verification')
-        cases = [
-            {'todo_publish_address': '192.0.2.50', 'todo_service_port': 9443},
-            {'todo_publish_address': '127.0.0.1', 'todo_service_port': 8443,
-             'postgres_publish_address': '192.0.2.50'},
-            {'todo_publish_address': '127.0.0.1', 'todo_service_port': 8443},
-        ]
-        for variables in cases:
-            with self.subTest(variables=variables), tempfile.TemporaryDirectory() as temp:
-                base = Path(temp)
-                tasks = []
-                for template in sorted((ROOT / 'deploy/quadlet').glob('*.kube.j2')):
-                    name = template.name.removesuffix('.j2')
-                    tasks.append({'name': f'Render {name}', 'ansible.builtin.template': {
-                        'src': str(template), 'dest': str(base / name), 'mode': '0644'}})
-                playbook = base / 'render.json'
-                playbook.write_text(json.dumps([{
-                    'hosts': 'localhost', 'gather_facts': False, 'vars': variables, 'tasks': tasks,
-                }]))
-                subprocess.run([executable, '-i', 'localhost,', '-c', 'local', str(playbook)],
-                               check=True, capture_output=True, text=True,
-                               env={**os.environ, 'ANSIBLE_LOCAL_TEMP': str(base / 'ansible-tmp')})
-                for task in tasks:
-                    target = Path(task['ansible.builtin.template']['dest'])
-                    self.assertEqual(target.read_bytes(), quadlet.render(ROOT, target.name, variables))
-                for profile in ('local', 'prod'):
-                    outputs = [base / f'{profile}-{suffix}' for suffix in ('before', 'after')]
-                    for output in outputs:
-                        subprocess.run([str(ROOT / 'deploy/scripts/render-kube-runtime.sh'),
-                                        str(ROOT / f'deploy/environments/{profile}/values.yaml'),
-                                        str(output)], check=True, capture_output=True)
-                    self.assertEqual({p.name: p.read_bytes() for p in outputs[0].iterdir()},
-                                     {p.name: p.read_bytes() for p in outputs[1].iterdir()})

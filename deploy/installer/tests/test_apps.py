@@ -48,8 +48,8 @@ class AppRegistryTests(unittest.TestCase):
         self.assertIs(REPLICATED_DATABASES[-1], KEYCLOAK_DATABASE)
         self.assertEqual(KEYCLOAK_DATABASE.replication_port, 5434)
 
-    def test_describe_shape_matches_what_ansible_reads_per_entry(self):
-        # replication-apps --details feeds deploy/ansible/tasks/read-replication-registry.yml;
+    def test_describe_shape_matches_what_app_ops_reads_per_entry(self):
+        # app_ops.steps.GROUP and replication-apps --details read describe();
         # every loop there depends on todo/notes describing as applications (hostname,
         # application_unit, manifests.application) and keycloak describing as a bare
         # database (none of those keys), never the other way around.

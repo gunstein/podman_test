@@ -135,7 +135,7 @@ class ReplicatedSecretTests(unittest.TestCase):
                 self.assertEqual(cli.main(['import-replication-secrets']), 1)
         self.assertEqual(store.created, [])
 
-    def test_export_output_is_opaque_to_ansible_templating(self):
+    def test_export_output_is_opaque_and_never_shows_a_value(self):
         self.use(FakeSecrets(primary_values()))
         exported = io.StringIO()
         with redirect_stdout(exported):

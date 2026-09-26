@@ -62,38 +62,16 @@ class PVCStorageTests(unittest.TestCase):
                         {name + "-volume.service" for name in VOLUMES}), str(path))
                 self.assertNotEqual(line, "KubeDownForce=true")
         self.assertEqual(list((ROOT / "deploy/quadlet").glob("*.volume")), [])
-        for path in (ROOT / "deploy/ansible/roles").rglob("*.yml"):
-            # Cleanup may name retired definitions, but no role may install them.
-            def check(node):
-                if isinstance(node, list):
-                    for item in node:
-                        check(item)
-                elif isinstance(node, dict):
-                    for module in ("ansible.builtin.copy", "ansible.builtin.template"):
-                        if module in node:
-                            self.assertNotIn(".volume", str(node), str(path))
-                    unit = node.get("ansible.builtin.systemd_service", {})
-                    self.assertNotIn(unit.get("name"),
-                                     {n + "-volume.service" for n in VOLUMES})
-                    for value in node.values():
-                        check(value)
-            check(yaml.safe_load(path.read_text()))
 
     def test_python_standby_consumes_the_actual_rendered_data_claim(self):
-        # replicate-workload.yml is transport only; replication.py's data_claim
-        # (used identically by bootstrap_standby and reseed_standby) owns playing
+        # replication.py's data_claim (used identically by bootstrap_standby and
+        # reseed_standby) owns playing
         # only the canonical PVC before pg_basebackup, covered directly by
         # deploy/installer/tests/test_replication.py.
         from app_installer import apps, replication
         canonical = next(d for d in yaml.safe_load_all((RUNTIME / "postgres.yaml").read_text())
                          if d["metadata"]["name"] == "todo-postgres-data")
         self.assertEqual(yaml.safe_load(replication.data_claim(apps.SHARED_RESOURCE_OWNER, RUNTIME)), canonical)
-        role = (ROOT / "deploy/ansible/roles/postgres_standby/tasks/main.yml").read_text()
-        self.assertIn('replicate-workload.yml', role)
-        self.assertIn('todo_replication_operation: standby', role)
-        reseed_role = (ROOT / "deploy/ansible/roles/postgres_reseed_standby/tasks/main.yml").read_text()
-        self.assertIn('stage-postgres-group.yml', reseed_role)
-        self.assertIn('- reseed-group', reseed_role)
 
     def test_uninstall_preserves_database_and_tls_data_by_default_and_never_removes_backup(self):
         from app_installer import uninstall

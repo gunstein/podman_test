@@ -1,6 +1,5 @@
 """Check runnable acceptance examples, without fixing prose or phase layout."""
 
-import json
 import re
 import shlex
 import subprocess
@@ -50,14 +49,11 @@ class AcceptanceGuideTests(unittest.TestCase):
                              'todo-standby')
         self.assertNotRegex(commands, r'python\S* .*todo_dr_run\.py')
         rebuild = [shlex.split(line) for line in commands.splitlines()
-                   if 'deploy/ansible/playbooks/rebuild-standby.yml' in line]
+                   if 'python3 -m app_ops' in line and ' rebuild-standby ' in line + ' ']
         self.assertTrue(rebuild)
         for command in rebuild:
-            self.assertIn('--ask-become-pass', command)
-            values = json.loads(command[command.index('--extra-vars') + 1])
-            self.assertEqual(values['todo_confirm_old_primary_fenced'],
-                             'todo-primary is fenced')
-            self.assertEqual(values['todo_confirm_reseed'], 'todo-primary')
+            self.assertEqual(command[command.index('--confirm-fenced') + 1], 'todo-primary is fenced')
+            self.assertEqual(command[command.index('--confirm-reseed') + 1], 'todo-primary')
         self.assertNotIn('--start-at-task', commands)
         self.assertNotIn('--replace', commands)
 
@@ -111,8 +107,9 @@ class AcceptanceGuideTests(unittest.TestCase):
         self.assertIn('app-quarantine.sh stop todo-primary gunstein', guide)
 
     def test_acceptance_reference_links_resolve_in_source(self):
-        for name in ('ACCEPTANCE.md', 'ACCEPTANCE-TROUBLESHOOTING.md', 'ACCEPTANCE-AGENT.md', 'ACCEPTANCE-APP-OPS.md'):
-            path = ROOT / 'docs' / name
+        paths = [ROOT / 'docs' / name for name in (
+            'ACCEPTANCE.md', 'ACCEPTANCE-TROUBLESHOOTING.md', 'ACCEPTANCE-AGENT.md', 'PROXMOX-QUARANTINE.md')]
+        for path in paths + sorted((ROOT / 'deploy/ops').glob('*.md')):
             for target in re.findall(r'\]\(([^)]+)\)', path.read_text()):
                 if '://' in target or target.startswith('#'):
                     continue
@@ -120,13 +117,14 @@ class AcceptanceGuideTests(unittest.TestCase):
 
 
 class AppOpsGuideTests(unittest.TestCase):
-    """The app-ops acceptance guide only uses commands, flags and inventories app-ops accepts."""
+    """The acceptance guides only use commands, flags and inventories app-ops accepts."""
 
     def setUp(self):
         sys.path.insert(0, str(ROOT / 'deploy/ops'))
         from app_ops import cli, inventory
         self.cli, self.inventory = cli, inventory
-        self.guide = (ROOT / 'docs/ACCEPTANCE-APP-OPS.md').read_text()
+        self.guide = ''.join((ROOT / 'docs' / name).read_text()
+                             for name in ('ACCEPTANCE.md', 'PROXMOX-QUARANTINE.md'))
 
     def test_commands_parse_and_use_the_inventory_for_their_topology(self):
         blocks = re.findall(r'```bash\n(.*?)```', self.guide, re.S)

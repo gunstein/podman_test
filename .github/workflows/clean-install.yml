@@ -8,17 +8,14 @@ permissions:
   contents: read
 
 jobs:
-  ansible-syntax:
-    name: Ansible syntax matrix (ansible-core ${{ matrix.ansible }})
+  dr-tools:
+    name: DR tools and operations package (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       matrix:
-        include:
-          - python: "3.9"
-            ansible: "2.14.18"
-          - python: "3.12"
-            ansible: "2.20.8"
+        # 3.9 is the Oracle Linux 9 system Python on the hosts.
+        python: ["3.9", "3.12"]
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -26,71 +23,8 @@ jobs:
         with:
           python-version: "${{ matrix.python }}"
 
-      - name: Install Ansible Core
-        run: >-
-          python -m pip install
-          "ansible-core==${{ matrix.ansible }}"
-
-      - name: Syntax-check single-host playbooks
-        shell: bash
-        run: |
-          set -euo pipefail
-          for playbook in \
-            deploy/ansible/playbooks/deploy.yml \
-            deploy/ansible/playbooks/uninstall.yml
-          do
-            ansible-playbook \
-              --inventory deploy/ansible/inventories/local/hosts.ini \
-              "$playbook" \
-              --syntax-check
-          done
-
-      - name: Syntax-check initial standby playbooks
-        shell: bash
-        run: |
-          set -euo pipefail
-          for playbook in \
-            deploy/ansible/playbooks/preflight-standby.yml \
-            deploy/ansible/playbooks/sync-standby-secrets.yml \
-            deploy/ansible/playbooks/bootstrap-standby.yml \
-            deploy/ansible/playbooks/install-dr-tool.yml \
-            deploy/ansible/playbooks/install-quarantine-tool.yml \
-            deploy/ansible/playbooks/replication-status.yml
-          do
-            ansible-playbook \
-              --inventory deploy/ansible/inventories/initial/hosts.example.ini \
-              "$playbook" \
-              --syntax-check
-          done
-
-      - name: Syntax-check promoted application playbook
-        run: >-
-          ansible-playbook
-          --inventory deploy/ansible/inventories/recovery/hosts.example.ini
-          deploy/ansible/playbooks/deploy-promoted-application.yml
-          --syntax-check
-
-      - name: Syntax-check backup playbook
-        run: >-
-          ansible-playbook
-          --inventory deploy/ansible/inventories/recovery/hosts.example.ini
-          deploy/ansible/playbooks/configure-backup.yml
-          --syntax-check
-
-      - name: Syntax-check standby rebuild playbooks
-        shell: bash
-        run: |
-          set -euo pipefail
-          for playbook in \
-            deploy/ansible/playbooks/preflight-standby-rebuild.yml \
-            deploy/ansible/playbooks/rebuild-standby.yml \
-            deploy/ansible/playbooks/cluster-status.yml
-          do
-            ansible-playbook \
-              --inventory deploy/ansible/inventories/recovery/hosts.example.ini \
-              "$playbook" \
-              --syntax-check
-          done
+      - name: Install test dependencies
+        run: python -m pip install "PyYAML==6.0.3" jinja2
 
       - name: Test DR and backup tools
         run: python -m unittest discover --start-directory tests --verbose
@@ -105,14 +39,9 @@ jobs:
           )
           archive=dist/todo-operations.tar.gz
           for required in \
-            todo-operations/ansible.cfg \
-            todo-operations/deploy/ansible/inventories/initial/hosts.example.ini \
-            todo-operations/deploy/ansible/inventories/recovery/hosts.example.ini \
-            todo-operations/deploy/ansible/playbooks/deploy-promoted-application.yml \
-            todo-operations/deploy/ansible/playbooks/configure-backup.yml \
-            todo-operations/deploy/ansible/playbooks/rebuild-standby.yml \
-            todo-operations/deploy/ansible/roles/promoted_application/tasks/main.yml \
-            todo-operations/deploy/ansible/roles/postgres_backup/tasks/main.yml \
+            todo-operations/deploy/ops/app_ops/cli.py \
+            todo-operations/deploy/ops/README.md \
+            todo-operations/deploy/installer/app_installer/cli.py \
             todo-operations/deploy/scripts/app_dr.py \
             todo-operations/deploy/scripts/app_backup.py \
             todo-operations/deploy/offline/FAPOLICYD.md \
@@ -127,26 +56,6 @@ jobs:
           grep -Eq "^source_revision=[0-9a-f]{40}$" <<<"$version"
           grep -Fx "source_state=clean" <<<"$version" >/dev/null
 
-
-  ansible-lint:
-    name: Ansible lint
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.12"
-
-      - name: Install pinned Ansible tooling
-        run: >-
-          python -m pip install
-          "ansible-core==2.20.8"
-          "ansible-lint==26.8.0"
-
-      - name: Lint Ansible content
-        run: ansible-lint deploy/ansible
 
   script-quality:
     name: Scripts and nginx smoke

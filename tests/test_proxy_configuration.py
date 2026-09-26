@@ -64,7 +64,6 @@ class ProxyConfigurationTests(unittest.TestCase):
         self.assertIn("mountPath: /var/lib/todo-tls", app)
 
     def test_promoted_proxy_uses_stable_hostname_and_kube_publish(self):
-        ansible = read("deploy/ansible/playbooks/deploy-promoted-application.yml")
         template = read(
             "deploy/quadlet/"
             "shared-proxy.kube.j2"
@@ -74,11 +73,7 @@ class ProxyConfigurationTests(unittest.TestCase):
 
         from app_installer import apps
         self.assertEqual(apps.SHARED_RESOURCE_OWNER.hostname, 'todo.test')
-        self.assertIn('promoted_service_port: 8443', ansible)
-        self.assertIn(
-            '- "{{ promoted_service_port | string }}"',
-            read("deploy/ansible/roles/promoted_application/tasks/main.yml"),
-        )
+        self.assertIn("'--service-port', '8443'", read("deploy/ops/app_ops/recovery.py"))
         self.assertIn(
             "PublishPort={{ todo_publish_address }}:"
             "{{ todo_service_port }}:8443",

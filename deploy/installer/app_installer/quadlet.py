@@ -1,4 +1,4 @@
-"""Render the existing Quadlet templates with Ansible's whitespace semantics."""
+"""Render the Quadlet templates with the Jinja2 whitespace settings they were written for."""
 import os
 import stat
 import tempfile

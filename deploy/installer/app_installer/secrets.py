@@ -26,7 +26,7 @@ def keycloak_secret_mapping():
 
 def read(name):
     """The value of a raw Podman secret. Only for passing on to another secret, never for printing."""
-    # Ansible command.stdout strips trailing newlines, but preserves other whitespace.
+    # Strip only trailing newlines, as the value was stored; keep other whitespace.
     return run("podman", "secret", "inspect", "--showsecret", "--format",
                "{{.SecretData}}", name).stdout.rstrip("\r\n")
 

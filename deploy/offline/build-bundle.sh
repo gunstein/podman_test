@@ -9,15 +9,13 @@ trap 'rm -rf "$work_directory"' EXIT
 
 mkdir -p "$bundle_directory/images" "$bundle_directory/docs" \
   "$bundle_directory/deploy/runtime" \
-  "$bundle_directory/deploy/quadlet" "$bundle_directory/deploy/offline" \
-  "$bundle_directory/deploy/ansible/playbooks" "$bundle_directory/deploy/ansible/inventories/local"
+  "$bundle_directory/deploy/quadlet" "$bundle_directory/deploy/offline"
 mkdir -p "$(dirname "$output")"
 "$project_root/deploy/scripts/render-kube-runtime.sh" "$project_root/deploy/environments/prod/values.yaml" "$bundle_directory/generated/kube-runtime"
 
 PYTHONPATH="$project_root/deploy/installer${PYTHONPATH:+:$PYTHONPATH}" \
   python3 -m app_installer.images "$project_root" "$bundle_directory/images"
 
-cp "$project_root/ansible.cfg" "$bundle_directory/"
 cp "$project_root/docs/ARCHITECTURE.md" \
   "$project_root/docs/SECRETS.md" \
   "$project_root/docs/TLS.md" \
@@ -36,14 +34,6 @@ cp "$project_root/deploy/quadlet/app-network.network" "$project_root/deploy/quad
 cp -r "$project_root/deploy/environments" "$bundle_directory/deploy/"
 cp "$project_root/deploy/runtime/README.md" "$bundle_directory/deploy/runtime/"
 cp "$project_root/docs/history/RESULTS.md" "$bundle_directory/deploy/runtime/"
-mkdir -p "$bundle_directory/deploy/ansible/roles"
-cp "$project_root/deploy/ansible/playbooks/deploy.yml" \
-  "$project_root/deploy/ansible/playbooks/uninstall.yml" \
-  "$bundle_directory/deploy/ansible/playbooks/"
-cp "$project_root/deploy/ansible/inventories/local/hosts.ini" \
-  "$bundle_directory/deploy/ansible/inventories/local/"
-cp "$project_root/deploy/ansible/requirements.txt" "$project_root/deploy/ansible/"*.md \
-  "$bundle_directory/deploy/ansible/"
 cp "$project_root/deploy/offline/install.sh" "$project_root/deploy/offline/preflight.sh" \
   "$bundle_directory/"
 cp "$project_root/deploy/offline/README.md" "$project_root/deploy/offline/FAPOLICYD.md" \

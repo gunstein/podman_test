@@ -2,7 +2,7 @@
 
 Everything else here (container, secret, unit and volume names) is a naming
 rule derived from the App/Database registry in apps.py, not a setting: it
-must stay a fixed contract other tools (Ansible, the DR/backup CLIs, the
+must stay a fixed contract other tools (app-ops, the DR/backup CLIs, the
 quarantine helper) also derive independently, so it belongs there, not here.
 """
 from pathlib import Path

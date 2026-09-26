@@ -175,7 +175,6 @@ class KubeRuntimeTests(unittest.TestCase):
              "todo-postgres.kube.j2", "shared-proxy.kube.j2",
              "notes-app.kube.j2", "notes-postgres.kube.j2", "keycloak-postgres.kube.j2"},
         )
-        self.assertEqual(list((ROOT / "deploy/ansible/roles").rglob("*.kube.j2")), [])
 
     def test_active_application_constructs_separate_secrets_in_memory(self):
         from app_installer import secrets
@@ -245,9 +244,6 @@ class KubeRuntimeTests(unittest.TestCase):
 
     def test_clean_deploy_targets_kube_without_legacy_chain(self):
         from app_installer import install
-        deploy = read(ROOT / "deploy/ansible/playbooks/deploy.yml")
-        self.assertIn("app_installer", deploy)
-        self.assertNotIn("include_role", deploy)
         self.assertEqual(set(install.SERVICES), {
             "todo-app", "notes-app", "keycloak", "todo-postgres", "notes-postgres",
             "keycloak-postgres", "shared-proxy"})

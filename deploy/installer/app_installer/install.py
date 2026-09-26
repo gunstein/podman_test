@@ -1,4 +1,4 @@
-"""Single-host orchestration; shared workload functions also serve Ansible DR."""
+"""Single-host orchestration; shared workload functions also serve app-ops DR."""
 from pathlib import Path
 
 from . import apps, images, keycloak, quadlet, secrets, settings, workloads

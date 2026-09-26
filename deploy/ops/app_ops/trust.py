@@ -1,4 +1,4 @@
-"""Exact-file fapolicyd trust and installer staging, as the todo_fapolicyd role and stage-installer did."""
+"""Exact-file fapolicyd trust and staging of the installer module on each host."""
 import base64
 from pathlib import Path
 

@@ -4,11 +4,8 @@ import hashlib
 import os
 import pathlib
 import subprocess
-import sys
 import tempfile
 import unittest
-
-import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "deploy/scripts/trust-files.sh"
@@ -110,55 +107,6 @@ class TrustFilesTests(FakeTrustTools, unittest.TestCase):
         for arguments in ((), ("trust", "todo"), ("install", "/tmp/x")):
             with self.subTest(arguments=arguments):
                 self.assertEqual(self.run_script(*arguments).returncode, 2)
-
-
-
-class TrustRoleTests(FakeTrustTools, unittest.TestCase):
-    """The real todo_fapolicyd tasks: script text in argv, controller then target trust."""
-
-    def run_role(self):
-        tasks = yaml.safe_load((ROOT / "deploy/ansible/roles/todo_fapolicyd/tasks/main.yml").read_text())
-        tasks = [task for task in tasks if task["name"] != "Create the Todo operator binary directory"]
-        installed = self.directory / "installed"
-        installed.mkdir(exist_ok=True)
-        (self.directory / "bin" / "become").write_text('#!/bin/sh\nfor arg do last=$arg; done\nexec /bin/sh -c "$last"\n')
-        (self.directory / "bin" / "become").chmod(0o755)
-        (self.directory / "bin" / "systemctl").write_text(
-            '#!/bin/sh\ncase "$*" in "is-active fapolicyd") echo active ;; "is-active --quiet fapolicyd") ;; *) exit 99 ;; esac\n')
-        dest = installed / "todo_tool.py"
-        contents = self.source.read_bytes()
-        installed_entry = f"filedb {dest} {len(contents)} {hashlib.sha256(contents).hexdigest()}"
-        (self.directory / "current").write_text(self.expected + "\n" + installed_entry + "\n")
-        play = self.directory / "play.yml"
-        play.write_text(yaml.safe_dump([{
-            "hosts": "localhost", "gather_facts": False,
-            "vars": {"project_root": str(ROOT), "todo_fapolicyd_trust_file": "todo",
-                     "todo_fapolicyd_files": [{"source": str(self.source), "dest": str(dest), "mode": "0644"}],
-                     "ansible_python_interpreter": sys.executable,
-                     "ansible_become_exe": str(self.directory / "bin" / "become")},
-            "tasks": tasks}]))
-        result = subprocess.run(
-            [os.environ.get("ANSIBLE_PLAYBOOK", "ansible-playbook"), "-i", "localhost,", "-c", "local", str(play)],
-            capture_output=True, text=True, timeout=120,
-            env={**os.environ, "PATH": f"{self.directory / 'bin'}:{os.environ['PATH']}",
-                 "FAKE_DIR": str(self.directory), "TRUST_DELAY": "0", "ANSIBLE_BECOME_ALLOW_SAME_USER": "true",
-                 "ANSIBLE_LOCAL_TEMP": str(self.directory / "ansible-local")})
-        return result, dest
-
-    def test_role_trusts_sources_installs_then_trusts_targets(self):
-        result, dest = self.run_role()
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(dest.read_bytes(), self.source.read_bytes())
-        calls = [call for call in self.calls() if call.startswith("--file")]
-        self.assertEqual(calls, [f"--file update {self.source} --trust-file todo",
-                                 f"--file add {self.source} --trust-file todo",
-                                 f"--file update {dest} --trust-file todo",
-                                 f"--file add {dest} --trust-file todo"])
-        (self.directory / "known").write_text(f"{self.source}\n{dest}\n")
-        (self.directory / "calls").unlink()
-        repeat, _ = self.run_role()
-        self.assertEqual(repeat.returncode, 0, repeat.stdout + repeat.stderr)
-        self.assertIn("changed=0", repeat.stdout)
 
 
 if __name__ == "__main__":

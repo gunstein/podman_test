@@ -21,7 +21,7 @@ def main(argv=None):
     """Parse one subcommand, run it, and return the exit code.
 
     install, uninstall and down serve a single host. The other commands are
-    the building blocks the DR tools (app_ops and the Ansible roles) run on
+    the building blocks the DR tool app_ops runs on
     each host: install-workload, replicate-workload, publish-primaries,
     reseed-group, deploy-promoted and the status commands. Each prints one
     JSON result on stdout. Errors print one "app-installer: ..." line on
@@ -197,7 +197,7 @@ def main(argv=None):
         elif args.command == 'export-replication-secrets':
             from . import secrets
             # Value-bearing stdout: callers must pipe it, never log or store it. Base64
-            # keeps it opaque; Ansible templating would otherwise parse JSON into a dict.
+            # keeps it opaque, so no caller parses or reformats the values on the way.
             print(base64.b64encode(json.dumps(secrets.export_replicated()).encode()).decode())
         elif args.command == 'import-replication-secrets':
             from . import secrets

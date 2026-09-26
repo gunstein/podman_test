@@ -7,48 +7,14 @@ work_directory=$(mktemp -d)
 package_directory="$work_directory/todo-operations"
 trap 'rm -rf "$work_directory"' EXIT
 
-mkdir -p "$package_directory/deploy/ansible/roles" \
-  "$package_directory/deploy/ansible/playbooks" \
-  "$package_directory/deploy/quadlet" \
+mkdir -p "$package_directory/deploy/quadlet" \
   "$package_directory/deploy/runtime" \
   "$package_directory/deploy/scripts" \
   "$package_directory/deploy/offline" \
   "$package_directory/docs"
 mkdir -p "$(dirname "$output")"
 
-cp "$project_root/ansible.cfg" "$package_directory/"
 cp "$project_root/deploy/README.md" "$package_directory/deploy/"
-cp "$project_root/deploy/ansible/"*.md \
-  "$project_root/deploy/ansible/requirements.txt" "$package_directory/deploy/ansible/"
-for playbook in \
-  preflight-standby bootstrap-standby install-dr-tool install-quarantine-tool \
-  replication-status deploy-promoted-application configure-backup \
-  preflight-standby-rebuild rebuild-standby cluster-status sync-standby-secrets
-do
-  cp "$project_root/deploy/ansible/playbooks/$playbook.yml" \
-    "$package_directory/deploy/ansible/playbooks/"
-done
-for topology in initial recovery; do
-  destination="$package_directory/deploy/ansible/inventories/$topology"
-  mkdir -p "$destination/group_vars"
-  cp "$project_root/deploy/ansible/inventories/$topology/hosts.example.ini" "$destination/"
-  cp "$project_root/deploy/ansible/inventories/$topology/group_vars/"*.yaml "$destination/group_vars/"
-done
-for role in \
-  standby_preflight \
-  todo_fapolicyd \
-  postgres_primary \
-  postgres_standby \
-  todo_dr \
-  promoted_application \
-  postgres_backup \
-  postgres_redundancy_primary \
-  postgres_reseed_standby
-do
-  cp -r "$project_root/deploy/ansible/roles/$role" \
-    "$package_directory/deploy/ansible/roles/"
-done
-cp -r "$project_root/deploy/ansible/tasks" "$package_directory/deploy/ansible/"
 cp "$project_root/deploy/quadlet/app-network.network" "$project_root/deploy/quadlet/"*.kube.j2 \
   "$package_directory/deploy/quadlet/"
 "$project_root/deploy/scripts/render-kube-runtime.sh" "$project_root/deploy/environments/prod/values.yaml" "$package_directory/generated/kube-runtime"
@@ -68,7 +34,6 @@ cp "$project_root/docs/ARCHITECTURE.md" \
   "$project_root/docs/WHAT-YOU-LEARN.md" \
   "$project_root/docs/LEARNING-GUIDE.md" \
   "$project_root/docs/ACCEPTANCE.md" \
-  "$project_root/docs/ACCEPTANCE-APP-OPS.md" \
   "$project_root/docs/ACCEPTANCE-TROUBLESHOOTING.md" \
   "$project_root/docs/PROXMOX-QUARANTINE.md" \
   "$package_directory/docs/"
@@ -78,7 +43,7 @@ cp "$project_root/deploy/installer/README.md" "$project_root/deploy/installer/py
 cp "$project_root/deploy/installer/app_installer/"*.py \
   "$package_directory/deploy/installer/app_installer/"
 mkdir -p "$package_directory/deploy/ops/app_ops"
-cp "$project_root/deploy/ops/README.md" "$package_directory/deploy/ops/"
+cp "$project_root/deploy/ops/"*.md "$package_directory/deploy/ops/"
 cp "$project_root/deploy/ops/app_ops/"*.py "$package_directory/deploy/ops/app_ops/"
 
 source_revision=unknown

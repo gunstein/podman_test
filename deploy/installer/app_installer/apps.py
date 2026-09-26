@@ -99,7 +99,7 @@ REPLICATED_DATABASES = APPS + (KEYCLOAK_DATABASE,)
 def describe(workload):
     """Every name and file one replicated database needs, as a plain dict.
 
-    The DR tools (the Ansible roles, app_ops and the replication-apps command)
+    The DR tools (app_ops and the replication-apps command)
     read names from here rather than rebuilding them, so a new app only needs
     an entry in APPS. Keycloak's database has no application of its own, so
     it gets a shorter entry that also carries the Keycloak admin secret.

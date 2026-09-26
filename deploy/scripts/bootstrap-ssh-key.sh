@@ -3,8 +3,8 @@ set -euo pipefail
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
   echo "Usage: $0 user@target-host [expected-ed25519-fingerprint]" >&2
-  echo "Installs this host's Ansible control key on the target, as documented" >&2
-  echo "in deploy/ansible/STANDBY-ARCHITECTURE.md. Never accepts an unknown host key" >&2
+  echo "Installs this host's app-ops control key on the target, as documented" >&2
+  echo "in deploy/ops/STANDBY-ARCHITECTURE.md. Never accepts an unknown host key" >&2
   echo "without an independently verified fingerprint (SHA256:...)." >&2
   exit 1
 fi
@@ -14,7 +14,7 @@ expected_fingerprint=${2:-}
 host=${target#*@}
 key_file="$HOME/.ssh/id_rsa"
 
-test -f "$key_file" || ssh-keygen -t rsa -b 3072 -N '' -C "todo-ansible-control" -f "$key_file"
+test -f "$key_file" || ssh-keygen -t rsa -b 3072 -N '' -C "todo-ops-control" -f "$key_file"
 
 if [[ -n "$expected_fingerprint" ]]; then
   if ssh-keygen -F "$host" >/dev/null 2>&1; then

@@ -1,6 +1,6 @@
 target-version = "py39"
 line-length = 100
-extend-exclude = ["todo-backend/.venv", "deploy/ansible/.venv"]
+extend-exclude = ["todo-backend/.venv"]
 
 [lint]
 select = ["E4", "E7", "E9", "F", "I"]

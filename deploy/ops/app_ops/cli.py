@@ -1,4 +1,4 @@
-"""app-ops: DR operations over plain SSH. Each command replaces the Ansible playbook of the same name."""
+"""app-ops: DR operations over plain SSH, one command per operation (see deploy/ops/README.md)."""
 import argparse
 import json
 import sys

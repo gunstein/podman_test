@@ -28,7 +28,7 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         raise RuntimeError(f"The {capability} Kube runtime requires Podman --no-pod-prefix.")
     # install.preflight() already refuses a legacy per-container Quadlet host-wide,
     # before any workload install runs; see install-workload's CLI dispatch for the
-    # DR/Ansible path, which calls it for the same reason.
+    # DR path, which calls it for the same reason.
     # Read and render everything before mutating the installation.
     files = [(runtime / name, (rendered / name).read_bytes(), 0o600)
              for name in manifests]

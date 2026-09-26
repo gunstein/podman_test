@@ -41,7 +41,7 @@ def changed(result):
 
 
 def put(host, path, content):
-    """Private 0600 staging copy in 0700 directories, as the Ansible copy tasks made."""
+    """Private 0600 staging copy in 0700 directories."""
     host.run(['sh', '-c', 'umask 077 && mkdir -p "$(dirname "$1")" && cat > "$1"', 'put', path], input=content)
 
 

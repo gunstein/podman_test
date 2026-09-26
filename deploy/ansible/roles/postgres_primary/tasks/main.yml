@@ -1,8 +1,0 @@
----
-- name: Resolve the registered replication group
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/replication-apps.yml"
-
-- name: Create each replication identity and publish every primary on the LAN
-  ansible.builtin.include_tasks: "{{ project_root }}/deploy/ansible/tasks/publish-primaries.yml"
-  vars:
-    todo_publish_primaries_mode: bootstrap

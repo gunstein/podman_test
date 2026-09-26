@@ -95,6 +95,31 @@ What is weak is how they are checked and switched.
    DR/multi-host", and the rule that DR installs workloads through
    `install-workload.yml`.
 
+## Data checks in acceptance
+
+Acceptance proves replication state for all three databases (streaming, slot,
+zero lag, equal LSNs), but checks content only through marker rows in todo and
+notes. Keycloak's database is checked only indirectly, through a login on the
+promoted primary.
+
+- **C1. A content fingerprint per database.** A read-only command (in
+  `app_installer`, called by app-ops) that gives, for every table, the row count
+  and a hash over its rows in a fixed order. Compare primary and standby for
+  all three databases after bootstrap (phase 4), just before fencing (phase 6,
+  while both are reachable) and after the rebuild (phase 9).
+- **C2. A direct Keycloak marker.** For example an attribute on the test user,
+  read with SQL on the standby like the todo and notes markers, including on
+  the rebuilt standby in phase 9.
+- **C3. PITR for Keycloak too.** Phase 8 backs up and checks archiving for all
+  three databases but restores only todo and notes. Restore Keycloak's
+  database as well, and compare a known value before and after the restore
+  point.
+- **C4. State what asynchronous replication can lose.** Acceptance fences only
+  after the last marker has reached the standby, so it shows failover works,
+  not the worst-case loss of a crash while writing. Say plainly in
+  ACCEPTANCE.md and ARCHITECTURE.md that the last transactions can be lost
+  (the RPO), and that this is a design choice.
+
 ## Operations and DR decisions
 
 - **D1. Sudo with a password in app-ops.** app-ops needs `NOPASSWD` today, and

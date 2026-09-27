@@ -275,10 +275,15 @@ echo "Wrote $dir/pve.env"
 2. **Never** print, log or store a secret except where C6 says so. Secrets are:
    the Proxmox token, the Keycloak admin password, the testuser password and any
    `podman secret` value. Never run `set -x`. Never `cat` `pve.env`.
-3. **Never** retry a destructive or one-shot command after it failed or timed
-   out: `app_dr.py promote`, `rebuild-standby`, snapshot rollback, volume
-   deletion, `app_backup.py restore --replace`, `cleanup-restore`. Inspect state
-   instead (C8).
+3. **Never** run a command that changes state a second time after it failed,
+   timed out or gave an unexpected result. That covers installers
+   (`install.sh`, app-ops commands), `app_dr.py` and `app_backup.py` actions
+   other than `status`, `firewall-cmd` changes, Proxmox power, NIC and firewall
+   changes, SQL writes, marker creation and every rehearsal sub-step. It is
+   worst for one-shot commands such as `app_dr.py promote`, `rebuild-standby`,
+   snapshot rollback, volume deletion, `app_backup.py restore --replace` and
+   `cleanup-restore`. Inspect state instead (C8). A read-only check is not
+   covered: C8 says when it may be repeated.
 4. **Never** disable or weaken SELinux, fapolicyd, firewalld, SSH host-key
    checking or TLS verification. Never use `curl -k`, `--insecure`,
    `E2E_IGNORE_HTTPS_ERRORS=true`, `StrictHostKeyChecking=no` or
@@ -441,6 +446,23 @@ that repetition is read-only and allowed.
 (`cat /proc/sys/kernel/random/boot_id`), reboot through the API, then poll SSH
 every 10 seconds for up to 10 minutes until the boot ID differs.
 
+**Waiting until the workloads are up.** A systemd unit is `active` as soon as
+its pod starts; containers, health checks and HTTP answers follow seconds
+later. After every reboot, and after every command that starts services
+(`install.sh`, `bootstrap-standby`, `deploy-promoted-application`,
+`rebuild-standby`), run the repository's wait script on that host before the
+next check, and keep its `READY` line in the step's log:
+
+```bash
+ssh gunstein@192.168.0.102 'bash -s' -- app < deploy/scripts/wait-ready.sh
+ssh gunstein@192.168.0.102 'bash -s' -- standby < deploy/scripts/wait-ready.sh
+```
+
+Use `app` on a host with the application and `standby` on a database-only
+standby. It only reads, waits up to 5 minutes and names what it still waits
+for. `NOT READY` is a failed check: STOP (C3). Do not write your own wait loops
+around `systemctl` or `podman`.
+
 ### C6. Secrets handling (the only allowed patterns)
 
 - Testuser password: generate once in phase 3 into tmpfs, never into the run folder:
@@ -495,7 +517,11 @@ listings plus connection tests instead of `pve-firewall` output.
    task list `get /nodes/{node}/tasks?vmid=107`, `podman ps -a`).
 4. Only read-only commands, waits for asynchronous work (fapolicyd refresh,
    replication catching up, Keycloak starting after boot) and re-running a
-   read-only check may be repeated. Everything else: STOP (C3).
+   read-only check may be repeated. A read-only check that failed because
+   something was still starting may run once more after `wait-ready.sh`
+   prints `READY` (C5); log both results and list the repeat in
+   `run-record.md`. It does not change the verdict. Everything that changes
+   state: STOP (C3), never run it again (C2 rule 3).
 5. Look up the symptom in `docs/ACCEPTANCE-TROUBLESHOOTING.md` and put its
    "safe next observation" in your report. Do not carry out a recovery
    yourself, even one that looks obvious.
@@ -634,9 +660,9 @@ their `.sha256` files with `scp` to both VMs, then verify there. Record both
 
    Use the same pattern later with `phase4`, `phase6`, `phase7` and `phase9`
    in the marker text.
-9. Reboot VM 107 through the API (C5), repeat the checks, the markers and the
-   CA fingerprint, rerun `install.sh` and compare before/after values as
-   ACCEPTANCE.md requires.
+9. Reboot VM 107 through the API (C5), run `wait-ready.sh app` (C5), then
+   repeat the checks, the markers and the CA fingerprint, run `install.sh`
+   again and compare before/after values as ACCEPTANCE.md requires.
 
 #### C9.4 Client name resolution and CA trust (phase 3 and phase 7)
 
@@ -845,6 +871,8 @@ restore commands. Record every backup name printed by `create`
 
 1. Do ACCEPTANCE.md phase 10 steps 1-8, one log per step
    (`10-step1-...log` to `10-step8-...log`). Never reboot both VMs at once.
+   After each reboot run `wait-ready.sh` (`standby` for `.102`, `app` for
+   `.108`) before the next step.
    Step 5 needs, on `.108`: all seven services,
    `podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf`, for each database
    `SELECT pg_is_in_recovery(), current_setting('default_transaction_read_only'),
@@ -870,8 +898,9 @@ restore commands. Record every backup name printed by `create`
    into the repository; the operator decides. Copy every value (IDs,
    fingerprints, backup names) from a log in this run folder, never from
    memory or an earlier run. List every command or sub-step that ran more than
-   once, with the first result; a rerun after a failed or unexpected result
-   rules out CLEAN PASS.
+   once, with the first result. Running a state-changing command again after a
+   failed or unexpected result rules out CLEAN PASS (C2 rule 3); repeating a
+   read-only check after `wait-ready.sh` (C8) does not.
 5. Delete `$XDG_RUNTIME_DIR/todo-acceptance/e2e-password`. Leave both VMs in the
    final roles (`.108` primary with application, `.102` database-only standby).
    Do not reset, promote or rebuild anything after the verdict.

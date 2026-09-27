@@ -98,6 +98,7 @@ jobs:
             deploy/scripts/trust-files.sh \
             deploy/scripts/trust-serving-ca.sh \
             deploy/scripts/bootstrap-ssh-key.sh \
+            deploy/scripts/wait-ready.sh \
             deploy/scripts/run-mutation-tests.sh
 
       - name: Prepare rootless Podman for smoke test

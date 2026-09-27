@@ -22,6 +22,10 @@ roles freshly before any operation.
 
 How it got there, newest first:
 
+- `b9bffbf` quick run 1: QUICK PASS
+  ([record](docs/history/QUICK-b9bffbf.md)), the first run with
+  `acceptance.py`: 14 steps, all PASS, none repeated, nine minutes. Single-host
+  behaviour only; it does not replace a full run.
 - `e8e1919` run 12: REPAIRED FUNCTIONAL PASS
   ([record](docs/history/ACCEPTANCE-e8e1919.md)). Every functional gate
   passed again, with one log per phase 10 step. Repair: the agent added the

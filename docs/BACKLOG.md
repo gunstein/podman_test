@@ -74,8 +74,9 @@ being accepted.
   20 minutes) for changes that do not touch installer, Quadlet, replication,
   app-ops or backup. Implemented (`deploy/scripts/acceptance.py`,
   [ACCEPTANCE-QUICK.md](ACCEPTANCE-QUICK.md)), plus `check clean-host`,
-  `check browser`, `check markers` and `do rollback`; waiting for its first
-  real quick run.
+  `check browser`, `check markers` and `do rollback`. The first quick run
+  passed with every step PASS ([record](history/QUICK-b9bffbf.md)); the item
+  goes when A4 has used the tool in a full run.
 - **A2. The rest of the glue.** *[new]* `check roles`, `check write-probe`
   (the guide's rolled-back inserts, verbatim), `check replication-tls`,
   `check markers` on both hosts, `check disk`, `do firewall-replication`,

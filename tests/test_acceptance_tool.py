@@ -310,5 +310,37 @@ class FullRunTests(ToolTest):
         self.assertFalse(any(" set " in call for call in fake.calls))
 
 
+class InterruptedStepTests(ToolTest):
+    """A do that crashes or is killed must still block a blind second run."""
+
+    def test_an_unexpected_error_is_recorded_and_blocks_the_next_run(self):
+        arguments = ("--step", "06-1", "do", "reboot", "107", "192.168.0.102", "app")
+        with patch.object(acceptance, "boot_id", side_effect=OSError("ssh vanished")):
+            self.assertEqual(self.tool(*arguments)[0], 1)
+        started, failed = self.record()
+        self.assertEqual((started["result"], failed["result"]), ("STARTED", "FAIL"))
+        self.assertIn("OSError: ssh vanished", self.log(failed))
+        code, fake = self.tool(*arguments)
+        self.assertEqual(code, 3)
+        self.assertEqual(fake.calls, [])
+
+    def test_a_started_do_without_a_result_blocks_until_approved(self):
+        self.run_directory.mkdir(parents=True)
+        (self.run_directory / "record.jsonl").write_text(json.dumps({
+            "kind": "do", "command": "reboot", "arguments": ["107", "192.168.0.102", "app"],
+            "result": "STARTED", "log": "logs/06-1-do-reboot.log", "step": "06-1", "values": {},
+            "approved": "", "time": "t"}) + "\n")
+        arguments = ("--step", "06-1", "do", "reboot", "107", "192.168.0.102", "app")
+        self.assertEqual(self.tool(*arguments)[0], 3)
+        self.assertIn("started but never finished", self.log(self.record()[-1]))
+        boots = iter(["old\n", "new\n"])
+        rules = [("boot_id", lambda line: (0, next(boots))), ("wait-ready", (0, "READY: x\n"))]
+        self.assertEqual(self.tool("--operator-approved", "VM checked by hand", *arguments, rules=rules)[0], 0)
+
+    def test_checks_write_no_started_line(self):
+        self.tool("--step", "04-2", "check", "headers", rules=[("curl", (0, APP_HEADERS))])
+        self.assertEqual([entry["result"] for entry in self.record()], ["PASS"])
+
+
 if __name__ == "__main__":
     unittest.main()

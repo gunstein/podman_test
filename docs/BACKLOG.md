@@ -34,6 +34,7 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 1. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
    failover command), G2 (Trondheim is ready), G3 (time it in the drill), T3
    (fencing without the Oslo hypervisor), T4 (one CA), T5 (moving the names),
+   G6 (real time limits),
    M1 (alerts), O1 (incident runbooks), G4 (the disaster drill in the lab) and
    G5 (rebuilding Oslo on new hardware).
 2. What operation needs: U1 (updating a replicated pair), T6 (planned
@@ -111,6 +112,14 @@ such as a small cloud VM. Without one, the safe design is one human decision
   (`app_dr.py preflight/promote`, `deploy-promoted-application`,
   `configure-backup`), stopping at the first failure. It changes DNS through
   the provider's API if there is one (T5), or prints exactly what to do.
+- **G6. Real time limits.** *[new]* A command that hangs must not stop a
+  failover silently. `commands.run` in the installer and the SSH transport of
+  app-ops have no timeout; `connect_with_retry` in `migrate.py` checks its
+  deadline only after a failed attempt; `_wait_for_restore_pause` promises 60
+  seconds but makes 60 attempts of unbounded commands. Give each long wait one
+  deadline from `time.monotonic()` and each underlying call its own limit, and
+  say in the error which step ran out of time. (From the code review of
+  `25ec0a6`.)
 - **G2. Trondheim is ready to take over.** *[new]* Part of the scheduled
   checks (M1): the same bundle and operations package revision as Oslo, every
   DR secret and the shared CA (T4) synchronised, the recovery inventory in
@@ -334,7 +343,10 @@ why. The seven workloads already log to journald (`LogDriver=journald`), and
   `podman secret failed (exit 1)` and drops stderr, so the command must be rerun
   by hand to see why. Include the stderr tail, except for commands that can
   print secrets (such as `podman secret inspect`), as app-ops and `app_dr.py`
-  already do.
+  already do. Name the operation, the workload and the step that failed, not
+  only the program. The backends answer a missing OIDC setting with "invalid
+  token"; they should refuse to start without it, so a configuration error
+  shows up in the service log and not as a client error.
 - **L3. Backend logging.** *[new]* The backends log almost nothing themselves, and
   `LOG_LEVEL` from `values.yaml` is set but never used (uvicorn runs at its
   default). Use it, and log rejected tokens with the reason (never the token),
@@ -478,12 +490,16 @@ promoted primary.
 8. **One way to run commands and SQL.** *[simplify]* `app_dr.py` and `app_backup.py` have
    their own command runners and error types, and `app_backup.py` spells out
    nine `psql` calls; use `replication.sql()` and one shared runner.
-9. **Smaller units.** *[simplify]* Split `app_backup.py` (archiving, backup, restore) and
-   `replication.py` (bootstrap/reseed, status checks). Give each
-   `app_installer/cli.py` and `app_backup.py` command its own small function.
-10. **Small cleanups.** *[simplify]* Rename `TodoDr` and `TodoBackup`; replace the manual
-    `sys.path` setup in the scripts; describe the JSON contract between
-    app_ops and app_installer.
+9. **Smaller units.** *[simplify]* Split `app_backup.py` (700 lines: archiving,
+   backup, restore) and `replication.py` (bootstrap/reseed, status checks).
+   Give each `app_installer/cli.py` and `app_backup.py` command its own small
+   function; `cli.main()` is over 200 lines and `install()` over 100.
+10. **Small cleanups.** *[simplify]* Rename `TodoDr` and `TodoBackup` (they
+    handle all three databases); replace the manual `sys.path` setup in the
+    scripts; describe the JSON contract between app_ops and app_installer.
+    Type the module boundaries: `REPLICATED_DATABASES` mixes `App` and
+    `Database` while some annotations say `App`, and several interfaces pass
+    untyped dicts.
 11. **Backend duplication.** *[simplify]* `todo-backend` and `notes-backend` have identical
     `migrate.py` and near-identical `setup_roles.py` and `main.py`. Share them;
     this touches the image builds.

@@ -504,14 +504,23 @@ COMMANDS = {
 
 
 def refusal(run_directory, name, arguments, once, approved):
-    """Why this do command must not run now, or None."""
+    """Why this do command must not run now, or None.
+
+    A do writes a STARTED line before it acts and its result after. A STARTED
+    line without a result means the tool was killed or crashed in the middle:
+    nobody knows what it changed, so it counts as a failure.
+    """
+    outcome = {}
     for entry in read_record(run_directory):
-        if entry['kind'] != 'do' or entry['command'] != name or entry['arguments'] != arguments:
-            continue
-        if entry['result'] == 'FAIL' and not approved:
-            return f'"do {name}" failed earlier in this run ({entry["log"]}); a second run needs --operator-approved'
-        if entry['result'] == 'PASS' and once:
-            return f'"do {name}" already ran in this run ({entry["log"]}); it runs only once'
+        if entry['kind'] == 'do' and entry['command'] == name and entry['arguments'] == arguments:
+            if entry['result'] != 'REFUSED':
+                outcome[entry['log']] = entry['result']
+    for log, result in outcome.items():
+        if result in ('FAIL', 'STARTED') and not approved:
+            how = 'failed' if result == 'FAIL' else 'started but never finished'
+            return f'"do {name}" {how} earlier in this run ({log}); a second run needs --operator-approved'
+        if result == 'PASS' and once:
+            return f'"do {name}" already ran in this run ({log}); it runs only once'
     return None
 
 
@@ -545,21 +554,33 @@ def main(argv=None):
              f'{args.kind} {name} {" ".join(arguments)}')
     if args.operator_approved:
         step.log(f'# operator approved: {args.operator_approved}')
+
+    def record(result):
+        append_record(run_directory, {
+            'time': datetime.datetime.now().astimezone().isoformat(timespec='seconds'), 'step': args.step,
+            'kind': args.kind, 'command': name, 'arguments': arguments, 'result': result,
+            'values': step.values, 'log': str(step.log_path.relative_to(run_directory)),
+            'approved': args.operator_approved})
+
+    result = 'FAIL'
     try:
         if reason:
             raise Refused(reason)
+        if args.kind == 'do':
+            record('STARTED')
         function(step, *arguments)
         result = 'FAIL' if step.failures else 'PASS'
     except Refused as error:
         step.log(f'REFUSED: {error}')
         result = 'REFUSED'
-    step.log(f'RESULT: {result}' + (f' ({"; ".join(step.failures)})' if step.failures else ''))
-    step.log_file.close()
-    append_record(run_directory, {
-        'time': datetime.datetime.now().astimezone().isoformat(timespec='seconds'), 'step': args.step,
-        'kind': args.kind, 'command': name, 'arguments': arguments, 'result': result,
-        'values': step.values, 'log': str(step.log_path.relative_to(run_directory)),
-        'approved': args.operator_approved})
+    except Exception as error:  # the tool itself broke: record it, never lose the attempt
+        step.failures.append(f'{type(error).__name__}: {error}')
+    except KeyboardInterrupt:
+        step.failures.append('interrupted')
+    finally:
+        step.log(f'RESULT: {result}' + (f' ({"; ".join(step.failures)})' if step.failures else ''))
+        step.log_file.close()
+        record(result)
     return {'PASS': 0, 'FAIL': 1, 'REFUSED': 3}[result]
 
 

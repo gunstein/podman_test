@@ -177,7 +177,10 @@ def _describe_application(app):
 
 
 def services(applications=None, *, databases=True):
-    """User systemd services in start order: proxy, apps, Keycloak, then databases.
+    """User systemd services in stop order: proxy, apps, Keycloak, then databases.
+
+    Callers stop the serving tier before the databases it uses. Starting goes
+    the other way round, databases first (install.install).
 
     applications limits the list to some apps (default: all). With
     databases=False only the serving tier is returned, which is what a

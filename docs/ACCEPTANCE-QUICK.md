@@ -66,7 +66,7 @@ mkdir -p "$RUN/logs"
 must equal the kickoff revision:
 
 ```bash
-{ git status --porcelain; git rev-parse HEAD; } > "$RUN/logs/00-1-git.log" 2>&1
+{ git status --porcelain; git rev-parse HEAD; } > "$RUN/logs/00-1-git.log" 2>&1; echo "exit=$?" >> "$RUN/logs/00-1-git.log"
 ```
 
 **1. Clean VM.**
@@ -140,7 +140,7 @@ $A --step 06-6 check browser
 
 ```bash
 rm -f "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password"
-$A report
+$A report quick
 ```
 
 `report` writes `REPORT.md` in the run folder from `record.jsonl` and the

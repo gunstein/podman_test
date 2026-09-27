@@ -9,7 +9,7 @@ the result with the expected values itself and records it.
 
   acceptance.py --run RUN_ID --step 03-4 check services 192.168.0.102 app
   acceptance.py --run RUN_ID --step 03-9 do reboot 107 192.168.0.102 app
-  acceptance.py --run RUN_ID report
+  acceptance.py --run RUN_ID report full       (or quick)
 
 check   reads only and may be repeated.
 do      changes state. After a FAIL it refuses the same command with the same
@@ -21,7 +21,10 @@ Each call writes logs/<step>-<kind>-<command>.log in the run folder
 JSON line to record.jsonl. Exit status: 0 PASS, 1 FAIL, 2 usage, 3 refused.
 
 report writes REPORT.md in the run folder from record.jsonl and the other
-logs, so no value in the run record is copied by hand (BACKLOG A3). It exits
+logs, so no value in the run record is copied by hand (BACKLOG A3), and
+compares the run with the guide (full: ACCEPTANCE-AGENT.md, quick:
+ACCEPTANCE-QUICK.md) as it was at the recorded revision: every acceptance.py
+line and every log the guide names must be there, and nothing else. It exits
 0 only if every step passed, no do was left unfinished or needed approval,
 every other log ends in exit=0 (exit=1 for a log named *-refused.log, a
 refusal the guide asks for) and every step ran from the same clean
@@ -819,8 +822,48 @@ def product_logs(run_directory, tool_logs):
     return rows
 
 
-def report(run_directory):
-    """Build REPORT.md from record.jsonl and the logs; return (text, all steps passed)."""
+GUIDES = {'full': 'docs/ACCEPTANCE-AGENT.md', 'quick': 'docs/ACCEPTANCE-QUICK.md'}
+
+
+def guide_steps(text):
+    """What a guide asks for: its acceptance.py lines by step label, and the log names of its other commands."""
+    tool = {}
+    for label, kind, rest in re.findall(r'^\$A --step (\S+) (check|do) (.*)$', text, re.M):
+        tool[label] = [kind, *shlex.split(rest.split('#')[0])]
+    logs = set(re.findall(r'^(?:vm|ops|product) ([0-9][\w.-]*) ', text, re.M))
+    logs |= set(re.findall(r'logs/([0-9][\w.-]*)\.log', text))
+    return tool, {f'logs/{name}.log' for name in logs}
+
+
+def same_step(expected, ran):
+    """True if a recorded step is the guide's line; a guide argument like "$ONBOOT" or <...> matches any value."""
+    return len(expected) == len(ran) and all(
+        want == got or want.startswith('$') or want.startswith('<') for want, got in zip(expected, ran))
+
+
+def compare_with_guide(entries, products, text):
+    """Every difference between the steps that ran and the steps the guide asks for."""
+    tool, logs = guide_steps(text)
+    ran = {}
+    for entry in entries:
+        if entry['result'] != 'STARTED':
+            ran.setdefault(entry['step'], [entry['kind'], entry['command'], *entry['arguments']])
+    differences = []
+    for label, expected in tool.items():
+        if label not in ran:
+            differences.append(f'guide step {label} `{" ".join(expected)}` did not run')
+        elif not same_step(expected, ran[label]):
+            differences.append(f'step {label} ran `{" ".join(ran[label])}`, the guide says `{" ".join(expected)}`')
+    differences += [f'step {label} `{" ".join(command)}` is not in the guide' for label, command in ran.items()
+                    if label not in tool]
+    names = {name for name, _, _ in products}
+    differences += [f'guide log {name} is missing' for name in sorted(logs - names)]
+    differences += [f'log {name} is not in the guide' for name in sorted(names - logs)]
+    return differences
+
+
+def report(run_directory, guide):
+    """Build REPORT.md from record.jsonl, the logs and the guide; return (text, all steps passed)."""
     entries = read_record(run_directory)
     finished = [entry for entry in entries if entry['result'] != 'STARTED']
     finished_logs = {entry['log'] for entry in finished}
@@ -858,6 +901,17 @@ def report(run_directory):
         if len(steps) > 1 and kind == 'check':
             repeats.append(f'{kind} {command} {" ".join(arguments)}: steps {", ".join(steps)}')
 
+    if revision not in ('unknown', 'more than one'):
+        shown = subprocess.run(['git', '-C', str(ROOT), 'show', f'{revision}:{GUIDES[guide]}'],
+                               capture_output=True, text=True)
+        guide_text = shown.stdout if shown.returncode == 0 else ''
+    else:
+        guide_text = ''
+    if guide_text:
+        attention += compare_with_guide(entries, products, guide_text)
+    else:
+        attention.append(f'{GUIDES[guide]} at the recorded revision could not be read to compare the steps')
+
     passed = not attention and bool(finished)
     counts = {result: sum(entry['result'] == result for entry in finished) for result in ('PASS', 'FAIL', 'REFUSED')}
     lines = [f'# Acceptance run {run_directory.name}', '',
@@ -866,7 +920,7 @@ def report(run_directory):
              f'acceptance.py steps: {len(finished)} (PASS {counts["PASS"]}, FAIL {counts["FAIL"]}, '
              f'REFUSED {counts["REFUSED"]}, unfinished {len(unfinished)}); other logs: {len(products)}.',
              '', f'**From the record: {"ALL STEPS PASS" if passed else "NOT CLEAN"}.** '
-             'A CLEAN PASS of a full run also needs every step of the guide; check the step list against it.', '',
+             f'Compared with {GUIDES[guide]} at that revision: every step and log it names, nothing else.', '',
              '## Steps', '', '| Step | Command | Result | Values | Log |', '|---|---|---|---|---|']
     for entry in finished:
         command = ' '.join([entry['kind'], entry['command'], *entry['arguments']])
@@ -894,9 +948,9 @@ def main(argv=None):
     if not re.fullmatch(r'[A-Za-z0-9.-]+', args.run) or args.run.strip('.') == '':
         parser.error('--run looks like 2026-09-27-app-ops-13')
     if args.kind == 'report':
-        if args.command or not (runs / args.run / 'record.jsonl').is_file():
-            parser.error('report takes no arguments and needs an existing run with record.jsonl')
-        text, passed = report(runs / args.run)
+        if args.command not in GUIDES or args.arguments or not (runs / args.run / 'record.jsonl').is_file():
+            parser.error('report takes full or quick (the guide to compare with) and needs a run with record.jsonl')
+        text, passed = report(runs / args.run, args.command)
         (runs / args.run / 'REPORT.md').write_text(text)
         print(text, end='')
         return 0 if passed else 1

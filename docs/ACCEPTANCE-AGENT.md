@@ -433,7 +433,7 @@ for a password. Never run `ansible` or `ansible-playbook`: Ansible is retired.
 **Long commands.** Bundle builds, `bootstrap-standby` and `rebuild-standby`
 can take more than ten minutes. Start them in the background with output to a
 log file, for example
-`nohup ssh ... 'cd ~/todo-operations && ... python3 -m app_ops ... rebuild-standby ...; echo "exit=$?"' > logs/09-rebuild.log 2>&1 &`,
+the `ops ... &` line in C9.10,
 then read the log until the `exit=` line appears. If your tool times out, the
 command may still be running: read the log and `ps`; never start it a second time.
 
@@ -888,14 +888,15 @@ $A --step 11-2 check services 192.168.0.108 app
 $A --step 11-3 check services 192.168.0.102 standby
 vm 11-4-restarts 192.168.0.108 'systemctl --user show -p NRestarts --value todo-app.service notes-app.service shared-proxy.service'   # 0, 0, 0
 rm -f "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password"
-$A report
+$A report full
 ```
 
 `report` writes `REPORT.md` from `record.jsonl` and the logs. The verdict is
 exactly one of:
 
-- `CLEAN PASS`: `report` says **ALL STEPS PASS**, every step above has its
-  log, every JSON line after `→` matched, and nothing was repeated.
+- `CLEAN PASS`: `report full` says **ALL STEPS PASS** (it also checks that
+  every step and log of this guide is there and nothing else), and every JSON
+  line after `→` matched.
 - `REPAIRED FUNCTIONAL PASS`: everything works, but something needed the
   operator (a `--operator-approved` step, a manual fix). List each with its
   original failure.

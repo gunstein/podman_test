@@ -92,7 +92,9 @@ being accepted.
   report` writes `REPORT.md` with every step and its values, the other logs'
   last `exit=` and `{"changed": ...}` lines, and what needs attention
   (failures, refusals, approvals, unfinished `do`, non-zero exits, a dirty
-  checkout); the quick guide's verdict uses it.
+  checkout); the quick guide's verdict uses it. It also compares the run with the guide at
+  the recorded revision (`report full` or `report quick`): run 15's report said
+  ALL STEPS PASS although the agent had replaced two phase 6 steps.
 - **A4. A shorter agent guide.** *[simplify]* C9 becomes a command list per
   phase; the kickoff needs no special rules. One full run with the tool before
   it is trusted. ACCEPTANCE.md stays the explained guide for people. Written: C9.1-C9.11 are fixed `acceptance.py`, `product`, `vm` and `ops`

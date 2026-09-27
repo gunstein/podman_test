@@ -364,10 +364,24 @@ class ReportTests(ToolTest):
     def product_log(self, name, *lines):
         (self.run_directory / "logs" / name).write_text("\n".join(lines) + "\n")
 
-    def report(self, rules=()):
-        fake = Fake(list(rules))
+    def matching_guide(self):
+        """A guide that asks for exactly what this run did."""
+        lines = []
+        for entry in acceptance.read_record(self.run_directory):
+            if entry["result"] != "STARTED":
+                lines.append(f'$A --step {entry["step"]} {entry["kind"]} {entry["command"]} '
+                             + " ".join(entry["arguments"]))
+        tool_logs = {entry["log"] for entry in acceptance.read_record(self.run_directory)}
+        for path in sorted((self.run_directory / "logs").glob("*.log")):
+            if f"logs/{path.name}" not in tool_logs:
+                lines.append(f'vm {path.stem} 192.168.0.102 "true"')
+        return "\n".join(dict.fromkeys(lines)) + "\n"
+
+    def report(self, rules=(), guide=None):
+        text = self.matching_guide() if guide is None else guide
+        fake = Fake(list(rules) + [("show ", (0, text))])
         with patch.object(acceptance.subprocess, "run", fake), contextlib.redirect_stdout(io.StringIO()):
-            code = acceptance.main(["--run", "run-1", "report"])
+            code = acceptance.main(["--run", "run-1", "report", "full"])
         return code, (self.run_directory / "REPORT.md").read_text()
 
     def test_a_clean_run_passes_and_takes_every_value_from_the_record(self):
@@ -444,9 +458,43 @@ class ReportTests(ToolTest):
         self.assertIn("did not all run from one clean checkout", text)
         self.assertIn(f"{REVISION} (NOT clean)", text)
 
+
+
+    def test_the_run_is_compared_with_the_guide(self):
+        """Run 15 replaced two guide steps with four others; report said ALL STEPS PASS."""
+        closed = [("CLOSED", (0, "CLOSED: 192.168.0.102\n"))]
+        guide = ("$A --step 06-3 check ports-closed 192.168.0.102 client\n"
+                 "vm 06-6-preflight 192.168.0.108 'python3 /opt/todo/bin/app_dr.py preflight'\n"
+                 '$A --step 09-12b do onboot 107 "$ONBOOT"\n')
+        self.tool("--step", "06-4", "check", "connect", "client", "192.168.0.102", "22", "blocked",
+                  rules=[("/dev/tcp", (124, ""))])
+        self.tool("--step", "09-12b", "do", "onboot", "107", "0", rules=[("get /nodes", (0, '{"onboot": 0}'))])
+        self.product_log("06-8-preflight.log", "Preflight passed", "exit=0")
+        code, text = self.report(rules=closed, guide=guide)
+        self.assertEqual(code, 1)
+        for expected in ("guide step 06-3 `check ports-closed 192.168.0.102 client` did not run",
+                         "step 06-4 `check connect client 192.168.0.102 22 blocked` is not in the guide",
+                         "guide log logs/06-6-preflight.log is missing",
+                         "log logs/06-8-preflight.log is not in the guide"):
+            self.assertIn(expected, text)
+        self.assertNotIn("09-12b", text.split("## Needs attention")[1])
+
+    def test_a_step_with_other_arguments_than_the_guide_needs_attention(self):
+        self.tool("--step", "04-15", "check", "roles", "192.168.0.108", "primary",
+                  rules=[("pg_is_in_recovery", (0, "f|off\n"))])
+        code, text = self.report(guide="$A --step 04-15 check roles 192.168.0.108 standby\n")
+        self.assertEqual(code, 1)
+        self.assertIn("step 04-15 ran `check roles 192.168.0.108 primary`, the guide says "
+                      "`check roles 192.168.0.108 standby`", text)
+
+    def test_both_guides_parse(self):
+        for name, path in acceptance.GUIDES.items():
+            tool, logs = acceptance.guide_steps((ROOT / path).read_text())
+            self.assertTrue(tool and logs, name)
+
     def test_report_needs_a_run_and_nothing_else(self):
-        for arguments in (["--run", "run-1", "report"], ["--run", "..", "report"],
-                          ["--run", "run-1", "report", "extra"]):
+        for arguments in (["--run", "run-1", "report", "full"], ["--run", "..", "report", "full"],
+                          ["--run", "run-1", "report"], ["--run", "run-1", "report", "full", "extra"]):
             with self.subTest(arguments), self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
                 acceptance.main(arguments)
 

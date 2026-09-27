@@ -18,7 +18,7 @@ security headers, and the acceptance run itself done through
 on one clean revision and compared them with the agent guide: every step and
 log it names, nothing else. Install, standby bootstrap, quarantine rehearsal,
 fencing, the one `failover` command (group promotion, application tier,
-backup and a login check), backup and isolated PITR,
+backup and a service check), backup and isolated PITR,
 rebuild of the old primary and sequential reboots all passed as written.
 CI now also runs the Todo API as `todo_app` and the whole stack with the
 browser tests on Podman 5.7.

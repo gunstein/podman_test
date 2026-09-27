@@ -691,10 +691,13 @@ python3 /opt/todo/bin/app_dr.py status
 `failover` runs on the standby itself and stops at the first failed step,
 naming it: it promotes the database group with `app_dr.py`, deploys the
 application tier (`deploy-promoted-application`), configures backup
-(`configure-backup`), waits until every service is ready, Keycloak and both
-apps answer through nginx and HTTPS verifies with the host's CA, and prints
-what users need: the hostnames, this address and the CA fingerprint. Its
-promotion step is exactly:
+(`configure-backup`), waits until every service is ready and each app answers
+over HTTPS with the host's CA, checks that each app's login can start
+(Keycloak shows its login form for the app's client and redirect address, and
+the app's Content-Security-Policy allows the token request), and prints what
+users need: the hostnames, this address and the CA fingerprint. It does not
+log a user in; the browser test in phase 7 does. Its promotion step is
+exactly:
 
 ```bash
 python3 /opt/todo/bin/app_dr.py promote \

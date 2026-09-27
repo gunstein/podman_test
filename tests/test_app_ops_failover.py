@@ -20,6 +20,9 @@ def tearDownModule():
     commands.tearDownModule()
 
 
+LOGIN_FORM = '<form id="kc-form-login"><input id="username" name="username"></form>'
+
+
 class FailoverWorld(World):
     """The promoted host runs locally, so the fake answers its identity; record state and failures are set."""
 
@@ -40,10 +43,16 @@ class FailoverWorld(World):
             if self.fail == "ready":
                 return ("wait-ready",), "waiting for service keycloak\nNOT READY after 300s: service keycloak\n", 1
             return ("wait-ready",), "READY", 0
-        if command[0] == "curl":
-            return ("keycloak", command[-2]), "{}", 0
-        if command[:2] == ["bash", "-c"]:
-            return ("https", command[4], command[6]), "", 0
+        if command[:2] == ["bash", "-c"] and command[3] == "https":
+            hostname, address, path, options = command[4], command[6], command[7], command[8:]
+            if "openid-connect/auth" in path:
+                refused = self.fail == "redirect" and "notes-frontend" in path
+                return ("login-form", hostname, path), "" if refused else LOGIN_FORM, 22 if refused else 0
+            if options == ["--head"]:
+                sources = "'self'" if self.fail == "csp" else "'self' https://todo.test:8443"
+                return ("csp", hostname), f"HTTP/1.1 200 OK\ncontent-security-policy: default-src 'self'; " \
+                                          f"connect-src {sources}; frame-ancestors 'none'\n", 0
+            return ("https", hostname, address), "ready", 0
         if command[:3] == ["podman", "exec", "nginx"]:
             return ("ca",), "sha256 Fingerprint=AA:BB\n", 0
         return super().answer(host, command, stdin)
@@ -59,21 +68,27 @@ class FailoverTests(unittest.TestCase):
 
     def kinds(self, world):
         wanted = ("read-record", "promote", "deploy-promoted", "require-promoted-group", "app_backup.py",
-                  "wait-ready", "keycloak", "https", "ca")
+                  "wait-ready", "https", "login-form", "csp", "ca")
         return [step[0] for step in world.steps() if step[0] in wanted]
 
-    def test_promotes_then_deploys_then_backup_then_checks_login(self):
+    def test_promotes_deploys_configures_backup_then_checks_services_and_login_page(self):
         world = FailoverWorld()
         report = self.run_failover(world)
         self.assertEqual(self.kinds(world), ["read-record", "promote", "deploy-promoted", "require-promoted-group",
-                                             "app_backup.py", "wait-ready", "keycloak", "https", "keycloak",
-                                             "https", "ca"])
+                                             "app_backup.py", "wait-ready", "https", "https", "login-form", "csp",
+                                             "login-form", "csp", "ca"])
+        forms = [step for step in world.steps() if step[0] == "login-form"]
+        self.assertEqual([step[1] for step in forms], ["todo.test", "todo.test"])
+        self.assertIn("client_id=todo-frontend&redirect_uri=https%3A%2F%2Ftodo.test%3A8443%2F", forms[0][2])
+        self.assertIn("client_id=notes-frontend&redirect_uri=https%3A%2F%2Fnotes.test%3A8443%2F", forms[1][2])
+        self.assertEqual([step[1] for step in world.steps() if step[0] == "csp"], ["todo.test", "notes.test"])
         self.assertIn(("promote", "todo-primary is fenced", "todo-standby"), world.steps())
         self.assertEqual([step[1] for step in world.steps() if step[0] == "https"], ["todo.test", "notes.test"])
         self.assertTrue(all(step[2] == "192.0.2.11" for step in world.steps() if step[0] == "https"))
         self.assertTrue(report["changed"] and report["promoted_now"])
         self.assertEqual(report["users"]["ca_sha256"], "AA:BB")
         self.assertIn("todo.test and notes.test at 192.0.2.11", report["users"]["next"])
+        self.assertIn("checks the login page, not a login", report["users"]["next"])
 
     def test_a_rerun_after_a_complete_promotion_skips_it(self):
         world = FailoverWorld(record="complete")
@@ -94,9 +109,20 @@ class FailoverTests(unittest.TestCase):
             self.run_failover(world)
         self.assertNotIn("deploy-promoted", self.kinds(world))
         world = FailoverWorld(fail="ready")
-        with self.assertRaisesRegex(RuntimeError, 'stopped at step "ready": NOT READY after 300s: service keycloak'):
+        with self.assertRaisesRegex(RuntimeError, 'stopped at step "services": NOT READY after 300s: service keycloak'):
             self.run_failover(world)
         self.assertNotIn("ca", self.kinds(world))
+
+    def test_a_refused_redirect_or_a_csp_without_keycloak_stops_at_the_login_page(self):
+        """Code review: redirect URI and CSP errors block login while the services answer."""
+        for fail, message in (("redirect", "notes: Keycloak refused the login request of client notes-frontend "
+                                           "with redirect https://notes.test:8443/"),
+                              ("csp", "notes: Content-Security-Policy connect-src 'self' does not allow "
+                                      "https://todo.test:8443")):
+            world = FailoverWorld(fail=fail)
+            with self.subTest(fail=fail), self.assertRaisesRegex(RuntimeError, 'step "login-page": ' + message):
+                self.run_failover(world)
+            self.assertNotIn("ca", self.kinds(world))
 
     def test_wrong_confirmations_or_a_remote_host_change_nothing(self):
         for arguments in ({"fenced": "todo-primary"}, {"promotion": "todo-primary"}, {"local": False}):

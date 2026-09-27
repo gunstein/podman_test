@@ -148,6 +148,29 @@ jobs:
       - name: Start the stack with dev-up.sh
         run: deploy/scripts/dev-up.sh
 
+      - name: failover's login-page check against the real Keycloak and nginx
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=deploy/ops python - <<'PY'
+          from app_ops import failover, inventory
+          from app_ops.transport import Host
+
+          host = Host(inventory.HostSpec(name="ci", role="current_primary", address="127.0.0.1",
+                                         user="runner", home="/home/runner", local=True))
+          failover.login_page(host)
+          # A redirect Keycloak does not know must be refused, or the check proves nothing.
+          query = failover.urlencode({"client_id": "todo-frontend", "redirect_uri": "https://evil.test/",
+                                      "response_type": "code", "scope": "openid",
+                                      "code_challenge": failover.PKCE_CHALLENGE, "code_challenge_method": "S256"})
+          try:
+              page = failover.https(host, "todo.test", "/auth/realms/todo/protocol/openid-connect/auth?" + query)
+          except RuntimeError:
+              page = ""
+          assert 'id="username"' not in page, "Keycloak showed its login form for an unknown redirect"
+          print("login-page check passed against the real stack")
+          PY
+
       - name: Browser tests through nginx with a real Keycloak login
         shell: bash
         run: |

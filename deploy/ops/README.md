@@ -85,11 +85,15 @@ python3 -m app_ops --inventory recovery.yaml cluster-status
 `failover` is the one command for the surviving site after a person has
 decided the primary is lost and fenced it. It runs on that host itself and
 chains `app_dr.py promote`, `deploy-promoted-application`, `configure-backup`
-and a check that users can log in (services ready, Keycloak and both apps
-through nginx, HTTPS verified with the host's CA). It stops at the first
-failed step and names it; running it again skips a completed promotion and
-never retries a failed one. Its result tells what users need: the hostnames,
-the address and the CA fingerprint.
+and two checks: every service is ready and each app answers over HTTPS with
+the host's CA, and each app's login can start (Keycloak shows its login form
+for the app's client and redirect address, and the app's
+Content-Security-Policy allows the token request). It does not log a user
+in, which needs a person's password and a browser: confirm that by hand, or
+with the browser test in acceptance. It stops at the first failed step and
+names it; running it again skips a completed promotion and never retries a
+failed one. Its result tells what users need: the hostnames, the address and
+the CA fingerprint.
 
 `sync-standby-secrets` and `preflight-standby-rebuild` can also be run on
 their own. Every command prints one JSON result: `changed`, or the status

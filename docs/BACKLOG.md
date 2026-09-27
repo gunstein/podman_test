@@ -94,7 +94,9 @@ being accepted.
   (failures, refusals, approvals, unfinished `do`, non-zero exits, a dirty
   checkout); the quick guide's verdict uses it. It also compares the run with the guide at
   the recorded revision (`report full` or `report quick`): run 15's report said
-  ALL STEPS PASS although the agent had replaced two phase 6 steps.
+  ALL STEPS PASS although the agent had replaced two phase 6 steps. It
+  compares every record under a label, not only the first: a code review
+  showed that a second, different command under a correct label passed.
 - **A4. A shorter agent guide.** *[simplify]* C9 becomes a command list per
   phase; the kickoff needs no special rules. One full run with the tool before
   it is trusted. ACCEPTANCE.md stays the explained guide for people. Written: C9.1-C9.11 are fixed `acceptance.py`, `product`, `vm` and `ops`
@@ -128,7 +130,14 @@ such as a small cloud VM. Without one, the safe design is one human decision
   acceptance phase 6 now runs it instead of `app_dr.py promote`: it prints
   the hostnames, address and CA fingerprint users need, since no DNS
   provider is chosen (T5). Run 18 accepted it
-  ([record](history/ACCEPTANCE-2dbc561.md)).
+  ([record](history/ACCEPTANCE-2dbc561.md)). A code review then found that
+  its final check proved the services answer, not that users can log in. A
+  real login needs a person's password and a browser, which a DR tool should
+  not hold, so it stays with a person and with the browser tests (acceptance
+  phase 7, CI's full-stack job). `failover` now checks what it can without a
+  user: services ready, and each app's login can start (Keycloak accepts the
+  app's client and redirect address; the app's CSP allows the token request),
+  also run against the real stack in CI. Waiting for a full run.
 - **G6. Real time limits.** *[new]* A command that hangs must not stop a
   failover silently. `commands.run` in the installer and the SSH transport of
   app-ops have no timeout; `connect_with_retry` in `migrate.py` checks its

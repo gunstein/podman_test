@@ -2,13 +2,19 @@
 
 It chains the existing steps and stops at the first failure, naming the step:
 
-  1. promote   app_dr.py promote (its own preflight first), unless the
-               promotion record already says the whole group was promoted
-  2. deploy    the application tier (deploy-promoted-application)
-  3. backup    WAL archiving and app_backup.py (configure-backup)
-  4. ready     every service ready, Keycloak and both apps answer through
-               nginx, and HTTPS on the host's address verifies with its CA
-  5. users     what the operator must do so users reach this host
+  1. promote     app_dr.py promote (its own preflight first), unless the
+                 promotion record already says the whole group was promoted
+  2. deploy      the application tier (deploy-promoted-application)
+  3. backup      WAL archiving and app_backup.py (configure-backup)
+  4. services    every service ready, and each app answers over HTTPS on the
+                 host's address, verified with its CA
+  5. login-page  for each app, Keycloak shows its login form for the app's
+                 own client and redirect address, and the app's
+                 Content-Security-Policy lets the browser fetch the token
+  6. users       what the operator must do so users reach this host
+
+It does not log a user in: that needs a person's password and a browser.
+A person, or the browser test in acceptance, confirms a real login.
 
 Running it again after a failure is safe: a completed promotion is skipped,
 and the later steps change nothing that is already right. A failed or partial
@@ -17,11 +23,14 @@ promotion is never retried; a person must look at the record first.
 import json
 import sys
 from pathlib import Path
+from urllib.parse import urlencode
 
 from . import recovery, steps
 from .steps import apps, settings
 
 APP_DR = '/opt/todo/bin/app_dr.py'
+# Any valid S256 PKCE challenge: the login form is only shown, never submitted.
+PKCE_CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'
 
 
 def promotion_state(host):
@@ -44,19 +53,56 @@ def promote(host, confirm_fenced, confirm_promotion):
     return True
 
 
-def ready(project_root, host):
-    """Raise unless users can log in: services ready, Keycloak and apps through nginx, HTTPS verified."""
+def https(host, hostname, path, *curl_options):
+    """GET https://hostname:port/path from the host's own address, trusting only the host's CA."""
+    script = ('curl --silent --show-error --fail --max-time 10 '
+              '--cacert <(podman exec nginx cat /var/lib/todo-tls/ca.crt) '
+              '--resolve "$1:$2:$3" "${@:5}" "https://$1:$2$4"')
+    return host.run(['bash', '-c', script, 'https', hostname, str(settings.HTTPS_PORT), host.spec.address,
+                     path, *curl_options]).stdout
+
+
+def services(project_root, host):
+    """Raise unless every service is ready and each app answers over HTTPS with the host's CA."""
     wait_ready = (Path(project_root) / 'deploy/scripts/wait-ready.sh').read_text()
     waited = host.run(['bash', '-s', '--', 'app'], input=wait_ready, allowed=(0, 1))
     if waited.returncode:
         raise RuntimeError(waited.stdout.strip().splitlines()[-1] if waited.stdout.strip() else 'not ready')
     for app in apps.APPS:
-        host.run(['curl', '--silent', '--show-error', '--fail', '--max-time', '10', '-H', f'Host: {app.hostname}',
-                  f'http://127.0.0.1:{settings.LOCAL_HTTP_PORT}/auth/realms/todo/.well-known/openid-configuration'])
-        host.run(['bash', '-c', 'curl --silent --show-error --fail --max-time 10 '
-                  '--cacert <(podman exec nginx cat /var/lib/todo-tls/ca.crt) '
-                  '--resolve "$1:$2:$3" "https://$1:$2/ready"',
-                  'check-https', app.hostname, str(settings.HTTPS_PORT), host.spec.address])
+        https(host, app.hostname, '/ready')
+
+
+def connect_sources(headers):
+    """The connect-src values of the Content-Security-Policy in HTTP response headers."""
+    for line in headers.splitlines():
+        name, _, value = line.partition(':')
+        if name.strip().lower() == 'content-security-policy':
+            for directive in value.split(';'):
+                words = directive.split()
+                if words and words[0] == 'connect-src':
+                    return words[1:]
+    return []
+
+
+def login_page(host):
+    """Raise unless each app's login can start: Keycloak accepts its redirect, and its CSP allows the token."""
+    identity = apps.SHARED_RESOURCE_OWNER.hostname
+    identity_origin = f'https://{identity}:{settings.HTTPS_PORT}'
+    for app in apps.APPS:
+        origin = f'https://{app.hostname}:{settings.HTTPS_PORT}'
+        query = urlencode({'client_id': app.keycloak_client, 'redirect_uri': origin + '/', 'response_type': 'code',
+                           'scope': 'openid', 'code_challenge': PKCE_CHALLENGE, 'code_challenge_method': 'S256'})
+        try:
+            page = https(host, identity, '/auth/realms/todo/protocol/openid-connect/auth?' + query)
+        except RuntimeError as error:
+            raise RuntimeError(f'{app.name}: Keycloak refused the login request of client '
+                               f'{app.keycloak_client} with redirect {origin}/: {error}') from error
+        if 'id="username"' not in page:
+            raise RuntimeError(f'{app.name}: Keycloak did not show its login form for {app.keycloak_client}')
+        sources = connect_sources(https(host, app.hostname, '/', '--head'))
+        if identity_origin not in sources and not (origin == identity_origin and "'self'" in sources):
+            raise RuntimeError(f'{app.name}: Content-Security-Policy connect-src {" ".join(sources) or "(none)"} '
+                               f'does not allow {identity_origin}, so the browser cannot fetch the login token')
 
 
 def users(host):
@@ -66,7 +112,8 @@ def users(host):
     names = [app.hostname for app in apps.APPS]
     return {'hostnames': names, 'address': host.spec.address, 'ca_sha256': fingerprint,
             'next': f'Point {" and ".join(names)} at {host.spec.address} (DNS or each client\'s hosts file), '
-                    f'and have clients trust this host\'s CA, SHA-256 {fingerprint}.'}
+                    f'and have clients trust this host\'s CA, SHA-256 {fingerprint}. Then confirm that a '
+                    'user can log in to each app in a browser: failover checks the login page, not a login.'}
 
 
 def failover(project_root, controller, current, old_primary, confirm_fenced, confirm_promotion, say=None):
@@ -83,7 +130,8 @@ def failover(project_root, controller, current, old_primary, confirm_fenced, con
             ('promote', lambda: promote(current, confirm_fenced, confirm_promotion)),
             ('deploy', lambda: recovery.deploy_promoted(project_root, controller, current)),
             ('backup', lambda: recovery.configure_backup(project_root, controller, current)),
-            ('ready', lambda: ready(project_root, current)),
+            ('services', lambda: services(project_root, current)),
+            ('login-page', lambda: login_page(current)),
             ('users', lambda: users(current))):
         say(f'{name} ...')
         try:

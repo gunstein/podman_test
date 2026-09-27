@@ -93,9 +93,9 @@ host-managed Python and Jinja2 are present.
 
 The installer verifies every bundled file, runs the same preflight
 automatically, loads missing container images and invokes the shared Python
-installer directly. On the first installation it asks
-for the database password and an initial Keycloak administrator password.
-Neither secret is stored in the bundle.
+installer directly. On the first installation it generates every database
+password and the initial Keycloak administrator password as Podman secrets,
+and keeps them on later runs. No secret is stored in the bundle.
 
 ### Oracle Linux 9 with fapolicyd
 

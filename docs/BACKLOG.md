@@ -94,7 +94,11 @@ being accepted.
   checkout); the quick guide's verdict uses it.
 - **A4. A shorter agent guide.** *[simplify]* C9 becomes a command list per
   phase; the kickoff needs no special rules. One full run with the tool before
-  it is trusted. ACCEPTANCE.md stays the explained guide for people.
+  it is trusted. ACCEPTANCE.md stays the explained guide for people. Written: C9.1-C9.11 are fixed `acceptance.py`, `product`, `vm` and `ops`
+  lines (over 80 tool steps, each label once, checked by a test), with new
+  tool commands for fencing, port and connection proofs, the quarantine
+  profile and stop helper, links, power, `onboot` and SSH pinning. Waiting for
+  the full run.
 
 ## Goal: Trondheim running within 30 minutes
 

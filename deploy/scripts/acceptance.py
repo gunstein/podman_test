@@ -23,7 +23,8 @@ JSON line to record.jsonl. Exit status: 0 PASS, 1 FAIL, 2 usage, 3 refused.
 report writes REPORT.md in the run folder from record.jsonl and the other
 logs, so no value in the run record is copied by hand (BACKLOG A3). It exits
 0 only if every step passed, no do was left unfinished or needed approval,
-every other log ends in exit=0 and every step ran from the same clean
+every other log ends in exit=0 (exit=1 for a log named *-refused.log, a
+refusal the guide asks for) and every step ran from the same clean
 checkout. Each record line carries the revision and cleanliness of the
 checkout at the time of that step; report never reads git itself.
 
@@ -31,7 +32,8 @@ Commands:
   do    rollback VMID SNAPSHOT HOST      reset the VM, start it, wait for SSH
   check clean-host HOST                  no Todo state, security services on
   do    firewall-https HOST CLIENT_IP    permanent rich rule for 8443, reloaded
-  check services HOST app|standby        wait-ready.sh, no failed units, nginx -t
+  check services HOST app|standby        wait-ready.sh, no failed units; nginx -t (app)
+                                         or no serving service active (standby)
   check ca HOST                          saves the public CA; same as last time
   check headers                          HSTS, CSP and frame headers from here
   check browser                          Todo, Notes and SSO tests, 0 skipped
@@ -45,6 +47,17 @@ Commands:
   do    firewall-replication SOURCE HOST add|remove   5432-5434 from SOURCE to HOST
   do    proxmox-firewall VMID on|off     VM firewall switch, then a 20 s wait
   do    replication-exception VMID on|off   the todo-quarantine-replication rule, then 20 s
+  do    fence VMID                       pve_lab.py fence, every field checked
+  check ports-closed HOST FROM           ports-closed.sh from FROM (client or an IPv4)
+  check connect FROM TO PORT open|blocked   one fresh TCP connection, 5 s limit
+  check quarantine-ready VMID NAME       the Guest Agent helper answers READY
+  do    quarantine-profile VMID CLIENT PEER   the three rules, firewall still off
+  do    quarantine-stop VMID NAME        the helper stops every service: STOPPED
+  check stopped HOST                     every service inactive or failed, no containers
+  do    link VMID up|down HOST           every network link; up waits for SSH
+  do    power VMID start|shutdown        start waits for the Guest Agent
+  do    onboot VMID 0|1                  the start-at-boot flag, read back
+  do    pin-ssh FROM TO                  key-based SSH FROM to TO, host key verified
 """
 import argparse
 import datetime
@@ -58,6 +71,9 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'deploy/installer'))
+from app_installer import apps  # noqa: E402  (the registry of services, read-only)
+
 TODO_URL = 'https://todo.test:8443'
 NOTES_URL = 'https://notes.test:8443'
 IDENTITY_ORIGIN = TODO_URL
@@ -158,6 +174,17 @@ VMID = matching(r'[0-9]{3,9}')
 ROLE = matching(r'primary|archiving|standby')
 SWITCH = matching(r'on|off')
 CHANGE = matching(r'add|remove')
+NAME = matching(r'[a-z][a-z0-9-]{0,62}')
+PORT = matching(r'[0-9]{1,5}')
+EXPECT = matching(r'open|blocked')
+LINK = matching(r'up|down')
+POWER = matching(r'start|shutdown')
+BIT = matching(r'[01]')
+
+
+def source_address(text):
+    """Where a connection starts: the client itself, or a VM by its IPv4 address."""
+    return text if text == 'client' else host_address(text)
 SNAPSHOT = matching(r'[A-Za-z0-9_-]+')
 MODE = matching(r'app|standby')
 PHASE = matching(r'phase[0-9]+')
@@ -199,6 +226,11 @@ def check_services(step, host, mode):
     if mode == 'app':
         nginx = step.ssh(host, 'podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf')
         step.expect(nginx.returncode == 0, 'nginx configuration is valid')
+    else:
+        serving = apps.services(databases=False)
+        states = step.ssh(host, 'systemctl --user is-active ' + ' '.join(serving)).stdout.split()
+        step.expect(len(states) == len(serving) and 'active' not in states,
+                    'a database-only standby runs none of: ' + ', '.join(serving))
 
 
 def fingerprint(text):
@@ -489,6 +521,190 @@ def do_replication_exception(step, vmid, switch):
     settle(step)
 
 
+def parsed(result, default):
+    """The JSON a pve_lab.py call printed, or default if it printed none."""
+    try:
+        return json.loads(result.stdout)
+    except ValueError:
+        return default
+
+
+def on(step, source, script, *arguments):
+    """Run a bash script on the client or, over SSH, on a VM."""
+    if source == 'client':
+        return step.run(['bash', '-c', script, 'bash', *arguments], timeout=120)
+    return step.ssh(source, script, *arguments, timeout=120)
+
+
+def do_fence(step, vmid):
+    """Phase 6: pve_lab.py fence, and every field of its evidence checked here."""
+    result = pve(step, 'fence', vmid)
+    data = parsed(result, {})
+    networks = [value for key, value in data.items() if re.fullmatch(r'net[0-9]+', key)]
+    step.expect(result.returncode == 0, 'pve_lab.py fence exited 0')
+    step.expect(data.get('status') == 'stopped', 'status stopped')
+    step.expect(data.get('onboot') == '0', 'onboot 0')
+    step.expect(data.get('ha') == 'not managed', 'not managed by HA')
+    step.expect(bool(networks) and all('link_down=1' in value.split(',') for value in networks),
+                'every network link down')
+    step.values.update(data)
+
+
+PORTS = ('22', '5432', '5433', '5434', '8443')
+
+
+def check_ports_closed(step, host, source):
+    """Phase 6: nothing on the fenced host accepts a connection, seen from source."""
+    script = (ROOT / 'deploy/scripts/ports-closed.sh').read_text()
+    result = on(step, source, script, host, *PORTS)
+    step.expect(result.returncode == 0 and f'CLOSED: {host}' in result.stdout, f'{host} is closed seen from {source}')
+
+
+def check_connect(step, source, target, port, expected):
+    """One fresh TCP connection from source to target:port, which must open or be blocked."""
+    result = on(step, source, 'timeout 5 bash -c "</dev/tcp/$1/$2"', target, port)
+    how = {0: 'opened', 124: 'timed out'}.get(result.returncode, f'failed (exit {result.returncode})')
+    step.values.update(outcome=how)
+    step.expect((result.returncode == 0) == (expected == 'open'),
+                f'{source} to {target}:{port} {how}, must be {expected}')
+
+
+def quarantine_helper(step, vmid, action, name):
+    result = pve(step, 'exec', vmid, '--', '/opt/todo/bin/app-quarantine.sh', action, name, step.user)
+    return result, parsed(result, {})
+
+
+def check_quarantine_ready(step, vmid, name):
+    """Phase 5: the stop helper is installed and answers through the Guest Agent."""
+    result, data = quarantine_helper(step, vmid, 'check', name)
+    step.expect(result.returncode == 0 and data.get('exitcode') == 0 and 'READY' in data.get('out-data', ''),
+                'the helper answers READY')
+
+
+def do_quarantine_stop(step, vmid, name):
+    """Phases 5 and 9: the helper stops every service; exited 1, exitcode 0 and STOPPED."""
+    result, data = quarantine_helper(step, vmid, 'stop', name)
+    step.expect(data.get('exited') == 1, 'the helper finished')
+    step.expect(data.get('exitcode') == 0 and 'STOPPED' in data.get('out-data', ''), 'it printed STOPPED')
+    if data.get('err-data'):
+        step.values['warnings'] = data['err-data'].strip()
+
+
+def check_stopped(step, host):
+    """Every registered service inactive or failed with no process, and no running container."""
+    services = apps.services()
+    # One property per call: systemctl show does not keep the order properties were asked in.
+    script = ''.join(f'echo "{unit}' + ''.join(f' $(systemctl --user show -p {name} --value {unit})'
+                                              for name in ('ActiveState', 'MainPID', 'ControlPID')) + '"\n'
+                     for unit in services)
+    result = step.ssh(host, script + 'echo "containers $(podman ps -q | wc -l)"\n')
+    found = {line.split()[0]: line.split()[1:] for line in result.stdout.splitlines() if line.split()}
+    for unit in services:
+        state = found.get(unit, [])
+        step.expect(len(state) == 3 and state[0] in ('inactive', 'failed') and state[1:] == ['0', '0'],
+                    f'{unit}: {" ".join(state) or "no answer"}')
+    step.expect(found.get('containers') == ['0'], 'no running containers')
+
+
+def do_link(step, vmid, updown, host):
+    """Every network link of the VM up or down, read back; up then waits for SSH from here."""
+    value = '1' if updown == 'down' else '0'
+    result = pve(step, 'nic', vmid, 'link_down', value)
+    networks = parsed(result, {})
+    step.expect(result.returncode == 0 and bool(networks)
+                and all(f'link_down={value}' in text.split(',') for text in networks.values()),
+                f'every link of VM {vmid} is {updown}')
+    if updown == 'up':
+        step.expect(wait_for(step, 'SSH', lambda: bool(boot_id(step, host)), 180), f'SSH to {host} works')
+
+
+def do_power(step, vmid, action):
+    """Start (and wait for the Guest Agent) or cleanly shut down the VM through Proxmox."""
+    step.expect(pve(step, 'task', f'/nodes/{{node}}/qemu/{vmid}/status/{action}').returncode == 0,
+                f'VM {vmid} {action} task OK')
+    if action == 'start':
+        step.expect(wait_for(step, 'the Guest Agent',
+                             lambda: pve(step, 'post', f'/nodes/{{node}}/qemu/{vmid}/agent/ping').returncode == 0,
+                             300), 'the Guest Agent answers')
+
+
+def do_onboot(step, vmid, value):
+    """Set whether Proxmox starts the VM at boot, and read it back."""
+    pve(step, 'set', f'/nodes/{{node}}/qemu/{vmid}/config', f'onboot={value}')
+    config = parsed(pve(step, 'get', f'/nodes/{{node}}/qemu/{vmid}/config'), {})
+    step.expect(str(config.get('onboot', 0)) == value, f'onboot is {value}')
+
+
+QUARANTINE_RULES = (
+    ('todo-quarantine-ssh-client', {'type': 'in', 'action': 'ACCEPT', 'proto': 'tcp', 'dport': '22', 'enable': '1'}),
+    ('todo-quarantine-ssh-peer', {'type': 'in', 'action': 'ACCEPT', 'proto': 'tcp', 'dport': '22', 'enable': '1'}),
+    ('todo-quarantine-replication',
+     {'type': 'out', 'action': 'ACCEPT', 'proto': 'tcp', 'dport': '5432:5434', 'enable': '0'}),
+)
+
+
+def do_quarantine_profile(step, vmid, client, peer):
+    """Phase 5: the VM's quarantine rules and options, with the VM firewall still off.
+
+    Refuses to touch a rule it did not create: only rules whose comment starts
+    with todo-quarantine- are removed and recreated.
+    """
+    for path in ('/cluster/firewall/options', '/nodes/{node}/firewall/options'):
+        step.expect(parsed(pve(step, 'get', path), {}).get('enable') == 1, f'{path} has the firewall enabled')
+    base = f'/nodes/{{node}}/qemu/{vmid}/firewall'
+    step.expect(parsed(pve(step, 'get', f'{base}/options'), {}).get('enable') != 1, f'VM {vmid} firewall is still off')
+    existing = parsed(pve(step, 'get', f'{base}/rules'), [])
+    foreign = [rule for rule in existing if not str(rule.get('comment', '')).startswith('todo-quarantine-')]
+    step.expect(not foreign, f'no rules on VM {vmid} other than earlier todo-quarantine ones')
+    if step.failures:
+        return
+    for rule in sorted(existing, key=lambda rule: rule['pos'], reverse=True):
+        pve(step, 'delete', f'{base}/rules/{rule["pos"]}')
+    step.expect(pve(step, 'nic', vmid, 'firewall', '1').returncode == 0, 'firewall=1 on every network device')
+    addresses = {'todo-quarantine-ssh-client': f'source={client}/32', 'todo-quarantine-ssh-peer': f'source={peer}/32',
+                 'todo-quarantine-replication': f'dest={peer}/32'}
+    for comment, fields in QUARANTINE_RULES:
+        pve(step, 'post', f'{base}/rules', *(f'{key}={value}' for key, value in fields.items()),
+            addresses[comment], f'comment={comment}')
+    pve(step, 'set', f'{base}/options', 'enable=0', 'policy_in=DROP', 'policy_out=DROP', 'dhcp=1', 'ndp=1')
+    rules = {rule.get('comment'): rule for rule in parsed(pve(step, 'get', f'{base}/rules'), [])}
+    step.expect(sorted(rules) == sorted(comment for comment, _ in QUARANTINE_RULES), 'exactly the three rules')
+    step.expect(str(rules.get('todo-quarantine-replication', {}).get('enable')) == '0',
+                'the replication exception is disabled')
+    options = parsed(pve(step, 'get', f'{base}/options'), {})
+    step.expect(options.get('enable') != 1 and options.get('policy_in') == 'DROP' and options.get('policy_out') == 'DROP',
+                'options: firewall off, policy DROP both ways')
+    step.values.update(rules=sorted(rules), options=options)
+
+
+PIN_SCRIPT = """set -eu
+host=$1 expected=$2
+scanned=$(ssh-keyscan -t ed25519 "$host" 2>/dev/null)
+actual=$(printf '%s\\n' "$scanned" | ssh-keygen -lf - | awk '{print $2}')
+test "$actual" = "$expected" || { echo "FINGERPRINT MISMATCH: $actual != $expected" >&2; exit 1; }
+ssh-keygen -F "$host" >/dev/null || printf '%s\\n' "$scanned" >> ~/.ssh/known_hosts
+echo "PINNED $host $actual"
+"""
+
+
+def do_pin_ssh(step, source, target):
+    """Key-based SSH from source to target, with target's host key checked over the client's trusted SSH."""
+    key = step.ssh(source, "test -f ~/.ssh/id_rsa || ssh-keygen -q -t rsa -b 3072 -N '' -C todo-ops-control "
+                           "-f ~/.ssh/id_rsa; cat ~/.ssh/id_rsa.pub").stdout.strip().splitlines()
+    public = key[-1] if key and key[-1].startswith('ssh-') else ''
+    if not step.expect(bool(public), f'{source} has an SSH key'):
+        return
+    step.ssh(target, 'umask 077; mkdir -p ~/.ssh; grep -qxF "$1" ~/.ssh/authorized_keys 2>/dev/null || '
+                     'printf "%s\\n" "$1" >> ~/.ssh/authorized_keys', public)
+    fields = step.ssh(target, 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub').stdout.split()
+    expected = fields[1] if len(fields) > 1 else ''
+    pinned = step.ssh(source, PIN_SCRIPT, target, expected)
+    step.expect(bool(expected) and f'PINNED {target} {expected}' in pinned.stdout, f'{target} host key verified and pinned')
+    name = step.ssh(source, f'ssh -o BatchMode=yes {step.user}@{target} hostname')
+    step.expect(name.returncode == 0 and bool(name.stdout.strip()), f'{source} reaches {target} with its key')
+    step.values.update(fingerprint=expected, hostname=name.stdout.strip())
+
+
 COMMANDS = {
     # (kind, name): (function, argument validators, refuse any second run)
     ('do', 'rollback'): (do_rollback, (VMID, SNAPSHOT, host_address), False),
@@ -508,6 +724,17 @@ COMMANDS = {
     ('do', 'firewall-replication'): (do_firewall_replication, (host_address, host_address, CHANGE), True),
     ('do', 'proxmox-firewall'): (do_proxmox_firewall, (VMID, SWITCH), False),
     ('do', 'replication-exception'): (do_replication_exception, (VMID, SWITCH), False),
+    ('do', 'fence'): (do_fence, (VMID,), False),
+    ('check', 'ports-closed'): (check_ports_closed, (host_address, source_address), False),
+    ('check', 'connect'): (check_connect, (source_address, host_address, PORT, EXPECT), False),
+    ('check', 'quarantine-ready'): (check_quarantine_ready, (VMID, NAME), False),
+    ('do', 'quarantine-profile'): (do_quarantine_profile, (VMID, host_address, host_address), False),
+    ('do', 'quarantine-stop'): (do_quarantine_stop, (VMID, NAME), False),
+    ('check', 'stopped'): (check_stopped, (host_address,), False),
+    ('do', 'link'): (do_link, (VMID, LINK, host_address), False),
+    ('do', 'power'): (do_power, (VMID, POWER), False),
+    ('do', 'onboot'): (do_onboot, (VMID, BIT), False),
+    ('do', 'pin-ssh'): (do_pin_ssh, (host_address, host_address), False),
 }
 
 
@@ -586,8 +813,10 @@ def report(run_directory):
     for entry in unfinished:
         attention.append(f'{entry["step"]} do {entry["command"]}: started but never finished ({entry["log"]})')
     for name, last, _ in products:
-        if last != 'exit=0':
-            attention.append(f'{name}: {last}')
+        # A log named ...-refused.log records a refusal the guide asks for: it must exit 1.
+        expected = 'exit=1' if name.endswith('-refused.log') else 'exit=0'
+        if last != expected:
+            attention.append(f'{name}: {last}, expected {expected}')
     if not clean:
         described = '; '.join(f'{rev} ({"clean" if ok else "NOT clean"})' for rev, ok in checkouts)
         attention.append(f'the steps did not all run from one clean checkout: {described}')

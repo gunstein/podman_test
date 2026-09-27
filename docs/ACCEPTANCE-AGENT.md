@@ -379,14 +379,14 @@ Next I will: <what you do afterwards>
 
 ### C5. Tools you use
 
-**Run folder.** Create `~/todo-acceptance-runs/<RUN_ID>/` (outside the checkout)
-with `logs/`. Copy the run-record template from `docs/ACCEPTANCE.md`
-("Run record / handoff template") into `run-record.md` there. Save the output
-of every command that matters to `logs/<phase>-<step>.log`, for example:
-
-```bash
-ssh gunstein@192.168.0.102 'systemctl --user is-active todo-app.service' 2>&1 | tee ~/todo-acceptance-runs/$RUN_ID/logs/03-services.log
-```
+**Run folder and the acceptance tool.** Every step of C9 writes into
+`~/todo-acceptance-runs/<RUN_ID>/` (outside the checkout): the checks and
+state changes around the product through `deploy/scripts/acceptance.py`
+(`$A`), the product's own commands through the `product`, `vm` and `ops`
+helpers (C9.1). Both put each step's full output and exit status in its own
+`logs/<step>...log`; `acceptance.py` also appends a line to `record.jsonl` and
+builds `REPORT.md` from it at the end. Keep short notes in `run-record.md`
+there as you go (what you did, any STOP).
 
 **Proxmox API.** Always use the helper from the checkout; never write your own
 curl commands with the token:
@@ -451,20 +451,10 @@ every 10 seconds for up to 10 minutes until the boot ID differs.
 
 **Waiting until the workloads are up.** A systemd unit is `active` as soon as
 its pod starts; containers, health checks and HTTP answers follow seconds
-later. After every reboot, and after every command that starts services
-(`install.sh`, `bootstrap-standby`, `deploy-promoted-application`,
-`rebuild-standby`), run the repository's wait script on that host before the
-next check, and keep its `READY` line in the step's log:
-
-```bash
-ssh gunstein@192.168.0.102 'bash -s' -- app < deploy/scripts/wait-ready.sh
-ssh gunstein@192.168.0.102 'bash -s' -- standby < deploy/scripts/wait-ready.sh
-```
-
-Use `app` on a host with the application and `standby` on a database-only
-standby. It only reads, waits up to 5 minutes and names what it still waits
-for. `NOT READY` is a failed check: STOP (C3). Do not write your own wait loops
-around `systemctl` or `podman`.
+later. `$A check services` and `$A do reboot` wait for that with
+`deploy/scripts/wait-ready.sh` (`app` on a host with the application,
+`standby` on a database-only standby), up to 5 minutes. Do not write your own
+wait loops around `systemctl` or `podman`.
 
 ### C6. Secrets handling (the only allowed patterns)
 
@@ -491,19 +481,13 @@ around `systemctl` or `podman`.
 
 ### C7. Evidence you must capture (do not skip; earlier runs lacked this)
 
-For every phase, write into `run-record.md`:
-
-- Each app-ops command's JSON line and exit code, and for repeats
-  `{"changed": false}`.
-- `hostname`, boot ID before and after each reboot.
-- Per database (todo, notes, keycloak): role (`pg_is_in_recovery`,
-  `transaction_read_only`), receive/replay LSNs, lag, slot name and state.
-- Marker titles and IDs (Todo and Notes) and on which host you read them.
-- CA SHA-256 fingerprint of the serving host.
-- Browser test summary lines (`N passed`, and **0 skipped**).
-- Proxmox evidence: VM status, `onboot`, every `netN` string, VM firewall
-  options and the rules you created (with comments).
-- Every deviation from ACCEPTANCE.md and why.
+The evidence is what C9 writes: one log per step, `record.jsonl` and
+`REPORT.md`. `acceptance.py` records the values itself (boot IDs, roles, CA
+fingerprints, marker IDs, TLS rows, Proxmox state, disk sizes); the product
+logs hold every app-ops and DR command's JSON line and exit status. Do not
+copy values by hand. In `run-record.md`, write only what the logs cannot
+show: where you stopped and why, what the operator did (client trust,
+approvals), and every deviation from ACCEPTANCE.md.
 
 Environment deviations that are expected in an agent run and must be recorded,
 but do not by themselves downgrade the verdict: the lab sudoers file from A3
@@ -520,10 +504,10 @@ listings plus connection tests instead of `pve-firewall` output.
    task list `get /nodes/{node}/tasks?vmid=107`, `podman ps -a`).
 4. Only read-only commands, waits for asynchronous work (fapolicyd refresh,
    replication catching up, Keycloak starting after boot) and re-running a
-   read-only check may be repeated. A read-only check that failed because
-   something was still starting may run once more after `wait-ready.sh`
-   prints `READY` (C5); log both results and list the repeat in
-   `run-record.md`. It does not change the verdict. Everything that changes
+   read-only check may be repeated. A `$A check` that failed because
+   something was still starting may run once more after
+   `$A check services` passes; both results are in `record.jsonl` and
+   `REPORT.md` lists the repeat. It does not change the verdict. Everything that changes
    state: STOP (C3), never run it again (C2 rule 3).
 5. Look up the symptom in `docs/ACCEPTANCE-TROUBLESHOOTING.md` and put its
    "safe next observation" in your report. Do not carry out a recovery
@@ -531,12 +515,11 @@ listings plus connection tests instead of `pve-firewall` output.
 
 ### C9. Phase-by-phase instructions
 
-Execute the phases of `docs/ACCEPTANCE.md` in order. Read each phase completely
-before starting it. The notes below tell you how to perform the steps that
-normally need the operator, and what extra checks are required. Values below
-use the lab defaults (`.102` = VM 107 = `todo-primary`, `.108` = VM 108 =
-`todo-standby`, client `.100`); use the kickoff values. Run every app-ops
-command as C9.13 shows.
+The phases are those of `docs/ACCEPTANCE.md`; read each one there before you
+start it, for the why. What you run is the fixed list of commands below, in
+order: C9.1 explains the helpers, C9.2 to C9.11 are the phases. Values use the
+lab defaults (`.102` = VM 107 = `todo-primary`, `.108` = VM 108 =
+`todo-standby`, client `.100`); use the kickoff values.
 
 #### C9.0 Before phase 1
 
@@ -562,112 +545,96 @@ command as C9.13 shows.
 
 5. Check the Proxmox helper and access: `get /version`, both VMs'
    `status/current` and `config`, `get /cluster/firewall/options`,
-   `get /cluster/ha/resources`. Record `onboot` and every `netN` value for both
-   VMs; you restore `onboot` at the end.
+   `get /cluster/ha/resources`. `01-3 do rollback` records VM 107's `onboot`
+   from its clean snapshot; phase 9 restores that value.
 
-#### C9.1 Phase 1 — Clean-host evidence (pre-approved reset)
+#### C9.1 Commands, logs and the helpers you use
 
-1. Roll back both VMs to their clean snapshots with `task .../snapshot/<SNAP>/rollback`,
-   then `task .../status/start` if the VM is stopped. Wait for `agent/ping` and SSH.
-2. VM firewall must be off on both: `get .../firewall/options` shows no
-   `enable: 1`. If a VM firewall is enabled, read all its rules; if every rule
-   has a `todo-quarantine` comment from an earlier run, set `enable=0` with
-   `set /nodes/{node}/qemu/<VMID>/firewall/options enable=0` and record why.
-   Any other rule: STOP.
-3. Every `netN` must not contain `link_down=1`. If it does, `nic <VMID> link_down 0` and record.
-4. Run the phase 1 guest checks from ACCEPTANCE.md on both VMs over SSH, plus
-   `sudo -n true && echo SUDO-OK` and `nmcli -g IP4.ADDRESS,IP4.GATEWAY device show`
-   (record whether the address comes from DHCP). Save to logs.
-5. PASS only if identities differ and match the kickoff, security services are
-   active, SELinux is Enforcing, Podman is rootless, `python3 -c 'import jinja2, yaml'`
-   succeeds on both VMs, and there is no Todo, Notes or Keycloak state. If Jinja2
-   or PyYAML is missing, `sudo -n dnf install -y python3-jinja2 python3-pyyaml`
-   is a documented target prerequisite (`deploy/offline/README.md`), not a source
-   change; install it and record the deviation. If Todo/Notes/Keycloak state
-   exists after rollback: STOP (wrong snapshot).
+Everything below is a fixed command. Run them in order, from the repository
+root on the client, in one shell where you first set:
 
-#### C9.2 Phase 2 — Build and stage
+```bash
+RUN_ID="<run ID from the kickoff>"
+RUN=~/todo-acceptance-runs/$RUN_ID
+mkdir -p "$RUN/logs"
+A="python3 deploy/scripts/acceptance.py --run $RUN_ID"
+# A product command: its full output and exit status in logs/<step>.log.
+product() { local log="$RUN/logs/$1.log"; shift; "$@" > "$log" 2>&1; echo "exit=$?" >> "$log"; tail -n 4 "$log"; }
+# A command on a VM, and an app-ops command on the controller VM.
+vm() { product "$1" ssh -o BatchMode=yes gunstein@"$2" "$3"; }
+ops() { vm "$1" "$2" "cd ~/todo-operations && PYTHONPATH=\$PWD/deploy/ops PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops $3"; }
+```
 
-Follow ACCEPTANCE.md phase 2 exactly on the client. Transfer both archives and
-their `.sha256` files with `scp` to both VMs, then verify there. Record both
-`VERSION` files; both must show the kickoff revision and `source_state=clean`.
+- `$A ...` is `deploy/scripts/acceptance.py`: it runs the glue around the
+  product the same way every time, writes its own log and a line in
+  `record.jsonl`, compares the result itself and ends with `RESULT: PASS`,
+  `FAIL` or `REFUSED`. FAIL or REFUSED: STOP (C3). It refuses to repeat a
+  failed `do`; only the operator can allow that (`--operator-approved`).
+- `product`, `vm` and `ops` run the product's own commands exactly as written
+  here (the same as ACCEPTANCE.md). Read the tail it prints: the JSON line
+  must be the one given after `→`, and the last line `exit=0`. A step whose
+  log name ends in `-refused` must end in `exit=1` with the message given.
+  Anything else: STOP.
+- Values below are the lab defaults (`.102` = VM 107 = `todo-primary`,
+  `.108` = VM 108 = `todo-standby`, client `.100`, snapshot `clean-agent`);
+  use the kickoff values. Do not add commands of your own around these.
+- `rebuild-standby` and the builds can take over ten minutes: start those
+  `product`/`ops` lines with a trailing `&`, then read the log until its
+  `exit=` line appears (C5 "Long commands"). Never start one twice.
+
+#### C9.2 Phases 1 and 2 — Clean hosts, build and stage (pre-approved reset)
+
+```bash
+$A --step 01-1 do proxmox-firewall 107 off     # an earlier run may have left it on
+$A --step 01-2 do proxmox-firewall 108 off
+$A --step 01-3 do rollback 107 clean-agent 192.168.0.102
+$A --step 01-4 do rollback 108 clean-agent 192.168.0.108
+$A --step 01-5 check clean-host 192.168.0.102
+$A --step 01-6 check clean-host 192.168.0.108
+vm 01-7-prerequisites-102 192.168.0.102 'sudo -n dnf install -y python3-jinja2 python3-pyyaml'
+vm 01-8-prerequisites-108 192.168.0.108 'sudo -n dnf install -y python3-jinja2 python3-pyyaml'
+product 02-1-build-offline deploy/offline/build-bundle.sh
+product 02-2-build-operations deploy/scripts/build-operations-package.sh
+product 02-3-transfer-102 scp dist/todo-offline-m12.tar.gz dist/todo-offline-m12.tar.gz.sha256 dist/todo-operations.tar.gz dist/todo-operations.tar.gz.sha256 gunstein@192.168.0.102:
+product 02-4-transfer-108 scp dist/todo-offline-m12.tar.gz dist/todo-offline-m12.tar.gz.sha256 dist/todo-operations.tar.gz dist/todo-operations.tar.gz.sha256 gunstein@192.168.0.108:
+vm 02-5-verify-102 192.168.0.102 'sha256sum -c todo-offline-m12.tar.gz.sha256 todo-operations.tar.gz.sha256 && tar -xzf todo-offline-m12.tar.gz && tar -xzf todo-operations.tar.gz && (cd todo-offline-m12 && sha256sum --quiet -c SHA256SUMS && cat VERSION) && (cd todo-operations && sha256sum --quiet -c SHA256SUMS && cat VERSION)'
+vm 02-6-verify-108 192.168.0.108 'sha256sum -c todo-offline-m12.tar.gz.sha256 todo-operations.tar.gz.sha256 && tar -xzf todo-offline-m12.tar.gz && tar -xzf todo-operations.tar.gz && (cd todo-offline-m12 && sha256sum --quiet -c SHA256SUMS && cat VERSION) && (cd todo-operations && sha256sum --quiet -c SHA256SUMS && cat VERSION)'
+```
+
+Both `VERSION` files on both VMs must show the kickoff revision and
+`source_state=clean`. Installing `python3-jinja2` is a documented target
+prerequisite, not a source change: record it as an expected deviation.
 
 #### C9.3 Phase 3 — Initial deployment on `.102`
 
-1. Apply the fapolicyd exact-file trust recipe from `deploy/offline/README.md`
-   (with `sudo -n`), then `sh ./preflight.sh` and
-   `sh ./install.sh --publish-address 192.168.0.102` over SSH.
-2. Add the firewalld HTTPS rule for the client IP (value from the kickoff).
-3. Client name resolution and CA trust: see C9.4.
-4. Run the seven-service, nginx and health checks of phase 3.
-5. Browser environment on the client (once per run):
+```bash
+vm 03-1-trust 192.168.0.102 'cd ~/todo-offline-m12 && for source in "$PWD"/deploy/installer/app_installer/*.py; do source=$(realpath "$source"); sudo -n fapolicyd-cli --file update "$source" --trust-file app-installer || sudo -n fapolicyd-cli --file add "$source" --trust-file app-installer; done && sudo -n fapolicyd-cli --update'
+vm 03-2-install 192.168.0.102 'cd ~/todo-offline-m12 && sh ./preflight.sh && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": true}
+$A --step 03-3 do firewall-https 192.168.0.102 192.168.0.100
+$A --step 03-4 check services 192.168.0.102 app
+```
 
-   ```bash
-   python3 -m venv todo-backend/.venv
-   todo-backend/.venv/bin/python -m pip install -r todo-backend/requirements-e2e.txt
-   todo-backend/.venv/bin/python -m playwright install chromium
-   ```
+Client name resolution and CA trust for `.102`: C9.4 (the operator runs it
+when `CLIENT_SUDO: no`). Then generate the testuser password (C6) and
+provision the user (C9.4, last block):
 
-   `todo-backend/.venv` is ignored by Git; confirm `git status --porcelain` is
-   still empty afterwards.
-6. Provision `testuser` (C6 password). `e2e/provision_user.py` talks to
-   `http://127.0.0.1:8080`, so forward that port from the serving host. The
-   control socket lets you close exactly this tunnel afterwards. Never close
-   it with `pkill -f`: the pattern also matches your own shell running the
-   block, and kills it.
+```bash
+$A --step 03-5 check ca 192.168.0.102
+$A --step 03-6 check headers
+$A --step 03-7 check browser
+$A --step 03-8 do markers phase3
+$A --step 03-9 check markers 192.168.0.102
+$A --step 03-10 do reboot 107 192.168.0.102 app
+$A --step 03-11 check ca 192.168.0.102
+$A --step 03-12 check markers 192.168.0.102
+vm 03-13-install-again 192.168.0.102 'cd ~/todo-offline-m12 && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": false}
+$A --step 03-14 check services 192.168.0.102 app
+```
 
-   ```bash
-   tunnel="$XDG_RUNTIME_DIR/todo-acceptance/tunnel"
-   ssh -o ExitOnForwardFailure=yes -o ControlMaster=yes -o ControlPath="$tunnel" \
-     -f -N -L 127.0.0.1:8080:127.0.0.1:8080 gunstein@192.168.0.102
-   (
-     KEYCLOAK_ADMIN_PASSWORD="$(ssh gunstein@192.168.0.102 "podman secret inspect --showsecret --format '{{.SecretData}}' keycloak-admin-password")"
-     E2E_PASSWORD="$(cat "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password")"
-     export KEYCLOAK_ADMIN_PASSWORD E2E_PASSWORD
-     todo-backend/.venv/bin/python e2e/provision_user.py
-   )
-   ssh -o ControlPath="$tunnel" -O exit gunstein@192.168.0.102
-   ```
+The trust log shows `update` errors for files not yet trusted, then a
+successful `add`: expected.
 
-   Provision once. The user lives in the replicated Keycloak database and must
-   survive failover; do not re-provision after promotion unless login fails
-   (then STOP first).
-7. Browser tests: run the block from ACCEPTANCE.md, but set the password from
-   the file instead of `read -rsp`:
-
-   ```bash
-   (
-     E2E_PASSWORD="$(cat "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password")"
-     export E2E_PASSWORD E2E_USERNAME=testuser
-     E2E_BASE_URL=https://todo.test:8443 E2E_IGNORE_HTTPS_ERRORS=false \
-       todo-backend/.venv/bin/python -m pytest e2e/test_todo_flow.py --browser chromium -q
-     E2E_NOTES_URL=https://notes.test:8443 E2E_IGNORE_HTTPS_ERRORS=false \
-       todo-backend/.venv/bin/python -m pytest e2e/test_notes_flow.py --browser chromium -q
-     E2E_MULTI_APP=1 E2E_CA_FILE=/tmp/todo-public-root.crt E2E_IGNORE_HTTPS_ERRORS=false \
-       todo-backend/.venv/bin/python -m pytest e2e/test_multi_app.py -q
-   )
-   ```
-
-   Require the Todo, Notes and multi-app SSO tests all passed and **0 skipped**.
-   A skip is a failure. Use this same block in phases 7 and 11.
-8. Persistent markers: create one authenticated Todo and one Note with the
-   helper and record the printed IDs:
-
-   ```bash
-   (
-     E2E_PASSWORD="$(cat "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password")"
-     export E2E_PASSWORD MARKER="acceptance $RUN_ID phase3"
-     todo-backend/.venv/bin/python e2e/create_markers.py
-   )
-   ```
-
-   Use the same pattern later with `phase4`, `phase6`, `phase7` and `phase9`
-   in the marker text.
-9. Reboot VM 107 through the API (C5), run `wait-ready.sh app` (C5), then
-   repeat the checks, the markers and the CA fingerprint, run `install.sh`
-   again and compare before/after values as ACCEPTANCE.md requires.
-
-#### C9.4 Client name resolution and CA trust (phase 3 and phase 7)
+#### C9.4 Client trust and the test user (phases 3 and 7)
 
 With `CLIENT_SUDO: yes` (and `sudo -n true` working on the client), run these
 yourself. With `CLIENT_SUDO: no`, write them as
@@ -681,260 +648,265 @@ sudo sed -i -e '/[[:space:]]todo\.test\([[:space:]]\|$\)/d' -e '/[[:space:]]note
 deploy/scripts/trust-serving-ca.sh "gunstein@$IP"
 ```
 
-Afterwards verify yourself: `getent hosts todo.test notes.test`, the fingerprint
-comparison from ACCEPTANCE.md, and `curl --fail https://todo.test:8443/ready`
-and `https://notes.test:8443/ready` **without** `-k`. Also save the public CA to
-`/tmp/todo-public-root.crt` for `E2E_CA_FILE`.
+Phase 3 only, once per run: the browser environment and the test user.
+`todo-backend/.venv` is ignored by Git; `git status --porcelain` must stay
+empty. `e2e/provision_user.py` talks to `http://127.0.0.1:8080`, so forward
+that port; close exactly this tunnel with its control socket, never with
+`pkill -f` (the pattern matches your own shell):
 
-#### C9.5 Phase 4 — Standby bootstrap
+```bash
+product 03-4a-browser-env sh -c 'python3 -m venv todo-backend/.venv && todo-backend/.venv/bin/python -m pip install -r todo-backend/requirements-e2e.txt && todo-backend/.venv/bin/python -m playwright install chromium'
+tunnel="$XDG_RUNTIME_DIR/todo-acceptance/tunnel"
+ssh -o ExitOnForwardFailure=yes -o ControlMaster=yes -o ControlPath="$tunnel" \
+  -f -N -L 127.0.0.1:8080:127.0.0.1:8080 gunstein@192.168.0.102
+(
+  KEYCLOAK_ADMIN_PASSWORD="$(ssh gunstein@192.168.0.102 "podman secret inspect --showsecret --format '{{.SecretData}}' keycloak-admin-password")"
+  E2E_PASSWORD="$(cat "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password")"
+  export KEYCLOAK_ADMIN_PASSWORD E2E_PASSWORD
+  todo-backend/.venv/bin/python e2e/provision_user.py
+) > "$RUN/logs/03-4b-provision-user.log" 2>&1; echo "exit=$?" >> "$RUN/logs/03-4b-provision-user.log"
+ssh -o ControlPath="$tunnel" -O exit gunstein@192.168.0.102
+```
 
-Follow ACCEPTANCE.md, with app-ops trust and `initial.yaml` on `.102` first
-(C9.13). The firewalld rule on `.102` uses `port="5432-5434"`.
-Set up key-based SSH in both directions with C9.12 (`FROM=.102`, `TO=.108`,
-then `FROM=.108`, `TO=.102`); do not use `ssh-copy-id`, which would need a
-password. The phase 5 rehearsal checks SSH from `.108` to `.102`, so that host
-key must already be pinned then. Record per-database
-streaming/slot/lag evidence and read both markers on the standby. Reboot VM 108
-through the API and re-check.
+The user lives in the replicated Keycloak database and survives failover; do
+not provision it again after promotion.
+
+#### C9.5 Phase 4 — Trust, inventories and standby bootstrap
+
+Before phase 4, on `.102` (C9.13): trust app-ops twice (`changed`, then
+`unchanged`), write `initial.yaml`, record the skipped first sudo refusal.
+
+```bash
+vm 04-1-trust-ops 192.168.0.102 'cd ~/todo-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
+vm 04-2-trust-ops-again 192.168.0.102 'cd ~/todo-operations && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → unchanged
+vm 04-3-inventory 192.168.0.102 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-primary: {role: primary, address: 192.168.0.102, local: true}" "  todo-standby: {role: standby, address: 192.168.0.108}" > initial.yaml && cat initial.yaml'
+echo "C9.13 item 1: first sudo refusal check skipped (lab sudoers)" > "$RUN/logs/04-4-sudo-refusal-skip.txt"
+$A --step 04-5 do pin-ssh 192.168.0.102 192.168.0.108
+$A --step 04-6 do pin-ssh 192.168.0.108 192.168.0.102
+ops 04-7-preflight-refused 192.168.0.102 '--inventory initial.yaml preflight-standby'   # exit=1, message names the missing rich rule
+$A --step 04-8 do firewall-replication 192.168.0.108 192.168.0.102 add
+ops 04-9-preflight 192.168.0.102 '--inventory initial.yaml preflight-standby'           # → {"changed": false}
+ops 04-10-bootstrap 192.168.0.102 '--inventory initial.yaml bootstrap-standby'          # → {"changed": true}
+ops 04-11-status 192.168.0.102 '--inventory initial.yaml replication-status'            # → {"changed": false}
+ops 04-12-status-again 192.168.0.102 '--inventory initial.yaml replication-status'      # → {"changed": false}
+vm 04-13-no-secrets 192.168.0.102 'cd ~/todo-operations && find . -newer SHA256SUMS -type f'   # only initial.yaml
+$A --step 04-14 check replication-tls 192.168.0.102
+$A --step 04-15 check roles 192.168.0.108 standby
+$A --step 04-16 do markers phase4
+$A --step 04-17 check markers 192.168.0.108
+$A --step 04-18 do reboot 108 192.168.0.108 standby
+$A --step 04-19 check replication-tls 192.168.0.102
+$A --step 04-20 check markers 192.168.0.108
+```
 
 #### C9.6 Phase 5 — DR tool and quarantine rehearsal (pre-approved outage)
 
-1. `install-dr-tool` on `.102`, then `app_dr.py status` on `.108`, then the
-   repeat (`{"changed": false}`).
-2. On `.102`, install the quarantine helper with both pre-approved opt-ins, then
-   run the same command once more and require `{"changed": false}`:
-   `install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint`.
+```bash
+ops 05-1-install-dr-tool 192.168.0.102 '--inventory initial.yaml install-dr-tool'          # → {"changed": true}
+ops 05-2-install-dr-tool-again 192.168.0.102 '--inventory initial.yaml install-dr-tool'    # → {"changed": false}
+vm 05-3-dr-status 192.168.0.108 'python3 /opt/todo/bin/app_dr.py status'                   # standby, not writable, 0 bytes lag, primary reachable
+ops 05-4-install-quarantine-tool 192.168.0.102 '--inventory initial.yaml install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint'        # → {"changed": true}
+ops 05-5-install-quarantine-tool-again 192.168.0.102 '--inventory initial.yaml install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint'  # → {"changed": false}
+$A --step 05-6 check quarantine-ready 107 todo-primary
+$A --step 05-7 do quarantine-profile 107 192.168.0.100 192.168.0.108
+```
 
-3. `pve_lab.py exec 107 -- /opt/todo/bin/app-quarantine.sh check todo-primary gunstein`
-   must exit 0 and print `READY`.
-4. Prepare the quarantine profile on VM 107 **while it is still disabled**:
-   - `get /cluster/firewall/options`: datacenter firewall must be enabled (else C4).
-   - `get /nodes/{node}/firewall/options`: the node's own firewall must also be
-     enabled (else C4; this is separate from the datacenter switch above and from
-     VM 107's own `enable` flag, and A1 should have turned it on ahead of time).
-   - `get /nodes/{node}/qemu/107/firewall/rules`: if any rule remains from an
-     incomplete earlier run (its Proxmox firewall config is not part of the VM
-     snapshot, so phase 1's rollback does not clear it), and every one of them
-     has a `todo-quarantine-*` comment, delete each by its `pos` with
-     `delete /nodes/{node}/qemu/107/firewall/rules/<pos>` (highest `pos` first)
-     and record why. Any rule without that comment prefix: STOP.
-   - `nic 107 firewall 1` needs `SDN.Use` on the token (A1); a `403` naming
-     `/sdn/zones/.../SDN.Use` means A1 was not completed — ask the operator (C4).
-   - Every `netN` of VM 107 needs `firewall=1`: `nic 107 firewall 1`.
-   - Create exactly these rules, each with its comment:
+The rehearsal. VM 107 is still the writable primary, so this brief outage is
+harmless. The proofs run before services stop, because a blocked port only
+proves something when a service listens behind it. Sub-steps 2 to 6 put VM 107
+into quarantine; only 7 and 8 take it out again.
 
-     ```bash
-     python3 deploy/scripts/pve_lab.py post /nodes/{node}/qemu/107/firewall/rules type=in action=ACCEPT proto=tcp dport=22 source=192.168.0.100/32 enable=1 comment=todo-quarantine-ssh-client
-     python3 deploy/scripts/pve_lab.py post /nodes/{node}/qemu/107/firewall/rules type=in action=ACCEPT proto=tcp dport=22 source=192.168.0.108/32 enable=1 comment=todo-quarantine-ssh-peer
-     python3 deploy/scripts/pve_lab.py post /nodes/{node}/qemu/107/firewall/rules type=out action=ACCEPT proto=tcp dport=5432:5434 dest=192.168.0.108/32 enable=0 comment=todo-quarantine-replication
-     ```
+```bash
+# 1. Baseline, firewall still off
+$A --step 05-8-1a check connect client 192.168.0.102 8443 open
+$A --step 05-8-1b check connect 192.168.0.108 192.168.0.102 5432 open
+$A --step 05-8-1c check connect 192.168.0.102 192.168.0.108 22 open
+# 2. Firewall on (the tool waits 20 s for it to apply)
+$A --step 05-8-2 do proxmox-firewall 107 on
+# 3. Outside proofs, all fresh connections
+$A --step 05-8-3a check connect client 192.168.0.102 22 open
+$A --step 05-8-3b check connect client 192.168.0.102 8443 blocked
+$A --step 05-8-3c check connect 192.168.0.108 192.168.0.102 22 open
+$A --step 05-8-3d check connect 192.168.0.108 192.168.0.102 5432 blocked
+$A --step 05-8-3e check connect 192.168.0.102 192.168.0.108 22 blocked
+vm 05-8-3f-ipv6 192.168.0.102 'ip -6 addr show scope global'   # must print nothing; a global IPv6 address: STOP
+# 4-6. Links down, start isolated, stop the services through the Guest Agent
+$A --step 05-8-4a do power 107 shutdown
+$A --step 05-8-4b do link 107 down 192.168.0.102
+$A --step 05-8-5 do power 107 start
+$A --step 05-8-6 do quarantine-stop 107 todo-primary
+# 7. Links up: restricted SSH works, everything stays stopped
+$A --step 05-8-7a do link 107 up 192.168.0.102
+$A --step 05-8-7b check connect 192.168.0.108 192.168.0.102 22 open
+$A --step 05-8-7c check stopped 192.168.0.102
+# 8. Restore normal operation: firewall off, then a reboot starts the services
+$A --step 05-8-8a do proxmox-firewall 107 off
+$A --step 05-8-8b do reboot 107 192.168.0.102 app
+# 9. Writable, streaming over TLS with zero lag, trusted HTTPS
+$A --step 05-8-9a check roles 192.168.0.102 primary
+$A --step 05-8-9b check replication-tls 192.168.0.102
+ops 05-8-9c-status 192.168.0.102 '--inventory initial.yaml replication-status'   # → {"changed": false}
+$A --step 05-8-9d check ca 192.168.0.102
+```
 
-   - Set the options but keep the firewall off. `dhcp=1` and `ndp=1` keep
-     DHCP and IPv6 neighbour discovery working, so the guest keeps its address
-     under quarantine:
-     `set /nodes/{node}/qemu/107/firewall/options enable=0 policy_in=DROP policy_out=DROP dhcp=1 ndp=1`.
-   - Record `get .../firewall/rules` and `get .../firewall/options`.
-5. Rehearsal (VM 107 is still the writable primary, so a brief exposure is
-   harmless). A blocked port only proves something when a service is really
-   listening behind it, so the outside proofs run **before** services stop.
-   Run all nine sub-steps, in order, without adding any. Sub-steps 2-6 put
-   VM 107 into quarantine (Proxmox firewall on, links down, services
-   stopped); only sub-steps 7 and 8 take it out again. The helper in
-   sub-step 6 only stops services: it never touches the network. Between
-   sub-steps 6 and 8 the services stay stopped on purpose; the reboot in
-   sub-step 8 starts them. If any sub-step fails, STOP (C3) and leave
-   everything as it is.
-   1. Baseline with the firewall still off: from the client
-      `curl --fail https://todo.test:8443/ready` works; from `.108`
-      `timeout 5 bash -c '</dev/tcp/192.168.0.102/5432'` works; from `.102`
-      `timeout 5 bash -c '</dev/tcp/192.168.0.108/22'` works. If any fails, STOP.
-   2. `set .../107/firewall/options enable=1` (VM running, links up). Then
-      `sleep 20`: the Proxmox firewall service applies changes on its next
-      cycle, about every 10 seconds, so a proof started at once can still get
-      through. Wait first; never run the proofs, see them fail and run them
-      again.
-   3. Outside proofs, all fresh connections:
-      - Client to `.102`: `ssh gunstein@192.168.0.102 hostname` works;
-        `curl --connect-timeout 5 https://todo.test:8443/ready` fails.
-      - `.108` to `.102`: `ssh gunstein@192.168.0.102 hostname` works;
-        `timeout 5 bash -c '</dev/tcp/192.168.0.102/5432'` fails.
-      - `.102` to `.108`: `timeout 5 bash -c '</dev/tcp/192.168.0.108/22'` fails
-        (outbound is blocked; the replication exception is still disabled).
-      - If `.102` has a global IPv6 address (`ip -6 addr show scope global`),
-        repeat one inbound and one outbound test over IPv6; both must fail.
-      Any unexpected result: STOP (you may set `enable=0` first; `.102` is still
-      the authorized primary in this phase).
-   4. `task .../107/status/shutdown`; then `nic 107 link_down 1`.
-   5. `task .../107/status/start` (firewall stays enabled); wait for `agent/ping`.
-   6. `exec 107 -- /opt/todo/bin/app-quarantine.sh stop todo-primary gunstein`:
-      require exit 0, `exited: 1` and `STOPPED` in `out-data`.
-   7. `nic 107 link_down 0`. Wait up to three minutes for the guest to get
-      its address back. SSH from the client and from `.108` must work.
-      On `.102`: every service from `apps.services()` is inactive or failed
-      with zero MainPID and ControlPID, and `podman ps` shows no running containers.
-   8. Restore normal operation: `set .../107/firewall/options enable=0`, then
-      `task .../107/status/reboot` so the services start at boot. Record
-      `get .../107/firewall/options` (no `enable: 1`) and every `netN` (no
-      `link_down=1`) afterwards.
-   9. Require all seven services active on `.102`, `.102` writable for all three
-      databases, streaming with zero lag to `.108` again, and trusted HTTPS from
-      the client. Only then continue. If streaming does not come back, do not
-      start anything or rerun an installer: record the two readings from
-      sub-step 8 and `ss -ltn` on `.102`, then STOP.
+If streaming does not come back in 9, do not start anything or run an
+installer: STOP with the logs of 8a and 8b.
 
 #### C9.7 Phase 6 — Fence and promote (pre-approved)
 
-1. Create the `phase6` markers and read them on `.108`.
-2. Fence VM 107 with one command, and keep its full output in the log:
-   ```bash
-   python3 deploy/scripts/pve_lab.py fence 107 2>&1 | tee ~/todo-acceptance-runs/$RUN_ID/logs/06-fence.log
-   ```
-   PASS only if it exits 0 and prints `"status": "stopped"`, `"onboot": "0"`,
-   `"ha": "not managed"` and `link_down=1` in every `netN`. Do not replace it
-   with separate `task`, `set` or `nic` calls. If it fails: STOP (C8).
-3. Check the ports, from the client and from `.108`, with both outputs in one log:
-   ```bash
-   ( bash deploy/scripts/ports-closed.sh 192.168.0.102 22 5432 5433 5434 8443
-     ssh gunstein@192.168.0.108 'bash -s' -- 192.168.0.102 22 5432 5433 5434 8443 < deploy/scripts/ports-closed.sh
-   ) 2>&1 | tee ~/todo-acceptance-runs/$RUN_ID/logs/06-ports-closed.log
-   ```
-   PASS only if both print `CLOSED: 192.168.0.102`. `OPEN PORTS`: STOP.
-4. On `.108`: `app_dr.py preflight`, `promote`, `status` exactly as in
-   ACCEPTANCE.md (the confirmation strings are fixed). Run `promote` once.
-5. Rolled-back write probes on Todo and Notes, markers present, all three
-   databases `f|off`.
+```bash
+$A --step 06-1 do markers phase6
+$A --step 06-2 check markers 192.168.0.108
+$A --step 06-3 do fence 107
+$A --step 06-4 check ports-closed 192.168.0.102 client
+$A --step 06-5 check ports-closed 192.168.0.102 192.168.0.108
+vm 06-6-preflight 192.168.0.108 "python3 /opt/todo/bin/app_dr.py preflight --confirm-primary-fenced 'todo-primary is fenced'"
+vm 06-7-promote 192.168.0.108 "python3 /opt/todo/bin/app_dr.py promote --confirm-primary-fenced 'todo-primary is fenced' --confirm-promotion todo-standby"
+vm 06-8-status 192.168.0.108 'python3 /opt/todo/bin/app_dr.py status'
+$A --step 06-9 check roles 192.168.0.108 primary
+$A --step 06-10 check write-probe 192.168.0.108
+$A --step 06-11 check markers 192.168.0.108
+```
+
+`promote` runs once. Keep VM 107 fenced.
 
 #### C9.8 Phase 7 — Application failover
 
-Follow ACCEPTANCE.md on `.108`, with app-ops trust and `recovery.yaml` on
-`.108` first (C9.13). Then C9.4 with `<IP>` = `.108` (a new CA is expected). Do
-not re-provision `testuser`. Run the browser tests and create `phase7` markers.
-Repeat `deploy-promoted-application` (`{"changed": false}`), reboot VM 108
-through the API, re-check.
+```bash
+vm 07-1-trust-ops 192.168.0.108 'cd ~/todo-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
+vm 07-2-inventory 192.168.0.108 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-standby: {role: current_primary, address: 192.168.0.108, local: true}" "  todo-primary: {role: rebuild_standby, address: 192.168.0.102}" > recovery.yaml && cat recovery.yaml'
+$A --step 07-3 do firewall-https 192.168.0.108 192.168.0.100
+ops 07-4-deploy 192.168.0.108 '--inventory recovery.yaml deploy-promoted-application'   # → {"changed": true}
+```
+
+Client name resolution and CA trust for `.108` (C9.4); a new CA is expected.
+Do not provision the test user again.
+
+```bash
+$A --step 07-5 check services 192.168.0.108 app
+$A --step 07-6 check ca 192.168.0.108
+$A --step 07-7 check headers
+$A --step 07-8 check browser
+$A --step 07-9 do markers phase7
+$A --step 07-10 check markers 192.168.0.108
+ops 07-11-deploy-again 192.168.0.108 '--inventory recovery.yaml deploy-promoted-application'   # → {"changed": false}
+$A --step 07-12 do reboot 108 192.168.0.108 app
+$A --step 07-13 check ca 192.168.0.108
+$A --step 07-14 check roles 192.168.0.108 primary
+$A --step 07-15 check markers 192.168.0.108
+```
 
 #### C9.9 Phase 8 — Backup and isolated PITR (cleanup pre-approved)
 
-Follow ACCEPTANCE.md exactly, including `--app todo` and `--app notes` for
-restore commands. Record every backup name printed by `create`
-(`todo: ...`, `notes: ...`, `keycloak: ...`). Existing restore state before
-`restore` is a STOP. After both comparisons pass, run the two
-`cleanup-restore` commands and verify only the restore resources vanished.
+```bash
+ops 08-1-configure-backup 192.168.0.108 '--inventory recovery.yaml configure-backup'   # → {"changed": true}
+$A --step 08-2 check roles 192.168.0.108 archiving
+vm 08-3-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'        # zero failed archive attempts
+vm 08-4-backup-create 192.168.0.108 'python3 /opt/todo/bin/app_backup.py create'        # note the three base-... names
+vm 08-5-restore-state 192.168.0.108 'podman ps -a --filter name=restore --format "{{.Names}}"; podman volume ls --filter name=restore --format "{{.Name}}"'   # must print nothing
+vm 08-6-before-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR before restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR before restore point');\""
+vm 08-7-mark 192.168.0.108 'python3 /opt/todo/bin/app_backup.py mark --name acceptance_before_after'
+vm 08-8-after-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR after restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR after restore point');\""
+```
+
+Put the Todo and Notes backup names from `08-4` into these two commands:
+
+```bash
+vm 08-9-restore-todo 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app todo restore --backup <todo base-...> --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app todo restore-status && podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec todo-postgres-restore psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec todo-postgres psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
+vm 08-10-restore-notes 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app notes restore --backup <notes base-...> --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app notes restore-status && podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec notes-postgres-restore psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec notes-postgres psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
+```
+
+Each must show `recovery|paused|read_only = t|t|on`, network `none`, only the
+before-row in the restored view and both rows in the live view. Then:
+
+```bash
+vm 08-11-cleanup 192.168.0.108 'python3 /opt/todo/bin/app_backup.py --app todo cleanup-restore --confirm todo-postgres-restore && python3 /opt/todo/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore && podman ps -a --filter name=restore --format "{{.Names}}" && podman volume ls --format "{{.Name}}"'   # no restore resources; the three -backup volumes remain
+ops 08-12-configure-backup-again 192.168.0.108 '--inventory recovery.yaml configure-backup'   # → {"changed": false}
+$A --step 08-13 do reboot 108 192.168.0.108 app
+$A --step 08-14 check roles 192.168.0.108 archiving
+vm 08-15-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'   # zero failed archive attempts
+```
 
 #### C9.10 Phase 9 — Rebuild VM 107 as standby (pre-approved reseed)
 
-1. VM 107 is stopped with links down. `set .../107/firewall/options enable=1`
-   (the replication rule is still `enable=0`).
-2. `task .../107/status/start`; wait for `agent/ping`.
-3. `exec 107 -- /opt/todo/bin/app-quarantine.sh stop todo-primary gunstein`:
-   exit 0 and `STOPPED`. A warning about failed units is allowed; save it.
-4. `nic 107 link_down 0`. SSH from the client and from `.108` must work; from
-   `.102`, `timeout 5 bash -c '</dev/tcp/192.168.0.108/22'` must fail. Record
-   `get .../107/firewall/options` and `.../rules`; they must equal the profile
-   from the rehearsal (replication rule still `enable=0`).
-5. On `.102` via SSH: services stopped, no running containers; read
-   `journalctl -b _SYSTEMD_USER_UNIT=todo-postgres.service` (and the notes and
-   keycloak PostgreSQL units) into logs.
-6. On `.102`: remove the old inbound replication rich rule (5432-5434 from
-   `.108`) with `sudo -n firewall-cmd --permanent --remove-rich-rule=...` and
-   reload. On `.108`: add the rule allowing only `.102` to `.108` ports
-   5432-5434, and reload.
-7. Key-based SSH from `.108` to `.102` with C9.12 (`FROM=.108`, `TO=.102`).
-8. Enable only the replication exception: read `get .../107/firewall/rules`,
-   find the rule whose comment is `todo-quarantine-replication`, read its `pos`,
-   then `set /nodes/{node}/qemu/107/firewall/rules/<pos> enable=1`. Record
-   `get .../107/firewall/rules` again, then `sleep 20` so the Proxmox
-   firewall has applied the exception before `rebuild-standby` checks the path. Do not probe ports 5432-5434 yet: until
-   the rebuild publishes them, `.108` listens there only on `127.0.0.1`, and
-   the quarantine firewall can drop the refusal, so an open path and a
-   blocked one both time out. `rebuild-standby` checks the path itself once
-   the ports are published (step 10).
-9. On `.108`: the wrong-confirmation check from ACCEPTANCE.md, then the
-   read-only `preflight-standby-rebuild`, which must report
-   `{"changed": false}`. It does not test the replication path (see step 8).
-10. `rebuild-standby` once, in the background with a log (C5). Do not start it
-    twice. Wait for the `exit=` line. Any non-zero exit: STOP; never rerun.
-    Right after publishing, it requires a connection from `.102` to every
-    replication port; `replication port ... is not reachable` means a firewall
-    step is missing, and nothing was deleted: STOP, never rerun.
-11. On `.102`, every port must now connect (rc 0):
-
-    ```bash
-    for port in 5432 5433 5434; do
-      timeout 5 bash -c "</dev/tcp/192.168.0.108/$port"; echo "port=$port rc=$?"
-    done
-    ```
-
-    `cluster-status`: every database reports streaming, async, active slot,
-    zero lag, and `.102` read-only. Create `phase9` markers and read them on `.102`.
-12. After phase 9 passes, lift the quarantine as the 12c3bef run did:
-    `set .../107/firewall/options enable=0`, and restore VM 107 `onboot` to the
-    value recorded in C9.0. Record both.
-
-#### C9.11 Phase 10 and 11 — Final reboots and verdict
-
-1. Do ACCEPTANCE.md phase 10 steps 1-8, one log per step
-   (`10-step1-...log` to `10-step8-...log`). Never reboot both VMs at once.
-   After each reboot run `wait-ready.sh` (`standby` for `.102`, `app` for
-   `.108`) before the next step.
-   Step 5 needs, on `.108`: all seven services,
-   `podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf`, for each database
-   `SELECT pg_is_in_recovery(), current_setting('default_transaction_read_only'),
-   current_setting('archive_mode'), current_setting('archive_timeout');`
-   (`f|off|on|1h`), `app_backup.py status` and the CA fingerprint. Step 7 runs
-   from the client: `curl` without `-k` to both hostnames, the issuer and the
-   markers. Step 8 records, on `.108`, for each database the backup volume
-   size (`podman unshare du -sh "$(podman volume inspect -f '{{.Mountpoint}}' todo-postgres-backup)"`,
-   likewise `notes-` and `keycloak-`), the WAL size
-   (`podman exec todo-postgres du -sh /var/lib/postgresql/data/pg_wal`, likewise
-   the other two) and `df -h ~/.local/share/containers`.
-2. Final browser tests from the client (0 skipped), all markers, CA fingerprint,
-   `NRestarts=0` for `todo-app.service`, `notes-app.service`,
-   `shared-proxy.service`, no failed user units on either VM.
-3. Verdict, exactly one of:
-   - `CLEAN PASS`: every phase passed on the kickoff revision, no source change,
-     full evidence (C7).
-   - `REPAIRED FUNCTIONAL PASS`: everything works, but something had to be
-     repaired during the run. List each repair and its original failure.
-   - `BLOCKED` / `IN PROGRESS`: not finished; say where and why.
-4. Write a draft evidence record in the style of `docs/history/ACCEPTANCE-12c3bef.md` to
-   `~/todo-acceptance-runs/<RUN_ID>/ACCEPTANCE-<short-sha>.md`. Do not copy it
-   into the repository; the operator decides. Copy every value (IDs,
-   fingerprints, backup names) from a log in this run folder, never from
-   memory or an earlier run. List every command or sub-step that ran more than
-   once, with the first result. Running a state-changing command again after a
-   failed or unexpected result rules out CLEAN PASS (C2 rule 3); repeating a
-   read-only check after `wait-ready.sh` (C8) does not.
-5. Delete `$XDG_RUNTIME_DIR/todo-acceptance/e2e-password`. Leave both VMs in the
-   final roles (`.108` primary with application, `.102` database-only standby).
-   Do not reset, promote or rebuild anything after the verdict.
-6. Report to the operator: verdict, revision, final topology, and every deviation.
-
-#### C9.12 Key-based SSH between the VMs (no password needed)
-
-app-ops on `FROM` must reach `TO` with a key, and `FROM` must know `TO`'s host
-key through an independently verified fingerprint. Your own SSH connections
-from the client are the trusted path. Run from the client (example
-`FROM=192.168.0.102`, `TO=192.168.0.108`):
+Strictly in this order. VM 107 is stopped with every link down since phase 6.
 
 ```bash
-FROM=192.168.0.102 TO=192.168.0.108
-ssh gunstein@$FROM "test -f ~/.ssh/id_rsa || ssh-keygen -q -t rsa -b 3072 -N '' -C todo-ops-control -f ~/.ssh/id_rsa"
-ssh gunstein@$FROM 'cat ~/.ssh/id_rsa.pub' |
-  ssh gunstein@$TO 'umask 077; mkdir -p ~/.ssh; read -r key; grep -qxF "$key" ~/.ssh/authorized_keys 2>/dev/null || printf "%s\n" "$key" >> ~/.ssh/authorized_keys'
-FP=$(ssh gunstein@$TO 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub' | awk '{print $2}')
-ssh gunstein@$FROM bash -s -- "$TO" "$FP" <<'PIN'
-set -eu
-host=$1 expected=$2
-scanned=$(ssh-keyscan -t ed25519 "$host" 2>/dev/null)
-actual=$(printf '%s\n' "$scanned" | ssh-keygen -lf - | awk '{print $2}')
-test "$actual" = "$expected" || { echo "FINGERPRINT MISMATCH: $actual != $expected" >&2; exit 1; }
-ssh-keygen -F "$host" >/dev/null || printf '%s\n' "$scanned" >> ~/.ssh/known_hosts
-echo "PINNED $host $actual"
-PIN
-ssh gunstein@$FROM "ssh -o BatchMode=yes gunstein@$TO hostname"
+$A --step 09-1 do proxmox-firewall 107 on
+$A --step 09-2 do power 107 start
+$A --step 09-3 do quarantine-stop 107 todo-primary      # warnings about failed PostgreSQL units are allowed
+$A --step 09-4a do link 107 up 192.168.0.102
+$A --step 09-4b check connect 192.168.0.108 192.168.0.102 22 open
+$A --step 09-4c check connect 192.168.0.102 192.168.0.108 22 blocked
+$A --step 09-5a check stopped 192.168.0.102
+vm 09-5b-journal 192.168.0.102 'for unit in todo-postgres notes-postgres keycloak-postgres; do journalctl -b _SYSTEMD_USER_UNIT=$unit.service --no-pager | tail -n 20; done; true'
+$A --step 09-6a do firewall-replication 192.168.0.108 192.168.0.102 remove
+$A --step 09-6b do firewall-replication 192.168.0.102 192.168.0.108 add
+$A --step 09-7 do pin-ssh 192.168.0.108 192.168.0.102
+$A --step 09-8 do replication-exception 107 on
+ops 09-9a-rebuild-refused 192.168.0.108 '--inventory recovery.yaml preflight-standby-rebuild --confirm-fenced todo-primary --confirm-reseed todo-primary'   # exit=1, both exact confirmations are required
+ops 09-9b-preflight 192.168.0.108 "--inventory recovery.yaml preflight-standby-rebuild --confirm-fenced 'todo-primary is fenced' --confirm-reseed todo-primary"   # → {"changed": false}
+ops 09-10-rebuild 192.168.0.108 "--inventory recovery.yaml rebuild-standby --confirm-fenced 'todo-primary is fenced' --confirm-reseed todo-primary" &   # → {"changed": true}; wait for exit=
 ```
 
-A fingerprint mismatch is a STOP. The last command must print `TO`'s hostname.
+Do not probe ports 5432-5434 before 09-10: until the rebuild publishes them,
+`.108` listens there only on `127.0.0.1` and an open path looks like a
+blocked one. `rebuild-standby` checks the path itself. If it fails in any way,
+including `replication port ... is not reachable`: STOP, never run it again.
+
+```bash
+$A --step 09-11a check connect 192.168.0.102 192.168.0.108 5432 open
+$A --step 09-11b check connect 192.168.0.102 192.168.0.108 5433 open
+$A --step 09-11c check connect 192.168.0.102 192.168.0.108 5434 open
+ops 09-11d-cluster-status 192.168.0.108 '--inventory recovery.yaml cluster-status'   # streaming, async, slots active, zero lag
+$A --step 09-11e check roles 192.168.0.102 standby
+$A --step 09-11f check replication-tls 192.168.0.108
+$A --step 09-11g do markers phase9
+$A --step 09-11h check markers 192.168.0.102
+$A --step 09-12a do proxmox-firewall 107 off
+ONBOOT="<the onboot value that 01-3 do rollback recorded, 0 or 1>"
+$A --step 09-12b do onboot 107 "$ONBOOT"
+```
+
+#### C9.11 Phases 10 and 11 — Final reboots and verdict
+
+```bash
+$A --step 10-1 do reboot 107 192.168.0.102 standby    # includes: only the three PostgreSQL services
+$A --step 10-2 check roles 192.168.0.102 standby
+ops 10-3-cluster-status 192.168.0.108 '--inventory recovery.yaml cluster-status'
+$A --step 10-4 do reboot 108 192.168.0.108 app
+$A --step 10-5a check roles 192.168.0.108 archiving
+$A --step 10-5b check ca 192.168.0.108
+vm 10-5c-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'
+ops 10-6-cluster-status 192.168.0.108 '--inventory recovery.yaml cluster-status'
+$A --step 10-7a check headers
+$A --step 10-7b check markers 192.168.0.108
+$A --step 10-7c check markers 192.168.0.102
+$A --step 10-8 check disk 192.168.0.108
+$A --step 11-1 check browser
+$A --step 11-2 check services 192.168.0.108 app
+$A --step 11-3 check services 192.168.0.102 standby
+vm 11-4-restarts 192.168.0.108 'systemctl --user show -p NRestarts --value todo-app.service notes-app.service shared-proxy.service'   # 0, 0, 0
+rm -f "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password"
+$A report
+```
+
+`report` writes `REPORT.md` from `record.jsonl` and the logs. The verdict is
+exactly one of:
+
+- `CLEAN PASS`: `report` says **ALL STEPS PASS**, every step above has its
+  log, every JSON line after `→` matched, and nothing was repeated.
+- `REPAIRED FUNCTIONAL PASS`: everything works, but something needed the
+  operator (a `--operator-approved` step, a manual fix). List each with its
+  original failure.
+- `BLOCKED` / `IN PROGRESS`: not finished; say where and why.
+
+Write the draft record in the style of `docs/history/ACCEPTANCE-12c3bef.md` to
+`$RUN/ACCEPTANCE-<short-sha>.md`, taking every value from `REPORT.md` or a log,
+never from memory. Leave both VMs in their final roles (`.108` primary with
+application, `.102` database-only standby) and do not reset, promote or
+rebuild anything after the verdict. Report to the operator: verdict, revision,
+final topology, every deviation, and `REPORT.md`.
 
 #### C9.13 app-ops in an agent run
 

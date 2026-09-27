@@ -132,9 +132,13 @@ class CheckTests(ToolTest):
             with self.subTest(message):
                 self.assertEqual(self.tool("--step", "03-4", "check", "services", "192.168.0.102", "app",
                                            rules=rules)[0], 1)
-        rules = [("wait-ready", (0, "READY: x\n")), ("nginx -t", (1, "no nginx on a standby\n"))]
+        rules = [("wait-ready", (0, "READY: x\n")), ("nginx -t", (1, "no nginx on a standby\n")),
+                 ("is-active", (3, "inactive\ninactive\ninactive\ninactive\n"))]
         self.assertEqual(self.tool("--step", "10-2", "check", "services", "192.168.0.102", "standby",
                                    rules=rules)[0], 0)
+        rules[2] = ("is-active", (0, "active\ninactive\ninactive\ninactive\n"))
+        self.assertEqual(self.tool("--step", "10-2", "check", "services", "192.168.0.102", "standby",
+                                   rules=rules)[0], 1)
 
     def test_headers_pass_and_a_wrong_connect_src_fails(self):
         good = [("/auth/", (0, AUTH_HEADERS)), ("curl", (0, APP_HEADERS))]
@@ -367,6 +371,7 @@ class ReportTests(ToolTest):
                   rules=[("create_markers.py", (0, "MARKER 'acceptance run-1 phase3': todo id=3 note id=4\n"))])
         self.tool("--step", "04-2", "check", "headers", rules=[("curl", (0, APP_HEADERS))])
         self.product_log("03-2-install.log", "Preflight checks passed.", '{"changed": true}', "exit=0")
+        self.product_log("04-3-preflight-refused.log", "app-ops: no rich rule", "exit=1")
         code, text = self.report()
         self.assertEqual(code, 0)
         self.assertIn("**From the record: ALL STEPS PASS.**", text)
@@ -383,13 +388,15 @@ class ReportTests(ToolTest):
         self.tool(*arguments)
         self.tool("--operator-approved", "checked by hand", *arguments, rules=failing)
         self.product_log("02-1-build.log", "building", "exit=2")
+        self.product_log("04-3-preflight-refused.log", "app-ops: no rich rule", "exit=0")
         self.product_log("02-2-transfer.log", "no exit line at all")
         code, text = self.report()
         self.assertEqual(code, 1)
         self.assertIn("NOT CLEAN", text)
         for expected in ("03-3 do firewall-https: FAIL", "03-3 do firewall-https: REFUSED",
                          'operator approval "checked by hand"', "logs/02-1-build.log: exit=2",
-                         "logs/02-2-transfer.log: no exit= line"):
+                         "logs/02-2-transfer.log: no exit= line",
+                         "logs/04-3-preflight-refused.log: exit=0, expected exit=1"):
             self.assertIn(expected, text)
 
     def test_an_unfinished_do_needs_attention(self):
@@ -438,6 +445,128 @@ class ReportTests(ToolTest):
                           ["--run", "run-1", "report", "extra"]):
             with self.subTest(arguments), self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
                 acceptance.main(arguments)
+
+
+class GuideCommandTests(ToolTest):
+    """The commands A4 needs so the agent guide becomes a command list."""
+
+    def test_fence_checks_every_field(self):
+        good = '{"ha": "not managed", "net0": "virtio=AA,firewall=1,link_down=1", "onboot": "0", "status": "stopped"}'
+        self.assertEqual(self.tool("--step", "06-2", "do", "fence", "107", rules=[("fence 107", (0, good))])[0], 0)
+        self.assertEqual(self.record()[-1]["values"]["status"], "stopped")
+        link_up = good.replace("link_down=1", "link_down=0")
+        self.assertEqual(self.tool("--step", "06-2", "do", "fence", "108", rules=[("fence 108", (0, link_up))])[0], 1)
+
+    def test_ports_closed_from_the_client_and_from_a_vm(self):
+        closed = [("CLOSED", (0, "192.168.0.102:22 timeout\nCLOSED: 192.168.0.102\n"))]
+        code, fake = self.tool("--step", "06-3", "check", "ports-closed", "192.168.0.102", "client", rules=closed)
+        self.assertEqual(code, 0)
+        self.assertTrue(fake.calls[0].startswith("bash -c"))
+        code, fake = self.tool("--step", "06-3", "check", "ports-closed", "192.168.0.102", "192.168.0.108", rules=closed)
+        self.assertEqual(code, 0)
+        self.assertIn("gunstein@192.168.0.108", fake.calls[0])
+        opened = [("CLOSED", (1, "192.168.0.102:5432 open\nOPEN PORTS on 192.168.0.102\n"))]
+        self.assertEqual(self.tool("--step", "06-3", "check", "ports-closed", "192.168.0.102", "client",
+                                   rules=opened)[0], 1)
+
+    def test_connect_proves_open_and_blocked(self):
+        self.assertEqual(self.tool("--step", "05-5", "check", "connect", "client", "192.168.0.102", "22", "open",
+                                   rules=[("/dev/tcp", (0, ""))])[0], 0)
+        self.assertEqual(self.tool("--step", "05-5", "check", "connect", "192.168.0.108", "192.168.0.102", "5432",
+                                   "blocked", rules=[("/dev/tcp", (124, ""))])[0], 0)
+        self.assertEqual(self.record()[-1]["values"], {"outcome": "timed out"})
+        self.assertEqual(self.tool("--step", "05-5", "check", "connect", "client", "192.168.0.102", "8443", "blocked",
+                                   rules=[("/dev/tcp", (0, ""))])[0], 1)
+
+    def test_quarantine_helper_ready_and_stop(self):
+        ready = '{"exitcode": 0, "exited": 1, "out-data": "READY: host=todo-primary"}'
+        self.assertEqual(self.tool("--step", "05-3", "check", "quarantine-ready", "107", "todo-primary",
+                                   rules=[("app-quarantine.sh check todo-primary gunstein", (0, ready))])[0], 0)
+        stopped = ('{"err-data": "WARNING: notes-postgres.service remains failed", "exitcode": 0, "exited": 1, '
+                   '"out-data": "STOPPED: host=todo-primary"}')
+        self.assertEqual(self.tool("--step", "09-3", "do", "quarantine-stop", "107", "todo-primary",
+                                   rules=[("app-quarantine.sh stop", (0, stopped))])[0], 0)
+        self.assertIn("remains failed", self.record()[-1]["values"]["warnings"])
+        running = '{"exited": 0, "pid": 7}'
+        self.assertEqual(self.tool("--step", "05-5", "do", "quarantine-stop", "107", "todo-primary",
+                                   rules=[("app-quarantine.sh stop", (124, running))])[0], 1)
+
+    def test_stopped_needs_every_service_down_and_no_containers(self):
+        def answer(line):
+            units = [unit for unit in acceptance.apps.services() if unit in line]
+            return 0, "".join(f"{unit} failed 0 0\n" for unit in units) + "containers 0\n"
+        self.assertEqual(self.tool("--step", "09-5", "check", "stopped", "192.168.0.102",
+                                   rules=[("ActiveState", answer)])[0], 0)
+
+        def one_running(line):
+            code, out = answer(line)
+            return code, out.replace("todo-app.service failed 0 0", "todo-app.service active 812 0")
+        self.assertEqual(self.tool("--step", "09-5", "check", "stopped", "192.168.0.102",
+                                   rules=[("ActiveState", one_running)])[0], 1)
+        self.assertIn("FAIL: todo-app.service: active 812 0", self.log(self.record()[-1]))
+
+    def test_link_power_and_onboot(self):
+        down = '{"net0": "virtio=AA,firewall=1,link_down=1"}'
+        self.assertEqual(self.tool("--step", "05-5", "do", "link", "107", "down", "192.168.0.102",
+                                   rules=[("nic 107 link_down 1", (0, down))])[0], 0)
+        up = '{"net0": "virtio=AA,firewall=1,link_down=0"}'
+        self.assertEqual(self.tool("--step", "05-5", "do", "link", "107", "up", "192.168.0.102",
+                                   rules=[("nic 107 link_down 0", (0, up)), ("boot_id", (0, "id\n"))])[0], 0)
+        code, fake = self.tool("--step", "05-5", "do", "power", "107", "start", rules=[])
+        self.assertEqual(code, 0)
+        self.assertTrue(any("agent/ping" in call for call in fake.calls))
+        self.assertEqual(self.tool("--step", "09-12", "do", "onboot", "107", "0",
+                                   rules=[("get /nodes", (0, '{"onboot": 0}'))])[0], 0)
+        self.assertEqual(self.tool("--step", "09-12", "do", "onboot", "107", "1",
+                                   rules=[("get /nodes", (0, '{"onboot": 0}'))])[0], 1)
+
+    def test_quarantine_profile_replaces_only_its_own_rules(self):
+        state = {"rules": [{"pos": 0, "comment": "todo-quarantine-ssh-client"},
+                           {"pos": 1, "comment": "todo-quarantine-replication"}], "posted": []}
+
+        def answer(line):
+            if "get /cluster/firewall/options" in line or "get /nodes/{node}/firewall/options" in line:
+                return 0, '{"enable": 1}'
+            if "firewall/options" in line and " get " in f" {line} ":
+                return 0, '{"enable": 0, "policy_in": "DROP", "policy_out": "DROP"}'
+            if " delete " in f" {line} ":
+                return 0, "null"
+            if " post " in f" {line} ":
+                comment = line.split("comment=")[1].split()[0]
+                enable = "0" if comment.endswith("replication") else "1"
+                state["posted"].append({"pos": len(state["posted"]), "comment": comment, "enable": enable})
+                return 0, "null"
+            if "firewall/rules" in line:
+                return 0, json.dumps(state["posted"] if state["posted"] else state["rules"])
+            return 0, '{"net0": "virtio=AA,firewall=1"}'
+        code, fake = self.tool("--step", "05-4", "do", "quarantine-profile", "107", "192.168.0.100", "192.168.0.108",
+                               rules=[("pve_lab.py", answer)])
+        self.assertEqual(code, 0, self.log(self.record()[-1]))
+        deletes = [call for call in fake.calls if " delete " in f" {call} "]
+        self.assertEqual([call.split("/rules/")[1].split()[0] for call in deletes], ["1", "0"])
+        self.assertTrue(any("dest=192.168.0.108/32" in call and "todo-quarantine-replication" in call
+                            and "enable=0" in call for call in fake.calls))
+
+        foreign = [("get /cluster/firewall/options", (0, '{"enable": 1}')),
+                   ("get /nodes/{node}/firewall/options", (0, '{"enable": 1}')),
+                   ("firewall/options", (0, '{"enable": 0}')),
+                   ("firewall/rules", (0, '[{"pos": 0, "comment": "someone else"}]'))]
+        code, fake = self.tool("--step", "05-4", "do", "quarantine-profile", "108", "192.168.0.100", "192.168.0.102",
+                               rules=foreign)
+        self.assertEqual(code, 1)
+        self.assertFalse(any(" delete " in f" {call} " or " post " in f" {call} " for call in fake.calls))
+
+    def test_pin_ssh_verifies_the_host_key(self):
+        rules = [("id_rsa.pub", (0, "ssh-rsa AAAA todo-ops-control\n")),
+                 ("ssh_host_ed25519_key.pub", (0, "256 SHA256:abc root@todo-standby (ED25519)\n")),
+                 ("ssh-keyscan", (0, "PINNED 192.168.0.108 SHA256:abc\n")),
+                 ("hostname", (0, "todo-standby\n"))]
+        self.assertEqual(self.tool("--step", "04-1", "do", "pin-ssh", "192.168.0.102", "192.168.0.108",
+                                   rules=rules)[0], 0)
+        self.assertEqual(self.record()[-1]["values"], {"fingerprint": "SHA256:abc", "hostname": "todo-standby"})
+        mismatch = [rules[0], rules[1], ("ssh-keyscan", (1, "FINGERPRINT MISMATCH\n")), rules[3]]
+        self.assertEqual(self.tool("--step", "09-7", "do", "pin-ssh", "192.168.0.108", "192.168.0.102",
+                                   rules=mismatch)[0], 1)
 
 
 if __name__ == "__main__":

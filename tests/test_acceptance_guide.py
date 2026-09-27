@@ -103,8 +103,32 @@ class AcceptanceGuideTests(unittest.TestCase):
         actions = re.findall(r'pve_lab\.py (\w+)', guide)
         self.assertTrue(actions)
         self.assertLessEqual(set(actions), {'get', 'set', 'post', 'delete', 'task', 'exec', 'nic', 'fence'})
-        self.assertIn('pve_lab.py fence 107', guide)
-        self.assertIn('app-quarantine.sh stop todo-primary gunstein', guide)
+        # Fencing and the quarantine stop run through acceptance.py, which calls exactly these.
+        self.assertIn('do fence 107', guide)
+        self.assertIn('do quarantine-stop 107 todo-primary', guide)
+        tool = (ROOT / 'deploy/scripts/acceptance.py').read_text()
+        self.assertIn("pve(step, 'fence', vmid)", tool)
+        self.assertIn("'/opt/todo/bin/app-quarantine.sh', action, name, step.user", tool)
+
+    def test_every_acceptance_tool_line_in_the_agent_guide_is_a_valid_command(self):
+        sys.path.insert(0, str(ROOT / 'deploy/scripts'))
+        import acceptance
+        guide = (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text()
+        lines = re.findall(r'^\$A --step (\S+) (check|do) (\S+)(.*)$', guide, re.M)
+        self.assertGreater(len(lines), 80)
+        steps = []
+        for step, kind, name, rest in lines:
+            arguments = shlex.split(rest.split('#')[0])
+            with self.subTest(step=step):
+                self.assertRegex(step, r'^[0-9]{2}-[0-9A-Za-z-]+$')
+                self.assertIn((kind, name), acceptance.COMMANDS)
+                _, validators, _ = acceptance.COMMANDS[kind, name]
+                self.assertEqual(len(arguments), len(validators))
+                for validate, text in zip(validators, arguments):
+                    if not text.startswith('$'):
+                        validate(text)
+            steps.append(step)
+        self.assertEqual(len(steps), len(set(steps)), 'every step label is used once')
 
     def test_acceptance_reference_links_resolve_in_source(self):
         paths = [ROOT / 'docs' / name for name in (
@@ -159,4 +183,7 @@ class BrowserFlowTests(unittest.TestCase):
             return set(re.findall(r'pytest (e2e/test_\w+\.py)', (ROOT / 'docs' / name).read_text()))
         self.assertEqual(flows('ACCEPTANCE.md'), {'e2e/test_todo_flow.py', 'e2e/test_notes_flow.py',
                                                   'e2e/test_multi_app.py'})
-        self.assertEqual(flows('ACCEPTANCE-AGENT.md'), flows('ACCEPTANCE.md'))
+        # The agent runs them through acceptance.py check browser.
+        tool = (ROOT / 'deploy/scripts/acceptance.py').read_text()
+        self.assertEqual(set(re.findall(r"'(e2e/test_\w+\.py)'", tool)), flows('ACCEPTANCE.md'))
+        self.assertIn('check browser', (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text())

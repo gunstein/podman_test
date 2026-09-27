@@ -29,6 +29,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
+0. Acceptance tooling (A1-A4): every later item needs a trustworthy run, and
+   runs 11 and 12 failed on the agent's own commands, not on the product.
 1. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
    failover command), G2 (Trondheim is ready), G3 (time it in the drill), T3
    (fencing without the Oslo hypervisor), T4 (one CA), T5 (moving the names),
@@ -48,6 +50,44 @@ physical sites. D2 and L6 are therefore designed for two hosts that each keep
 what the other would lose: each host backs up its own database copy (D2), and
 each holds the other's logs (L6). Everything between them crosses a network
 between sites, and replication across it uses TLS.
+
+## Acceptance tooling
+
+Runs 11 and 12 passed every functional gate, but both failed to be clean
+because of commands the agent typed around the product: a firewall rule
+without `--permanent`, a proof run before the Proxmox firewall applied, a
+write probe against a column that does not exist, an exit status lost in a
+pipe, a hand-copied fingerprint. The fix is fewer hand-written commands, not
+more rules. `deploy/scripts/acceptance.py` runs on the client only (standard
+library, `pve_lab.py`, SSH, `wait-ready.sh`); it is lab tooling, never shipped
+to a host. The product's own commands (`install.sh`, app-ops, `app_dr.py`,
+`app_backup.py`) stay exactly as the guide writes them: they are what is
+being accepted.
+
+- **A1. Foundation and a quick run.** *[new]* A run folder with one log per
+  command (time, command, output, exit status) and a `record.jsonl` line for
+  each. `check` commands only read, may repeat and compare with the expected
+  values themselves (PASS/FAIL); `do` commands change state and refuse to run
+  again in the same run after a failure unless the operator approves. First
+  commands: `check services` (via `wait-ready.sh`), `check headers`,
+  `check ca`, `do reboot`, `do markers`, `do firewall-https`. With them, a
+  quick acceptance (phases 1-3 with reboot and repeat install on one VM, about
+  20 minutes) for changes that do not touch installer, Quadlet, replication,
+  app-ops or backup. Implemented (`deploy/scripts/acceptance.py`,
+  [ACCEPTANCE-QUICK.md](ACCEPTANCE-QUICK.md)), plus `check clean-host`,
+  `check browser`, `check markers` and `do rollback`; waiting for its first
+  real quick run.
+- **A2. The rest of the glue.** *[new]* `check roles`, `check write-probe`
+  (the guide's rolled-back inserts, verbatim), `check replication-tls`,
+  `check markers` on both hosts, `check disk`, `do firewall-replication`,
+  `do proxmox-firewall` (with the 20-second wait).
+- **A3. The record from the log.** *[new]* `acceptance.py report` builds the
+  draft record's tables from `record.jsonl`: IDs, fingerprints, backup names
+  and every repeat, so no value is copied by hand. CLEAN PASS then means
+  every step PASS and no `do` run twice.
+- **A4. A shorter agent guide.** *[simplify]* C9 becomes a command list per
+  phase; the kickoff needs no special rules. One full run with the tool before
+  it is trusted. ACCEPTANCE.md stays the explained guide for people.
 
 ## Goal: Trondheim running within 30 minutes
 

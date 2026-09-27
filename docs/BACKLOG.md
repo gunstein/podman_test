@@ -524,7 +524,10 @@ SQL or Podman behaviour):
 - **E1. Todo API tests with the real runtime role.** *[new]* The Todo API tests
   in CI connect as the migration role, which has more rights than `todo_app`
   has in production; a missing `GRANT` would only show in the lab. Run CRUD
-  through the API as `todo_app`, as the Notes tests already do.
+  through the API as `todo_app`, as the Notes tests already do. Implemented:
+  `todo-backend/role_tests` runs in CI as `todo_app` (API CRUD; DDL,
+  `TRUNCATE` and `schema_migrations` denied) and fails when a grant is
+  revoked. It replaces the inline privilege probe in the workflow.
 - **E2. A small full-stack job in CI.** *[new]* Before merging: `dev-up.sh` on
   the runner's rootless Podman, a real Keycloak login and one write and read
   in each app through nginx, then `dev-down.sh`. Run 10's CSP error was found

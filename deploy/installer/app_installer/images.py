@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import apps
+from . import apps, settings
 from .commands import exists, run
 
 
@@ -49,12 +49,14 @@ def _prepare(project_root, deployment_mode, bundle_directory, refresh_images, sp
         changed[image.component] = False
         if not present or refresh_images:
             if deployment_mode == "offline":
-                run("podman", "load", "--input", Path(bundle_directory) / "images" / image.archive)
+                run("podman", "load", "--input", Path(bundle_directory) / "images" / image.archive,
+                    timeout=settings.IMAGE_TIMEOUT)
             elif image.source is None:
-                run("podman", "pull", image.reference)
+                run("podman", "pull", image.reference, timeout=settings.IMAGE_TIMEOUT)
             else:
                 run("podman", "build", *(["--pull"] if refresh_images else []),
-                    "--file", root / image.source / "Containerfile", "--tag", image.reference, root)
+                    "--file", root / image.source / "Containerfile", "--tag", image.reference, root,
+                    timeout=settings.IMAGE_TIMEOUT)
             changed[image.component] = True
         if image.component == "proxy":
             inspection = json.loads(run("podman", "image", "inspect", image.reference).stdout)
@@ -98,7 +100,7 @@ def build_and_export(project_root, destination):
     destination.mkdir(parents=True, exist_ok=True)
     for image in specifications.values():
         run('podman', 'save', '--format', 'oci-archive', '--output',
-            destination / image.archive, image.reference)
+            destination / image.archive, image.reference, timeout=settings.IMAGE_TIMEOUT)
 
 
 if __name__ == '__main__':

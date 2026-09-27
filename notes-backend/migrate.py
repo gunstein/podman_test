@@ -25,6 +25,9 @@ PATTERN = re.compile(r"^(\d+)_(.+)\.(up|down)\.sql$")
 # SQLSTATE 57P03 means PostgreSQL is running but not ready for connections.
 RETRYABLE_CONNECT_SQLSTATES = {None, "57P03"}
 CONNECT_RETRY_INTERVAL_SECONDS = 2.0
+# One attempt may take at most this long, and never longer than the time left,
+# so a connection that hangs cannot outlast the deadline.
+CONNECT_ATTEMPT_SECONDS = 10
 
 
 @dataclass(frozen=True)
@@ -89,6 +92,9 @@ def parse_connect_timeout(value: str) -> float:
 def connect_with_retry(timeout_seconds: float):
     """Connect, retrying while PostgreSQL is still starting, for up to timeout_seconds.
 
+    Every attempt has its own limit inside that deadline, so one that hangs
+    fails and is retried instead of waiting forever.
+
     The init container can start before PostgreSQL accepts connections.
     Only "not reachable yet" and "starting up" are retried; a wrong password
     or missing database fails at once.
@@ -99,9 +105,11 @@ def connect_with_retry(timeout_seconds: float):
         return connect()
 
     deadline = time.monotonic() + timeout_seconds
+    remaining = timeout_seconds
     while True:
         try:
-            return connect()
+            # libpq takes whole seconds and treats anything below 2 as 2.
+            return connect(connect_timeout=max(2, math.ceil(min(CONNECT_ATTEMPT_SECONDS, remaining))))
         except psycopg.OperationalError as error:
             if error.sqlstate not in RETRYABLE_CONNECT_SQLSTATES:
                 raise
@@ -109,7 +117,9 @@ def connect_with_retry(timeout_seconds: float):
             if remaining <= 0:
                 raise
             print("Database is not ready; retrying connection", flush=True)
-            time.sleep(min(CONNECT_RETRY_INTERVAL_SECONDS, remaining))
+            pause = min(CONNECT_RETRY_INTERVAL_SECONDS, remaining)
+            time.sleep(pause)
+            remaining -= pause
 
 
 def migrate_up(connect_timeout: float = 0) -> None:

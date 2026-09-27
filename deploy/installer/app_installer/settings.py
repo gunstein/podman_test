@@ -27,3 +27,13 @@ QUADLET_DIR = Path.home() / ".config/containers/systemd"
 # played here so `down` can find and remove it, independent of whatever
 # --rendered-manifest-dir or --quadlet-dir a later `down` call happens to pass.
 DEV_STATE_FILE = Path.home() / ".config/containers/app-installer-dev.json"
+
+# Time limits in seconds, so a command that hangs stops the step with an error
+# instead of waiting forever. COMMAND_TIMEOUT is the default for any command;
+# the others are for steps that are slow by nature.
+COMMAND_TIMEOUT = 600
+HEALTH_TIMEOUT = 300
+IMAGE_TIMEOUT = 1800
+# Copying one database (pg_basebackup, a base backup or a restore copy); over
+# a slow link between sites this can take hours.
+DATA_COPY_TIMEOUT = 4 * 3600

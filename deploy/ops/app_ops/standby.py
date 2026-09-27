@@ -108,7 +108,7 @@ def bootstrap(project_root, controller, primary, standby):
         changed = steps.changed(steps.app_installer(
             standby, standby_path, 'replicate-workload', 'standby', '--app', entry['name'],
             '--primary-address', primary.spec.address, '--image-archive', images + entry['postgres_archive'],
-            *steps.group_paths(standby))) or changed
+            *steps.group_paths(standby), timeout=steps.COPY_STEP_TIMEOUT)) or changed
     streaming(primary, primary_path)
     return changed
 

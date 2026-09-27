@@ -13,7 +13,7 @@ import socket
 import string
 from pathlib import Path
 
-from . import apps, install, keycloak, quadlet, replication_tls, secrets, workloads
+from . import apps, install, keycloak, quadlet, replication_tls, secrets, settings, workloads
 from .commands import exists, run
 
 DATA = '/var/lib/postgresql/data'
@@ -271,7 +271,8 @@ def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kub
     for app in restart:
         quadlet.systemctl('restart', app.service('postgres'))
     for app in apps.REPLICATED_DATABASES:
-        run('podman', 'wait', '--condition=healthy', app.resource('postgres'))
+        run('podman', 'wait', '--condition=healthy', app.resource('postgres'),
+            timeout=settings.HEALTH_TIMEOUT)
     quadlet.systemctl('start', 'shared-proxy.service')
     for app in apps.APPS:
         keycloak.wait('/ready', 30, 1, 'ready', hostname=app.hostname)
@@ -359,7 +360,8 @@ def bootstrap_standby(app, primary_address, *, project_root, quadlet_dir,
         '--env', 'PGSSLMODE=verify-full', '--env', f'PGSSLROOTCERT=/run/secrets/{ca}', app.image('postgres'),
         'pg_basebackup', f'--host={primary_address}', f'--port={app.replication_port}',
         f'--username={role}', f'--pgdata={DATA}', '--format=plain', '--wal-method=stream',
-        '--write-recovery-conf', '--create-slot', f'--slot={slot}', '--progress')
+        '--write-recovery-conf', '--create-slot', f'--slot={slot}', '--progress',
+        timeout=settings.DATA_COPY_TIMEOUT)
     run(*common, '--volume', f'{app.volume("data")}:{DATA}:Z', '--entrypoint', 'chmod',
         app.image('postgres'), '0700', DATA)
     # The final helper must leave the shared Kube SELinux label, not a private MCS label.
@@ -370,7 +372,8 @@ def bootstrap_standby(app, primary_address, *, project_root, quadlet_dir,
     workloads.install_postgres(project_root, quadlet_dir, kube_runtime_dir,
                                rendered_manifest_dir, app=app)
     quadlet.systemctl('start', app.service('postgres'))
-    run('podman', 'wait', '--condition=healthy', app.resource('postgres'))
+    run('podman', 'wait', '--condition=healthy', app.resource('postgres'),
+        timeout=settings.HEALTH_TIMEOUT)
     state = status(app)
     if not state['in_recovery'] or not state['transaction_read_only']:
         raise RuntimeError(f'{app.name}: bootstrap did not produce a read-only standby')

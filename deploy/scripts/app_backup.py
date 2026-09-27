@@ -31,7 +31,7 @@ for location in ('installer', 'lib'):
     if (directory / 'app_installer').is_dir():
         sys.path.insert(0, str(directory))
         break
-from app_installer import apps, keycloak, replication  # noqa: E402
+from app_installer import apps, keycloak, replication, settings  # noqa: E402
 
 DATA_DIRECTORY = "/var/lib/postgresql/data"
 BACKUP_DIRECTORY = "/var/lib/postgresql/backup"
@@ -65,7 +65,7 @@ Runner = Callable[[Sequence[str], Optional[float]], subprocess.CompletedProcess]
 
 
 def run_command(
-    arguments: Sequence[str], timeout: Optional[float] = None
+    arguments: Sequence[str], timeout: Optional[float] = settings.COMMAND_TIMEOUT
 ) -> subprocess.CompletedProcess:
     """Run a command and capture its output; the caller decides what a failure means."""
     return subprocess.run(
@@ -80,7 +80,8 @@ def run_command(
 class TodoBackup:
     """Backup, archiving and disposable restore for one database.
 
-    runner, clock and sleeper replace subprocess, time and sleeping in tests.
+    runner, clock, sleeper and monotonic replace subprocess, the time of day,
+    sleeping and the wait deadline clock in tests.
     """
 
     def __init__(
@@ -89,6 +90,7 @@ class TodoBackup:
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         sleeper: Callable[[float], None] = time.sleep,
         *, app: apps.App = apps.SHARED_RESOURCE_OWNER,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.app = app
         self.image = app.image('postgres')
@@ -98,6 +100,7 @@ class TodoBackup:
         self.runner = runner
         self.clock = clock
         self.sleeper = sleeper
+        self.monotonic = monotonic
 
     def _run(
         self,
@@ -226,7 +229,7 @@ class TodoBackup:
                 "--progress",
             ],
             "Physical base backup",
-            timeout=None,
+            timeout=settings.DATA_COPY_TIMEOUT,
         )
         self._run(
             [
@@ -240,7 +243,7 @@ class TodoBackup:
                 f"/backup/base/{name}",
             ],
             "Base backup verification",
-            timeout=None,
+            timeout=settings.DATA_COPY_TIMEOUT,
         )
         self._run(
             [
@@ -341,7 +344,7 @@ class TodoBackup:
     def require_configured_archive(self) -> None:
         """After a restart: wait until healthy, then raise unless the archive settings held."""
         self._run(["podman", "wait", "--condition=healthy", self.app.resource("postgres")],
-                  "PostgreSQL health wait", timeout=None)
+                  "PostgreSQL health wait", timeout=settings.HEALTH_TIMEOUT)
         self.require_writable_primary()
         if self._archive_settings() != f"on|{ARCHIVE_COMMAND}|{ARCHIVE_TIMEOUT}":
             raise BackupError("PostgreSQL did not keep the configured archive settings after restart")
@@ -390,15 +393,17 @@ class TodoBackup:
         if not WAL_SEGMENT.fullmatch(wal):
             raise BackupError(f"Unexpected WAL segment name: {wal!r}")
         archive_path = f"/var/lib/postgresql/backup/wal/{wal}"
-        for _attempt in range(30):
+        deadline = self.monotonic() + 30
+        while self.monotonic() < deadline:
+            limit = max(1.0, deadline - self.monotonic())
             try:
                 result = self.runner(
                     ["podman", "exec", self.app.resource("postgres"), "test", "-f", archive_path],
-                    30,
+                    limit,
                 )
             except subprocess.TimeoutExpired as error:
                 raise BackupError(
-                    "WAL archive inspection timed out after 30 seconds"
+                    f"WAL archive inspection timed out after {limit:g} seconds"
                 ) from error
             if result.returncode == 0:
                 return
@@ -473,7 +478,7 @@ class TodoBackup:
                     self.app.resource("backup"), backup,
                 ],
                 "Base backup copy into disposable restore volume",
-                timeout=None,
+                timeout=settings.DATA_COPY_TIMEOUT,
             )
             self._run(
                 [
@@ -508,8 +513,10 @@ class TodoBackup:
             raise
 
     def _wait_for_restore_pause(self) -> None:
-        """Wait up to 60 seconds for the restore to pause at its target."""
-        for _attempt in range(60):
+        """Wait up to 60 seconds for the restore to pause at its target: one deadline for every query."""
+        deadline = self.monotonic() + 60
+        while self.monotonic() < deadline:
+            limit = max(1.0, deadline - self.monotonic())
             try:
                 result = self.runner(
                     [
@@ -519,11 +526,11 @@ class TodoBackup:
                         "--command",
                         "SELECT pg_is_in_recovery(), pg_is_wal_replay_paused();",
                     ],
-                    30,
+                    limit,
                 )
             except subprocess.TimeoutExpired as error:
                 raise BackupError(
-                    "Disposable PITR status query timed out after 30 seconds"
+                    f"Disposable PITR status query timed out after {limit:g} seconds"
                 ) from error
             if result.returncode == 0 and result.stdout.strip() == "t|t":
                 return
@@ -596,16 +603,16 @@ def configure(tools: Sequence[TodoBackup], journal: Path) -> dict:
         restart = [tool for tool, _access, _directories, needed in prepared if needed]
         if restart:
             for service in apps.services(databases=False):
-                if runner(["systemctl", "--user", "stop", service], None).returncode not in (0, 5):
+                if runner(["systemctl", "--user", "stop", service], settings.COMMAND_TIMEOUT).returncode not in (0, 5):
                     raise BackupError(f"Could not stop {service} before the PostgreSQL restart")
         tools[0]._run(["systemctl", "--user", "daemon-reload"], "User systemd reload")
         for tool in restart:
             tool._run(["systemctl", "--user", "restart", tool.app.service("postgres")],
-                      f"{tool.app.service('postgres')} restart", timeout=None)
+                      f"{tool.app.service('postgres')} restart", timeout=settings.COMMAND_TIMEOUT)
         for tool in tools:
             tool.require_configured_archive()
         tools[0]._run(["systemctl", "--user", "start", "shared-proxy.service"],
-                      "Application tier start", timeout=None)
+                      "Application tier start", timeout=settings.COMMAND_TIMEOUT)
         for app in apps.APPS:
             keycloak.wait("/ready", 30, 1, "ready", hostname=app.hostname)
         keycloak.wait("/auth/realms/todo/.well-known/openid-configuration", 90, 2)

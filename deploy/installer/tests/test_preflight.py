@@ -20,7 +20,7 @@ def host(hostname='primary', machine_id='a' * 32, volumes=(), ip_output=IP_OUTPU
     """A fake run/exists pair answering like one host."""
     calls = []
 
-    def run(*argv, input=None, allowed=(0,)):
+    def run(*argv, input=None, allowed=(0,), timeout=None):
         calls.append(argv)
         outputs = {('hostname',): hostname + '\n', ('cat', '/etc/machine-id'): machine_id + '\n',
                    ('ip', '-4', '-o', 'address', 'show', 'scope', 'global'): ip_output}

@@ -22,16 +22,19 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
 
-def connect():
+def connect(connect_timeout=None):
     """Open a database connection that returns rows as dicts.
 
     DATABASE_URL wins if set (local development). Otherwise the password is
     read from DATABASE_PASSWORD_FILE, a mounted Podman secret, so it never
-    appears in the environment or the Kube YAML.
+    appears in the environment or the Kube YAML. connect_timeout, in whole
+    seconds, stops an attempt that hangs; without it libpq waits as long as
+    the network lets it.
     """
+    limit = {} if connect_timeout is None else {"connect_timeout": connect_timeout}
     url = os.getenv("DATABASE_URL")
     if url:
-        return psycopg.connect(url, row_factory=dict_row)
+        return psycopg.connect(url, row_factory=dict_row, **limit)
 
     password_file = os.getenv("DATABASE_PASSWORD_FILE")
     if not password_file:
@@ -50,6 +53,7 @@ def connect():
         user=os.getenv("DATABASE_USER", "todo"),
         password=password,
         row_factory=dict_row,
+        **limit,
     )
 
 

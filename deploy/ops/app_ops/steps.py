@@ -8,9 +8,15 @@ from . import trust
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT / 'deploy/installer'))
-from app_installer import apps, settings  # noqa: E402,F401 (settings: for failover)
+from app_installer import apps, settings  # noqa: E402
 
 GROUP = [apps.describe(database) for database in apps.REPLICATED_DATABASES]
+
+# A backstop for one app_installer step on a host. Each command inside it has
+# its own limit (settings.COMMAND_TIMEOUT and the longer ones), so this only
+# catches a step that hangs outside them. Copying databases takes longer.
+STEP_TIMEOUT = 2 * 3600
+COPY_STEP_TIMEOUT = len(GROUP) * settings.DATA_COPY_TIMEOUT + STEP_TIMEOUT
 
 
 def paths(host):
@@ -29,10 +35,11 @@ def installed_pythonpath(host):
     return paths(host)['target'] + '/deploy/installer'
 
 
-def app_installer(host, pythonpath, *arguments, input=None, allowed=(0,)):
+def app_installer(host, pythonpath, *arguments, input=None, allowed=(0,), timeout=STEP_TIMEOUT):
     """Run python3 -m app_installer with the given arguments on host, using pythonpath."""
     return host.run(['env', f'PYTHONPATH={pythonpath}', 'PYTHONDONTWRITEBYTECODE=1',
-                     'python3', '-m', 'app_installer', *arguments], input=input, allowed=allowed)
+                     'python3', '-m', 'app_installer', *arguments], input=input, allowed=allowed,
+                    timeout=timeout)
 
 
 def changed(result):

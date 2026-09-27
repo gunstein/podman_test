@@ -40,7 +40,7 @@ def configure_backup(project_root, controller, current):
         project_root, controller, current,
         [(f'{project_root}/deploy/scripts/app_backup.py', '/opt/todo/bin/app_backup.py', '0644')], '/opt/todo/bin')
     result = current.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', '/opt/todo/bin/app_backup.py',
-                          'configure', '--journal', journal])
+                          'configure', '--journal', journal], timeout=steps.STEP_TIMEOUT)
     return steps.changed(result) or changed
 
 
@@ -88,7 +88,7 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
                       '--primary-address', current.spec.address)
     app_installer(rebuild_host, rebuild_path, 'reseed-group', '--primary-address', current.spec.address,
                   '--confirm-fenced', confirm_fenced, '--confirm-reseed', confirm_reseed,
-                  *steps.group_paths(rebuild_host))
+                  *steps.group_paths(rebuild_host), timeout=steps.COPY_STEP_TIMEOUT)
     standby.install_dr_tool(project_root, controller, rebuild_host, current.spec)
     standby.streaming(current, current_path, rebuilt=True)
     return True

@@ -55,10 +55,12 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
 
     for app in applications:
         play(app.manifest('postgres'), app.manifest('config'))
-        run('podman', 'wait', '--condition', 'healthy', app.resource('postgres'))
+        run('podman', 'wait', '--condition', 'healthy', app.resource('postgres'),
+            timeout=settings.HEALTH_TIMEOUT)
         setup_roles(app)
     play(apps.KEYCLOAK_DATABASE.manifest('postgres'), apps.KEYCLOAK_DATABASE.manifest('config'))
-    run('podman', 'wait', '--condition', 'healthy', apps.KEYCLOAK_DATABASE.resource('postgres'))
+    run('podman', 'wait', '--condition', 'healthy', apps.KEYCLOAK_DATABASE.resource('postgres'),
+        timeout=settings.HEALTH_TIMEOUT)
     play('keycloak.yaml')
     for app in applications:
         play(app.manifest('app'), app.manifest('config'))

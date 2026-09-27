@@ -76,7 +76,7 @@ class InstallServerTlsTests(unittest.TestCase):
     def install(self, settings):
         writes, statements = [], []
 
-        def run(*argv, input=None, allowed=(0,)):
+        def run(*argv, input=None, allowed=(0,), timeout=None):
             if argv[0] == 'openssl':
                 return commands.run(*argv, allowed=allowed)
             if argv[:3] == ('podman', 'exec', APP.resource('postgres')) and argv[3] == 'cat':

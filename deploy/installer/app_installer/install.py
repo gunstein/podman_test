@@ -169,10 +169,12 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
             quadlet.systemctl('stop', service + '.service')
     for app in applications:
         quadlet.systemctl('start', app.service('postgres'))
-        run('podman', 'wait', '--condition=healthy', app.resource('postgres'))
+        run('podman', 'wait', '--condition=healthy', app.resource('postgres'),
+            timeout=settings.HEALTH_TIMEOUT)
         setup_roles(app)
     quadlet.systemctl('start', apps.KEYCLOAK_DATABASE.service('postgres'))
-    run('podman', 'wait', '--condition=healthy', apps.KEYCLOAK_DATABASE.resource('postgres'))
+    run('podman', 'wait', '--condition=healthy', apps.KEYCLOAK_DATABASE.resource('postgres'),
+        timeout=settings.HEALTH_TIMEOUT)
     quadlet.systemctl('start', 'keycloak.service')
     for app in applications:
         quadlet.systemctl('start', app.service('app'))

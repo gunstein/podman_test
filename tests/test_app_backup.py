@@ -53,12 +53,30 @@ class FakeRunner:
         return completed("ok\n")
 
 
+class FakeTime:
+    """A deadline clock that moves only when the code under test sleeps."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+def fake_time():
+    time = FakeTime()
+    return {"sleeper": time.sleep, "monotonic": time.monotonic}
+
+
 class TodoBackupTests(unittest.TestCase):
     def tool(self, runner):
         return app_backup.TodoBackup(
             runner=runner,
             clock=lambda: datetime(2026, 8, 29, 12, 34, 56, tzinfo=timezone.utc),
-            sleeper=lambda _seconds: None,
+            **fake_time(),
         )
 
     def test_status_reports_writable_archive(self):
@@ -147,7 +165,7 @@ class RestoreEdgeTests(unittest.TestCase):
     BACKUP = "base-20260829T123456Z"
 
     def tool(self, runner):
-        return app_backup.TodoBackup(runner=runner, sleeper=lambda _seconds: None)
+        return app_backup.TodoBackup(runner=runner, **fake_time())
 
     def live_names(self, tool):
         app = tool.app
@@ -225,6 +243,22 @@ class RestoreEdgeTests(unittest.TestCase):
                 runner = NeverPaused(stops)
                 with self.assertRaisesRegex(app_backup.BackupError, message):
                     self.tool(runner)._wait_for_restore_pause()
+
+    def test_the_restore_wait_is_one_deadline_even_when_each_query_is_slow(self):
+        time = FakeTime()
+        limits = []
+
+        def slow(arguments, timeout):
+            limits.append(timeout)
+            time.now += 20
+            return completed("t|f\n") if arguments[1] == "exec" else completed()
+
+        tool = app_backup.TodoBackup(runner=slow, sleeper=time.sleep, monotonic=time.monotonic)
+        with self.assertRaisesRegex(app_backup.BackupError, "within 60 seconds"):
+            tool._wait_for_restore_pause()
+        self.assertLessEqual(time.now, 60 + 2 * 20 + 1)
+        self.assertEqual(limits[0], 60)
+        self.assertLess(limits[2], limits[0])
 
     def test_restore_status_without_a_restore_container(self):
         with self.assertRaisesRegex(app_backup.BackupError, "does not exist"):
@@ -368,7 +402,7 @@ class ConfigureArchiveTests(unittest.TestCase):
     DATABASES = app_backup.apps.REPLICATED_DATABASES
 
     def configure(self, host, promoted=True, access_changed=False):
-        tools = [app_backup.TodoBackup(runner=host, app=app, sleeper=lambda _s: None,
+        tools = [app_backup.TodoBackup(runner=host, app=app, **fake_time(),
                                         clock=lambda: datetime(2026, 9, 25, 12, 0, 0, 123456, tzinfo=timezone.utc))
                  for app in self.DATABASES]
         self.hba = []

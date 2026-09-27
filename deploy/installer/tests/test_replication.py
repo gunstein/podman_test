@@ -305,7 +305,7 @@ class PublishPrimariesTests(unittest.TestCase):
     def publish(self, bootstrap, changed=(), access_changed=False, legacy=False, readonly=None):
         steps = self.steps = []
 
-        def run(*argv, input=None, allowed=(0,)):
+        def run(*argv, input=None, allowed=(0,), timeout=None):
             steps.append(argv)
             return subprocess.CompletedProcess(argv, 0, '', '')
 
@@ -433,7 +433,7 @@ class ReseedGroupTests(unittest.TestCase):
             for name in tier + tuple(d.unit('postgres') for d in self.DATABASES):
                 (runtime / name).write_text('fixture')
 
-            def run(*argv, input=None, allowed=(0,)):
+            def run(*argv, input=None, allowed=(0,), timeout=None):
                 steps.append(argv)
                 return subprocess.CompletedProcess(argv, 0, '', '')
 

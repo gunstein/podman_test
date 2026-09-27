@@ -136,7 +136,14 @@ such as a small cloud VM. Without one, the safe design is one human decision
   seconds but makes 60 attempts of unbounded commands. Give each long wait one
   deadline from `time.monotonic()` and each underlying call its own limit, and
   say in the error which step ran out of time. (From the code review of
-  `25ec0a6`.)
+  `25ec0a6`.) Implemented: every installer command has a limit
+  (`settings.COMMAND_TIMEOUT`, 10 minutes; health waits 5 minutes, images 30
+  minutes, a database copy 4 hours), every app-ops command on a host 10
+  minutes, and each app_installer step a larger backstop above the limits
+  inside it. `connect_with_retry` gives each attempt its own
+  `connect_timeout` inside the deadline, and the PITR and WAL archive waits
+  in `app_backup.py` each keep one deadline. A timeout names the command and
+  host; `failover` adds the step. Waiting for a full run.
 - **G2. Trondheim is ready to take over.** *[new]* Part of the scheduled
   checks (M1): the same bundle and operations package revision as Oslo, every
   DR secret and the shared CA (T4) synchronised, the recovery inventory in

@@ -25,7 +25,7 @@ class FakeRunner:
         self.restorecon = restorecon
         self.raw, self.commands = [], []
 
-    def __call__(self, argv, input=None, capture_output=True, text=True):
+    def __call__(self, argv, input=None, capture_output=True, text=True, timeout=None):
         self.raw.append((argv, input))
         command = shlex.split(argv[-1]) if argv[0] == "ssh" else list(argv)
         if command[0] == "sudo":
@@ -189,6 +189,28 @@ class QuarantineToolTests(unittest.TestCase):
             self.install(runner)
         self.assertNotIn("put", runner.kinds())
 
+
+
+class TransportTimeoutTests(unittest.TestCase):
+    def test_every_command_has_a_limit_and_a_hang_names_the_host_and_command(self):
+        seen = []
+
+        def hangs(argv, timeout=None, **kwargs):
+            seen.append(timeout)
+            raise subprocess.TimeoutExpired(argv, timeout)
+
+        host = transport.Host(PRIMARY, runner=hangs)
+        with self.assertRaisesRegex(transport.CommandError,
+                                    r"todo-primary: podman ps timed out after 600 seconds"):
+            host.run(["podman", "ps"], input="secret on stdin")
+        with self.assertRaisesRegex(transport.CommandError, "timed out after 5 seconds"):
+            host.run(["true"], timeout=5)
+        self.assertEqual(seen, [transport.COMMAND_TIMEOUT, 5])
+
+    def test_data_copy_steps_get_a_longer_backstop_than_other_steps(self):
+        from app_ops import steps
+        self.assertGreater(steps.COPY_STEP_TIMEOUT, steps.STEP_TIMEOUT)
+        self.assertGreater(steps.STEP_TIMEOUT, transport.COMMAND_TIMEOUT)
 
 if __name__ == "__main__":
     unittest.main()

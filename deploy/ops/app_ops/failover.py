@@ -40,7 +40,7 @@ def promote(host, confirm_fenced, confirm_promotion):
         raise RuntimeError(f'the promotion record says "{state}". Inspect every database role and '
                            f'{steps.paths(host)["config"]}/promotion.json; failover never retries a promotion.')
     host.run(['python3', APP_DR, 'promote', '--confirm-primary-fenced', confirm_fenced,
-              '--confirm-promotion', confirm_promotion])
+              '--confirm-promotion', confirm_promotion], timeout=steps.STEP_TIMEOUT)
     return True
 
 

@@ -46,7 +46,7 @@ class World:
         self.writable_standby = writable_standby
         self.log = []
 
-    def __call__(self, argv, input=None, capture_output=True, text=True):
+    def __call__(self, argv, input=None, capture_output=True, text=True, timeout=None):
         host = argv[-2].split("@")[1] if argv[0] == "ssh" else "controller"
         command = shlex.split(argv[-1]) if argv[0] == "ssh" else list(argv)
         if command[:3] == ["sudo", "-n", "--"]:

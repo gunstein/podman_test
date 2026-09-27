@@ -191,12 +191,28 @@ such as a small cloud VM. Without one, the safe design is one human decision
   removed, the network closed from the surviving side), and for what to do when
   that site comes back with its old primary. The quarantine covers the return
   only when the hypervisor is reachable.
-- **T4. One CA for both sites.** *[new]* The promoted host creates its own CA, so
-  after a failover every user's browser shows certificate errors until the new
-  CA is rolled out (acceptance trusted the new CA on its one client by hand).
-  Share one CA between the sites, synchronised like the other DR secrets (the
-  replication CA in replication_tls.py already is), or use certificates from an
-  existing PKI.
+- **T4. One CA for both sites.** *[decision]* The promoted host creates its own
+  CA, so after a failover every client must trust a new CA before users stop
+  seeing certificate errors (`failover` prints its fingerprint; acceptance
+  trusts it on its one client by hand). Kept as it is for now (owner's
+  decision, 2026-09-27). To decide before G3, whose timing must either include
+  that trust step or not need it:
+  - *Only a CA outside the nodes*, the mode `docs/TLS.md` already recommends:
+    a protected issuing machine holds the CA; Oslo and Trondheim each get
+    their own server certificate and private key for the same names, issued
+    in advance; clients trust the root once. nginx then only reads the issued
+    files. The installer checks names, chain, key match and expiry before it
+    changes anything, the node key lives in a Podman secret, the standby gets
+    its certificate at bootstrap (G2), and renewal starts manual with an expiry
+    warning on both nodes (U2). In the lab, the client plays the issuing machine.
+  - *Both modes*: `local` as today for hosts without such a CA, and
+    `provided` as above. The mode is chosen at install and stored on the
+    host, primary and standby must match, and `provided` never falls back to a
+    local CA when a file is missing or invalid. Optionally, `local` shares one
+    CA from the primary to the standby at bootstrap, like the replication CA,
+    so failover keeps client trust at the cost of the CA key on both nodes.
+    Full acceptance would then run `provided`; CI keeps covering `local`.
+
 - **T5. Pointing users at the other site.** *[docs]* Clients use `todo.test` and
   `notes.test`; acceptance edits `/etc/hosts` on one client. Write down how the
   names move to the surviving site in the real setup (a DNS change with a

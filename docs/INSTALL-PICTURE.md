@@ -1,86 +1,67 @@
 # Install picture: from source to running pods
 
-One page showing how the solution is built, packed, moved and installed today.
-[TARGET-PICTURE.md](TARGET-PICTURE.md) is the matching page for DR.
+How the application gets from source code to running pods, in production and
+in development. [TARGET-PICTURE.md](TARGET-PICTURE.md) is the matching page
+for failover between two sites.
 
-## Build on a connected machine
-
-```mermaid
-flowchart LR
-  j2["Kube YAML templates<br>deploy/manifests/*.yaml.j2"] --> render
-  values["values.yaml<br>prod: hostname, port"] --> render
-  render(["Jinja2<br>render-kube-runtime.sh"]) --> yaml["10 plain YAML files<br>for 7 pods"]
-  code["Containerfiles: backend,<br>frontend, nginx, Keycloak"] --> build(["podman build<br>+ pull postgres:17.11"])
-  build --> img["7 OCI archives"]
-  q["Quadlet templates<br>deploy/quadlet/*.kube.j2"]
-  inst["Python installer<br>app_installer"]
-  ops["app-ops<br>deploy/ops"]
-
-  yaml & img & q & inst --> bundle[["todo-offline-m12.tar.gz<br>everything for one host"]]
-  yaml & q & inst & ops --> opspkg[["todo-operations.tar.gz<br>DR tools, no images"]]
-```
-
-Both packages get a `VERSION` file (Git revision and `clean`/`dirty`), a
-`SHA256SUMS` file for every file inside, and an external `.sha256` next to the
-archive. Build only from a clean checkout; `dirty` is for diagnosis.
-
-## Move and install on the target (no internet)
+**The same application and the same YAML templates in both. Only how it is
+started and kept running differs. The production install needs no internet.**
 
 ```mermaid
 flowchart LR
-  a["Copy archive<br>+ .sha256"] --> b["sha256sum -c<br>then tar -x"]
-  b --> c["fapolicyd: trust the<br>installer .py files<br>(exact files only)"]
-  c --> d["sh install.sh<br>--publish-address IP"]
-  d --> e["SHA256SUMS<br>+ preflight.sh"]
-  e --> f["python3 -m<br>app_installer install"]
+  src["Source code<br>and YAML templates"]
+
+  subgraph PROD["Production without internet"]
+    direction LR
+    build["Build machine<br>builds images,<br>renders YAML"] --> bundle[["Offline bundle<br>images + YAML<br>+ installer"]]
+    bundle -- "copied,<br>no internet" --> host["Production host<br>install.sh loads images,<br>installs configuration"]
+    host --> prodrun["systemd + Quadlet<br>run the pods<br>with Podman"]
+  end
+
+  subgraph DEV["Development"]
+    direction LR
+    up["dev-up.sh<br>builds images,<br>renders YAML"] --> devrun["podman kube play<br>runs the pods"]
+  end
+
+  src --> build
+  src --> up
 ```
 
-`preflight.sh` changes nothing. It checks Podman rootless, subuid/subgid, the
-Quadlet generator, `systemctl --user`, Python with Jinja2, free ports
-5432-5434, 8080 and 8443, and reports disk and memory.
+## Production without internet
 
-## What the Python installer does
+1. **Build.** On a suitable build machine: build the container images from
+   the source code, fetch the base images they need, and render the YAML
+   from the templates.
+2. **Pack.** Put the container images, the rendered YAML and the install
+   tools into one offline bundle.
+3. **Move.** Copy the bundle to a prepared production host without internet
+   access.
+4. **Install.** `install.sh` loads the images and installs the configuration.
+5. **Run.** systemd starts and restarts the pods through Quadlet, which runs
+   them with Podman.
 
-```mermaid
-flowchart TB
-  subgraph PREP["Prepare: nothing is stopped yet"]
-    direction LR
-    s1["1. Refuse unsupported hosts:<br>DR host, old per-container<br>Quadlets, old Podman"] --> s2["2. Podman secrets:<br>keep existing, generate<br>missing (32 characters)"]
-    s2 --> s3["3. Load missing images<br>from the bundle"]
-    s3 --> s4["4. Write YAML (0600) and<br>.kube units (0644), only<br>changed files; daemon-reload"]
-  end
-  subgraph RUN["Run"]
-    direction LR
-    s5["5. Stop only services whose<br>file or image changed"] --> s6["6. Start in order: databases,<br>roles, Keycloak, apps,<br>roles again, nginx"]
-    s6 --> s7["7. Keycloak: clients,<br>redirects, lockout and<br>password policy"]
-    s7 --> s8["8. Check every unit runs<br>from the expected .kube file"]
-  end
-  PREP --> RUN
-```
+The build machine does not have to be a particular server or CI system. It
+needs access to the source code, the container images and the other build
+dependencies, over the internet, from internal mirrors or from local storage.
 
-Run it again with the same arguments and nothing changes (`changed: false`).
-The installer never asks for a password and never changes firewalld.
+**Prerequisite:** the production host must already be prepared with the host
+tools it needs, among them Podman, systemd and Python with Jinja2.
 
-## What ends up on the host
+## Development
 
-| Where | What |
-|---|---|
-| `~/.config/containers/systemd/` | `app-network.network` and the `todo-kube-runtime/` folder |
-| `…/todo-kube-runtime/*.yaml` | The rendered pods and ConfigMaps, as built (0600) |
-| `…/todo-kube-runtime/*.kube` | Seven Quadlet units; user systemd starts them at boot |
-| `podman secret ls` | Database, migrator, app and Keycloak admin passwords; never in YAML or the bundle |
-| Podman volumes | Three database volumes and `todo-nginx-data` (TLS key and certificate) |
-| Ports | 8443 on the chosen IP; 8080 and 5432-5434 on localhost only |
+1. The developer uses the same source code and YAML templates.
+2. `dev-up.sh` builds the images, renders the YAML and starts the application
+   with `podman kube play`.
+3. This path uses neither systemd nor Quadlet. `dev-down.sh` stops it.
 
-## Same YAML, three ways to run it
+## More detail
 
-| | Development | One production host | Two hosts (DR) |
-|---|---|---|---|
-| Command | `dev-up.sh` / `dev-down.sh` | `sh install.sh` | `app-ops` from the client |
-| Runs pods with | `podman kube play` directly | Quadlet `.kube` units | Quadlet `.kube` units |
-| Images | Built from the checkout | Loaded from the bundle | Loaded from the bundle |
-| YAML | Rendered with `local` values | Rendered at build, `prod` values | The same as one host |
-| Code that installs | `app_installer` | `app_installer` | `app_installer` on each host, over SSH |
-
-One implementation: app-ops installs nothing itself. It calls the same
-`app_installer` CLI on each host, then adds replication, promotion and backup.
+- [Offline bundle](../deploy/offline/README.md): building, checking and
+  installing the bundle, and the host prerequisites.
+- [Python installer](../deploy/installer/README.md): what `install.sh` and
+  `dev-up.sh` do, step by step.
+- [Architecture](ARCHITECTURE.md): the seven pods and why they are grouped
+  as they are.
+- [Secrets](SECRETS.md) and [TLS](TLS.md): passwords and certificates.
+- [app-ops](../deploy/ops/README.md): the second site, replication, failover
+  and backup.

@@ -6,7 +6,7 @@ A pedagogical rootless Podman Todo and Notes demo: Jinja2 renders Kube YAML;
 user systemd manages seven .kube workloads (two apps, shared Keycloak and nginx,
 three PostgreSQL databases replicated as one DR group). See [Architecture](docs/ARCHITECTURE.md),
 [Learning guide](docs/LEARNING-GUIDE.md) and the one-page
-[install picture](docs/INSTALL-PICTURE.md) of build, bundle and installer.
+[install picture](docs/INSTALL-PICTURE.md) of the production and development paths.
 
 ## Acceptance
 

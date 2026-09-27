@@ -532,7 +532,14 @@ SQL or Podman behaviour):
   the runner's rootless Podman, a real Keycloak login and one write and read
   in each app through nginx, then `dev-down.sh`. Run 10's CSP error was found
   only on the lab VMs; this job would have caught it in minutes. It narrows
-  item 12 below to the part that needs no second host.
+  item 12 below to the part that needs no second host. Implemented: the
+  `full-stack` job runs on `ubuntu-26.04` (Podman 5.7; `ubuntu-latest` has
+  4.9, without `--no-pod-prefix`) and runs the lab's Todo, Notes and
+  multi-app SSO browser tests, about ten minutes. Its first run found a real
+  defect: Podman 5.7 lets `envFrom` win over `env`, so the migration
+  container ran as `todo_app`. `DATABASE_USER` now lives only in `env`, and
+  a test refuses a variable set in both places. That changes the Kube YAML,
+  so the next full acceptance run covers it.
 - **E3. Installer CLI branches.** *[new]* The installer's `cli.py` has 46 %
   branch coverage. Test its commands and failure paths through the CLI, done
   together with splitting `cli.main()` (DR code structure, item 9).

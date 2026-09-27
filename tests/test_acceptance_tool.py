@@ -169,6 +169,19 @@ class CheckTests(ToolTest):
         self.assertEqual(self.tool("--step", "10-2", "check", "services", "192.168.0.102", "standby",
                                    rules=rules)[0], 1)
 
+    def test_a_failed_podman_health_check_run_is_listed_not_failed(self):
+        """Run 19: one health-check run failed while a container started; the check failed on it."""
+        unit = "327f5281df52db4abfe1ca62fd6336959bc246c9be4db4a5943ecf594f7755ed-29e5e1da076debce.service"
+        line = f"{unit} loaded failed failed /usr/bin/podman healthcheck run 327f5281df52\n"
+        ready = ("wait-ready", (0, "READY: x\n"))
+        self.assertEqual(self.tool("--step", "07-5", "check", "services", "192.168.0.108", "app",
+                                   rules=[ready, ("--failed", (0, line))])[0], 0)
+        entry = acceptance.read_record(self.run_directory)[-1]
+        self.assertEqual(entry["values"], {"failed_health_check_runs": 1})
+        self.assertEqual(self.tool("--step", "07-5", "check", "services", "192.168.0.108", "app",
+                                   rules=[ready, ("--failed", (0, line + "todo-app.service loaded failed failed\n"))]
+                                   )[0], 1)
+
     def test_headers_pass_and_a_wrong_connect_src_fails(self):
         good = [("/auth/", (0, AUTH_HEADERS)), ("curl", (0, APP_HEADERS))]
         self.assertEqual(self.tool("--step", "03-3", "check", "headers", rules=good)[0], 0)

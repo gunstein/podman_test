@@ -227,12 +227,28 @@ cat /etc/machine-id
         step.values['machine_id'] = lines[-1]
 
 
+# Podman runs each container health check as a transient unit named
+# <container id>-<random>.service; one failed run leaves it "failed" until the next.
+HEALTH_CHECK_UNIT = re.compile(r'[0-9a-f]{64}-[0-9a-f]+\.(service|timer)')
+
+
 def check_services(step, host, mode):
-    """All services up (wait-ready.sh), no failed user units, and a valid nginx configuration."""
+    """All services up (wait-ready.sh), no failed user units, and a valid nginx configuration.
+
+    Podman's own health-check units are listed, not failed: wait-ready.sh
+    already requires every container to be healthy, and the probe allows
+    single failed runs while a container starts (run 19).
+    """
     ready = step.ssh(host, (ROOT / 'deploy/scripts/wait-ready.sh').read_text(), mode, timeout=400)
     step.expect(ready.returncode == 0 and 'READY:' in ready.stdout, f'wait-ready.sh {mode} printed READY')
     failed = step.ssh(host, 'systemctl --user --failed --no-legend --plain')
-    step.expect(failed.returncode == 0 and not failed.stdout.strip(), 'no failed user units')
+    units = [line.split()[0] for line in failed.stdout.splitlines() if line.strip()]
+    health_checks = [unit for unit in units if HEALTH_CHECK_UNIT.fullmatch(unit)]
+    if health_checks:
+        step.values['failed_health_check_runs'] = len(health_checks)
+    step.expect(failed.returncode == 0 and len(units) == len(health_checks),
+                'no failed user units' + (f' (ignored {len(health_checks)} failed Podman health-check run)'
+                                          if health_checks else ''))
     if mode == 'app':
         nginx = step.ssh(host, 'podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf')
         step.expect(nginx.returncode == 0, 'nginx configuration is valid')

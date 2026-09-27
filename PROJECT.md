@@ -27,6 +27,11 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `4137c5e` run 19: functional pass, not clean
+  ([record](docs/history/ACCEPTANCE-4137c5e.md)), the first run with the time
+  limits (G6) and the review fixes. `check services` failed once on a Podman
+  health-check unit that had failed while a container started, and passed on
+  a repeat; it now ignores those units. No product defect.
 - `2dbc561` run 18: CLEAN PASS ([record](docs/history/ACCEPTANCE-2dbc561.md)),
   the first run with `app-ops failover` (G1) in phase 6.
 - `aeefe4a` run 17: CLEAN PASS ([record](docs/history/ACCEPTANCE-aeefe4a.md)),

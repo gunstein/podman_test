@@ -137,7 +137,8 @@ such as a small cloud VM. Without one, the safe design is one human decision
   phase 7, CI's full-stack job). `failover` now checks what it can without a
   user: services ready, and each app's login can start (Keycloak accepts the
   app's client and redirect address; the app's CSP allows the token request),
-  also run against the real stack in CI. Waiting for a full run.
+  also run against the real stack in CI. Run 19 passed it on the lab VMs
+  ([record](history/ACCEPTANCE-4137c5e.md)).
 - **G6. Real time limits.** *[new]* A command that hangs must not stop a
   failover silently. `commands.run` in the installer and the SSH transport of
   app-ops have no timeout; `connect_with_retry` in `migrate.py` checks its
@@ -152,7 +153,8 @@ such as a small cloud VM. Without one, the safe design is one human decision
   inside it. `connect_with_retry` gives each attempt its own
   `connect_timeout` inside the deadline, and the PITR and WAL archive waits
   in `app_backup.py` each keep one deadline. A timeout names the command and
-  host; `failover` adds the step. Waiting for a full run.
+  host; `failover` adds the step. Run 19 reached none of the limits
+  ([record](history/ACCEPTANCE-4137c5e.md)).
 - **G2. Trondheim is ready to take over.** *[new]* Part of the scheduled
   checks (M1): the same bundle and operations package revision as Oslo, every
   DR secret and the shared CA (T4) synchronised, the recovery inventory in

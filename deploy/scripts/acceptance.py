@@ -842,20 +842,31 @@ def same_step(expected, ran):
 
 
 def compare_with_guide(entries, products, text):
-    """Every difference between the steps that ran and the steps the guide asks for."""
+    """Every difference between the steps that ran and the steps the guide asks for.
+
+    Every finished record is compared, not only the first one under a label, so
+    an extra command cannot hide behind a correct one. A check may be repeated
+    under its label with the same arguments; a do under one label runs once.
+    """
     tool, logs = guide_steps(text)
     ran = {}
     for entry in entries:
         if entry['result'] != 'STARTED':
-            ran.setdefault(entry['step'], [entry['kind'], entry['command'], *entry['arguments']])
+            ran.setdefault(entry['step'], []).append([entry['kind'], entry['command'], *entry['arguments']])
     differences = []
     for label, expected in tool.items():
         if label not in ran:
             differences.append(f'guide step {label} `{" ".join(expected)}` did not run')
-        elif not same_step(expected, ran[label]):
-            differences.append(f'step {label} ran `{" ".join(ran[label])}`, the guide says `{" ".join(expected)}`')
-    differences += [f'step {label} `{" ".join(command)}` is not in the guide' for label, command in ran.items()
-                    if label not in tool]
+            continue
+        for command in dict.fromkeys(map(tuple, ran[label])):
+            if not same_step(expected, command):
+                differences.append(f'step {label} ran `{" ".join(command)}`, the guide says `{" ".join(expected)}`')
+        actions = [command for command in ran[label] if command[0] == 'do']
+        if len(actions) > 1:
+            differences.append(f'step {label} ran a do {len(actions)} times; a do step runs once')
+    differences += [f'step {label} `{" ".join(command)}` is not in the guide'
+                    for label, commands in ran.items() if label not in tool
+                    for command in dict.fromkeys(map(tuple, commands))]
     names = {name for name, _, _ in products}
     differences += [f'guide log {name} is missing' for name in sorted(logs - names)]
     differences += [f'log {name} is not in the guide' for name in sorted(names - logs)]

@@ -512,6 +512,34 @@ class ReportTests(ToolTest):
         self.assertIn("step 04-15 ran `check roles 192.168.0.108 primary`, the guide says "
                       "`check roles 192.168.0.108 standby`", text)
 
+    def add_record(self, **changes):
+        """Append a copy of the last finished record with some fields changed."""
+        record = self.run_directory / "record.jsonl"
+        last = json.loads(record.read_text().splitlines()[-1])
+        record.write_text(record.read_text() + json.dumps({**last, **changes}) + "\n")
+
+    def test_every_record_under_a_label_is_compared_not_only_the_first(self):
+        """Code review: a second, different command under a correct label passed unseen."""
+        self.tool("--step", "05-8-4a", "do", "power", "107", "shutdown",
+                  rules=[("status/shutdown", (0, '{"data": "UPID"}')), ("status/current", (0, '{"status": "stopped"}'))])
+        self.add_record(arguments=["107", "start"])
+        code, text = self.report(guide="$A --step 05-8-4a do power 107 shutdown\n")
+        self.assertEqual(code, 1)
+        attention = text.split("## Needs attention")[1]
+        self.assertIn("step 05-8-4a ran `do power 107 start`, the guide says `do power 107 shutdown`", attention)
+        self.assertIn("step 05-8-4a ran a do 2 times; a do step runs once", attention)
+
+    def test_a_check_may_repeat_under_its_label_but_not_with_other_arguments(self):
+        self.tool("--step", "04-15", "check", "roles", "192.168.0.108", "standby",
+                  rules=[("pg_is_in_recovery", (0, "t|on\n"))])
+        self.add_record()
+        guide = "$A --step 04-15 check roles 192.168.0.108 standby\n"
+        self.assertEqual(self.report(guide=guide)[0], 0)
+        self.add_record(arguments=["192.168.0.108", "primary"])
+        code, text = self.report(guide=guide)
+        self.assertEqual(code, 1)
+        self.assertIn("step 04-15 ran `check roles 192.168.0.108 primary`", text)
+
     def test_both_guides_parse(self):
         for name, path in acceptance.GUIDES.items():
             tool, logs = acceptance.guide_steps((ROOT / path).read_text())

@@ -22,6 +22,11 @@ roles freshly before any operation.
 
 How it got there, newest first:
 
+- `5a0b544` run 14: functional pass, not clean
+  ([record](docs/history/ACCEPTANCE-5a0b544.md)), the first full run with
+  `acceptance.py`: 105 steps, one FAIL. `check replication-tls` ran before the
+  standby had reconnected after a reboot and passed on a repeat; the check now
+  waits (`c12444a`). No product defect.
 - `27f77b1` run 13: BLOCKED in phase 4, step 04-5, on the first full run
   with the tool. `do pin-ssh` passed the public key to the remote shell
   unquoted, so only `ssh-rsa` reached `authorized_keys`. The tool now quotes

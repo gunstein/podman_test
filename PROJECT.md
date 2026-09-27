@@ -10,14 +10,15 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `aeefe4a` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-aeefe4a.md)),
+**Current verdict: CLEAN PASS** on `2dbc561` for the seven-pod, three-database
+topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-2dbc561.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/acceptance.py`. Its `report full` found all 104 steps PASS
 on one clean revision and compared them with the agent guide: every step and
 log it names, nothing else. Install, standby bootstrap, quarantine rehearsal,
-fencing, group promotion, application failover, backup and isolated PITR,
+fencing, the one `failover` command (group promotion, application tier,
+backup and a login check), backup and isolated PITR,
 rebuild of the old primary and sequential reboots all passed as written.
 CI now also runs the Todo API as `todo_app` and the whole stack with the
 browser tests on Podman 5.7.
@@ -26,6 +27,8 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `2dbc561` run 18: CLEAN PASS ([record](docs/history/ACCEPTANCE-2dbc561.md)),
+  the first run with `app-ops failover` (G1) in phase 6.
 - `aeefe4a` run 17: CLEAN PASS ([record](docs/history/ACCEPTANCE-aeefe4a.md)),
   after the CI full-stack job found that Podman 5.7 lets `envFrom` win over
   `env`; `DATABASE_USER` now lives only in `env`.

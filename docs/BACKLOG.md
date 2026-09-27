@@ -127,7 +127,8 @@ such as a small cloud VM. Without one, the safe design is one human decision
   Implemented as `app-ops failover` (`deploy/ops/app_ops/failover.py`), and
   acceptance phase 6 now runs it instead of `app_dr.py promote`: it prints
   the hostnames, address and CA fingerprint users need, since no DNS
-  provider is chosen (T5). Waiting for a full run.
+  provider is chosen (T5). Run 18 accepted it
+  ([record](history/ACCEPTANCE-2dbc561.md)).
 - **G6. Real time limits.** *[new]* A command that hangs must not stop a
   failover silently. `commands.run` in the installer and the SSH transport of
   app-ops have no timeout; `connect_with_retry` in `migrate.py` checks its
@@ -213,11 +214,16 @@ such as a small cloud VM. Without one, the safe design is one human decision
     so failover keeps client trust at the cost of the CA key on both nodes.
     Full acceptance would then run `provided`; CI keeps covering `local`.
 
-- **T5. Pointing users at the other site.** *[docs]* Clients use `todo.test` and
-  `notes.test`; acceptance edits `/etc/hosts` on one client. Write down how the
-  names move to the surviving site in the real setup (a DNS change with a
-  short TTL, a floating address or similar), who does it, and how long it
-  takes. Without it, failover is done but nobody reaches the service.
+- **T5. Pointing users at the other site.** *[docs]* Decided (2026-09-27): a
+  manual change in the internal DNS, which is expected to survive the loss of
+  Oslo; perhaps it stays manual for good. After `failover`, the DNS owner
+  points `todo.test` and `notes.test` at the address `failover` prints. The
+  runbook (O1) mentions, without detail: agree on a low TTL in advance (a few
+  minutes), make sure the records can be changed without Oslo (where the
+  primary DNS server lives), and name who makes the change and how to reach
+  them. No automatic DNS update is planned; the lab keeps `/etc/hosts` as the
+  stand-in.
+
 - **T6. Planned switchover and switchback.** *[new]* Today roles change only through a
   disaster promotion: fence, promote, then rebuild the old primary with a full
   copy of every database. For maintenance at one site, switch in a controlled

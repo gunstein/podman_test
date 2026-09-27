@@ -719,7 +719,11 @@ through the API and re-check.
       `curl --fail https://todo.test:8443/ready` works; from `.108`
       `timeout 5 bash -c '</dev/tcp/192.168.0.102/5432'` works; from `.102`
       `timeout 5 bash -c '</dev/tcp/192.168.0.108/22'` works. If any fails, STOP.
-   2. `set .../107/firewall/options enable=1` (VM running, links up).
+   2. `set .../107/firewall/options enable=1` (VM running, links up). Then
+      `sleep 20`: the Proxmox firewall service applies changes on its next
+      cycle, about every 10 seconds, so a proof started at once can still get
+      through. Wait first; never run the proofs, see them fail and run them
+      again.
    3. Outside proofs, all fresh connections:
       - Client to `.102`: `ssh gunstein@192.168.0.102 hostname` works;
         `curl --connect-timeout 5 https://todo.test:8443/ready` fails.
@@ -809,7 +813,8 @@ restore commands. Record every backup name printed by `create`
 8. Enable only the replication exception: read `get .../107/firewall/rules`,
    find the rule whose comment is `todo-quarantine-replication`, read its `pos`,
    then `set /nodes/{node}/qemu/107/firewall/rules/<pos> enable=1`. Record
-   `get .../107/firewall/rules` again. Do not probe ports 5432-5434 yet: until
+   `get .../107/firewall/rules` again, then `sleep 20` so the Proxmox
+   firewall has applied the exception before `rebuild-standby` checks the path. Do not probe ports 5432-5434 yet: until
    the rebuild publishes them, `.108` listens there only on `127.0.0.1`, and
    the quarantine firewall can drop the refusal, so an open path and a
    blocked one both time out. `rebuild-standby` checks the path itself once
@@ -838,8 +843,19 @@ restore commands. Record every backup name printed by `create`
 
 #### C9.11 Phase 10 and 11 — Final reboots and verdict
 
-1. Reboot VM 107 only, verify, run `cluster-status`. Then reboot VM 108
-   only, verify, run `cluster-status` again. Never both at once.
+1. Do ACCEPTANCE.md phase 10 steps 1-8, one log per step
+   (`10-step1-...log` to `10-step8-...log`). Never reboot both VMs at once.
+   Step 5 needs, on `.108`: all seven services,
+   `podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf`, for each database
+   `SELECT pg_is_in_recovery(), current_setting('default_transaction_read_only'),
+   current_setting('archive_mode'), current_setting('archive_timeout');`
+   (`f|off|on|1h`), `app_backup.py status` and the CA fingerprint. Step 7 runs
+   from the client: `curl` without `-k` to both hostnames, the issuer and the
+   markers. Step 8 records, on `.108`, for each database the backup volume
+   size (`podman unshare du -sh "$(podman volume inspect -f '{{.Mountpoint}}' todo-postgres-backup)"`,
+   likewise `notes-` and `keycloak-`), the WAL size
+   (`podman exec todo-postgres du -sh /var/lib/postgresql/data/pg_wal`, likewise
+   the other two) and `df -h ~/.local/share/containers`.
 2. Final browser tests from the client (0 skipped), all markers, CA fingerprint,
    `NRestarts=0` for `todo-app.service`, `notes-app.service`,
    `shared-proxy.service`, no failed user units on either VM.
@@ -851,7 +867,11 @@ restore commands. Record every backup name printed by `create`
    - `BLOCKED` / `IN PROGRESS`: not finished; say where and why.
 4. Write a draft evidence record in the style of `docs/history/ACCEPTANCE-12c3bef.md` to
    `~/todo-acceptance-runs/<RUN_ID>/ACCEPTANCE-<short-sha>.md`. Do not copy it
-   into the repository; the operator decides.
+   into the repository; the operator decides. Copy every value (IDs,
+   fingerprints, backup names) from a log in this run folder, never from
+   memory or an earlier run. List every command or sub-step that ran more than
+   once, with the first result; a rerun after a failed or unexpected result
+   rules out CLEAN PASS.
 5. Delete `$XDG_RUNTIME_DIR/todo-acceptance/e2e-password`. Leave both VMs in the
    final roles (`.108` primary with application, `.102` database-only standby).
    Do not reset, promote or rebuild anything after the verdict.

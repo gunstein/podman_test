@@ -22,12 +22,17 @@ roles freshly before any operation.
 
 How it got there, newest first:
 
+- `8d625a4` run 11: REPAIRED FUNCTIONAL PASS
+  ([record](docs/history/ACCEPTANCE-8d625a4.md)). Replication over TLS
+  (`ssl = t`, TLSv1.3), the security headers and Notes login work on real VMs.
+  Not clean: the quarantine rehearsal was rerun after the firewall had not yet
+  applied, phase 10 lacked evidence for three steps, and the draft record had
+  a wrong CA fingerprint. The agent guide now waits for firewall changes and
+  asks for one log per phase 10 step.
 - `d1c04a4` run 10: BLOCKED in phase 3, step 7. The new Content-Security-Policy
   allowed only same-origin requests, so the browser blocked Notes' token
   request to Keycloak's canonical origin (`https://todo.test:8443`) and Notes
-  login failed. `connect-src` now names the identity origin. Replication TLS,
-  Keycloak lockout and the security headers are not yet accepted on real VMs.
-  No separate record.
+  login failed. `connect-src` now names the identity origin. No separate record.
 - `21659331` run 9: CLEAN PASS ([record](docs/history/ACCEPTANCE-2165933.md)).
 - `3bc5924` run 8: BLOCKED in phase 9. A new read-only rebuild preflight
   check could not tell an open replication path from a blocked one under the

@@ -83,7 +83,9 @@ The assistant uses SSH after the isolated guest's Todo services are stopped.
    with an agreed brief lab outage. Verify fresh inbound and outbound test
    connections, plus a permitted SSH connection after STOPPED. A blocked port
    with no listening service is not proof of a working firewall. Verify the
-   effective hypervisor rules as well. Keep the network disconnected if any
+   effective hypervisor rules as well. The Proxmox firewall service applies a
+   changed `enable` flag or rule on its next cycle, about every 10 seconds, so
+   wait 20 seconds before the first proof. Keep the network disconnected if any
    check fails. Restoration before promotion may restart the original primary;
    restoration after promotion may only rebuild it as a standby.
 

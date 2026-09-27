@@ -116,6 +116,72 @@ jobs:
         run: deploy/scripts/smoke-proxy.sh
 
 
+  full-stack:
+    # The seven pods from source with dev-up.sh on the runner's rootless Podman,
+    # then the lab's browser tests: a real Keycloak login and a write and read in
+    # each app through nginx, with TLS errors fatal. Run 10's CSP error would
+    # have failed here.
+    name: Full stack in rootless Podman
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install tools, Chromium and the demo hostnames
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install "PyYAML==6.0.3" jinja2 -r todo-backend/requirements-e2e.txt
+          python -m playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y podman libnss3-tools
+          podman --version
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          echo '127.0.0.1 todo.test notes.test' | sudo tee -a /etc/hosts
+
+      - name: Start the stack with dev-up.sh
+        run: deploy/scripts/dev-up.sh
+
+      - name: Browser tests through nginx with a real Keycloak login
+        shell: bash
+        run: |
+          set -euo pipefail
+          ca_file=$(mktemp)
+          podman exec nginx cat /var/lib/todo-tls/ca.crt > "$ca_file"
+          mkdir -p ~/.pki/nssdb
+          certutil -N -d sql:"$HOME/.pki/nssdb" --empty-password
+          certutil -A -d sql:"$HOME/.pki/nssdb" -n todo-ci-ca -t 'C,,' -i "$ca_file"
+          E2E_PASSWORD=$(python -c 'import secrets; print(secrets.token_urlsafe(24))')
+          KEYCLOAK_ADMIN_PASSWORD=$(PYTHONPATH=deploy/installer python -c \
+            'from app_installer import apps, secrets; print(secrets.read(apps.KEYCLOAK_ADMIN_SECRET))')
+          echo "::add-mask::$E2E_PASSWORD"
+          echo "::add-mask::$KEYCLOAK_ADMIN_PASSWORD"
+          export E2E_PASSWORD KEYCLOAK_ADMIN_PASSWORD E2E_USERNAME=testuser E2E_IGNORE_HTTPS_ERRORS=false
+          python e2e/provision_user.py
+          E2E_BASE_URL=https://todo.test:8443 python -m pytest e2e/test_todo_flow.py --browser chromium -rs
+          E2E_NOTES_URL=https://notes.test:8443 python -m pytest e2e/test_notes_flow.py --browser chromium -rs
+          E2E_MULTI_APP=1 E2E_CA_FILE="$ca_file" python -m pytest e2e/test_multi_app.py -rs
+
+      - name: Show pods and logs on failure
+        if: failure()
+        run: |
+          podman pod ps
+          podman ps --all
+          for container in $(podman ps --all --format '{{.Names}}'); do
+            echo "::group::$container"
+            podman logs --tail 80 "$container" || true
+            echo "::endgroup::"
+          done
+
+      - name: Stop the stack with dev-down.sh
+        if: always()
+        run: deploy/scripts/dev-down.sh
+
+
   postgres-version:
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -22,6 +22,12 @@ roles freshly before any operation.
 
 How it got there, newest first:
 
+- `e8e1919` run 12: REPAIRED FUNCTIONAL PASS
+  ([record](docs/history/ACCEPTANCE-e8e1919.md)). Every functional gate
+  passed again, with one log per phase 10 step. Repair: the agent added the
+  phase 3 HTTPS rule without `--permanent`, and a firewalld reload dropped it.
+  The logs also show a failed Notes write probe of the agent's own making that
+  did not stop the run.
 - `8d625a4` run 11: REPAIRED FUNCTIONAL PASS
   ([record](docs/history/ACCEPTANCE-8d625a4.md)). Replication over TLS
   (`ssl = t`, TLSv1.3), the security headers and Notes login work on real VMs.

@@ -31,6 +31,7 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 0. Acceptance tooling (A1-A4): every later item needs a trustworthy run, and
    runs 11 and 12 failed on the agent's own commands, not on the product.
+   Then E1 and E2, the cheapest way to find errors before the lab does.
 1. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
    failover command), G2 (Trondheim is ready), G3 (time it in the drill), T3
    (fencing without the Oslo hypervisor), T4 (one CA), T5 (moving the names),
@@ -513,6 +514,30 @@ promoted primary.
     this touches the image builds.
 
 ## Tests
+
+From the test review of `5a0b544` (412 tests: installer 91 % lines and 83 %
+branches, app-ops 95 % and 90 %; the fakes check commands and order, not real
+SQL or Podman behaviour):
+
+- **E1. Todo API tests with the real runtime role.** *[new]* The Todo API tests
+  in CI connect as the migration role, which has more rights than `todo_app`
+  has in production; a missing `GRANT` would only show in the lab. Run CRUD
+  through the API as `todo_app`, as the Notes tests already do.
+- **E2. A small full-stack job in CI.** *[new]* Before merging: `dev-up.sh` on
+  the runner's rootless Podman, a real Keycloak login and one write and read
+  in each app through nginx, then `dev-down.sh`. Run 10's CSP error was found
+  only on the lab VMs; this job would have caught it in minutes. It narrows
+  item 12 below to the part that needs no second host.
+- **E3. Installer CLI branches.** *[new]* The installer's `cli.py` has 46 %
+  branch coverage. Test its commands and failure paths through the CLI, done
+  together with splitting `cli.main()` (DR code structure, item 9).
+- **E4. A coverage report in CI.** *[config]* Print line and branch coverage
+  for the Python suites on every run, as information to follow up important
+  missing branches, not as a percentage gate.
+- **E5. Browser tests for failure.** *[optional]* An expired session and a real
+  token refresh against Keycloak, and what the user sees when the backend or
+  Keycloak is down. Data surviving a page reload and a service restart is
+  already covered by the acceptance markers.
 
 12. **A whole-stack CI job** *[optional]* (decision needed): install the seven pods with
     real Podman and stream between two PostgreSQL instances on one runner. The

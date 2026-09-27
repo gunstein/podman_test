@@ -121,8 +121,10 @@ jobs:
     # then the lab's browser tests: a real Keycloak login and a write and read in
     # each app through nginx, with TLS errors fatal. Run 10's CSP error would
     # have failed here.
+    # ubuntu-26.04: the installer needs podman kube play --no-pod-prefix (Podman
+    # 5); ubuntu-latest still has Podman 4.9.
     name: Full stack in rootless Podman
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 40
 
     steps:
@@ -137,8 +139,7 @@ jobs:
           set -euo pipefail
           python -m pip install "PyYAML==6.0.3" jinja2 -r todo-backend/requirements-e2e.txt
           python -m playwright install --with-deps chromium
-          sudo apt-get update
-          sudo apt-get install -y podman libnss3-tools
+          command -v certutil >/dev/null || { sudo apt-get update; sudo apt-get install -y libnss3-tools; }
           podman --version
           test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
           echo '127.0.0.1 todo.test notes.test' | sudo tee -a /etc/hosts

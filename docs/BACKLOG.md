@@ -477,6 +477,16 @@ promoted primary.
 15. *[optional]* GitHub secret scanning, or a gitleaks/trufflehog run, on top of
     the pattern search already done.
 
+## Documentation to consider
+
+- **Align overview and runtime guides with the accepted seven-pod design.** *[docs] [optional]*
+  Review `README.md` and `deploy/runtime/README.md` against `AGENTS.md`,
+  `docs/ARCHITECTURE.md` and the current installer. Some passages still describe
+  six workload units or put Keycloak in Todo's database, and the README's
+  two-node section says Notes replication and backup are future work. Check the
+  actual implementation and acceptance record before correcting those passages;
+  keep this as a documentation review, not a runtime change.
+
 ## Lab housekeeping (operator)
 
 16. *[operator]* Rebuild the `clean-agent` snapshots with `prepare-agent-snapshots.sh`, so

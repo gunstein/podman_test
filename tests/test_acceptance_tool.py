@@ -61,6 +61,10 @@ class ToolTest(unittest.TestCase):
         self.environment.start()
         self.addCleanup(self.environment.stop)
         self.run_directory = self.runs / "run-1"
+        # Checks that wait for replication judge at once here; tests that need the wait set it.
+        streaming = patch.object(acceptance, "STREAMING_TIMEOUT", 0)
+        streaming.start()
+        self.addCleanup(streaming.stop)
 
     def tool(self, *arguments, rules=()):
         fake = Fake(list(rules))
@@ -585,6 +589,24 @@ class RemoteArgumentTests(ToolTest):
             step.ssh("192.168.0.108", "unused", "ssh-rsa AAAA todo-ops-control", "it's; $(x)")
         step.log_file.close()
         self.assertEqual(seen, ["ssh-rsa AAAA todo-ops-control|it's; $(x)|"])
+
+
+class StreamingWaitTests(ToolTest):
+    def test_replication_tls_waits_for_the_walreceiver_to_reconnect(self):
+        """Run 14: pg_stat_replication was empty for a moment after the primary rebooted."""
+        answers = iter([""] * 3 + ["x_standby|streaming|t|TLSv1.3\n"] * 3)
+        with patch.object(acceptance, "STREAMING_TIMEOUT", 120):
+            code, fake = self.tool("--step", "05-8-9b", "check", "replication-tls", "192.168.0.102",
+                                   rules=[("pg_stat_ssl", lambda line: (0, next(answers)))])
+        self.assertEqual(code, 0)
+        self.assertEqual(sum("pg_stat_ssl" in call for call in fake.calls), 6)
+
+    def test_replication_tls_still_fails_when_it_never_streams(self):
+        with patch.object(acceptance, "STREAMING_TIMEOUT", 0):
+            code, _ = self.tool("--step", "05-8-9b", "check", "replication-tls", "192.168.0.102",
+                                rules=[("pg_stat_ssl", (0, ""))])
+        self.assertEqual(code, 1)
+        self.assertIn("no standby connection", self.log(self.record()[-1]))
 
 
 if __name__ == "__main__":

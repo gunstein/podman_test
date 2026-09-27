@@ -375,14 +375,34 @@ def check_write_probe(step, host):
                     f'{database} on {host}: insert accepted and rolled back')
 
 
+STREAMING_TIMEOUT = 120
+
+
 def check_replication_tls(step, host):
-    """On the primary: each database has a streaming standby connection, and it uses TLS."""
+    """On the primary: each database has a streaming standby connection, and it uses TLS.
+
+    Right after either host restarts, the standby's walreceiver reconnects on
+    its own within seconds (PostgreSQL retries every few seconds), so the
+    check waits for that, read-only, up to STREAMING_TIMEOUT seconds before it
+    judges. Run 14 read an empty pg_stat_replication a moment after a reboot.
+    """
+    query = 'SELECT application_name, state, ssl, version FROM pg_stat_replication JOIN pg_stat_ssl USING (pid);'
+
+    def streaming(rows):
+        return bool(rows) and all(row.split('|')[1:3] == ['streaming', 't'] for row in rows)
+
+    found = {}
+
+    def all_streaming():
+        found.update({database: psql(step, host, database, query).stdout.split() for database in DATABASES})
+        return all(streaming(found[database]) for database in DATABASES)
+
+    wait_for(step, 'every standby to stream', all_streaming, STREAMING_TIMEOUT)
     for database in DATABASES:
-        rows = psql(step, host, database, 'SELECT application_name, state, ssl, version FROM pg_stat_replication '
-                                          'JOIN pg_stat_ssl USING (pid);').stdout.split()
+        rows = found.get(database, [])
         step.values[database] = rows
-        step.expect(bool(rows) and all(row.split('|')[1:3] == ['streaming', 't'] for row in rows),
-                    f'{database} on {host}: streaming over TLS ({", ".join(rows) or "no standby connection"})')
+        step.expect(streaming(rows), f'{database} on {host}: streaming over TLS '
+                                     f'({", ".join(rows) or "no standby connection"})')
 
 
 def check_disk(step, host):
@@ -413,13 +433,15 @@ def boot_id(step, host):
 
 
 def wait_for(step, what, probe, timeout):
+    """Call probe until it is true or timeout seconds have passed; it always runs at least once."""
     deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    while True:
         if probe():
             return True
+        if time.monotonic() >= deadline:
+            step.log(f'gave up waiting for {what} after {timeout}s')
+            return False
         time.sleep(POLL_SECONDS)
-    step.log(f'gave up waiting for {what} after {timeout}s')
-    return False
 
 
 def do_rollback(step, vmid, snapshot, host):

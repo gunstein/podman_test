@@ -23,7 +23,9 @@ JSON line to record.jsonl. Exit status: 0 PASS, 1 FAIL, 2 usage, 3 refused.
 report writes REPORT.md in the run folder from record.jsonl and the other
 logs, so no value in the run record is copied by hand (BACKLOG A3). It exits
 0 only if every step passed, no do was left unfinished or needed approval,
-every other log ends in exit=0 and the checkout is clean.
+every other log ends in exit=0 and every step ran from the same clean
+checkout. Each record line carries the revision and cleanliness of the
+checkout at the time of that step; report never reads git itself.
 
 Commands:
   do    rollback VMID SNAPSHOT HOST      reset the VM, start it, wait for SSH
@@ -530,6 +532,14 @@ def refusal(run_directory, name, arguments, once, approved):
     return None
 
 
+def checkout():
+    """The checked-out revision and whether the working tree is clean, read now."""
+    revision = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True)
+    status = subprocess.run(['git', '-C', str(ROOT), 'status', '--porcelain'], capture_output=True, text=True)
+    clean = revision.returncode == 0 and status.returncode == 0 and not status.stdout.strip()
+    return revision.stdout.strip() or 'unknown', clean
+
+
 def short(values):
     """The values of one step on one line, long ones cut."""
     parts = []
@@ -559,9 +569,11 @@ def report(run_directory):
     finished = [entry for entry in entries if entry['result'] != 'STARTED']
     finished_logs = {entry['log'] for entry in finished}
     unfinished = [entry for entry in entries if entry['result'] == 'STARTED' and entry['log'] not in finished_logs]
-    revision = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True)
-    status = subprocess.run(['git', '-C', str(ROOT), 'status', '--porcelain'], capture_output=True, text=True)
-    clean = revision.returncode == 0 and status.returncode == 0 and not status.stdout.strip()
+    # Every step records the checkout it ran from; the report never reads git itself,
+    # so updating the checkout after the run cannot change what the report says.
+    checkouts = sorted({(entry.get('revision', 'unknown'), entry.get('clean', False)) for entry in entries})
+    revision = checkouts[0][0] if len(checkouts) == 1 else 'more than one'
+    clean = len(checkouts) == 1 and checkouts[0][1] and revision != 'unknown'
     products = product_logs(run_directory, {entry['log'] for entry in entries})
 
     attention = []
@@ -577,7 +589,8 @@ def report(run_directory):
         if last != 'exit=0':
             attention.append(f'{name}: {last}')
     if not clean:
-        attention.append('the checkout is not clean, or its revision could not be read')
+        described = '; '.join(f'{rev} ({"clean" if ok else "NOT clean"})' for rev, ok in checkouts)
+        attention.append(f'the steps did not all run from one clean checkout: {described}')
 
     seen, repeats = {}, []
     for entry in finished:
@@ -590,7 +603,8 @@ def report(run_directory):
     passed = not attention and bool(finished)
     counts = {result: sum(entry['result'] == result for entry in finished) for result in ('PASS', 'FAIL', 'REFUSED')}
     lines = [f'# Acceptance run {run_directory.name}', '',
-             f'Revision: `{revision.stdout.strip() or "unknown"}`, checkout {"clean" if clean else "NOT clean"}.',
+             f'Revision recorded by every step: `{revision}`, checkout '
+             f'{"clean at every step" if clean else "NOT clean at every step"}.',
              f'acceptance.py steps: {len(finished)} (PASS {counts["PASS"]}, FAIL {counts["FAIL"]}, '
              f'REFUSED {counts["REFUSED"]}, unfinished {len(unfinished)}); other logs: {len(products)}.',
              '', f'**From the record: {"ALL STEPS PASS" if passed else "NOT CLEAN"}.** '
@@ -651,8 +665,13 @@ def main(argv=None):
     if args.operator_approved:
         step.log(f'# operator approved: {args.operator_approved}')
 
+    revision, clean = checkout()
+    if not clean:
+        step.log(f'# checkout {revision} is not clean')
+
     def record(result):
         append_record(run_directory, {
+            'revision': revision, 'clean': clean,
             'time': datetime.datetime.now().astimezone().isoformat(timespec='seconds'), 'step': args.step,
             'kind': args.kind, 'command': name, 'arguments': arguments, 'result': result,
             'values': step.values, 'log': str(step.log_path.relative_to(run_directory)),

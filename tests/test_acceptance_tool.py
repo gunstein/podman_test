@@ -24,15 +24,24 @@ APP_HEADERS = ("HTTP/1.1 200 OK\r\nX-Content-Type-Options: nosniff\r\n"
 AUTH_HEADERS = "HTTP/1.1 200 OK\r\nStrict-Transport-Security: max-age=31536000\r\n\r\n"
 
 
+REVISION = "b9bffbfd175509936f61994a1ba087e464e476f7"
+GIT = [("rev-parse", (0, REVISION + "\n")), ("status --porcelain", (0, ""))]
+
+
 class Fake:
-    """Answers each command by its first matching (text in the command line) rule."""
+    """Answers each command by its first matching (text in the command line) rule.
+
+    Git is answered with a clean checkout at REVISION unless a rule says
+    otherwise, and git calls are not listed in calls.
+    """
 
     def __init__(self, rules):
-        self.rules, self.calls = rules, []
+        self.rules, self.calls = list(rules) + GIT, []
 
     def __call__(self, argv, input=None, **kwargs):
         line = " ".join(argv) + " " + (input or "")
-        self.calls.append(line)
+        if argv[0] != "git":
+            self.calls.append(line)
         for needle, answer in self.rules:
             if needle in line:
                 code, out = answer(line) if callable(answer) else answer
@@ -344,12 +353,10 @@ class InterruptedStepTests(ToolTest):
 
 class ReportTests(ToolTest):
     """acceptance.py report builds the run record from record.jsonl and the logs."""
-    GIT = [("rev-parse", (0, "b9bffbfd175509936f61994a1ba087e464e476f7\n")), ("status --porcelain", (0, ""))]
-
     def product_log(self, name, *lines):
         (self.run_directory / "logs" / name).write_text("\n".join(lines) + "\n")
 
-    def report(self, rules=GIT):
+    def report(self, rules=()):
         fake = Fake(list(rules))
         with patch.object(acceptance.subprocess, "run", fake), contextlib.redirect_stdout(io.StringIO()):
             code = acceptance.main(["--run", "run-1", "report"])
@@ -385,17 +392,17 @@ class ReportTests(ToolTest):
                          "logs/02-2-transfer.log: no exit= line"):
             self.assertIn(expected, text)
 
-    def test_an_unfinished_do_and_a_dirty_checkout_need_attention(self):
+    def test_an_unfinished_do_needs_attention(self):
         self.run_directory.mkdir(parents=True)
         (self.run_directory / "logs").mkdir()
         (self.run_directory / "record.jsonl").write_text(json.dumps({
             "kind": "do", "command": "reboot", "arguments": ["107", "192.168.0.102", "app"], "result": "STARTED",
-            "log": "logs/06-1-do-reboot.log", "step": "06-1", "values": {}, "approved": "", "time": "t"}) + "\n")
+            "log": "logs/06-1-do-reboot.log", "step": "06-1", "values": {}, "approved": "", "time": "t",
+            "revision": REVISION, "clean": True}) + "\n")
         (self.run_directory / "logs/06-1-do-reboot.log").write_text("# half a reboot\n")
-        code, text = self.report(rules=[("rev-parse", (0, "abc\n")), ("status --porcelain", (0, " M file\n"))])
+        code, text = self.report()
         self.assertEqual(code, 1)
         self.assertIn("06-1 do reboot: started but never finished", text)
-        self.assertIn("checkout is not clean", text)
         self.assertNotIn("| logs/06-1-do-reboot.log |", text.split("## Other logs")[1])
 
     def test_repeated_checks_are_listed_but_allowed(self):
@@ -405,6 +412,26 @@ class ReportTests(ToolTest):
         code, text = self.report()
         self.assertEqual(code, 0)
         self.assertIn("check services 192.168.0.102 app: steps 03-4, 06-5", text)
+
+    def test_the_revision_is_the_one_each_step_ran_from_not_the_one_checked_out_later(self):
+        rules = [("wait-ready", (0, "READY: x\n"))]
+        self.tool("--step", "03-4", "check", "services", "192.168.0.102", "app", rules=rules)
+        self.assertEqual(self.record()[-1]["revision"], REVISION)
+        code, text = self.report(rules=[("rev-parse", (0, "0" * 40 + "\n"))])
+        self.assertEqual(code, 0)
+        self.assertIn(f"`{REVISION}`, checkout clean at every step", text)
+        self.assertNotIn("0" * 40, text)
+
+    def test_a_step_on_another_revision_or_a_dirty_checkout_needs_attention(self):
+        rules = [("wait-ready", (0, "READY: x\n"))]
+        self.tool("--step", "03-4", "check", "services", "192.168.0.102", "app", rules=rules)
+        self.tool("--step", "06-5", "check", "services", "192.168.0.102", "app",
+                  rules=rules + [("status --porcelain", (0, " M deploy/scripts/acceptance.py\n"))])
+        self.assertIn("is not clean", self.log(self.record()[-1]))
+        code, text = self.report()
+        self.assertEqual(code, 1)
+        self.assertIn("did not all run from one clean checkout", text)
+        self.assertIn(f"{REVISION} (NOT clean)", text)
 
     def test_report_needs_a_run_and_nothing_else(self):
         for arguments in (["--run", "run-1", "report"], ["--run", "..", "report"],

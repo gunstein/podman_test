@@ -22,6 +22,10 @@ roles freshly before any operation.
 
 How it got there, newest first:
 
+- `27f77b1` run 13: BLOCKED in phase 4, step 04-5, on the first full run
+  with the tool. `do pin-ssh` passed the public key to the remote shell
+  unquoted, so only `ssh-rsa` reached `authorized_keys`. The tool now quotes
+  every remote argument. No product defect; no separate record.
 - `b9bffbf` quick run 1: QUICK PASS
   ([record](docs/history/QUICK-b9bffbf.md)), the first run with
   `acceptance.py`: 14 steps, all PASS, none repeated, nine minutes. Single-host

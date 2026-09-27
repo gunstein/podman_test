@@ -569,5 +569,23 @@ class GuideCommandTests(ToolTest):
                                    rules=mismatch)[0], 1)
 
 
+class RemoteArgumentTests(ToolTest):
+    def test_arguments_with_spaces_reach_the_remote_script_as_one_argument(self):
+        """Run 13 appended only "ssh-rsa" to authorized_keys: ssh re-splits the remote command."""
+        seen = []
+        real = subprocess.run
+
+        def remote_shell(argv, input=None, **kwargs):
+            # What sshd does: hand the joined remote command to a shell.
+            seen.append(real(["bash", "-c", argv[-1]], input='printf "%s|" "$@"', capture_output=True,
+                             text=True).stdout)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        step = acceptance.Step(self.runs, "04-5", "do", "pin-ssh", [], "gunstein")
+        with patch.object(acceptance.subprocess, "run", remote_shell), contextlib.redirect_stdout(io.StringIO()):
+            step.ssh("192.168.0.108", "unused", "ssh-rsa AAAA todo-ops-control", "it's; $(x)")
+        step.log_file.close()
+        self.assertEqual(seen, ["ssh-rsa AAAA todo-ops-control|it's; $(x)|"])
+
+
 if __name__ == "__main__":
     unittest.main()

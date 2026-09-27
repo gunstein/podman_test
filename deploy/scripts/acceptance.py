@@ -65,6 +65,7 @@ import ipaddress
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -129,9 +130,15 @@ class Step:
         return result
 
     def ssh(self, host, script, *arguments, timeout=None):
-        """Run a bash script on host as the service user, with host-key checking on."""
-        return self.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', f'{self.user}@{host}',
-                         'bash', '-s', '--', *arguments], input=script, timeout=timeout)
+        """Run a bash script on host as the service user, with host-key checking on.
+
+        ssh joins the remote command into one string that the remote shell
+        splits again, so every argument is quoted here: an SSH public key
+        ("ssh-rsa AAAA... comment") must arrive as one argument, not three.
+        """
+        remote = ' '.join(['bash', '-s', '--', *(shlex.quote(str(argument)) for argument in arguments)])
+        return self.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', f'{self.user}@{host}', remote],
+                        input=script, timeout=timeout)
 
     def expect(self, condition, message):
         self.log(('ok: ' if condition else 'FAIL: ') + message)

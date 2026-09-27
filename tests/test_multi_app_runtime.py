@@ -42,10 +42,29 @@ class IndependentAppChartsTests(unittest.TestCase):
             self.assertEqual(user, name + '_migrator')
             backend = next(d for d in documents if d['metadata']['name'] == name + '-backend-config')
             self.assertEqual(backend['data']['DATABASE_HOST'], name + '-postgres')
-            self.assertEqual(backend['data']['DATABASE_USER'], name + '_app')
+            runtime = next(e['value'] for e in application['containers'][0]['env']
+                           if e['name'] == 'DATABASE_USER')
+            self.assertEqual(runtime, name + '_app')
             self.assertEqual(backend['data']['OIDC_AUDIENCE'], name + '-frontend')
             self.assertEqual(backend['data']['OIDC_ISSUER'], 'https://todo.test:8443/auth/realms/todo')
         self.assertFalse(all_claims[0] & all_claims[1])
+
+    def test_no_container_sets_a_variable_both_in_env_and_from_a_config_map(self):
+        # Podman 5.7 lets envFrom win over env for the same name (Kubernetes lets env
+        # win), so a variable set in both places depends on the Podman version.
+        documents = [d for path in sorted(RUNTIME.glob('*.yaml'))
+                     for d in yaml.safe_load_all(path.read_text()) if d]
+        config_maps = {d['metadata']['name']: d.get('data', {}) for d in documents
+                       if d['kind'] == 'ConfigMap'}
+        checked = 0
+        for pod in (d for d in documents if d['kind'] == 'Pod'):
+            for container in pod['spec'].get('initContainers', []) + pod['spec']['containers']:
+                from_maps = {key for source in container.get('envFrom', [])
+                             for key in config_maps[source['configMapRef']['name']]}
+                explicit = {variable['name'] for variable in container.get('env', [])}
+                self.assertEqual(from_maps & explicit, set(), container['name'])
+                checked += bool(from_maps and explicit)
+        self.assertGreaterEqual(checked, 4)
 
     def test_shared_proxy_routes_both_hostnames_and_uses_one_san_certificate(self):
         documents = list(yaml.safe_load_all((RUNTIME / 'shared-proxy.yaml').read_text()))

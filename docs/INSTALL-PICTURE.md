@@ -7,17 +7,14 @@ One page showing how the solution is built, packed, moved and installed today.
 
 ```mermaid
 flowchart LR
-  subgraph SRC["Git checkout"]
-    j2["Kube YAML templates<br>deploy/manifests/*.yaml.j2"]
-    values["values.yaml<br>prod: hostname, port"]
-    code["Containerfiles<br>backend, frontend,<br>nginx, Keycloak"]
-    q["Quadlet templates<br>deploy/quadlet/*.kube.j2"]
-    inst["Python installer<br>app_installer"]
-    ops["app-ops<br>deploy/ops"]
-  end
-
-  j2 & values -->|"Jinja2<br>render-kube-runtime.sh"| yaml["10 plain YAML files<br>for 7 pods"]
-  code -->|"podman build<br>+ pull postgres:17.11"| img["7 OCI archives"]
+  j2["Kube YAML templates<br>deploy/manifests/*.yaml.j2"] --> render
+  values["values.yaml<br>prod: hostname, port"] --> render
+  render(["Jinja2<br>render-kube-runtime.sh"]) --> yaml["10 plain YAML files<br>for 7 pods"]
+  code["Containerfiles: backend,<br>frontend, nginx, Keycloak"] --> build(["podman build<br>+ pull postgres:17.11"])
+  build --> img["7 OCI archives"]
+  q["Quadlet templates<br>deploy/quadlet/*.kube.j2"]
+  inst["Python installer<br>app_installer"]
+  ops["app-ops<br>deploy/ops"]
 
   yaml & img & q & inst --> bundle[["todo-offline-m12.tar.gz<br>everything for one host"]]
   yaml & q & inst & ops --> opspkg[["todo-operations.tar.gz<br>DR tools, no images"]]
@@ -46,13 +43,19 @@ Quadlet generator, `systemctl --user`, Python with Jinja2, free ports
 
 ```mermaid
 flowchart TB
-  s1["1. Refuse unsupported hosts:<br>DR host, old per-container<br>Quadlets, old Podman"] --> s2["2. Podman secrets:<br>keep existing, generate<br>missing (32 characters)"]
-  s2 --> s3["3. Load missing images<br>from the bundle"]
-  s3 --> s4["4. Write YAML (0600) and<br>.kube units (0644), only<br>changed files; daemon-reload"]
-  s4 --> s5["5. Stop only services whose<br>file or image changed"]
-  s5 --> s6["6. Start in order: databases,<br>roles, Keycloak, apps,<br>roles again, nginx"]
-  s6 --> s7["7. Keycloak: clients,<br>redirects, lockout and<br>password policy"]
-  s7 --> s8["8. Check every unit runs<br>from the expected .kube file"]
+  subgraph PREP["Prepare: nothing is stopped yet"]
+    direction LR
+    s1["1. Refuse unsupported hosts:<br>DR host, old per-container<br>Quadlets, old Podman"] --> s2["2. Podman secrets:<br>keep existing, generate<br>missing (32 characters)"]
+    s2 --> s3["3. Load missing images<br>from the bundle"]
+    s3 --> s4["4. Write YAML (0600) and<br>.kube units (0644), only<br>changed files; daemon-reload"]
+  end
+  subgraph RUN["Run"]
+    direction LR
+    s5["5. Stop only services whose<br>file or image changed"] --> s6["6. Start in order: databases,<br>roles, Keycloak, apps,<br>roles again, nginx"]
+    s6 --> s7["7. Keycloak: clients,<br>redirects, lockout and<br>password policy"]
+    s7 --> s8["8. Check every unit runs<br>from the expected .kube file"]
+  end
+  PREP --> RUN
 ```
 
 Run it again with the same arguments and nothing changes (`changed: false`).

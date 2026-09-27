@@ -100,8 +100,9 @@ being accepted.
   it is trusted. ACCEPTANCE.md stays the explained guide for people. Written: C9.1-C9.11 are fixed `acceptance.py`, `product`, `vm` and `ops`
   lines (over 80 tool steps, each label once, checked by a test), with new
   tool commands for fencing, port and connection proofs, the quarantine
-  profile and stop helper, links, power, `onboot` and SSH pinning. Waiting for
-  the full run.
+  profile and stop helper, links, power, `onboot` and SSH pinning. Runs 16
+  and 17 were clean passes with it ([16](history/ACCEPTANCE-7402641.md),
+  [17](history/ACCEPTANCE-aeefe4a.md)).
 
 ## Goal: Trondheim running within 30 minutes
 
@@ -538,8 +539,8 @@ SQL or Podman behaviour):
   multi-app SSO browser tests, about ten minutes. Its first run found a real
   defect: Podman 5.7 lets `envFrom` win over `env`, so the migration
   container ran as `todo_app`. `DATABASE_USER` now lives only in `env`, and
-  a test refuses a variable set in both places. That changes the Kube YAML,
-  so the next full acceptance run covers it.
+  a test refuses a variable set in both places. Run 17 accepted the change
+  ([record](history/ACCEPTANCE-aeefe4a.md)).
 - **E3. Installer CLI branches.** *[new]* The installer's `cli.py` has 46 %
   branch coverage. Test its commands and failure paths through the CLI, done
   together with splitting `cli.main()` (DR code structure, item 9).

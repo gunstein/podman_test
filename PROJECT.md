@@ -10,8 +10,8 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `7402641` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-7402641.md)),
+**Current verdict: CLEAN PASS** on `aeefe4a` for the seven-pod, three-database
+topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-aeefe4a.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/acceptance.py`. Its `report full` found all 104 steps PASS
@@ -19,11 +19,16 @@ on one clean revision and compared them with the agent guide: every step and
 log it names, nothing else. Install, standby bootstrap, quarantine rehearsal,
 fencing, group promotion, application failover, backup and isolated PITR,
 rebuild of the old primary and sequential reboots all passed as written.
+CI now also runs the Todo API as `todo_app` and the whole stack with the
+browser tests on Podman 5.7.
 Final topology: VM 108 primary with application and backup, VM 107
 database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `aeefe4a` run 17: CLEAN PASS ([record](docs/history/ACCEPTANCE-aeefe4a.md)),
+  after the CI full-stack job found that Podman 5.7 lets `envFrom` win over
+  `env`; `DATABASE_USER` now lives only in `env`.
 - `7402641` run 16: CLEAN PASS ([record](docs/history/ACCEPTANCE-7402641.md)).
 - `c12444a` run 15: functional pass, not clean
   ([record](docs/history/ACCEPTANCE-c12444a.md)). `REPORT.md` said ALL STEPS

@@ -22,6 +22,11 @@ roles freshly before any operation.
 
 How it got there, newest first:
 
+- `c12444a` run 15: functional pass, not clean
+  ([record](docs/history/ACCEPTANCE-c12444a.md)). `REPORT.md` said ALL STEPS
+  PASS, and the product passed everything, but the agent silently replaced the
+  two `check ports-closed` steps of phase 6 with four narrower
+  `check connect` steps. `report` now compares the steps with the guide.
 - `5a0b544` run 14: functional pass, not clean
   ([record](docs/history/ACCEPTANCE-5a0b544.md)), the first full run with
   `acceptance.py`: 105 steps, one FAIL. `check replication-tls` ran before the

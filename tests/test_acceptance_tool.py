@@ -221,5 +221,94 @@ class DoTests(ToolTest):
         self.assertIn("FAIL: every network link of VM 107 is up", log)
 
 
+class FullRunTests(ToolTest):
+    """The A2 commands for the full two-VM run."""
+
+    def test_roles_need_every_database_in_the_role(self):
+        primary = [("pg_is_in_recovery", (0, "f|off\n"))]
+        self.assertEqual(self.tool("--step", "06-5", "check", "roles", "192.168.0.108", "primary", rules=primary)[0], 0)
+        self.assertEqual(self.record()[-1]["values"], {"todo": "f|off", "notes": "f|off", "keycloak": "f|off"})
+        one_behind = [("keycloak-postgres", (0, "t|on\n")), ("pg_is_in_recovery", (0, "f|off\n"))]
+        self.assertEqual(self.tool("--step", "06-5", "check", "roles", "192.168.0.108", "primary",
+                                   rules=one_behind)[0], 1)
+        standby = [("transaction_read_only", (0, "t|on\n"))]
+        self.assertEqual(self.tool("--step", "10-2", "check", "roles", "192.168.0.102", "standby", rules=standby)[0], 0)
+        archiving = [("archive_timeout", (0, "f|off|on|1h\n"))]
+        self.assertEqual(self.tool("--step", "10-5", "check", "roles", "192.168.0.108", "archiving",
+                                   rules=archiving)[0], 0)
+
+    def test_the_write_probe_is_the_guides_rolled_back_insert(self):
+        ok = [("psql", (0, "BEGIN\nINSERT 0 1\nROLLBACK\n"))]
+        code, fake = self.tool("--step", "06-5", "check", "write-probe", "192.168.0.108", rules=ok)
+        self.assertEqual(code, 0)
+        self.assertTrue(any("INSERT INTO notes (title) VALUES ('promotion write probe'); ROLLBACK;" in call
+                            for call in fake.calls))
+        broken = [("notes-postgres", (1, 'ERROR:  column "content" does not exist\n')), ("psql", ok[0][1])]
+        self.assertEqual(self.tool("--step", "06-5", "check", "write-probe", "192.168.0.108", rules=broken)[0], 1)
+
+    def test_replication_must_stream_over_tls_for_every_database(self):
+        tls = [("pg_stat_ssl", (0, "todo_standby|streaming|t|TLSv1.3\n"))]
+        self.assertEqual(self.tool("--step", "04-4", "check", "replication-tls", "192.168.0.102", rules=tls)[0], 0)
+        clear = [("notes-postgres", (0, "notes_standby|streaming|f|\n")), tls[0]]
+        self.assertEqual(self.tool("--step", "04-4", "check", "replication-tls", "192.168.0.102", rules=clear)[0], 1)
+        none = [("keycloak-postgres", (0, "")), tls[0]]
+        self.assertEqual(self.tool("--step", "04-4", "check", "replication-tls", "192.168.0.102", rules=none)[0], 1)
+
+    def test_disk_reads_every_size_and_needs_free_space(self):
+        def sizes(free):
+            return [("du -sk", (0, "".join(f"backup {d} 194560\nwal {d} 82944\n" for d in ("todo", "notes", "keycloak"))
+                                + f"free {free}\n"))]
+        code, fake = self.tool("--step", "10-8", "check", "disk", "192.168.0.108", rules=sizes(15728640))
+        self.assertEqual(code, 0)
+        self.assertIn("{{.Mountpoint}}", fake.calls[0])
+        self.assertEqual(self.record()[-1]["values"]["free"], "15360 MiB")
+        self.assertEqual(self.tool("--step", "10-8", "check", "disk", "192.168.0.108", rules=sizes(1024))[0], 1)
+
+    def test_replication_rule_is_added_and_removed_permanently(self):
+        rule = acceptance.replication_rule("192.168.0.108", "192.168.0.102")
+        added = [("--list-rich-rules", (0, rule + "\n"))]
+        code, fake = self.tool("--step", "04-1", "do", "firewall-replication", "192.168.0.108", "192.168.0.102", "add",
+                               rules=added)
+        self.assertEqual(code, 0)
+        self.assertTrue(any("--permanent --zone=public --add-rich-rule" in call for call in fake.calls))
+        self.assertEqual(self.tool("--step", "09-6", "do", "firewall-replication", "192.168.0.108", "192.168.0.102",
+                                   "remove", rules=[("--list-rich-rules", (0, ""))])[0], 0)
+        # A removal that leaves the rule in place fails (other arguments: a do runs once).
+        left = [("--list-rich-rules", (0, acceptance.replication_rule("192.168.0.102", "192.168.0.108") + "\n"))]
+        self.assertEqual(self.tool("--step", "09-6", "do", "firewall-replication", "192.168.0.102", "192.168.0.108",
+                                   "remove", rules=left)[0], 1)
+
+    def test_proxmox_firewall_is_read_back_and_given_time(self):
+        with patch.object(acceptance, "FIREWALL_SETTLE_SECONDS", 20):
+            code, fake = self.tool("--step", "05-5", "do", "proxmox-firewall", "107", "on",
+                                   rules=[("get /nodes/{node}/qemu/107/firewall/options", (0, '{"enable": 1}'))])
+        self.assertEqual(code, 0)
+        self.assertTrue(any("set /nodes/{node}/qemu/107/firewall/options enable=1" in call for call in fake.calls))
+        self.assertIn("waiting 20s", self.log(self.record()[-1]))
+        self.assertEqual(self.tool("--step", "09-12", "do", "proxmox-firewall", "107", "off",
+                                   rules=[("firewall/options", (0, '{"enable": 1}'))])[0], 1)
+
+    def test_the_replication_exception_is_found_by_its_comment(self):
+        rules = json.dumps([
+            {"pos": 0, "comment": "todo-quarantine-ssh-client", "type": "in", "dport": "22", "enable": 1},
+            {"pos": 2, "comment": "todo-quarantine-replication", "type": "out", "dport": "5432:5434", "enable": 0}])
+        state = {"rules": rules}
+
+        def answer(line):
+            if " set " in f" {line} ":
+                state["rules"] = state["rules"].replace('"enable": 0}', '"enable": 1}')
+                return 0, "null"
+            return 0, state["rules"]
+        code, fake = self.tool("--step", "09-8", "do", "replication-exception", "107", "on",
+                               rules=[("pve_lab.py", answer)])
+        self.assertEqual(code, 0)
+        self.assertTrue(any("set /nodes/{node}/qemu/107/firewall/rules/2 enable=1" in call for call in fake.calls))
+        missing = json.dumps([{"pos": 0, "comment": "something else", "type": "out", "dport": "5432:5434"}])
+        code, fake = self.tool("--step", "09-8", "do", "replication-exception", "107", "off",
+                               rules=[("pve_lab.py", (0, missing))])
+        self.assertEqual(code, 1)
+        self.assertFalse(any(" set " in call for call in fake.calls))
+
+
 if __name__ == "__main__":
     unittest.main()

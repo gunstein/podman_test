@@ -30,6 +30,13 @@ Commands:
   do    markers PHASE                    one Todo and one Note marker
   check markers HOST                     every recorded marker is on HOST
   do    reboot VMID HOST app|standby     new boot ID, then check services
+  check roles HOST primary|archiving|standby   f|off, f|off|on|1h or t|on, all three
+  check write-probe HOST                 the guide's rolled-back Todo and Notes inserts
+  check replication-tls HOST             every standby connection streams over TLS
+  check disk HOST                        backup and WAL sizes, at least 2 GiB free
+  do    firewall-replication SOURCE HOST add|remove   5432-5434 from SOURCE to HOST
+  do    proxmox-firewall VMID on|off     VM firewall switch, then a 20 s wait
+  do    replication-exception VMID on|off   the todo-quarantine-replication rule, then 20 s
 """
 import argparse
 import datetime
@@ -51,6 +58,9 @@ CA_PATH = '/var/lib/todo-tls/ca.crt'
 PYTHON = ROOT / 'todo-backend/.venv/bin/python'
 REBOOT_TIMEOUT = 600
 POLL_SECONDS = 10
+FIREWALL_SETTLE_SECONDS = 20  # the Proxmox firewall applies changes about every 10 s
+DATABASES = ('todo', 'notes', 'keycloak')  # apps.REPLICATED_DATABASES; user and container share the name
+MIN_FREE_KIB = 2 * 1024 * 1024
 
 
 class Refused(Exception):
@@ -137,6 +147,9 @@ def matching(pattern):
 
 
 VMID = matching(r'[0-9]{3,9}')
+ROLE = matching(r'primary|archiving|standby')
+SWITCH = matching(r'on|off')
+CHANGE = matching(r'add|remove')
 SNAPSHOT = matching(r'[A-Za-z0-9_-]+')
 MODE = matching(r'app|standby')
 PHASE = matching(r'phase[0-9]+')
@@ -284,6 +297,63 @@ def check_markers(step, host):
                         f'{database} on {host}: id {identifier} "{marker["title"]}"')
 
 
+def psql(step, host, database, statement):
+    """Run one statement in the database's container; the statement goes on stdin, not in argv."""
+    return step.ssh(host, f"podman exec -i {database}-postgres psql --no-psqlrc --set ON_ERROR_STOP=1 "
+                          f"--username {database} --dbname {database} --tuples-only --no-align "
+                          f"--field-separator='|' <<'SQL'\n{statement}\nSQL\n")
+
+
+def check_roles(step, host, role):
+    """All three databases in the same role: primary f|off, archiving f|off|on|1h, standby t|on."""
+    statement, expected = {
+        'primary': ("SELECT pg_is_in_recovery(), current_setting('default_transaction_read_only');", 'f|off'),
+        'archiving': ("SELECT pg_is_in_recovery(), current_setting('default_transaction_read_only'), "
+                      "current_setting('archive_mode'), current_setting('archive_timeout');", 'f|off|on|1h'),
+        'standby': ("SELECT pg_is_in_recovery(), current_setting('transaction_read_only');", 't|on'),
+    }[role]
+    for database in DATABASES:
+        value = psql(step, host, database, statement).stdout.strip()
+        step.values[database] = value
+        step.expect(value == expected, f'{database} on {host}: {value or "no answer"} (want {expected})')
+
+
+def check_write_probe(step, host):
+    """ACCEPTANCE.md phase 6: a rolled-back insert in Todo and in Notes on the promoted host."""
+    for database, statement in (
+            ('todo', "BEGIN; INSERT INTO todos (title, completed) VALUES ('promotion write probe', false); ROLLBACK;"),
+            ('notes', "BEGIN; INSERT INTO notes (title) VALUES ('promotion write probe'); ROLLBACK;")):
+        result = psql(step, host, database, statement)
+        step.expect(result.returncode == 0 and 'INSERT 0 1' in result.stdout and 'ROLLBACK' in result.stdout,
+                    f'{database} on {host}: insert accepted and rolled back')
+
+
+def check_replication_tls(step, host):
+    """On the primary: each database has a streaming standby connection, and it uses TLS."""
+    for database in DATABASES:
+        rows = psql(step, host, database, 'SELECT application_name, state, ssl, version FROM pg_stat_replication '
+                                          'JOIN pg_stat_ssl USING (pid);').stdout.split()
+        step.values[database] = rows
+        step.expect(bool(rows) and all(row.split('|')[1:3] == ['streaming', 't'] for row in rows),
+                    f'{database} on {host}: streaming over TLS ({", ".join(rows) or "no standby connection"})')
+
+
+def check_disk(step, host):
+    """ACCEPTANCE.md phase 10 step 8: backup and WAL sizes, and enough free space for Podman."""
+    lines = ''.join(f"""echo "backup {database} $(podman unshare du -sk "$(podman volume inspect -f '{{{{.Mountpoint}}}}' {database}-postgres-backup)" | cut -f1)"
+echo "wal {database} $(podman exec {database}-postgres du -sk /var/lib/postgresql/data/pg_wal | cut -f1)"
+""" for database in DATABASES)
+    result = step.ssh(host, lines + "echo \"free $(df -Pk ~/.local/share/containers | awk 'NR == 2 {print $4}')\"\n")
+    sizes = {}
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if parts and parts[-1].isdigit():
+            sizes[' '.join(parts[:-1])] = int(parts[-1])
+    step.values.update({name: f'{kib // 1024} MiB' for name, kib in sizes.items()})
+    step.expect(len(sizes) == 2 * len(DATABASES) + 1, 'every size was read')
+    step.expect(sizes.get('free', 0) >= MIN_FREE_KIB, f'at least {MIN_FREE_KIB // 1024 // 1024} GiB free')
+
+
 # --- do (changes state) -------------------------------------------------------------
 
 def pve(step, *arguments):
@@ -358,6 +428,59 @@ def do_reboot(step, vmid, host, mode):
     check_services(step, host, mode)
 
 
+def replication_rule(source, host):
+    return (f'rule family="ipv4" source address="{source}/32" destination address="{host}" '
+            'port port="5432-5434" protocol="tcp" accept')
+
+
+def do_firewall_replication(step, source, host, change):
+    """Phases 4 and 9: allow (or stop allowing) SOURCE to reach HOST's replication ports, permanently."""
+    rule = replication_rule(source, host)
+    step.ssh(host, f"sudo -n firewall-cmd --permanent --zone={ZONE} --{change}-rich-rule='{rule}' && "
+                   'sudo -n firewall-cmd --reload')
+    running = step.ssh(host, f'sudo -n firewall-cmd --zone={ZONE} --list-rich-rules').stdout.splitlines()
+    permanent = step.ssh(host, f'sudo -n firewall-cmd --permanent --zone={ZONE} --list-rich-rules').stdout.splitlines()
+    present = change == 'add'
+    step.expect((rule in running) == present, f'the rule is {"" if present else "not "}in the running configuration')
+    step.expect((rule in permanent) == present, f'the rule is {"" if present else "not "}in the permanent configuration')
+
+
+def settle(step):
+    step.log(f'waiting {FIREWALL_SETTLE_SECONDS}s for the Proxmox firewall to apply the change')
+    time.sleep(FIREWALL_SETTLE_SECONDS)
+
+
+def do_proxmox_firewall(step, vmid, switch):
+    """Turn the VM's Proxmox firewall on or off, read it back, and wait until it applies."""
+    wanted = 1 if switch == 'on' else 0
+    pve(step, 'set', f'/nodes/{{node}}/qemu/{vmid}/firewall/options', f'enable={wanted}')
+    options = json.loads(pve(step, 'get', f'/nodes/{{node}}/qemu/{vmid}/firewall/options').stdout or '{}')
+    step.expect(int(options.get('enable', 0)) == wanted, f'VM {vmid} firewall is {switch}')
+    step.values['options'] = options
+    settle(step)
+
+
+def do_replication_exception(step, vmid, switch):
+    """Phase 9 step 8: switch only the rule commented todo-quarantine-replication, found by its comment."""
+    wanted = 1 if switch == 'on' else 0
+    path = f'/nodes/{{node}}/qemu/{vmid}/firewall/rules'
+    rules = json.loads(pve(step, 'get', path).stdout or '[]')
+    matches = [rule for rule in rules if rule.get('comment') == 'todo-quarantine-replication']
+    if not step.expect(len(matches) == 1, 'exactly one rule commented todo-quarantine-replication'):
+        return
+    rule = matches[0]
+    step.expect(rule.get('type') == 'out' and rule.get('dport') == '5432:5434',
+                'it is the outbound replication rule for ports 5432:5434')
+    if step.failures:
+        return
+    pve(step, 'set', f'{path}/{rule["pos"]}', f'enable={wanted}')
+    after = [rule for rule in json.loads(pve(step, 'get', path).stdout or '[]')
+             if rule.get('comment') == 'todo-quarantine-replication']
+    step.expect(len(after) == 1 and int(after[0].get('enable', 0)) == wanted, f'the rule is {switch}')
+    step.values['rule'] = after[0] if after else {}
+    settle(step)
+
+
 COMMANDS = {
     # (kind, name): (function, argument validators, refuse any second run)
     ('do', 'rollback'): (do_rollback, (VMID, SNAPSHOT, host_address), False),
@@ -370,6 +493,13 @@ COMMANDS = {
     ('do', 'markers'): (do_markers, (PHASE,), True),
     ('check', 'markers'): (check_markers, (host_address,), False),
     ('do', 'reboot'): (do_reboot, (VMID, host_address, MODE), False),
+    ('check', 'roles'): (check_roles, (host_address, ROLE), False),
+    ('check', 'write-probe'): (check_write_probe, (host_address,), False),
+    ('check', 'replication-tls'): (check_replication_tls, (host_address,), False),
+    ('check', 'disk'): (check_disk, (host_address,), False),
+    ('do', 'firewall-replication'): (do_firewall_replication, (host_address, host_address, CHANGE), True),
+    ('do', 'proxmox-firewall'): (do_proxmox_firewall, (VMID, SWITCH), False),
+    ('do', 'replication-exception'): (do_replication_exception, (VMID, SWITCH), False),
 }
 
 

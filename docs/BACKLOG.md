@@ -80,7 +80,9 @@ being accepted.
 - **A2. The rest of the glue.** *[new]* `check roles`, `check write-probe`
   (the guide's rolled-back inserts, verbatim), `check replication-tls`,
   `check markers` on both hosts, `check disk`, `do firewall-replication`,
-  `do proxmox-firewall` (with the 20-second wait).
+  `do proxmox-firewall` (with the 20-second wait). Implemented, with
+  `check roles primary|archiving|standby` and `do replication-exception`
+  (finds the rule by its comment); first used in the full run of A4.
 - **A3. The record from the log.** *[new]* `acceptance.py report` builds the
   draft record's tables from `record.jsonl`: IDs, fingerprints, backup names
   and every repeat, so no value is copied by hand. CLEAN PASS then means

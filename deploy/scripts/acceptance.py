@@ -9,6 +9,7 @@ the result with the expected values itself and records it.
 
   acceptance.py --run RUN_ID --step 03-4 check services 192.168.0.102 app
   acceptance.py --run RUN_ID --step 03-9 do reboot 107 192.168.0.102 app
+  acceptance.py --run RUN_ID report
 
 check   reads only and may be repeated.
 do      changes state. After a FAIL it refuses the same command with the same
@@ -18,6 +19,11 @@ do      changes state. After a FAIL it refuses the same command with the same
 Each call writes logs/<step>-<kind>-<command>.log in the run folder
 (~/todo-acceptance-runs/RUN_ID, or $ACCEPTANCE_RUNS/RUN_ID) and appends one
 JSON line to record.jsonl. Exit status: 0 PASS, 1 FAIL, 2 usage, 3 refused.
+
+report writes REPORT.md in the run folder from record.jsonl and the other
+logs, so no value in the run record is copied by hand (BACKLOG A3). It exits
+0 only if every step passed, no do was left unfinished or needed approval,
+every other log ends in exit=0 and the checkout is clean.
 
 Commands:
   do    rollback VMID SNAPSHOT HOST      reset the VM, start it, wait for SSH
@@ -524,17 +530,107 @@ def refusal(run_directory, name, arguments, once, approved):
     return None
 
 
+def short(values):
+    """The values of one step on one line, long ones cut."""
+    parts = []
+    for key, value in values.items():
+        text = value if isinstance(value, str) else json.dumps(value, sort_keys=True)
+        parts.append(f'{key}={text if len(text) <= 60 else text[:57] + "..."}')
+    return ', '.join(parts).replace('|', '\\|')
+
+
+def product_logs(run_directory, tool_logs):
+    """Logs the tool did not write: the product's own commands, with their exit and JSON lines."""
+    rows = []
+    for path in sorted((run_directory / 'logs').glob('*.log')):
+        name = str(path.relative_to(run_directory))
+        if name in tool_logs:
+            continue
+        lines = path.read_text(errors='replace').splitlines()
+        exits = [line for line in lines if line.startswith('exit=')]
+        changed = [line.strip() for line in lines if line.strip().startswith('{"changed"')]
+        rows.append((name, exits[-1] if exits else 'no exit= line', ' '.join(changed)))
+    return rows
+
+
+def report(run_directory):
+    """Build REPORT.md from record.jsonl and the logs; return (text, all steps passed)."""
+    entries = read_record(run_directory)
+    finished = [entry for entry in entries if entry['result'] != 'STARTED']
+    finished_logs = {entry['log'] for entry in finished}
+    unfinished = [entry for entry in entries if entry['result'] == 'STARTED' and entry['log'] not in finished_logs]
+    revision = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True)
+    status = subprocess.run(['git', '-C', str(ROOT), 'status', '--porcelain'], capture_output=True, text=True)
+    clean = revision.returncode == 0 and status.returncode == 0 and not status.stdout.strip()
+    products = product_logs(run_directory, {entry['log'] for entry in entries})
+
+    attention = []
+    for entry in finished:
+        if entry['result'] != 'PASS':
+            attention.append(f'{entry["step"]} {entry["kind"]} {entry["command"]}: {entry["result"]} ({entry["log"]})')
+        if entry['approved']:
+            attention.append(f'{entry["step"]} {entry["kind"]} {entry["command"]}: run with operator approval '
+                             f'"{entry["approved"]}" ({entry["log"]})')
+    for entry in unfinished:
+        attention.append(f'{entry["step"]} do {entry["command"]}: started but never finished ({entry["log"]})')
+    for name, last, _ in products:
+        if last != 'exit=0':
+            attention.append(f'{name}: {last}')
+    if not clean:
+        attention.append('the checkout is not clean, or its revision could not be read')
+
+    seen, repeats = {}, []
+    for entry in finished:
+        key = (entry['kind'], entry['command'], tuple(entry['arguments']))
+        seen.setdefault(key, []).append(entry['step'])
+    for (kind, command, arguments), steps in seen.items():
+        if len(steps) > 1 and kind == 'check':
+            repeats.append(f'{kind} {command} {" ".join(arguments)}: steps {", ".join(steps)}')
+
+    passed = not attention and bool(finished)
+    counts = {result: sum(entry['result'] == result for entry in finished) for result in ('PASS', 'FAIL', 'REFUSED')}
+    lines = [f'# Acceptance run {run_directory.name}', '',
+             f'Revision: `{revision.stdout.strip() or "unknown"}`, checkout {"clean" if clean else "NOT clean"}.',
+             f'acceptance.py steps: {len(finished)} (PASS {counts["PASS"]}, FAIL {counts["FAIL"]}, '
+             f'REFUSED {counts["REFUSED"]}, unfinished {len(unfinished)}); other logs: {len(products)}.',
+             '', f'**From the record: {"ALL STEPS PASS" if passed else "NOT CLEAN"}.** '
+             'A CLEAN PASS of a full run also needs every step of the guide; check the step list against it.', '',
+             '## Steps', '', '| Step | Command | Result | Values | Log |', '|---|---|---|---|---|']
+    for entry in finished:
+        command = ' '.join([entry['kind'], entry['command'], *entry['arguments']])
+        lines.append(f'| {entry["step"]} | `{command}` | {entry["result"]} | {short(entry["values"])} | {entry["log"]} |')
+    lines += ['', '## Other logs (the product\'s own commands)', '', '| Log | Last exit | JSON |', '|---|---|---|']
+    lines += [f'| {name} | {last} | {changed} |' for name, last, changed in products]
+    lines += ['', '## Needs attention', '']
+    lines += [f'- {item}' for item in attention] or ['- Nothing.']
+    lines += ['', '## Repeated checks (allowed; listed for the record)', '']
+    lines += [f'- {item}' for item in repeats] or ['- None.']
+    return '\n'.join(lines) + '\n', passed
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--run', required=True, help='run ID, the run folder name')
-    parser.add_argument('--step', required=True, help='phase and step from the guide, for example 03-9')
+    parser.add_argument('--step', help='phase and step from the guide, for example 03-9 (not for report)')
     parser.add_argument('--user', default='gunstein', help='service user on the VMs')
     parser.add_argument('--operator-approved', default='', help='why the operator allows a second run')
-    parser.add_argument('kind', choices=('check', 'do'))
-    parser.add_argument('command')
+    parser.add_argument('kind', choices=('check', 'do', 'report'))
+    parser.add_argument('command', nargs='?')
     parser.add_argument('arguments', nargs='*')
     args = parser.parse_args(argv)
+    runs = Path(os.environ.get('ACCEPTANCE_RUNS', Path.home() / 'todo-acceptance-runs'))
+    if not re.fullmatch(r'[A-Za-z0-9.-]+', args.run) or args.run.strip('.') == '':
+        parser.error('--run looks like 2026-09-27-app-ops-13')
+    if args.kind == 'report':
+        if args.command or not (runs / args.run / 'record.jsonl').is_file():
+            parser.error('report takes no arguments and needs an existing run with record.jsonl')
+        text, passed = report(runs / args.run)
+        (runs / args.run / 'REPORT.md').write_text(text)
+        print(text, end='')
+        return 0 if passed else 1
     name = args.command
+    if not name or not args.step:
+        parser.error('check and do need --step and a command')
     if (args.kind, name) not in COMMANDS:
         parser.error(f'unknown command: {args.kind} {name}')
     function, validators, once = COMMANDS[args.kind, name]
@@ -546,7 +642,7 @@ def main(argv=None):
         arguments = [validate(text) for validate, text in zip(validators, args.arguments)]
     except ValueError as error:
         parser.error(str(error))
-    run_directory = Path(os.environ.get('ACCEPTANCE_RUNS', Path.home() / 'todo-acceptance-runs')) / args.run
+    run_directory = runs / args.run
     run_directory.mkdir(parents=True, exist_ok=True)
     reason = refusal(run_directory, name, arguments, once, args.operator_approved) if args.kind == 'do' else None
     step = Step(run_directory, args.step, args.kind, name, arguments, args.user)

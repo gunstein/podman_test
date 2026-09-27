@@ -87,7 +87,11 @@ being accepted.
 - **A3. The record from the log.** *[new]* `acceptance.py report` builds the
   draft record's tables from `record.jsonl`: IDs, fingerprints, backup names
   and every repeat, so no value is copied by hand. CLEAN PASS then means
-  every step PASS and no `do` run twice.
+  every step PASS and no `do` run twice. Implemented: `acceptance.py --run ID
+  report` writes `REPORT.md` with every step and its values, the other logs'
+  last `exit=` and `{"changed": ...}` lines, and what needs attention
+  (failures, refusals, approvals, unfinished `do`, non-zero exits, a dirty
+  checkout); the quick guide's verdict uses it.
 - **A4. A shorter agent guide.** *[simplify]* C9 becomes a command list per
   phase; the kickoff needs no special rules. One full run with the tool before
   it is trusted. ACCEPTANCE.md stays the explained guide for people.

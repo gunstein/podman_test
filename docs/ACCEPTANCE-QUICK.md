@@ -136,23 +136,17 @@ $A --step 06-6 check browser
 
 `check ca` fails by itself if the CA changed since step 4.
 
-**7. Verdict.** Delete the password file. `QUICK PASS` only if every
-line in `record.jsonl` has `"result": "PASS"` (each `do` also writes a
-`"STARTED"` line first, followed by its result), every product log ends in `exit=0`,
-and the installs printed `{"changed": true}` and then `{"changed": false}`.
-List every expected deviation. Report the verdict, the revision and the run
-folder; the operator reads `record.jsonl` and the logs.
+**7. Verdict.** Delete the password file and build the report:
 
 ```bash
 rm -f "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password"
-grep -v -e '"result": "PASS"' -e '"result": "STARTED"' "$RUN/record.jsonl"
-test "$(grep -c '"result": "STARTED"' "$RUN/record.jsonl")" = "$(grep '"kind": "do"' "$RUN/record.jsonl" | grep -c '"result": "PASS"')" && echo every-do-finished
-for log in 01-3-prerequisites 02-1-build 02-2-transfer 02-3-verify 03-1-trust 03-2-install 06-4-install; do
-  printf '%s %s\n' "$log" "$(tail -n 1 "$RUN/logs/$log.log")"
-done
-grep -h '"changed"' "$RUN/logs/03-2-install.log" "$RUN/logs/06-4-install.log"
+$A report
 ```
 
-The first `grep` must print nothing and the next line must say
-`every-do-finished`; every product log must end in `exit=0`,
-and the last lines must be `{"changed": true}` then `{"changed": false}`.
+`report` writes `REPORT.md` in the run folder from `record.jsonl` and the
+other logs; nothing is copied by hand. `QUICK PASS` only if it says
+**ALL STEPS PASS**, lists nothing under "Needs attention", and its table of
+other logs shows `{"changed": true}` for `03-2-install.log` and
+`{"changed": false}` for `06-4-install.log`. List every expected deviation.
+Report the verdict, the revision and the run folder; send the operator
+`REPORT.md`.

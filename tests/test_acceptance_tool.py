@@ -342,5 +342,76 @@ class InterruptedStepTests(ToolTest):
         self.assertEqual([entry["result"] for entry in self.record()], ["PASS"])
 
 
+class ReportTests(ToolTest):
+    """acceptance.py report builds the run record from record.jsonl and the logs."""
+    GIT = [("rev-parse", (0, "b9bffbfd175509936f61994a1ba087e464e476f7\n")), ("status --porcelain", (0, ""))]
+
+    def product_log(self, name, *lines):
+        (self.run_directory / "logs" / name).write_text("\n".join(lines) + "\n")
+
+    def report(self, rules=GIT):
+        fake = Fake(list(rules))
+        with patch.object(acceptance.subprocess, "run", fake), contextlib.redirect_stdout(io.StringIO()):
+            code = acceptance.main(["--run", "run-1", "report"])
+        return code, (self.run_directory / "REPORT.md").read_text()
+
+    def test_a_clean_run_passes_and_takes_every_value_from_the_record(self):
+        self.tool("--step", "03-8", "do", "markers", "phase3",
+                  rules=[("create_markers.py", (0, "MARKER 'acceptance run-1 phase3': todo id=3 note id=4\n"))])
+        self.tool("--step", "04-2", "check", "headers", rules=[("curl", (0, APP_HEADERS))])
+        self.product_log("03-2-install.log", "Preflight checks passed.", '{"changed": true}', "exit=0")
+        code, text = self.report()
+        self.assertEqual(code, 0)
+        self.assertIn("**From the record: ALL STEPS PASS.**", text)
+        self.assertIn("b9bffbfd175509936f61994a1ba087e464e476f7", text)
+        self.assertIn("todo_id=3", text)
+        self.assertIn('| logs/03-2-install.log | exit=0 | {"changed": true} |', text)
+        self.assertIn("- Nothing.", text)
+        self.assertNotIn("STARTED", text)
+
+    def test_failures_refusals_approvals_and_bad_product_logs_need_attention(self):
+        failing = [("--list-rich-rules", (0, ""))]
+        arguments = ("--step", "03-3", "do", "firewall-https", "192.168.0.102", "192.168.0.100")
+        self.tool(*arguments, rules=failing)
+        self.tool(*arguments)
+        self.tool("--operator-approved", "checked by hand", *arguments, rules=failing)
+        self.product_log("02-1-build.log", "building", "exit=2")
+        self.product_log("02-2-transfer.log", "no exit line at all")
+        code, text = self.report()
+        self.assertEqual(code, 1)
+        self.assertIn("NOT CLEAN", text)
+        for expected in ("03-3 do firewall-https: FAIL", "03-3 do firewall-https: REFUSED",
+                         'operator approval "checked by hand"', "logs/02-1-build.log: exit=2",
+                         "logs/02-2-transfer.log: no exit= line"):
+            self.assertIn(expected, text)
+
+    def test_an_unfinished_do_and_a_dirty_checkout_need_attention(self):
+        self.run_directory.mkdir(parents=True)
+        (self.run_directory / "logs").mkdir()
+        (self.run_directory / "record.jsonl").write_text(json.dumps({
+            "kind": "do", "command": "reboot", "arguments": ["107", "192.168.0.102", "app"], "result": "STARTED",
+            "log": "logs/06-1-do-reboot.log", "step": "06-1", "values": {}, "approved": "", "time": "t"}) + "\n")
+        (self.run_directory / "logs/06-1-do-reboot.log").write_text("# half a reboot\n")
+        code, text = self.report(rules=[("rev-parse", (0, "abc\n")), ("status --porcelain", (0, " M file\n"))])
+        self.assertEqual(code, 1)
+        self.assertIn("06-1 do reboot: started but never finished", text)
+        self.assertIn("checkout is not clean", text)
+        self.assertNotIn("| logs/06-1-do-reboot.log |", text.split("## Other logs")[1])
+
+    def test_repeated_checks_are_listed_but_allowed(self):
+        rules = [("wait-ready", (0, "READY: x\n"))]
+        for step in ("03-4", "06-5"):
+            self.tool("--step", step, "check", "services", "192.168.0.102", "app", rules=rules)
+        code, text = self.report()
+        self.assertEqual(code, 0)
+        self.assertIn("check services 192.168.0.102 app: steps 03-4, 06-5", text)
+
+    def test_report_needs_a_run_and_nothing_else(self):
+        for arguments in (["--run", "run-1", "report"], ["--run", "..", "report"],
+                          ["--run", "run-1", "report", "extra"]):
+            with self.subTest(arguments), self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                acceptance.main(arguments)
+
+
 if __name__ == "__main__":
     unittest.main()

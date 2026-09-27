@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -28,17 +29,41 @@ REVISION = "b9bffbfd175509936f61994a1ba087e464e476f7"
 GIT = [("rev-parse", (0, REVISION + "\n")), ("status --porcelain", (0, ""))]
 
 
+REAL_RUN = subprocess.run  # the tests patch subprocess.run; the shell checks below need the real one
+
+
+def valid_bash(script, what):
+    """Fail the test unless bash can parse script, as a remote or local shell would have to."""
+    result = REAL_RUN(["bash", "-n"], input=script, capture_output=True, text=True)
+    if result.returncode:
+        raise AssertionError(f"{what} is not valid bash: {result.stderr.strip()}\n{script}")
+
+
 class Fake:
     """Answers each command by its first matching (text in the command line) rule.
 
     Git is answered with a clean checkout at REVISION unless a rule says
     otherwise, and git calls are not listed in calls.
+
+    It also checks what a real shell would do with each command, because a
+    fake that only matches text let run 13's quoting bug through: for ssh, the
+    remote command must split into bash -s -- and its arguments exactly as the
+    tool meant, and the script on stdin must parse; for bash -c, the script
+    must parse.
     """
 
     def __init__(self, rules):
         self.rules, self.calls = list(rules) + GIT, []
 
     def __call__(self, argv, input=None, **kwargs):
+        if argv[0] == "ssh":
+            words = shlex.split(argv[-1])
+            if words[:3] != ["bash", "-s", "--"]:
+                raise AssertionError(f"the remote command does not start bash -s --: {argv[-1]}")
+            valid_bash(argv[-1], "the remote command")
+            valid_bash(input or "", "the script sent over ssh")
+        elif argv[:2] == ["bash", "-c"]:
+            valid_bash(argv[2], "the bash -c script")
         line = " ".join(argv) + " " + (input or "")
         if argv[0] != "git":
             self.calls.append(line)
@@ -655,6 +680,24 @@ class StreamingWaitTests(ToolTest):
                                 rules=[("pg_stat_ssl", (0, ""))])
         self.assertEqual(code, 1)
         self.assertIn("no standby connection", self.log(self.record()[-1]))
+
+
+class FakeShellTests(ToolTest):
+    """The fake itself must catch what broke run 13 and similar shell mistakes."""
+
+    def test_a_broken_remote_script_fails_the_test(self):
+        step = acceptance.Step(self.runs, "00-1", "check", "x", [], "gunstein")
+        self.addCleanup(step.log_file.close)
+        with patch.object(acceptance.subprocess, "run", Fake([])), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(AssertionError, "script sent over ssh is not valid bash"):
+                step.ssh("192.168.0.102", 'echo "unterminated')
+            with self.assertRaisesRegex(AssertionError, "bash -c script is not valid bash"):
+                acceptance.on(step, "client", "if true; then")
+
+    def test_a_remote_command_that_does_not_split_as_meant_fails_the_test(self):
+        fake = Fake([])
+        with self.assertRaisesRegex(AssertionError, "does not start bash -s --"):
+            fake(["ssh", "gunstein@192.168.0.102", "sh -c 'x'"])
 
 
 if __name__ == "__main__":

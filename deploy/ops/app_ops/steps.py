@@ -8,7 +8,7 @@ from . import trust
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT / 'deploy/installer'))
-from app_installer import apps  # noqa: E402
+from app_installer import apps, settings  # noqa: E402,F401 (settings: for failover)
 
 GROUP = [apps.describe(database) for database in apps.REPLICATED_DATABASES]
 

@@ -283,7 +283,7 @@ echo "Wrote $dir/pve.env"
    (`install.sh`, app-ops commands), `app_dr.py` and `app_backup.py` actions
    other than `status`, `firewall-cmd` changes, Proxmox power, NIC and firewall
    changes, SQL writes, marker creation and every rehearsal sub-step. It is
-   worst for one-shot commands such as `app_dr.py promote`, `rebuild-standby`,
+   worst for one-shot commands such as `failover`, `rebuild-standby`,
    snapshot rollback, volume deletion, `app_backup.py restore --replace` and
    `cleanup-restore`. Inspect state instead (C8). A read-only check is not
    covered: C8 says when it may be repeated.
@@ -752,7 +752,7 @@ $A --step 05-8-9d check ca 192.168.0.102
 If streaming does not come back in 9, do not start anything or run an
 installer: STOP with the logs of 8a and 8b.
 
-#### C9.7 Phase 6 — Fence and promote (pre-approved)
+#### C9.7 Phase 6 — Fence and fail over (pre-approved)
 
 ```bash
 $A --step 06-1 do markers phase6
@@ -761,26 +761,24 @@ $A --step 06-3 do fence 107
 $A --step 06-4 check ports-closed 192.168.0.102 client
 $A --step 06-5 check ports-closed 192.168.0.102 192.168.0.108
 vm 06-6-preflight 192.168.0.108 "python3 /opt/todo/bin/app_dr.py preflight --confirm-primary-fenced 'todo-primary is fenced'"
-vm 06-7-promote 192.168.0.108 "python3 /opt/todo/bin/app_dr.py promote --confirm-primary-fenced 'todo-primary is fenced' --confirm-promotion todo-standby"
-vm 06-8-status 192.168.0.108 'python3 /opt/todo/bin/app_dr.py status'
-$A --step 06-9 check roles 192.168.0.108 primary
-$A --step 06-10 check write-probe 192.168.0.108
-$A --step 06-11 check markers 192.168.0.108
+vm 06-7-trust-ops 192.168.0.108 'cd ~/todo-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
+vm 06-8-inventory 192.168.0.108 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-standby: {role: current_primary, address: 192.168.0.108, local: true}" "  todo-primary: {role: rebuild_standby, address: 192.168.0.102}" > recovery.yaml && cat recovery.yaml'
+$A --step 06-9 do firewall-https 192.168.0.108 192.168.0.100
+ops 06-10-failover 192.168.0.108 "--inventory recovery.yaml failover --confirm-primary-fenced 'todo-primary is fenced' --confirm-promotion todo-standby"   # → {"changed": true, "promoted_now": true, ...}
+vm 06-11-status 192.168.0.108 'python3 /opt/todo/bin/app_dr.py status'
+$A --step 06-12 check roles 192.168.0.108 primary
+$A --step 06-13 check write-probe 192.168.0.108
+$A --step 06-14 check markers 192.168.0.108
 ```
 
-`promote` runs once. Keep VM 107 fenced.
+`failover` runs once. If it stops, its log names the step: STOP, and do not
+run it again. Keep VM 107 fenced.
 
 #### C9.8 Phase 7 — Application failover
 
-```bash
-vm 07-1-trust-ops 192.168.0.108 'cd ~/todo-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
-vm 07-2-inventory 192.168.0.108 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-standby: {role: current_primary, address: 192.168.0.108, local: true}" "  todo-primary: {role: rebuild_standby, address: 192.168.0.102}" > recovery.yaml && cat recovery.yaml'
-$A --step 07-3 do firewall-https 192.168.0.108 192.168.0.100
-ops 07-4-deploy 192.168.0.108 '--inventory recovery.yaml deploy-promoted-application'   # → {"changed": true}
-```
-
-Client name resolution and CA trust for `.108` (C9.4); a new CA is expected.
-Do not provision the test user again.
+`failover` has deployed the application. Client name resolution and CA trust
+for `.108` (C9.4); a new CA is expected, the one `06-10` printed. Do not
+provision the test user again.
 
 ```bash
 $A --step 07-5 check services 192.168.0.108 app
@@ -799,7 +797,7 @@ $A --step 07-15 check markers 192.168.0.108
 #### C9.9 Phase 8 — Backup and isolated PITR (cleanup pre-approved)
 
 ```bash
-ops 08-1-configure-backup 192.168.0.108 '--inventory recovery.yaml configure-backup'   # → {"changed": true}
+ops 08-1-configure-backup 192.168.0.108 '--inventory recovery.yaml configure-backup'   # → {"changed": false}; failover configured it
 $A --step 08-2 check roles 192.168.0.108 archiving
 vm 08-3-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'        # zero failed archive attempts
 vm 08-4-backup-create 192.168.0.108 'python3 /opt/todo/bin/app_backup.py create'        # note the three base-... names
@@ -920,7 +918,7 @@ ssh gunstein@192.168.0.102 'cd ~/todo-operations && PYTHONPATH="$PWD/deploy/ops"
 ```
 
 The controller is `.102` with `initial.yaml` for phases 4-5, and `.108` with
-`recovery.yaml` from phase 7. Differences from ACCEPTANCE.md in an agent run:
+`recovery.yaml` from phase 6. Differences from ACCEPTANCE.md in an agent run:
 
 1. Sudo. The A3 lab sudoers file already grants passwordless sudo, so do not
    create or remove `90-app-ops-acceptance`. Skip the first refusal check
@@ -928,9 +926,9 @@ The controller is `.102` with `initial.yaml` for phases 4-5, and `.108` with
    without a password. Record the skip; unit tests cover that refusal. Do all
    the other refusal checks.
 2. Controller trust. Run the trust command with `sudo -n sh deploy/scripts/trust-files.sh ...`:
-   on `.102` before C9.5, and on `.108` before C9.8.
+   on `.102` before C9.5, and on `.108` in C9.7.
 3. Inventories. Write `initial.yaml` on `.102` before C9.5 and `recovery.yaml`
-   on `.108` before C9.8, with the kickoff names and addresses, using a
+   on `.108` in C9.7, with the kickoff names and addresses, using a
    heredoc over SSH. Save both in the run folder; they hold no secrets.
 
 The confirmations are the ones in ACCEPTANCE.md. Each repeat must print

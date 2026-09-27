@@ -73,12 +73,23 @@ python3 -m app_ops --inventory initial.yaml bootstrap-standby
 python3 -m app_ops --inventory initial.yaml replication-status
 python3 -m app_ops --inventory initial.yaml install-dr-tool
 python3 -m app_ops --inventory initial.yaml install-quarantine-tool
+python3 -m app_ops --inventory recovery.yaml failover \
+  --confirm-primary-fenced "todo-primary is fenced" --confirm-promotion todo-standby
 python3 -m app_ops --inventory recovery.yaml deploy-promoted-application
 python3 -m app_ops --inventory recovery.yaml configure-backup
 python3 -m app_ops --inventory recovery.yaml rebuild-standby \
   --confirm-fenced "todo-primary is fenced" --confirm-reseed todo-primary
 python3 -m app_ops --inventory recovery.yaml cluster-status
 ```
+
+`failover` is the one command for the surviving site after a person has
+decided the primary is lost and fenced it. It runs on that host itself and
+chains `app_dr.py promote`, `deploy-promoted-application`, `configure-backup`
+and a check that users can log in (services ready, Keycloak and both apps
+through nginx, HTTPS verified with the host's CA). It stops at the first
+failed step and names it; running it again skips a completed promotion and
+never retries a failed one. Its result tells what users need: the hostnames,
+the address and the CA fingerprint.
 
 `sync-standby-secrets` and `preflight-standby-rebuild` can also be run on
 their own. Every command prints one JSON result: `changed`, or the status
@@ -108,8 +119,8 @@ acceptance records:
 2. [Standby bootstrap](STANDBY-BOOTSTRAP.md): `preflight-standby`,
    `bootstrap-standby`, `replication-status`.
 3. [Promotion](PROMOTION.md): `install-dr-tool`, then the local `app_dr.py`.
-4. [Application failover](APPLICATION-FAILOVER.md):
-   `deploy-promoted-application`.
+4. [Application failover](APPLICATION-FAILOVER.md): `failover`, or
+   `deploy-promoted-application` on its own.
 5. [Backup and PITR](BACKUP-PITR.md): `configure-backup`, then the local
    `app_backup.py`.
 6. [Restoring redundancy](RESTORE-REDUNDANCY.md): `preflight-standby-rebuild`,

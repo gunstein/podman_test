@@ -62,7 +62,7 @@ rejects a reachable primary.
 
 ## Promotion contract
 
-Follow [the fencing and promotion phase](../../docs/ACCEPTANCE.md#6-fence-and-promote)
+Follow [the fencing and promotion phase](../../docs/ACCEPTANCE.md#6-fence-and-fail-over)
 for normal execution. Promotion changes topology and is not a routine health test.
 
 `preflight` requires an exact fencing assertion, the configured local hostname,

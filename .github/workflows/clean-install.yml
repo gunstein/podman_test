@@ -44,6 +44,7 @@ jobs:
             todo-operations/deploy/installer/app_installer/cli.py \
             todo-operations/deploy/scripts/app_dr.py \
             todo-operations/deploy/scripts/app_backup.py \
+            todo-operations/deploy/scripts/wait-ready.sh \
             todo-operations/deploy/offline/FAPOLICYD.md \
             todo-operations/docs/SECRETS.md \
             todo-operations/docs/TLS.md \

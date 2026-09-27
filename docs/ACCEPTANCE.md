@@ -656,28 +656,55 @@ Prepare and rehearse [Proxmox quarantine](PROXMOX-QUARANTINE.md) now, while
 initial primary is still the authorized writable node. Verify restored normal
 operation and streaming before proceeding to fencing.
 
-## 6. Fence and promote
+## 6. Fence and fail over
 
-- **Where:** Proxmox node Shell for fencing; initial standby for promotion.
+- **Where:** Proxmox node Shell for fencing; initial standby for preflight and `failover`.
 - **Preconditions:** Replicated persistent marker; tested quarantine; independent fencing evidence and explicit promotion approval.
-- **PASS:** All three databases report f|off after one group promotion, write validation passes and all markers remain.
-- **Evidence:** Hypervisor fencing output, approval, preflight/status and marker IDs.
-- **STOP if:** Any fencing uncertainty, reachable old DB, nonzero local apply lag or failed promotion. Never blindly retry.
+- **PASS:** `failover` completes every step once; all three databases report f|off, write validation passes and all markers remain.
+- **Evidence:** Hypervisor fencing output, approval, preflight, the `failover` JSON, status and marker IDs.
+- **STOP if:** Any fencing uncertainty, reachable old DB, nonzero local apply lag or any failed `failover` step. Never blindly retry.
 
 Create a persistent pre-failover marker in Todo and in Notes and verify both on standby. Fence
 `todo-primary` at the virtualization layer. Its database endpoint must be
 unreachable before continuing.
 
-On standby:
+On standby, check read-only that promotion is safe now:
 
 ```bash
 python3 /opt/todo/bin/app_dr.py preflight \
   --confirm-primary-fenced 'todo-primary is fenced'
+```
+
+Then trust app-ops and write `recovery.yaml` on the standby as described
+[before phase 4](#before-phase-4-trust-inventories-and-sudo), open HTTPS for
+the client, and run the one failover command:
+
+```bash
+sudo firewall-cmd --permanent --zone=public \
+  --add-rich-rule='rule family="ipv4" source address="192.168.0.100/32" destination address="192.168.0.108" port port="8443" protocol="tcp" accept'
+sudo firewall-cmd --reload
+python3 -m app_ops --inventory recovery.yaml failover \
+  --confirm-primary-fenced 'todo-primary is fenced' --confirm-promotion todo-standby
+python3 /opt/todo/bin/app_dr.py status
+```
+
+`failover` runs on the standby itself and stops at the first failed step,
+naming it: it promotes the database group with `app_dr.py`, deploys the
+application tier (`deploy-promoted-application`), configures backup
+(`configure-backup`), waits until every service is ready, Keycloak and both
+apps answer through nginx and HTTPS verifies with the host's CA, and prints
+what users need: the hostnames, this address and the CA fingerprint. Its
+promotion step is exactly:
+
+```bash
 python3 /opt/todo/bin/app_dr.py promote \
   --confirm-primary-fenced 'todo-primary is fenced' \
   --confirm-promotion todo-standby
-python3 /opt/todo/bin/app_dr.py status
 ```
+
+Running `failover` again is safe: a complete promotion record skips that step,
+and the later steps change nothing that is already right. A failed or partial
+promotion is never retried.
 
 Promotion acts on the complete group: preflight refuses unless every database
 is healthy and caught up, and a partial failure is recorded and blocks blind
@@ -696,23 +723,20 @@ markers remain. Keep old primary fenced.
 ## 7. Application failover
 
 - **Where:** Promoted host for deployment; client/build host for routing/trust/browser; Proxmox node Shell for reboot.
-- **Preconditions:** Phase 6 passed; old primary fenced; existing secrets and matching image archives available.
-- **PASS:** Healthy application, stable production issuer, real login and persistent marker; `{"changed": false}` repeat; reboot preserves CA/data.
+- **Preconditions:** Phase 6 passed, including `failover`; old primary fenced.
+- **PASS:** Healthy application, stable production issuer, real login and persistent marker; `deploy-promoted-application` repeat `{"changed": false}`; reboot preserves CA/data.
 - **Evidence:** app-ops JSON results, trusted browser results, marker/CA and boot IDs.
 - **STOP if:** Missing secrets/images, TLS or login failure, unexpected role/bootstrap activity or marker loss.
 
-On the promoted host, trust app-ops and write `recovery.yaml` as described
-[before phase 4](#before-phase-4-trust-inventories-and-sudo). Then:
+`failover` in phase 6 has already deployed the application tier. The same
+step on its own:
 
 ```bash
-sudo firewall-cmd --permanent --zone=public \
-  --add-rich-rule='rule family="ipv4" source address="192.168.0.100/32" destination address="192.168.0.108" port port="8443" protocol="tcp" accept'
-sudo firewall-cmd --reload
 python3 -m app_ops --inventory recovery.yaml deploy-promoted-application
 ```
 
-This command runs only on the promoted host itself; from any other controller
-it refuses before it changes anything.
+runs only on the promoted host itself; from any other controller it refuses
+before it changes anything.
 
 Map `todo.test` and `notes.test` to `.108` on the client and install the exported public nginx
 root. Require system-trust HTTPS, health/readiness, stable issuer
@@ -733,7 +757,9 @@ but the proxy reaches both over DNS; frontend serves HTTP only and holds no TLS 
 - **Evidence:** Backup and restore-point names, comparison, cleanup output, archive counters, capacity and boot IDs.
 - **STOP if:** Unverified backup, missing WAL, wrong restore target, archive failure or low space.
 
-Install the tool and its exact-file trust, and configure archiving:
+`failover` in phase 6 has already installed the tool with its exact-file
+trust and configured archiving. The same step on its own must now print
+`{"changed": false}`:
 
 ```bash
 python3 -m app_ops --inventory recovery.yaml configure-backup

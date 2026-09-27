@@ -124,6 +124,10 @@ such as a small cloud VM. Without one, the safe design is one human decision
   (`app_dr.py preflight/promote`, `deploy-promoted-application`,
   `configure-backup`), stopping at the first failure. It changes DNS through
   the provider's API if there is one (T5), or prints exactly what to do.
+  Implemented as `app-ops failover` (`deploy/ops/app_ops/failover.py`), and
+  acceptance phase 6 now runs it instead of `app_dr.py promote`: it prints
+  the hostnames, address and CA fingerprint users need, since no DNS
+  provider is chosen (T5). Waiting for a full run.
 - **G6. Real time limits.** *[new]* A command that hangs must not stop a
   failover silently. `commands.run` in the installer and the SSH transport of
   app-ops have no timeout; `connect_with_retry` in `migrate.py` checks its

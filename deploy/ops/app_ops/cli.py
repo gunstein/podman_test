@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import inventory, quarantine, recovery, standby
+from . import failover, inventory, quarantine, recovery, standby
 from .transport import Host
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -14,7 +14,7 @@ RECOVERY = ('current_primary', 'rebuild_standby')
 COMMANDS = {
     'install-quarantine-tool': INITIAL, 'preflight-standby': INITIAL, 'sync-standby-secrets': INITIAL,
     'bootstrap-standby': INITIAL, 'replication-status': INITIAL, 'install-dr-tool': INITIAL,
-    'deploy-promoted-application': RECOVERY, 'configure-backup': RECOVERY, 'preflight-standby-rebuild': RECOVERY,
+    'failover': RECOVERY, 'deploy-promoted-application': RECOVERY, 'configure-backup': RECOVERY, 'preflight-standby-rebuild': RECOVERY,
     'rebuild-standby': RECOVERY, 'cluster-status': RECOVERY,
 }
 
@@ -29,6 +29,9 @@ def parser():
         if name == 'install-quarantine-tool':
             command.add_argument('--enable-guest-exec', action='store_true')
             command.add_argument('--enable-selinux-entrypoint', action='store_true')
+        if name == 'failover':
+            command.add_argument('--confirm-primary-fenced', required=True, help='exactly "<old primary> is fenced"')
+            command.add_argument('--confirm-promotion', required=True, help='exactly "<this host>"')
         if name in ('preflight-standby-rebuild', 'rebuild-standby'):
             command.add_argument('--confirm-fenced', required=True, help='exactly "<rebuild host> is fenced"')
             command.add_argument('--confirm-reseed', required=True, help='exactly "<rebuild host>"')
@@ -48,6 +51,9 @@ def dispatch(args, controller, hosts):
     if args.command == 'install-dr-tool':
         return standby.install_dr_tool(root, controller, hosts['standby'], hosts['primary'].spec)
     current, rebuild = hosts['current_primary'], hosts['rebuild_standby']
+    if args.command == 'failover':
+        return failover.failover(root, controller, current, rebuild, args.confirm_primary_fenced,
+                                 args.confirm_promotion)
     if args.command == 'deploy-promoted-application':
         return recovery.deploy_promoted(root, controller, current)
     if args.command == 'configure-backup':

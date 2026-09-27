@@ -40,10 +40,9 @@ operator, not code; *[decision]* needs the owner's choice before any work.
    switchover), U2 (certificate renewal, before replication stops by itself),
    M4 (a durable WAL archive), M2 (scheduled backups with pruning), L1 and L2
    (command logging, failure reasons).
-3. Decide D4 (one database server or one per app).
-4. fapolicyd (F0 first, then what is left of F1-F6), firewalls (W) and data
+3. fapolicyd (F0 first, then what is left of F1-F6), firewalls (W) and data
    checks (C).
-5. DR code structure and the rest.
+4. DR code structure and the rest.
 
 The real setup has two machines and no third, on separate hardware at separate
 physical sites. D2 and L6 are therefore designed for two hosts that each keep
@@ -455,21 +454,6 @@ promoted primary.
 - **D3. `deploy-promoted-application` runs only on the promoted host.** *[docs]* It
   refuses unless that host is the machine running app-ops. Either lift the
   limit or document it as deliberate in `deploy/ops/README.md`.
-
-- **D4. One shared database server, or one per app?** *[decision]* Today Todo,
-  Notes and Keycloak each run their own PostgreSQL server, so there are three
-  WAL streams, slots, archives, backups and replication ports, and at a
-  failover or PITR the three are close to, but not exactly at, the same moment
-  (a row in Todo or Notes can refer to a Keycloak user whose creation was lost
-  in the last seconds; see C4). One shared server with three databases, as in
-  a classic central database server, would give one of each and exact
-  consistency, with less memory. It would cost independence: shared upgrades
-  (including major versions), restarts and settings, one failure affecting
-  every app and the login, PITR only for all databases at once, and a change
-  to the accepted architecture (AGENTS.md: each app has its own PostgreSQL
-  pod). Decide now that Ansible is retired, with numbers: how much code and how
-  many operating steps would go, and what would be lost. Choosing the shared
-  server means a new acceptance run.
 
 - **D5. pgBackRest only if the needs grow.** *[optional]* `app_backup.py` uses
   PostgreSQL's standard methods (`archive_command`, `pg_basebackup`,

@@ -310,6 +310,15 @@ promoted leaves a partial record that blocks blind retry. PostgreSQL cannot
 promote independent instances atomically, so this is a fail-closed gate, not
 an atomic group switch.
 
+One PostgreSQL server per app is a deliberate choice (decided 2026-09-27,
+instead of one shared server with three databases). Each app keeps its own
+upgrades, restarts, settings, failures and PITR, as the workload boundary in
+section 3 requires. The price is three WAL streams, slots, archives, backups
+and replication ports instead of one, and no single exact moment across the
+group: after a failover or PITR the three databases are close to, but not
+exactly at, the same point, so a Todo or Notes row can refer to a Keycloak user
+whose creation was lost in the last seconds.
+
 Initially one host serves both applications and a second streams each
 PostgreSQL database's WAL asynchronously. Physical slots retain needed WAL within a configured bound;
 lag and invalidated slots require monitoring. Async replication cannot guarantee

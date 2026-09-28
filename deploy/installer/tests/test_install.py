@@ -211,9 +211,10 @@ class InstallTests(unittest.TestCase):
                                     for call in command.call_args_list))
                 (directory / 'config.yaml').write_text('changed: true')
                 self.assertTrue(kube_play.up(directory, (APPS[0],), state))
-                downs = [Path(call.args[-1]).stem for call in command.call_args_list
+                downs = [call.kwargs['input'] for call in command.call_args_list
                          if '--down' in call.args]
-                self.assertEqual(downs, ['shared-proxy', 'app', 'keycloak', 'keycloak-postgres', 'postgres'])
+                self.assertEqual(downs, ['fixture: ' + name for name in (
+                    'shared-proxy', 'app', 'keycloak', 'keycloak-postgres', 'postgres')])
                 self.assertEqual(roles.call_count, 2)
 
     def test_down_uses_reverse_order_and_only_existing_files(self):
@@ -228,7 +229,20 @@ class InstallTests(unittest.TestCase):
                 for name in ('shared-proxy', 'app', 'postgres')])
             self.assertFalse(state.exists())
 
-    def test_down_prefers_the_exact_manifests_up_recorded(self):
+    def test_down_uses_the_recorded_yaml_after_its_file_is_gone(self):
+        # The next render replaces the whole directory, so a file up played
+        # may be gone (an app left out of the selection); its pods must still go.
+        with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run:
+            root = Path(temp)
+            state = root / '.state.json'
+            state.write_text(json.dumps({'fingerprint': 'x', 'teardown': ['kind: Pod # notes-app']}))
+            self.assertTrue(kube_play.down(root / 'rendered-again', state_file=state))
+            run.assert_called_once_with('podman', 'kube', 'play', '--down', '-',
+                                        input='kind: Pod # notes-app')
+            self.assertFalse(state.exists())
+
+    def test_down_reads_a_state_file_that_lists_paths(self):
+        # State files written before the YAML was recorded list paths instead.
         # An offline install plays from the bundle's own generated/kube-runtime,
         # not the source tree's generated/dev; down must still find those exact
         # pods rather than silently matching nothing in the wrong directory.
@@ -239,9 +253,7 @@ class InstallTests(unittest.TestCase):
             recorded.touch()
             state = root / '.state.json'
             state.write_text(json.dumps({'fingerprint': 'x', 'manifests': [str(recorded)]}))
-            wrong_directory = root / 'generated-dev'
-            wrong_directory.mkdir()
-            self.assertTrue(kube_play.down(wrong_directory, state_file=state))
+            self.assertTrue(kube_play.down(root / 'generated-dev', state_file=state))
             run.assert_called_once_with('podman', 'kube', 'play', '--down', recorded)
             self.assertFalse(state.exists())
 

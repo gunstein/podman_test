@@ -22,8 +22,10 @@ def render(project_root, values_file, output_directory, application_names=()):
 
     Runs at build time. Values come from the environment's values.yaml
     (public hostname, port and log level); names come from the app
-    registry. Every file is rendered and checked before any old output is
-    replaced, so a failed render never leaves a half-updated directory.
+    registry. Every file is rendered and checked first. Then the whole
+    output directory is replaced (see _replace_directory), so it holds
+    exactly this render: no file from an earlier render stays behind, and a
+    failed render leaves the earlier output as it was.
     """
     root, output = Path(project_root), Path(output_directory)
     selected = [app for app in apps.APPS if not application_names or app.name in application_names]
@@ -51,14 +53,30 @@ def render(project_root, values_file, output_directory, application_names=()):
     for name, content in files.items():
         _validate(name, content)
 
-    # Render and validate everything above before replacing any previous rendered output.
-    with tempfile.TemporaryDirectory() as temporary:
-        directory = Path(temporary)
+    _replace_directory(output, files)
+
+
+def _replace_directory(output, files):
+    """Write files into a new directory next to output, then swap it in.
+
+    The new directory is complete before the old one is touched. The swap is
+    two renames on the same file system: the old directory aside, the new
+    one into its place; only then is the old one deleted.
+    """
+    output.parent.mkdir(parents=True, exist_ok=True)
+    new = Path(tempfile.mkdtemp(prefix=f'.{output.name}.new.', dir=output.parent))
+    try:
+        new.chmod(0o755)
         for name, content in files.items():
-            (directory / name).write_bytes(content)
-        output.mkdir(parents=True, exist_ok=True)
-        for name in files:
-            shutil.copyfile(directory / name, output / name)
+            (new / name).write_bytes(content)
+    except BaseException:
+        shutil.rmtree(new)
+        raise
+    old = output.parent / f'.{output.name}.old.{new.name.rsplit(".", 1)[-1]}'
+    if output.exists():
+        output.rename(old)
+    new.rename(output)
+    shutil.rmtree(old, ignore_errors=True)
 
 
 if __name__ == '__main__':

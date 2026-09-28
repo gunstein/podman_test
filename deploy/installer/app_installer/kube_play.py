@@ -14,8 +14,9 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
     A fingerprint of the rendered YAML is stored in state_file. If nothing
     changed and every pod runs, this does nothing and returns False.
     Otherwise it takes down what it started last time, then starts
-    everything in dependency order and records what to tear down. Pods that
-    exist without a state file are refused rather than guessed at.
+    everything in dependency order and records what to tear down: the YAML
+    itself, not its path, since the next render replaces the directory.
+    Pods that exist without a state file are refused rather than guessed at.
     """
     applications = apps.APPS if applications is None else tuple(applications)
     directory = Path(rendered_manifest_dir)
@@ -39,10 +40,7 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
     if present and not previous:
         raise RuntimeError('Existing development pods have no installer state. Run down before install.')
     if previous:
-        for name in previous['manifests']:
-            manifest = Path(name)
-            if manifest.is_file():
-                run('podman', 'kube', 'play', '--down', manifest)
+        _tear_down(_recorded(previous))
         state_file.unlink(missing_ok=True)
     if not exists('network', apps.NETWORK):
         run('podman', 'network', 'create', apps.NETWORK)
@@ -74,8 +72,34 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
                 *(app.manifest('postgres') for app in reversed(applications))]
     state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(json.dumps({'fingerprint': fingerprint,
-                                     'manifests': [str(directory / name) for name in teardown]}))
+                                     'teardown': [(directory / name).read_text() for name in teardown]}))
     return True
+
+
+def _recorded(state):
+    """The manifests up recorded to tear down, in order.
+
+    A state file written before the YAML itself was recorded lists paths.
+    """
+    return state.get('teardown') or [Path(name) for name in state.get('manifests', ())]
+
+
+def _tear_down(manifests):
+    """podman kube play --down for each manifest, in order; True if any ran.
+
+    A manifest is YAML text from the state file, passed on stdin, so the
+    rendered file need not exist any more; or a Path, skipped if missing.
+    """
+    torn_down = False
+    for manifest in manifests:
+        if isinstance(manifest, Path):
+            if not manifest.is_file():
+                continue
+            run('podman', 'kube', 'play', '--down', manifest)
+        else:
+            run('podman', 'kube', 'play', '--down', '-', input=manifest)
+        torn_down = True
+    return torn_down
 
 
 def down(rendered_manifest_dir, applications=None, state_file=None):
@@ -84,23 +108,18 @@ def down(rendered_manifest_dir, applications=None, state_file=None):
     Prefers the exact manifests `up` recorded it played, so a caller that
     passes a different `rendered_manifest_dir` than the one used to install
     (offline installs use the bundle's own `generated/kube-runtime`, not the
-    source tree's `generated/dev`) still finds and removes the right pods,
-    instead of silently matching nothing.
+    source tree's `generated/dev`), or a later render that no longer has the
+    file, still removes the right pods instead of silently matching nothing.
     """
     directory = Path(rendered_manifest_dir)
     state_file = Path(state_file or settings.DEV_STATE_FILE)
     if state_file.is_file():
-        manifests = [Path(name) for name in json.loads(state_file.read_text())['manifests']]
+        torn_down = _tear_down(_recorded(json.loads(state_file.read_text())))
     else:
         applications = apps.APPS if applications is None else tuple(applications)
-        manifests = [directory / name for name in (
+        torn_down = _tear_down([directory / name for name in (
             'shared-proxy.yaml', *(app.manifest('app') for app in reversed(applications)),
             'keycloak.yaml', apps.KEYCLOAK_DATABASE.manifest('postgres'),
-            *(app.manifest('postgres') for app in reversed(applications)))]
-    torn_down = False
-    for manifest in manifests:
-        if manifest.is_file():
-            run('podman', 'kube', 'play', '--down', manifest)
-            torn_down = True
+            *(app.manifest('postgres') for app in reversed(applications)))])
     state_file.unlink(missing_ok=True)
     return torn_down

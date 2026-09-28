@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import jinja2
 import yaml
@@ -163,6 +164,30 @@ class RenderErrorTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "is not valid YAML"):
                 render.render(project_root, VALUES, output)
             self.assertFalse(output.exists())
+
+    def test_render_replaces_the_whole_output_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            todo, notes = apps.APPS
+            output = Path(directory) / "output"
+            render.render(ROOT, VALUES, output)
+            self.assertTrue((output / notes.manifest("app")).is_file())
+            (output / "left-over.yaml").write_text("stale")
+            render.render(ROOT, VALUES, output, (todo.name,))
+            self.assertFalse((output / "left-over.yaml").exists())
+            self.assertFalse((output / notes.manifest("app")).exists())
+            self.assertTrue((output / todo.manifest("app")).is_file())
+            self.assertEqual(sorted(path.name for path in Path(directory).iterdir()), ["output"])
+
+    def test_failed_render_leaves_the_earlier_output_as_it_was(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            render.render(ROOT, VALUES, output)
+            before = {path.name: path.read_bytes() for path in output.iterdir()}
+            with patch.object(Path, "write_bytes", side_effect=OSError("disk full")):
+                with self.assertRaisesRegex(OSError, "disk full"):
+                    render.render(ROOT, VALUES, output)
+            self.assertEqual({path.name: path.read_bytes() for path in output.iterdir()}, before)
+            self.assertEqual(sorted(path.name for path in Path(directory).iterdir()), ["output"])
 
     def test_malicious_public_hostname_is_rejected_before_any_rendering(self):
         with tempfile.TemporaryDirectory() as directory:

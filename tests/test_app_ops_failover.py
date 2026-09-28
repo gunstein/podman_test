@@ -92,7 +92,14 @@ class FailoverTests(unittest.TestCase):
 
     def test_a_rerun_after_a_complete_promotion_skips_it(self):
         world = FailoverWorld(record="complete")
-        report = self.run_failover(world)
+        said = []
+        report = failover.failover(
+            str(commands.PROJECT), Host(cli.LOCAL, runner=world),
+            Host(spec("todo-standby", "current_primary", "192.0.2.11", local=True), runner=world),
+            Host(spec("todo-primary", "rebuild_standby", "192.0.2.10"), runner=world),
+            "todo-primary is fenced", "todo-standby", say=said.append)
+        self.assertIn("promote skipped: the promotion record already says complete", said)
+        self.assertNotIn("promote done", said)
         self.assertNotIn("promote", self.kinds(world))
         self.assertIn("wait-ready", self.kinds(world))
         self.assertFalse(report["promoted_now"])

@@ -916,6 +916,10 @@ def report(run_directory, guide):
         expected = 'exit=1' if name.endswith('-refused.log') else 'exit=0'
         if last != expected:
             attention.append(f'{name}: {last}, expected {expected}')
+    for name, _, changed in products:
+        if '"promoted_now": false' in changed:
+            attention.append(f'{name}: "promoted_now": false, the group was promoted before this step '
+                             '(an earlier attempt?); a clean run promotes here')
     if not clean:
         described = '; '.join(f'{rev} ({"clean" if ok else "NOT clean"})' for rev, ok in checkouts)
         attention.append(f'the steps did not all run from one clean checkout: {described}')

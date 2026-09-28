@@ -553,6 +553,16 @@ class ReportTests(ToolTest):
         self.assertEqual(code, 1)
         self.assertIn("step 04-15 ran `check roles 192.168.0.108 primary`", text)
 
+    def test_a_failover_that_found_the_group_promoted_needs_attention(self):
+        """Run 20: a first failover attempt promoted, a second one hid it; the log said promoted_now false."""
+        self.tool("--step", "06-12", "check", "roles", "192.168.0.108", "primary",
+                  rules=[("pg_is_in_recovery", (0, "f|off\n"))])
+        self.product_log("06-10-failover.log", "app-ops failover: users done",
+                         '{"changed": true, "promoted_now": false, "users": {}}', "exit=0")
+        code, text = self.report()
+        self.assertEqual(code, 1)
+        self.assertIn('logs/06-10-failover.log: "promoted_now": false', text.split("## Needs attention")[1])
+
     def test_both_guides_parse(self):
         for name, path in acceptance.GUIDES.items():
             tool, logs = acceptance.guide_steps((ROOT / path).read_text())

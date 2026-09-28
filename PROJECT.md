@@ -27,6 +27,12 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `8e4e492` run 20: functional pass, not clean
+  ([record](docs/history/ACCEPTANCE-8e4e492.md)). `REPORT.md` said ALL STEPS
+  PASS, but `failover` ran twice: the agent's harness killed the first run
+  after it had promoted, and the second run replaced its log. The product
+  behaved as designed. A product step now refuses to run twice, `failover`
+  runs in the background, and `report` flags a failover that did not promote.
 - `4137c5e` run 19: functional pass, not clean
   ([record](docs/history/ACCEPTANCE-4137c5e.md)), the first run with the time
   limits (G6) and the review fixes. `check services` failed once on a Podman

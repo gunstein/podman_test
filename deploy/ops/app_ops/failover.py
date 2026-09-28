@@ -139,6 +139,7 @@ def failover(project_root, controller, current, old_primary, confirm_fenced, con
         except RuntimeError as error:
             raise RuntimeError(f'failover stopped at step "{name}": {error} -- the steps before it are done; '
                                'fix the cause, then run failover again') from error
-        say(f'{name} done')
+        say('promote skipped: the promotion record already says complete'
+            if name == 'promote' and report[name] is False else f'{name} done')
     return {'changed': any(report[name] for name in ('promote', 'deploy', 'backup')),
             'promoted_now': report['promote'], 'users': report['users']}

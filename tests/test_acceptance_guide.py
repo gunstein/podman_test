@@ -140,6 +140,24 @@ class AcceptanceGuideTests(unittest.TestCase):
                 self.assertTrue((path.parent / target.split('#')[0]).is_file(), target)
 
 
+class ProductHelperTests(unittest.TestCase):
+    """The guide's product() helper, as written in C9.1: one log per step, and a step runs once."""
+
+    def test_a_second_run_of_a_step_refuses_and_keeps_the_first_log(self):
+        import tempfile
+        text = (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text()
+        helper = next(line for line in text.splitlines() if line.startswith('product() {'))
+        with tempfile.TemporaryDirectory() as run:
+            (Path(run) / 'logs').mkdir()
+            script = f'RUN={shlex.quote(run)}\n{helper}\nproduct 06-10-x echo first\nproduct 06-10-x echo second'
+            result = subprocess.run(['bash', '-c', script], capture_output=True, text=True, check=False)
+            log = (Path(run) / 'logs/06-10-x.log').read_text().splitlines()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('STOP:', result.stderr)
+        self.assertTrue(log[0].startswith('# start '))
+        self.assertEqual(log[1:], ['first', 'exit=0'])
+
+
 class AppOpsGuideTests(unittest.TestCase):
     """The acceptance guides only use commands, flags and inventories app-ops accepts."""
 

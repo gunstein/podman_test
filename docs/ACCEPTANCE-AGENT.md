@@ -558,8 +558,9 @@ RUN_ID="<run ID from the kickoff>"
 RUN=~/todo-acceptance-runs/$RUN_ID
 mkdir -p "$RUN/logs"
 A="python3 deploy/scripts/acceptance.py --run $RUN_ID"
-# A product command: its full output and exit status in logs/<step>.log.
-product() { local log="$RUN/logs/$1.log"; shift; "$@" > "$log" 2>&1; echo "exit=$?" >> "$log"; tail -n 4 "$log"; }
+# A product command: its start time, full output and exit status in logs/<step>.log.
+# It runs once: an existing log means the step already ran, and it refuses.
+product() { local log="$RUN/logs/$1.log"; shift; if [ -e "$log" ]; then echo "STOP: $log exists, the step already ran; never run it again" >&2; return 1; fi; echo "# start $(date --iso-8601=seconds)" > "$log"; "$@" >> "$log" 2>&1; echo "exit=$?" >> "$log"; tail -n 4 "$log"; }
 # A command on a VM, and an app-ops command on the controller VM.
 vm() { product "$1" ssh -o BatchMode=yes gunstein@"$2" "$3"; }
 ops() { vm "$1" "$2" "cd ~/todo-operations && PYTHONPATH=\$PWD/deploy/ops PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops $3"; }
@@ -764,15 +765,19 @@ vm 06-6-preflight 192.168.0.108 "python3 /opt/todo/bin/app_dr.py preflight --con
 vm 06-7-trust-ops 192.168.0.108 'cd ~/todo-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
 vm 06-8-inventory 192.168.0.108 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-standby: {role: current_primary, address: 192.168.0.108, local: true}" "  todo-primary: {role: rebuild_standby, address: 192.168.0.102}" > recovery.yaml && cat recovery.yaml'
 $A --step 06-9 do firewall-https 192.168.0.108 192.168.0.100
-ops 06-10-failover 192.168.0.108 "--inventory recovery.yaml failover --confirm-primary-fenced 'todo-primary is fenced' --confirm-promotion todo-standby"   # → {"changed": true, "promoted_now": true, ...}
+ops 06-10-failover 192.168.0.108 "--inventory recovery.yaml failover --confirm-primary-fenced 'todo-primary is fenced' --confirm-promotion todo-standby" &   # → {"changed": true, "promoted_now": true, ...}; wait for exit=
 vm 06-11-status 192.168.0.108 'python3 /opt/todo/bin/app_dr.py status'
 $A --step 06-12 check roles 192.168.0.108 primary
 $A --step 06-13 check write-probe 192.168.0.108
 $A --step 06-14 check markers 192.168.0.108
 ```
 
-`failover` runs once. If it stops, its log names the step: STOP, and do not
-run it again. Keep VM 107 fenced.
+`failover` takes several minutes, so it runs in the background like
+`rebuild-standby`: wait until its log ends with `exit=`, and never start it a
+second time, also not when your own tool gave up waiting (run 20 promoted in a
+first attempt and hid it by running `failover` again). If it stops, its log
+names the step: STOP. `"promoted_now": false` means the group was already
+promoted before this step: STOP. Keep VM 107 fenced.
 
 #### C9.8 Phase 7 — Application failover
 

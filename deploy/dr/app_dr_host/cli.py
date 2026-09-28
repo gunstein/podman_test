@@ -80,10 +80,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == 'replicate-workload':
-            app = next(d for d in apps.REPLICATED_DATABASES if d.name == args.app)
+            database = next(d for d in apps.REPLICATED_DATABASES if d.name == args.app)
             result = {'changed': False}
             if args.operation == 'primary':
-                result['changed'] = replication.configure_primary(app, args.node_address)
+                result['changed'] = replication.configure_primary(database, args.node_address)
             elif args.operation in ('standby', 'reseed-check'):
                 directory = args.quadlet_dir.resolve()
                 options = dict(project_root=args.project_root, quadlet_dir=directory,
@@ -91,28 +91,28 @@ def main(argv=None):
                                rendered_manifest_dir=args.rendered_manifest_dir or args.project_root / 'generated/kube-runtime')
                 if args.operation == 'standby':
                     result['changed'] = replication.bootstrap_standby(
-                        app, args.primary_address, image_archive=args.image_archive, slot=args.slot, **options)
+                        database, args.primary_address, image_archive=args.image_archive, slot=args.slot, **options)
                 else:
                     if args.slot is not None or args.image_archive is not None:
                         raise ValueError('Reseed uses the registered rebuild slot and requires the existing image')
                     result['changed'] = replication.reseed_check(
-                        app, args.primary_address, confirm_fenced=args.confirm_fenced,
+                        database, args.primary_address, confirm_fenced=args.confirm_fenced,
                         confirm_reseed=args.confirm_reseed, **options)
             elif args.operation == 'rebuild-primary-check':
-                result['changed'] = replication.rebuild_primary_check(app)
+                result['changed'] = replication.rebuild_primary_check(database)
             elif args.operation == 'quarantined':
                 result['changed'] = replication.require_quarantined_group()
             elif args.operation == 'hba':
-                replication.require_primary(app)
-                result['changed'] = replication.refresh_hba(app)
+                replication.require_primary(database)
+                result['changed'] = replication.refresh_hba(database)
             elif args.operation == 'streaming':
-                result['status'] = replication.streaming_status(app, rebuilt=args.rebuilt)
+                result['status'] = replication.streaming_status(database, rebuilt=args.rebuilt)
             elif args.operation == 'replication-path':
-                result['path'] = replication.replication_path(app, args.primary_address)
+                result['path'] = replication.replication_path(database, args.primary_address)
             elif args.operation == 'authenticate':
-                result['system_identifier'] = replication.authenticate(app, args.primary_address)
+                result['system_identifier'] = replication.authenticate(database, args.primary_address)
             else:
-                result['status'] = replication.status(app)
+                result['status'] = replication.status(database)
             print(json.dumps(result))
         elif args.command == 'cluster-status':
             print(json.dumps({'changed': False, 'status': replication.cluster_status(args.role)}))

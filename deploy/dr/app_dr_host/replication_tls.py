@@ -107,8 +107,8 @@ def ensure_ca():
     return True
 
 
-def install_server_tls(app, node_address):
-    """Give the app's primary a valid host certificate and turn TLS on; True if anything changed.
+def install_server_tls(database, node_address):
+    """Give this primary database a valid host certificate and turn TLS on; True if anything changed.
 
     Keeps a certificate that the CA signed for node_address and that is not
     about to expire; otherwise issues a new one into the data directory. Then
@@ -116,7 +116,7 @@ def install_server_tls(app, node_address):
     waits until the server reports ssl on. A primary copied from another host
     (after promotion) gets a certificate for its own address here.
     """
-    container = app.resource('postgres')
+    container = database.resource('postgres')
     changed = False
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)
@@ -136,16 +136,16 @@ def install_server_tls(app, node_address):
                     input=source.read_text())
             changed = True
     from .replication import sql
-    if sql(app, "SELECT current_setting('ssl'), current_setting('ssl_min_protocol_version');") != 'on|TLSv1.2':
-        sql(app, "ALTER SYSTEM SET ssl = 'on';")
-        sql(app, "ALTER SYSTEM SET ssl_min_protocol_version = 'TLSv1.2';")
+    if sql(database, "SELECT current_setting('ssl'), current_setting('ssl_min_protocol_version');") != 'on|TLSv1.2':
+        sql(database, "ALTER SYSTEM SET ssl = 'on';")
+        sql(database, "ALTER SYSTEM SET ssl_min_protocol_version = 'TLSv1.2';")
         changed = True
     if changed:
-        sql(app, 'SELECT pg_reload_conf();')
+        sql(database, 'SELECT pg_reload_conf();')
         for _ in range(20):
-            if sql(app, "SELECT current_setting('ssl');") == 'on':
+            if sql(database, "SELECT current_setting('ssl');") == 'on':
                 break
             time.sleep(0.5)
         else:
-            raise RuntimeError(f'{app.name}: PostgreSQL did not turn TLS on; check its log for the certificate')
+            raise RuntimeError(f'{database.name}: PostgreSQL did not turn TLS on; check its log for the certificate')
     return changed

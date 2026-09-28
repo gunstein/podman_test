@@ -120,7 +120,7 @@ def write_config(path: Path, primary_name: str, primary_address: str, standby_na
         primary_address = replication.address(primary_address)
     except ValueError as error:
         raise DrError(f'primary_address must be a literal IPv4 address: {primary_address!r}') from error
-    raw = {'applications': [app.name for app in apps.REPLICATED_DATABASES], 'primary_name': primary_name,
+    raw = {'applications': [database.name for database in apps.REPLICATED_DATABASES], 'primary_name': primary_name,
            'primary_address': primary_address, 'standby_name': standby_name,
            'rpo_target_seconds': rpo_target_seconds}
     parse_config(raw, path)
@@ -140,8 +140,8 @@ class TodoDr:
     def __init__(self, config: Config, runner: Runner = run_command,
                  connector: Connector = tcp_reachable, journal_path: Path = DEFAULT_JOURNAL):
         self.config, self.runner, self.connector = config, runner, connector
-        self.applications = tuple(apps.REPLICATED_DATABASES)
-        expected = tuple(app.name for app in self.applications)
+        self.databases = apps.REPLICATED_DATABASES
+        expected = tuple(database.name for database in self.databases)
         if (config.applications and config.applications != expected) or (
                 not config.applications and len(expected) != 1):
             raise DrError('DR configuration must explicitly match the complete ordered application registry')
@@ -158,51 +158,51 @@ class TodoDr:
             raise DrError(f'{description} failed' + (f': {detail}' if detail else ''))
         return result.stdout.strip()
 
-    def service_status(self, app=None):
+    def service_status(self, database=None):
         """systemctl --user is-active for the database service, e.g. 'active'."""
-        app = app or self.applications[0]
-        return self._run(['systemctl', '--user', 'is-active', app.service('postgres')],
-                         f'{app.name}: PostgreSQL systemd status check')
+        database = database or self.databases[0]
+        return self._run(['systemctl', '--user', 'is-active', database.service('postgres')],
+                         f'{database.name}: PostgreSQL systemd status check')
 
-    def container_health(self, app=None):
+    def container_health(self, database=None):
         """The database container's health check result, e.g. 'healthy'."""
-        app = app or self.applications[0]
+        database = database or self.databases[0]
         return self._run(['podman', 'inspect', '--format', '{{.State.Health.Status}}',
-                          app.resource('postgres')], f'{app.name}: PostgreSQL container health check')
+                          database.resource('postgres')], f'{database.name}: PostgreSQL container health check')
 
-    def _query(self, app, statement):
-        """Run one SQL statement with psql in the app's database container."""
-        return self._run(['podman', 'exec', app.resource('postgres'), 'psql', '--username', app.name,
+    def _query(self, database, statement):
+        """Run one SQL statement with psql in the database's container."""
+        return self._run(['podman', 'exec', database.resource('postgres'), 'psql', '--username', database.name,
                          '--dbname', 'postgres', '--tuples-only', '--no-align', '--field-separator=|',
-                         '--command', statement], f'{app.name}: PostgreSQL recovery query')
+                         '--command', statement], f'{database.name}: PostgreSQL recovery query')
 
-    def database_status(self, app=None):
+    def database_status(self, database=None):
         """The database's role and replay position; raises DrError if it cannot be read."""
-        app = app or self.applications[0]
+        database = database or self.databases[0]
         try:
-            return DatabaseStatus(**replication.status(app, query=self._query))
+            return DatabaseStatus(**replication.status(database, query=self._query))
         except (ValueError, RuntimeError) as error:
             raise DrError(str(error)) from error
 
-    def primary_reachable(self, app=None):
+    def primary_reachable(self, database=None):
         """True if the configured primary still accepts TCP on this database's port."""
-        app = app or self.applications[0]
-        return self.connector(self.config.primary_address, app.replication_port, 2.0)
+        database = database or self.databases[0]
+        return self.connector(self.config.primary_address, database.replication_port, 2.0)
 
     def status_lines(self) -> List[str]:
         """Human-readable status for every database; read-only."""
         lines = []
-        for app in self.applications:
-            service, health = self.service_status(app), self.container_health(app)
-            database = self.database_status(app)
-            primary = 'reachable' if self.primary_reachable(app) else 'unreachable'
-            lines += [f'Application: {app.name}', f'Service: {service}', f'Container: {health}',
-                      f"Database role: {'standby' if database.in_recovery else 'promoted primary'}",
-                      f"Writable: {'no' if database.transaction_read_only else 'yes'}",
-                      f'Receive LSN: {database.receive_lsn or "not available"}',
-                      f'Replay LSN: {database.replay_lsn or "not available"}',
-                      f'Local apply lag: {database.apply_lag_bytes} bytes' + self._receive_note(database),
-                      f'Primary endpoint {self.config.primary_address}:{app.replication_port}: {primary}']
+        for database in self.databases:
+            service, health = self.service_status(database), self.container_health(database)
+            state = self.database_status(database)
+            primary = 'reachable' if self.primary_reachable(database) else 'unreachable'
+            lines += [f'Application: {database.name}', f'Service: {service}', f'Container: {health}',
+                      f"Database role: {'standby' if state.in_recovery else 'promoted primary'}",
+                      f"Writable: {'no' if state.transaction_read_only else 'yes'}",
+                      f'Receive LSN: {state.receive_lsn or "not available"}',
+                      f'Replay LSN: {state.replay_lsn or "not available"}',
+                      f'Local apply lag: {state.apply_lag_bytes} bytes' + self._receive_note(state),
+                      f'Primary endpoint {self.config.primary_address}:{database.replication_port}: {primary}']
         lines.append('Configured RPO target (informational): at most '
                      f'{self.config.rpo_target_seconds} seconds')
         if self.journal_path.exists():
@@ -210,10 +210,10 @@ class TodoDr:
         return lines
 
     @staticmethod
-    def _receive_note(database):
+    def _receive_note(state):
         """Explain the one case where receive is behind replay: it is expected, not lag."""
-        if database.receive_lsn and database.replay_lsn and (
-                replication.lsn(database.receive_lsn) < replication.lsn(database.replay_lsn)):
+        if state.receive_lsn and state.replay_lsn and (
+                replication.lsn(state.receive_lsn) < replication.lsn(state.replay_lsn)):
             return ' (receive restarted at the WAL segment start after a walreceiver restart; nothing to replay)'
         return ''
 
@@ -238,20 +238,20 @@ class TodoDr:
                           f'{self.journal_path}; never blindly retry or remove the record.')
         states = {}
         # Validate the entire group before the first promotion command.
-        for app in self.applications:
-            if self.service_status(app) != 'active':
-                raise DrError(f'{app.name}: PostgreSQL systemd service is not active')
-            if self.container_health(app) != 'healthy':
-                raise DrError(f'{app.name}: PostgreSQL container is not healthy')
+        for database in self.databases:
+            if self.service_status(database) != 'active':
+                raise DrError(f'{database.name}: PostgreSQL systemd service is not active')
+            if self.container_health(database) != 'healthy':
+                raise DrError(f'{database.name}: PostgreSQL container is not healthy')
             # The shared standby gate: read-only, both LSNs known, nothing left to replay.
             try:
-                database = DatabaseStatus(**replication.require_standby(app, query=self._query))
+                state = DatabaseStatus(**replication.require_standby(database, query=self._query))
             except (ValueError, RuntimeError) as error:
                 raise DrError(str(error)) from error
-            if self.primary_reachable(app):
+            if self.primary_reachable(database):
                 raise DrError('Primary PostgreSQL still answers at '
-                              f'{self.config.primary_address}:{app.replication_port}; fencing is not demonstrated')
-            states[app.name] = database
+                              f'{self.config.primary_address}:{database.replication_port}; fencing is not demonstrated')
+            states[database.name] = state
         return states
 
     @contextmanager
@@ -304,12 +304,12 @@ class TodoDr:
                         'completed': []}
             self._record(decision)  # Durable decision before any irreversible operation.
             try:
-                for app in self.applications:
-                    replication.promote(app, query=self._query,
-                                        command=lambda *argv: self._run(argv, f'{app.name}: PostgreSQL promotion'))
-                    decision['completed'].append(app.name)
+                for database in self.databases:
+                    replication.promote(database, query=self._query,
+                                        command=lambda *argv: self._run(argv, f'{database.name}: PostgreSQL promotion'))
+                    decision['completed'].append(database.name)
                     self._record(decision)
-                result = {app.name: self.database_status(app) for app in self.applications}
+                result = {database.name: self.database_status(database) for database in self.databases}
                 if any(state.in_recovery or state.transaction_read_only for state in result.values()):
                     raise DrError('The entire application group is not writable after promotion')
                 decision['state'] = 'complete'

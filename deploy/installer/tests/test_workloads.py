@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import apps, images, quadlet, workloads  # noqa: E402
+from app_installer import apps, images, quadlet, stack, workloads  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -20,7 +20,7 @@ class WorkloadsTests(unittest.TestCase):
             (workloads.install_postgres, ['todo-postgres'],
              ['todo-postgres-data', 'todo-postgres-backup']),
             (workloads.install_application, ['todo-app'], []),
-            (partial(workloads.install_postgres, app=apps.APPS[1]), ['notes-postgres'],
+            (partial(workloads.install_postgres, database=apps.APPS[1].database), ['notes-postgres'],
              ['notes-postgres-data', 'notes-postgres-backup']),
             (partial(workloads.install_application, app=apps.APPS[1]), ['notes-app'], []),
             (workloads.install_keycloak, ['keycloak'], []),
@@ -118,7 +118,7 @@ class WorkloadsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'verified DR group'):
                 workloads.install_postgres(ROOT, '/q', '/q/todo-kube-runtime', '/rendered',
                                            publish_address='192.0.2.1',
-                                           app=apps.App(name='third', hostname='third.test', keycloak_client='third-frontend'))
+                                           database=stack.Database(name='third'))
             run.assert_not_called()
 
     def test_image_build_load_and_identity(self):

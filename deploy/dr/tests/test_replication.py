@@ -325,9 +325,9 @@ class PublishPrimariesTests(unittest.TestCase):
         def identity(name):
             return lambda app, *args: (steps.append((name, app.name) + args), access_changed)[1]
 
-        def install(project_root, quadlet_dir, runtime, rendered, publish_address, *, app):
-            steps.append(('install', app.name, publish_address))
-            return app.name in changed
+        def install(project_root, quadlet_dir, runtime, rendered, publish_address, *, database):
+            steps.append(('install', database.name, publish_address))
+            return database.name in changed
 
         with patch.object(replication, 'run', run), \
                 patch.object(replication.install, 'preflight', preflight), \

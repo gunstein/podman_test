@@ -6,7 +6,7 @@ creation or removal of obsolete files). DR uses it to decide when to restart.
 import ipaddress
 from pathlib import Path
 
-from . import apps, quadlet, secrets, settings
+from . import apps, quadlet, secrets, settings, stack
 from .commands import run
 
 
@@ -49,23 +49,24 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
 
 
 def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-                     publish_address="", db_password=None, *, app: apps.App = apps.APPS[0]):
+                     publish_address="", db_password=None, *,
+                     database: stack.Database = apps.SHARED_RESOURCE_OWNER.database):
     """Install one database's PostgreSQL workload.
 
     publish_address publishes the replication port on the LAN; only
     databases in the DR group may do that. db_password supplies the owner
     password directly instead of reading it from Podman.
     """
-    if publish_address and app.name not in {d.name for d in apps.REPLICATED_DATABASES}:
+    if publish_address and database not in apps.REPLICATED_DATABASES:
         raise ValueError("Replication publication requires membership in the verified DR group.")
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        manifests=(app.manifest("postgres"), app.manifest("config")), units=(app.unit("postgres"),),
-        obsolete=(app.volume("data"), app.volume("backup")),
-        capability="PostgreSQL", mapping=secrets.postgres_secret_mapping(app),
+        manifests=(database.manifest("postgres"), database.manifest("config")), units=(database.unit("postgres"),),
+        obsolete=(database.volume("data"), database.volume("backup")),
+        capability="PostgreSQL", mapping=secrets.postgres_secret_mapping(database),
         variables={"postgres_publish_address": publish_address,
-                  "postgres_publish_port": app.replication_port},
-        values={app.secret("db"): db_password} if db_password is not None else None,
+                  "postgres_publish_port": database.replication_port},
+        values={database.secret("db"): db_password} if db_password is not None else None,
     )
 
 

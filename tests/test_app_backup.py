@@ -168,7 +168,7 @@ class RestoreEdgeTests(unittest.TestCase):
         return app_backup.TodoBackup(runner=runner, **fake_time())
 
     def live_names(self, tool):
-        app = tool.app
+        app = tool.database
         return {app.resource("postgres"), app.volume("data"), app.volume("backup")}
 
     def removals(self, runner):
@@ -312,7 +312,7 @@ class ApplicationBackupTests(unittest.TestCase):
     def test_each_backup_and_restore_stays_within_its_app(self):
         for app in app_backup.apps.REPLICATED_DATABASES:
             runner = FakeRunner()
-            tool = app_backup.TodoBackup(runner=runner, app=app)
+            tool = app_backup.TodoBackup(runner=runner, database=app)
             tool.create_backup()
             tool.restore('base-20260829T123456Z', 'before_delete', False)
             commands = runner.commands
@@ -335,7 +335,7 @@ class ApplicationBackupTests(unittest.TestCase):
         for app in app_backup.apps.REPLICATED_DATABASES:
             runner = FakeRunner(containers={app.resource('postgres-restore')},
                                 volumes={app.volume('restore-data')})
-            tool = app_backup.TodoBackup(runner=runner, app=app)
+            tool = app_backup.TodoBackup(runner=runner, database=app)
             with self.assertRaises(app_backup.BackupError):
                 tool.cleanup_restore('yes')
             self.assertEqual(runner.commands, [])
@@ -423,7 +423,7 @@ class ConfigureArchiveTests(unittest.TestCase):
     DATABASES = app_backup.apps.REPLICATED_DATABASES
 
     def configure(self, host, promoted=True, access_changed=False):
-        tools = [app_backup.TodoBackup(runner=host, app=app, **fake_time(),
+        tools = [app_backup.TodoBackup(runner=host, database=app, **fake_time(),
                                         clock=lambda: datetime(2026, 9, 25, 12, 0, 0, 123456, tzinfo=timezone.utc))
                  for app in self.DATABASES]
         self.hba = []
@@ -530,7 +530,7 @@ class ConfigureArchiveTests(unittest.TestCase):
                                      ([{**good, "Destination": "/wrong"}], False),
                                      ([{**good, "RW": False}], False), ([{**good, "Type": "bind"}], False)]:
                 with self.subTest(database=database.name, mounts=mounts):
-                    tool = app_backup.TodoBackup(runner=FakeHost(mounts={database.name: mounts}), app=database)
+                    tool = app_backup.TodoBackup(runner=FakeHost(mounts={database.name: mounts}), database=database)
                     if accepted:
                         tool.require_archive_prerequisites()
                     else:

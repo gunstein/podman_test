@@ -141,7 +141,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     postgres_image_changed = any(image_changes[app.name]['postgres'] for app in applications)
     restart = set()
     for app in applications:
-        postgres_changed = workloads.install_postgres(*arguments, app=app)
+        postgres_changed = workloads.install_postgres(*arguments, database=app.database)
         changed = postgres_changed or changed
         if postgres_changed or postgres_image_changed:
             restart.add(app.resource('postgres'))
@@ -150,7 +150,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         changed = application_changed or changed
         if application_changed or image_changes[app.name]['backend'] or image_changes[app.name]['frontend']:
             restart.add(app.resource('app'))
-    keycloak_database_changed = workloads.install_postgres(*arguments, app=apps.KEYCLOAK_DATABASE)
+    keycloak_database_changed = workloads.install_postgres(*arguments, database=apps.KEYCLOAK_DATABASE)
     changed = keycloak_database_changed or changed
     if keycloak_database_changed or postgres_image_changed:
         restart.add(apps.KEYCLOAK_DATABASE.resource('postgres'))

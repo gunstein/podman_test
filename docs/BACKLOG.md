@@ -564,11 +564,17 @@ to bottom.
      `dataclass(kw_only=True)` needs Python 3.10, and the hosts run 3.9.
   Found on the way: `logLevel` becomes `LOG_LEVEL` in each app's ConfigMap,
   but no backend reads it. Use it or remove it.
-- **R2. Honest types.** *[simplify]* The typing part of item 10 below:
-  `REPLICATED_DATABASES` mixes `App` and `Database`, so an `App` pretends to
-  be a database. Give `App` a `Database` instead, make
-  `REPLICATED_DATABASES` a plain tuple of `Database`, and replace the dict
-  from `describe()` with a small dataclass.
+- **R2. Honest types.** *[simplify]* Done: `REPLICATED_DATABASES` holds only
+  `Database`s (each app's, then Keycloak's). `describe()` and its 22-key dict
+  are gone: the DR code read six keys, all of which follow from the
+  `Database`. app-ops iterates the `Database`s, the secret copy is
+  `secrets.installed_names()` plus each replication password, and
+  `replication-apps --details` prints what the database table in
+  `docs/ACCEPTANCE.md` lists. The DR code now says `database`, not `app`,
+  for a member of the group (`install_postgres(database=...)`,
+  `TodoBackup(database=...)`); the `--app` options and the `applications`
+  key in the DR config and promotion record stay, as files and guides use
+  them.
 - **R3. One visible bootstrap for DR paths.** *[simplify]* DR finds
   `app_installer` through `sys.path` lookups spread over `app_dr.py`,
   `app_backup.py` and app-ops staging. Put it in one small function whose
@@ -630,10 +636,7 @@ to bottom.
    function; `cli.main()` is over 200 lines and `install()` over 100.
 10. **Small cleanups.** *[simplify]* Rename `TodoDr` and `TodoBackup` (they
     handle all three databases); replace the manual `sys.path` setup in the
-    scripts; describe the JSON contract between app_ops and app_installer.
-    Type the module boundaries: `REPLICATED_DATABASES` mixes `App` and
-    `Database` while some annotations say `App`, and several interfaces pass
-    untyped dicts.
+    scripts (R3). The typed boundaries are done (R2).
 11. **Backend duplication.** *[simplify]* `todo-backend` and `notes-backend` have identical
     `migrate.py` and near-identical `setup_roles.py` and `main.py`. Share them;
     this touches the image builds.

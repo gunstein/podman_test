@@ -1,4 +1,4 @@
-"""Independent physical PostgreSQL backups and scoped disposable PITR per app.
+"""Independent physical PostgreSQL backups and scoped disposable PITR per database.
 
 Installed as /opt/todo/bin/app_backup.py on the current primary and run there:
 
@@ -34,7 +34,7 @@ for _directories in ((_here.parents[1] / 'lib',), (_here.parents[2] / 'installer
         sys.path[:0] = [str(directory) for directory in _directories]
         break
 from app_dr_host import replication  # noqa: E402
-from app_installer import apps, keycloak, settings  # noqa: E402
+from app_installer import apps, keycloak, settings, stack  # noqa: E402
 
 DATA_DIRECTORY = "/var/lib/postgresql/data"
 BACKUP_DIRECTORY = "/var/lib/postgresql/backup"
@@ -92,14 +92,14 @@ class TodoBackup:
         runner: Runner = run_command,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         sleeper: Callable[[float], None] = time.sleep,
-        *, app: apps.App = apps.SHARED_RESOURCE_OWNER,
+        *, database: stack.Database = apps.SHARED_RESOURCE_OWNER.database,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
-        self.app = app
-        self.image = app.image('postgres')
-        self.backup_volume = app.volume('backup')
-        self.restore_volume = app.volume('restore-data')
-        self.restore_container = app.resource('postgres-restore')
+        self.database = database
+        self.image = database.image('postgres')
+        self.backup_volume = database.volume('backup')
+        self.restore_volume = database.volume('restore-data')
+        self.restore_container = database.resource('postgres-restore')
         self.runner = runner
         self.clock = clock
         self.sleeper = sleeper
@@ -141,8 +141,8 @@ class TodoBackup:
         """Return (in recovery, read-only) for the live database."""
         output = self._run(
             [
-                "podman", "exec", self.app.resource("postgres"), "psql",
-                "--username", self.app.name, "--dbname", "postgres",
+                "podman", "exec", self.database.resource("postgres"), "psql",
+                "--username", self.database.name, "--dbname", "postgres",
                 "--tuples-only", "--no-align", "--field-separator=|",
                 "--command",
                 "SELECT pg_is_in_recovery(), "
@@ -165,8 +165,8 @@ class TodoBackup:
         """Raw archive_mode, last archived and failed WAL, timeout and counters, '|'-separated."""
         return self._run(
             [
-                "podman", "exec", self.app.resource("postgres"), "psql",
-                "--username", self.app.name, "--dbname", "postgres",
+                "podman", "exec", self.database.resource("postgres"), "psql",
+                "--username", self.database.name, "--dbname", "postgres",
                 "--tuples-only", "--no-align", "--field-separator=|",
                 "--command",
                 "SELECT current_setting('archive_mode'), "
@@ -218,12 +218,12 @@ class TodoBackup:
                 "--pids-limit", "128",
                 "--volume", f"{self.backup_volume}:/backup:z",
                 "--secret",
-                self.app.secret("replicator") + ",type=env,target=PGPASSWORD",
+                self.database.secret("replicator") + ",type=env,target=PGPASSWORD",
                 self.image,
                 "pg_basebackup",
-                "--host=" + self.app.resource("postgres"),
+                "--host=" + self.database.resource("postgres"),
                 "--port=5432",
-                "--username=" + self.app.database_role("replicator"),
+                "--username=" + self.database.database_role("replicator"),
                 f"--pgdata=/backup/base/{name}",
                 "--format=plain",
                 "--wal-method=stream",
@@ -258,7 +258,7 @@ class TodoBackup:
                 "--entrypoint", "/bin/sh",
                 self.image,
                 "-ec", 'printf "%s\\n" "$1" > /backup/LATEST',
-                self.app.resource("backup"), name,
+                self.database.resource("backup"), name,
             ],
             "Latest backup marker update",
         )
@@ -268,8 +268,8 @@ class TodoBackup:
         """Run one SQL statement in the live database and return its output."""
         return self._run(
             [
-                "podman", "exec", self.app.resource("postgres"), "psql",
-                "--username", self.app.name, "--dbname", "postgres",
+                "podman", "exec", self.database.resource("postgres"), "psql",
+                "--username", self.database.name, "--dbname", "postgres",
                 "--tuples-only", "--no-align", "--field-separator=|",
                 "--set", "ON_ERROR_STOP=1", "--command", sql,
             ],
@@ -286,7 +286,7 @@ class TodoBackup:
 
     def require_archive_prerequisites(self) -> None:
         """Read-only gates; the group checks all of them before its first write."""
-        service = self.app.service("postgres")
+        service = self.database.service("postgres")
         try:
             active = self.runner(["systemctl", "--user", "is-active", service], 30).stdout.strip()
         except subprocess.TimeoutExpired as error:
@@ -294,13 +294,13 @@ class TodoBackup:
         if active != "active":
             raise BackupError(f"{service} is not active")
         self.require_writable_primary()
-        if not self._exists("secret", self.app.secret("replicator")):
-            raise BackupError(f"Replication credential {self.app.secret('replicator')} is missing")
+        if not self._exists("secret", self.database.secret("replicator")):
+            raise BackupError(f"Replication credential {self.database.secret('replicator')} is missing")
         if not self._exists("volume", self.backup_volume):
             raise BackupError(f"Backup volume {self.backup_volume} created by the PostgreSQL PVC is missing")
         try:
             mounts = json.loads(self._run(
-                ["podman", "inspect", "--format", "{{json .Mounts}}", self.app.resource("postgres")],
+                ["podman", "inspect", "--format", "{{json .Mounts}}", self.database.resource("postgres")],
                 "PostgreSQL mount inspection",
             ))
         except ValueError as error:
@@ -315,12 +315,12 @@ class TodoBackup:
             ["systemctl", "--user", "show", service, "--property=SourcePath", "--value"],
             "PostgreSQL service source query",
         )
-        if not source.endswith("/todo-kube-runtime/" + self.app.unit("postgres")):
+        if not source.endswith("/todo-kube-runtime/" + self.database.unit("postgres")):
             raise BackupError("Backup configuration refuses to replace a non-Kube PostgreSQL runtime")
 
     def prepare_archive(self) -> tuple[bool, bool, bool]:
         """Returns (replication access changed, backup directories changed, restart needed)."""
-        access = replication.refresh_hba(self.app)
+        access = replication.refresh_hba(self.database)
         directories = self._run(
             [
                 "podman", "run", "--rm", "--user", "postgres",
@@ -334,8 +334,8 @@ class TodoBackup:
             return access, directories == "changed", False
         self._run(
             [
-                "podman", "exec", self.app.resource("postgres"), "psql",
-                "--username", self.app.name, "--dbname", "postgres", "--set", "ON_ERROR_STOP=1",
+                "podman", "exec", self.database.resource("postgres"), "psql",
+                "--username", self.database.name, "--dbname", "postgres", "--set", "ON_ERROR_STOP=1",
                 "--command", "ALTER SYSTEM SET archive_mode = 'on';",
                 "--command", f"ALTER SYSTEM SET archive_command = '{ARCHIVE_COMMAND}';",
                 "--command", f"ALTER SYSTEM SET archive_timeout = '{ARCHIVE_TIMEOUT}';",
@@ -346,7 +346,7 @@ class TodoBackup:
 
     def require_configured_archive(self) -> None:
         """After a restart: wait until healthy, then raise unless the archive settings held."""
-        self._run(["podman", "wait", "--condition=healthy", self.app.resource("postgres")],
+        self._run(["podman", "wait", "--condition=healthy", self.database.resource("postgres")],
                   "PostgreSQL health wait", timeout=settings.HEALTH_TIMEOUT)
         self.require_writable_primary()
         if self._archive_settings() != f"on|{ARCHIVE_COMMAND}|{ARCHIVE_TIMEOUT}":
@@ -362,8 +362,8 @@ class TodoBackup:
         self._validate_restore_point(name)
         output = self._run(
             [
-                "podman", "exec", self.app.resource("postgres"), "psql",
-                "--username", self.app.name, "--dbname", "postgres",
+                "podman", "exec", self.database.resource("postgres"), "psql",
+                "--username", self.database.name, "--dbname", "postgres",
                 "--tuples-only", "--no-align",
                 "--command",
                 f"SELECT pg_create_restore_point('{name}');",
@@ -372,8 +372,8 @@ class TodoBackup:
         )
         wal = self._run(
             [
-                "podman", "exec", self.app.resource("postgres"), "psql",
-                "--username", self.app.name, "--dbname", "postgres",
+                "podman", "exec", self.database.resource("postgres"), "psql",
+                "--username", self.database.name, "--dbname", "postgres",
                 "--tuples-only", "--no-align",
                 "--command", "SELECT pg_walfile_name(pg_current_wal_lsn());",
             ],
@@ -381,8 +381,8 @@ class TodoBackup:
         )
         self._run(
             [
-                "podman", "exec", self.app.resource("postgres"), "psql",
-                "--username", self.app.name, "--dbname", "postgres",
+                "podman", "exec", self.database.resource("postgres"), "psql",
+                "--username", self.database.name, "--dbname", "postgres",
                 "--tuples-only", "--no-align",
                 "--command", "SELECT pg_switch_wal();",
             ],
@@ -401,7 +401,7 @@ class TodoBackup:
             limit = max(1.0, deadline - self.monotonic())
             try:
                 result = self.runner(
-                    ["podman", "exec", self.app.resource("postgres"), "test", "-f", archive_path],
+                    ["podman", "exec", self.database.resource("postgres"), "test", "-f", archive_path],
                     limit,
                 )
             except subprocess.TimeoutExpired as error:
@@ -435,7 +435,7 @@ class TodoBackup:
                 "--entrypoint", "/bin/sh",
                 self.image,
                 "-ec", 'test -s "/backup/base/$1/PG_VERSION"',
-                self.app.resource("backup"), backup,
+                self.database.resource("backup"), backup,
             ],
             "Selected base backup check",
         )
@@ -478,7 +478,7 @@ class TodoBackup:
                     'cp -a "/backup/base/$1/." /restore/; '
                     "rm -f /restore/standby.signal /restore/recovery.signal; "
                     "touch /restore/recovery.signal; chmod 0700 /restore",
-                    self.app.resource("backup"), backup,
+                    self.database.resource("backup"), backup,
                 ],
                 "Base backup copy into disposable restore volume",
                 timeout=settings.DATA_COPY_TIMEOUT,
@@ -538,7 +538,7 @@ class TodoBackup:
                 result = self.runner(
                     [
                         "podman", "exec", self.restore_container,
-                        "psql", "--username", self.app.name, "--dbname", "postgres",
+                        "psql", "--username", self.database.name, "--dbname", "postgres",
                         "--tuples-only", "--no-align", "--field-separator=|",
                         "--command",
                         "SELECT pg_is_in_recovery(), pg_is_wal_replay_paused();",
@@ -563,7 +563,7 @@ class TodoBackup:
         return self._run(
             [
                 "podman", "exec", self.restore_container,
-                "psql", "--username", self.app.name, "--dbname", "postgres",
+                "psql", "--username", self.database.name, "--dbname", "postgres",
                 "--tuples-only", "--no-align", "--field-separator=|",
                 "--command",
                 "SELECT pg_is_in_recovery(), pg_is_wal_replay_paused(), "
@@ -624,8 +624,8 @@ def configure(tools: Sequence[TodoBackup], journal: Path) -> dict:
                     raise BackupError(f"Could not stop {service} before the PostgreSQL restart")
         tools[0]._run(["systemctl", "--user", "daemon-reload"], "User systemd reload")
         for tool in restart:
-            tool._run(["systemctl", "--user", "restart", tool.app.service("postgres")],
-                      f"{tool.app.service('postgres')} restart", timeout=settings.COMMAND_TIMEOUT)
+            tool._run(["systemctl", "--user", "restart", tool.database.service("postgres")],
+                      f"{tool.database.service('postgres')} restart", timeout=settings.COMMAND_TIMEOUT)
         for tool in tools:
             tool.require_configured_archive()
         tools[0]._run(["systemctl", "--user", "start", "shared-proxy.service"],
@@ -636,15 +636,15 @@ def configure(tools: Sequence[TodoBackup], journal: Path) -> dict:
         verified = {}
         for tool, _access, directories, needed in prepared:
             if directories or needed:
-                point = f"{tool.app.database_role('archive_check')}_{tool.clock():%Y%m%d%H%M%S%f}"
+                point = f"{tool.database.database_role('archive_check')}_{tool.clock():%Y%m%d%H%M%S%f}"
                 tool.create_restore_point(point)
-                verified[tool.app.name] = point
+                verified[tool.database.name] = point
     except BackupError:
         raise
     except (RuntimeError, subprocess.TimeoutExpired) as error:
         raise BackupError(str(error)) from error
     return {"changed": any(any(flags) for _tool, *flags in prepared),
-            "restarted": [tool.app.name for tool in restart], "verified": verified}
+            "restarted": [tool.database.name for tool in restart], "verified": verified}
 
 
 def parser() -> argparse.ArgumentParser:
@@ -653,7 +653,7 @@ def parser() -> argparse.ArgumentParser:
         description="Manage independent application backups and disposable PITR."
     )
     result.add_argument('--app', choices=[d.name for d in apps.REPLICATED_DATABASES],
-                        help='Select one app; status/create/mark default to the whole group')
+                        help='Select one database; status/create/mark default to the whole group')
     commands = result.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="Show live database and WAL archive status")
     commands.add_parser("create", help="Create and verify a physical base backup")
@@ -681,13 +681,13 @@ def parser() -> argparse.ArgumentParser:
 def main(arguments: Optional[Sequence[str]] = None) -> int:
     """Run one command for the selected databases; print errors as 'ERROR: ...' and return 1."""
     args = parser().parse_args(arguments)
-    selected = [app for app in apps.REPLICATED_DATABASES if args.app is None or app.name == args.app]
+    selected = [database for database in apps.REPLICATED_DATABASES if args.app is None or database.name == args.app]
     try:
         if args.command in ('restore', 'restore-status', 'cleanup-restore') and len(selected) != 1:
             raise BackupError('Disposable restore operations require an explicit --app')
         if args.command == 'configure' and args.app is not None:
             raise BackupError('configure always covers the complete database group')
-        tools = [TodoBackup(app=app) for app in selected]
+        tools = [TodoBackup(database=database) for database in selected]
         if args.command == 'configure':
             print(json.dumps(configure(tools, args.journal)))
             return 0
@@ -696,9 +696,9 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
             for tool in tools:
                 tool.require_writable_primary()
                 if tool.archive_status().split('|', 1)[0] != 'on':
-                    raise BackupError(f'{tool.app.name}: archive_mode is not on')
+                    raise BackupError(f'{tool.database.name}: archive_mode is not on')
         for tool in tools:
-            prefix = tool.app.name + ': '
+            prefix = tool.database.name + ': '
             if args.command == 'status':
                 print(prefix + "\n".join(tool.status_lines()))
             elif args.command == 'create':

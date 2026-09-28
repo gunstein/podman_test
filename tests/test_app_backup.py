@@ -222,6 +222,27 @@ class RestoreEdgeTests(unittest.TestCase):
             tool.restore(self.BACKUP, "before_delete", replace=False)
         self.assertEqual(self.removals(runner), [["podman", "rm", "--force", tool.restore_container]])
 
+    def test_a_failed_cleanup_does_not_hide_why_the_start_failed(self):
+        for removal in (completed(returncode=1, stderr="busy"), subprocess.TimeoutExpired("podman", 30)):
+            class FailingStartAndRemoval(FakeRunner):
+                def __call__(self, arguments, timeout=None):
+                    if arguments[:3] == ["podman", "run", "--detach"]:
+                        return completed(returncode=125, stderr="cannot start")
+                    if arguments[:3] == ["podman", "rm", "--force"]:
+                        if isinstance(removal, Exception):
+                            raise removal
+                        return removal
+                    return super().__call__(arguments, timeout)
+
+            with self.subTest(removal=removal):
+                tool = self.tool(FailingStartAndRemoval())
+                with self.assertRaisesRegex(
+                        app_backup.BackupError,
+                        "Disposable PITR container start failed: cannot start; removing "
+                        + tool.restore_container + " afterwards failed too") as raised:
+                    tool.restore(self.BACKUP, "before_delete", replace=False)
+                self.assertIsInstance(raised.exception.__cause__, app_backup.BackupError)
+
     def test_a_restore_that_never_pauses_or_stops_early_is_reported(self):
         class NeverPaused(FakeRunner):
             def __init__(self, stops):

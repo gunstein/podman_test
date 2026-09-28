@@ -511,9 +511,23 @@ class TodoBackup:
                 "Disposable PITR container start",
             )
             self._wait_for_restore_pause()
-        except Exception:
-            self.runner(["podman", "rm", "--force", self.restore_container], 30)
-            raise
+        except Exception as error:
+            if self._remove_restore_container():
+                raise
+            raise BackupError(
+                f"{error}; removing {self.restore_container} afterwards failed too, "
+                f"remove it with: podman rm --force {self.restore_container}"
+            ) from error
+
+    def _remove_restore_container(self) -> bool:
+        """Remove the restore container after a failed start; False, never an exception, if that fails.
+
+        The caller then reports why the start failed, not why the cleanup did.
+        """
+        try:
+            return self.runner(["podman", "rm", "--force", self.restore_container], 30).returncode == 0
+        except (subprocess.TimeoutExpired, OSError):
+            return False
 
     def _wait_for_restore_pause(self) -> None:
         """Wait up to 60 seconds for the restore to pause at its target: one deadline for every query."""

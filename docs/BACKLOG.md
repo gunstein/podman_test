@@ -586,6 +586,18 @@ to bottom.
   need a full acceptance run.
 - **R4. Shared backend code.** *[simplify]* Item 11 below: the largest and
   least urgent; last, possibly with its own run.
+- **R5. Separate names from the database.** *[simplify]* Decided
+  (2026-09-28); after run 23. `stack.Database` is named after a database
+  but is the naming rules for everything that shares one name:
+  `resource("app")` gives `todo-app`, `service("app")` `todo-app.service`
+  and `image("backend")` `localhost/todo-backend:m12`. That is why `App`
+  forwards every naming method to its `Database`, and why a reader of
+  "Every resource name comes from the application name through
+  stack.Database" looks for a database. Split it: one small class for the
+  naming rules of a name (resource, unit, service, manifest, image, archive),
+  used by both `App` and the database, and a `Database` that holds only what
+  belongs to PostgreSQL (replication port, slots, roles, secrets, volumes).
+  Touches many files; needs a full acceptance run.
 - *[optional]* Smaller points from the same review: the PostgreSQL image is
   set per app, hostnames are not validated, and there is no fixed rule for how
   much of a failed command's output an error message shows.

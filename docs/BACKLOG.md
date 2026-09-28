@@ -34,6 +34,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
    Then E1 and E2, the cheapest way to find errors before the lab does.
    After run 21: S1, the installer and DR apart in the tree, before more DR
    code is added.
+   After run 22: R1-R3 from the code review of `9627adb`, so the installer
+   and DR code says what it does before more is built on it.
 1. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
    failover command), G2 (Trondheim is ready), G3 (time it in the drill), T3
    (fencing without the Oslo hypervisor), T4 (one CA), T5 (moving the names),
@@ -539,6 +541,50 @@ promoted primary.
   must be encrypted at rest. Failover stays our own code either way: no ready
   tool fits two sites without a third machine together with the application
   tier, Keycloak and the quarantine.
+
+## Code review of `9627adb`
+
+A second review, by another agent, found places where the installer and DR
+code is harder to trust or read than it should be. The owner's priority: the
+installer and DR code must be easy to understand and get into. Starts after
+run 22 is recorded. The long CLI dispatches stay as they are: they read top
+to bottom.
+
+- **R1. The code does what its comments promise.** *[simplify]* One commit
+  each, each with a test that fails first:
+  1. `render.py` promises that a failed render never leaves a half-updated
+     directory, but copies into the existing output (`mkdir(exist_ok=True)`
+     and `copyfile`), so stale files stay. Render into a temporary directory
+     next to it and replace the whole directory at the end.
+  2. `secrets.create_kube` only checks that the Kube secret exists, so it can
+     drift from the raw Podman secret. Fail with a clear message when they
+     differ.
+  3. The PITR restore in `app_backup.py` cleans up in `except` with
+     `podman rm`; if that fails, it hides the original error. Keep the
+     original error and report the cleanup failure next to it.
+  4. `values.yaml` is read with direct indexing (`['runtime']`); a missing
+     key gives a `KeyError`. Check it once and name what is missing.
+  5. `tests/test_apps.py` builds `App("notes", "notes", "notes.test",
+     "notes-frontend")` with arguments in the wrong places and still passes.
+     Make `App` `kw_only=True` and correct the test.
+- **R2. Honest types.** *[simplify]* The typing part of item 10 below:
+  `REPLICATED_DATABASES` mixes `App` and `Database`, so an `App` pretends to
+  be a database. Give `App` a `Database` instead, make
+  `REPLICATED_DATABASES` a plain tuple of `Database`, and replace the dict
+  from `describe()` with a small dataclass.
+- **R3. One visible bootstrap for DR paths.** *[simplify]* DR finds
+  `app_installer` through `sys.path` lookups spread over `app_dr.py`,
+  `app_backup.py` and app-ops staging. Put it in one small function whose
+  comment says why DR needs the installer (the rule in
+  `tests/test_dr_boundary.py`). Add a smoke test that unpacks the operations
+  package and runs `--help` on `app_ops`, `app_dr_host`, `app_dr.py` and
+  `app_backup.py`, so a broken path fails in CI, not in the lab. Needs a full
+  acceptance run afterwards. Covers the `sys.path` part of item 10.
+- **R4. Shared backend code.** *[simplify]* Item 11 below: the largest and
+  least urgent; last, possibly with its own run.
+- *[optional]* Smaller points from the same review: the PostgreSQL image is
+  set per app, hostnames are not validated, and there is no fixed rule for how
+  much of a failed command's output an error message shows.
 
 ## DR code structure
 

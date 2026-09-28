@@ -117,7 +117,7 @@ class TemplateSafetyTests(unittest.TestCase):
 
     def test_shared_proxy_rejects_an_unsafe_non_identity_app_hostname_too(self):
         identity, other = _app("identity"), apps.App(
-            "other", "evil.test; return 200 pwned", "other-frontend")
+            name="other", hostname="evil.test; return 200 pwned", keycloak_client="other-frontend")
         with self.assertRaises(ValueError):
             manifests.render_shared_proxy(ROOT, [identity, other], identity, "identity.test", 8443,
                                           "localhost/todo-proxy:m12")

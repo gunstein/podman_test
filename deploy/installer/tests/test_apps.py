@@ -1,3 +1,4 @@
+import ast
 import dataclasses
 import re
 import sys
@@ -28,9 +29,24 @@ class AppRegistryTests(unittest.TestCase):
             with self.assertRaises(dataclasses.FrozenInstanceError):
                 app.name = 'changed'
 
+    def test_every_app_is_built_with_keyword_arguments(self):
+        # App has several string fields in a row, so App("notes", "notes.test",
+        # ...) can put a value in the wrong field and still run. The hosts'
+        # Python 3.9 has no dataclass kw_only, so this test enforces it.
+        repository = Path(__file__).resolve().parents[3]
+        positional = []
+        for path in repository.glob("**/*.py"):
+            if ".git" in path.parts:
+                continue
+            for node in ast.walk(ast.parse(path.read_text(), str(path))):
+                if isinstance(node, ast.Call) and node.args and (
+                        getattr(node.func, "id", None) == "App" or getattr(node.func, "attr", None) == "App"):
+                    positional.append(f"{path.relative_to(repository)}:{node.lineno}")
+        self.assertEqual(positional, [])
+
     def test_app_owns_every_derived_name(self):
         for name in ("todo", "notes", "third"):
-            app = App(name, name + ".test", name + "-frontend")
+            app = App(name=name, hostname=name + ".test", keycloak_client=name + "-frontend")
             self.assertEqual(app.resource("postgres"), name + "-postgres")
             self.assertEqual(app.unit("app"), name + "-app.kube")
             self.assertEqual(app.service("app"), name + "-app.service")
@@ -70,7 +86,7 @@ class AppRegistryTests(unittest.TestCase):
 
     def test_images_come_from_the_app(self):
         from app_installer.images import image_list, shared_images
-        app = App("notes", "notes", "notes.test", "notes-frontend")
+        app = App(name="notes", hostname="notes.test", keycloak_client="notes-frontend")
         images = image_list(app)
         self.assertEqual([image.reference for image in images], [
             "localhost/notes-backend:m12", "localhost/notes-frontend:m12",
@@ -83,7 +99,7 @@ class AppRegistryTests(unittest.TestCase):
         from app_installer.secrets import application_secret_mapping, postgres_secret_mapping
         mappings = []
         for name in ("todo", "notes"):
-            app = App(name, name + ".test", name + "-frontend")
+            app = App(name=name, hostname=name + ".test", keycloak_client=name + "-frontend")
             mapping = {**postgres_secret_mapping(app), **application_secret_mapping(app)}
             self.assertEqual(mapping, {
                 name + "-kube-postgres-secret": {"database-password": name + "-db-password"},

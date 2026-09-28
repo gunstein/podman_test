@@ -12,7 +12,9 @@ class App:
     stack.Database, so the "todo" app owns todo-postgres, todo-app.service,
     todo-db-password and so on. The methods below that forward to
     self.database exist so callers can treat an App and a database-only
-    workload (Keycloak's) the same way.
+    workload (Keycloak's) the same way. Build one with keyword arguments
+    only (tests/test_apps.py checks it): the string fields are easy to mix
+    up, and the hosts' Python 3.9 has no dataclass kw_only.
     """
 
     name: str

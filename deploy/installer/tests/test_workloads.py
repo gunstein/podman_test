@@ -118,7 +118,7 @@ class WorkloadsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'verified DR group'):
                 workloads.install_postgres(ROOT, '/q', '/q/todo-kube-runtime', '/rendered',
                                            publish_address='192.0.2.1',
-                                           app=apps.App('third', 'third.test', 'third-frontend'))
+                                           app=apps.App(name='third', hostname='third.test', keycloak_client='third-frontend'))
             run.assert_not_called()
 
     def test_image_build_load_and_identity(self):

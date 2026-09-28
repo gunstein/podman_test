@@ -10,23 +10,27 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `2dbc561` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-2dbc561.md)),
+**Current verdict: CLEAN PASS** on `9627adb` for the seven-pod, three-database
+topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-9627adb.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 104 steps PASS
 on one clean revision and compared them with the agent guide: every step and
 log it names, nothing else. Install, standby bootstrap, quarantine rehearsal,
 fencing, the one `failover` command (group promotion, application tier,
-backup and a service check), backup and isolated PITR,
+backup, services and the login page), backup and isolated PITR,
 rebuild of the old primary and sequential reboots all passed as written.
 CI now also runs the Todo API as `todo_app` and the whole stack with the
-browser tests on Podman 5.7.
+browser tests on Podman 5.7. The single-host installer
+(`deploy/installer`) and DR (`deploy/dr`) are separate in the tree.
 Final topology: VM 108 primary with application and backup, VM 107
 database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `9627adb` run 22: CLEAN PASS ([record](docs/history/ACCEPTANCE-9627adb.md)),
+  the first run with DR moved to `deploy/dr` apart from the installer (S1),
+  and the first clean run with the fixes from runs 20 and 21.
 - `1a276fe` run 21: functional pass, not clean
   ([record](docs/history/ACCEPTANCE-1a276fe.md)). `failover` ran once and
   promoted, every tool step passed, but the readiness check before phase 1

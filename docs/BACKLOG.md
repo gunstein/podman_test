@@ -589,7 +589,7 @@ to bottom.
 ## DR code structure
 
 - **S1. Separate the installer from DR in the tree.** *[simplify]* Decided
-  (2026-09-28); starts after run 21. A third of `app_installer` is DR only
+  (2026-09-28); done after run 22. A third of `app_installer` is DR only
   (`replication.py`, `replication_tls.py`, `promoted.py`, the transfer of
   replication secrets, 13 of the 18 CLI commands), and `deploy/scripts` mixes
   DR host tools, development, lab and shared scripts. The imports already go
@@ -606,7 +606,8 @@ to bottom.
      package adds `deploy/dr`, app-ops stages both packages on each host, and
      the guides, CI, mutation testing and docs follow. One implementation of
      workload installation stays (AGENTS.md).
-  3. A full acceptance run.
+  3. A full acceptance run. Done: run 22 was a CLEAN PASS
+     ([record](history/ACCEPTANCE-9627adb.md)).
   It covers much of item 9 below: `replication.py` and `cli.main()` shrink.
   While moving them, make the top comment (module docstring) of
   `replication.py` and `replication_tls.py` explain the split plainly:

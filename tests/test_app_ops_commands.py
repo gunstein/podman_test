@@ -9,7 +9,7 @@ import unittest.mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "deploy/ops"))
+sys.path.insert(0, str(ROOT / "deploy/dr"))
 from app_ops import cli, inventory, recovery, standby, steps  # noqa: E402
 from app_ops.transport import Host  # noqa: E402
 
@@ -57,8 +57,8 @@ class World:
         return subprocess.CompletedProcess(argv, rc, out, "")
 
     def answer(self, host, command, stdin):
-        if command[:1] == ["env"] and "app_installer" in command:
-            sub = command[command.index("app_installer") + 1:]
+        if command[:1] == ["env"] and "app_dr_host" in command:
+            sub = command[command.index("app_dr_host") + 1:]
             step = tuple(sub[:2]) if sub[0] == "replicate-workload" else (sub[0],)
             if sub[0] == "node-facts":
                 return step, json.dumps({"host": host}), 0

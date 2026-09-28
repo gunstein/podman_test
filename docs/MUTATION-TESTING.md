@@ -10,7 +10,7 @@ mutant *survived*: the tests would not have caught that mistake.
 ## What is mutated, and why only that
 
 Only the read-only checks in
-`deploy/installer/app_installer/replication.py` that guard promotion and the
+`deploy/dr/app_dr_host/replication.py` that guard promotion and the
 deletion of database data:
 
 - `reseed_check`, `require_reseed_confirmations`, `require_quarantined_group`
@@ -35,7 +35,7 @@ surviving mutants mostly show how loose a fake is, not real bugs.
 
 The tool is [mutmut](https://github.com/boxed/mutmut), a test-only tool that
 is never installed on a target host. Its settings are in
-`deploy/installer/pyproject.toml`.
+`deploy/dr/pyproject.toml`.
 
 ```bash
 python3 -m venv /tmp/mutmut-venv
@@ -44,7 +44,7 @@ PATH=/tmp/mutmut-venv/bin:$PATH deploy/scripts/dev/run-mutation-tests.sh
 ```
 
 It takes well under a minute. It prints each surviving mutant as a diff and
-the total. mutmut works in `deploy/installer/mutants/`, which Git ignores.
+the total. mutmut works in `deploy/dr/mutants/`, which Git ignores.
 
 In CI, the **Mutation testing** workflow runs the same script once a week and
 on demand (Actions > Mutation testing > Run workflow). It only reports: the
@@ -53,7 +53,7 @@ list is in the job summary, and survivors never fail the run.
 ## Accepted survivors
 
 After the first round and the tests it added
-(`deploy/installer/tests/test_replication_checks.py`, and exact command lists
+(`deploy/dr/tests/test_replication_checks.py`, and exact command lists
 in `test_destructive_gates.py`), 642 of 696 mutants are killed. The 54 that
 survive are all in these groups:
 

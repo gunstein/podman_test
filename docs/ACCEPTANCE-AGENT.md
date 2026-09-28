@@ -4,7 +4,7 @@ This document lets a coding agent run the full two-VM acceptance in
 [ACCEPTANCE.md](ACCEPTANCE.md) with as little operator typing as possible.
 It adds **how** the agent operates (Proxmox API token, passwordless lab sudo,
 evidence, stop rules) on top of the canonical **what** in ACCEPTANCE.md.
-The operations tool is `app-ops` (plain SSH, [deploy/ops](../deploy/ops/README.md));
+The operations tool is `app-ops` (plain SSH, [deploy/dr](../deploy/dr/README.md));
 C9.13 says how the agent handles its sudo, trust and inventories.
 For a change that cannot affect DR, the 20-minute
 [quick acceptance](ACCEPTANCE-QUICK.md) on one VM is enough; it uses Part A's
@@ -525,7 +525,7 @@ lab defaults (`.102` = VM 107 = `todo-primary`, `.108` = VM 108 =
 
 1. Read `AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/ACCEPTANCE.md`,
    `docs/PROXMOX-QUARANTINE.md`, `docs/ACCEPTANCE-TROUBLESHOOTING.md`,
-   `deploy/ops/README.md` and C9.13.
+   `deploy/dr/README.md` and C9.13.
 2. `git status --porcelain` must be empty and `git rev-parse HEAD` must equal the
    kickoff revision. Otherwise STOP.
 3. If CI is not `green`, run the local suite and record the result; STOP on failure:
@@ -563,7 +563,7 @@ A="python3 deploy/scripts/lab/acceptance.py --run $RUN_ID"
 product() { local log="$RUN/logs/$1.log"; shift; if [ -e "$log" ]; then echo "STOP: $log exists, the step already ran; never run it again" >&2; return 1; fi; echo "# start $(date --iso-8601=seconds)" > "$log"; "$@" >> "$log" 2>&1; echo "exit=$?" >> "$log"; tail -n 4 "$log"; }
 # A command on a VM, and an app-ops command on the controller VM.
 vm() { product "$1" ssh -o BatchMode=yes gunstein@"$2" "$3"; }
-ops() { vm "$1" "$2" "cd ~/todo-operations && PYTHONPATH=\$PWD/deploy/ops PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops $3"; }
+ops() { vm "$1" "$2" "cd ~/todo-operations && PYTHONPATH=\$PWD/deploy/dr PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops $3"; }
 ```
 
 - `$A ...` is `deploy/scripts/lab/acceptance.py`: it runs the glue around the
@@ -678,8 +678,8 @@ Before phase 4, on `.102` (C9.13): trust app-ops twice (`changed`, then
 `unchanged`), write `initial.yaml`, record the skipped first sudo refusal.
 
 ```bash
-vm 04-1-trust-ops 192.168.0.102 'cd ~/todo-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
-vm 04-2-trust-ops-again 192.168.0.102 'cd ~/todo-operations && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → unchanged
+vm 04-1-trust-ops 192.168.0.102 'cd ~/todo-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
+vm 04-2-trust-ops-again 192.168.0.102 'cd ~/todo-operations && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → unchanged
 vm 04-3-inventory 192.168.0.102 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-primary: {role: primary, address: 192.168.0.102, local: true}" "  todo-standby: {role: standby, address: 192.168.0.108}" > initial.yaml && cat initial.yaml'
 echo "C9.13 item 1: first sudo refusal check skipped (lab sudoers)" > "$RUN/logs/04-4-sudo-refusal-skip.txt"
 $A --step 04-5 do pin-ssh 192.168.0.102 192.168.0.108
@@ -762,7 +762,7 @@ $A --step 06-3 do fence 107
 $A --step 06-4 check ports-closed 192.168.0.102 client
 $A --step 06-5 check ports-closed 192.168.0.102 192.168.0.108
 vm 06-6-preflight 192.168.0.108 "python3 /opt/todo/bin/app_dr.py preflight --confirm-primary-fenced 'todo-primary is fenced'"
-vm 06-7-trust-ops 192.168.0.108 'cd ~/todo-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
+vm 06-7-trust-ops 192.168.0.108 'cd ~/todo-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
 vm 06-8-inventory 192.168.0.108 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-standby: {role: current_primary, address: 192.168.0.108, local: true}" "  todo-primary: {role: rebuild_standby, address: 192.168.0.102}" > recovery.yaml && cat recovery.yaml'
 $A --step 06-9 do firewall-https 192.168.0.108 192.168.0.100
 ops 06-10-failover 192.168.0.108 "--inventory recovery.yaml failover --confirm-primary-fenced 'todo-primary is fenced' --confirm-promotion todo-standby" &   # → {"changed": true, "promoted_now": true, ...}; wait for exit=
@@ -919,7 +919,7 @@ the controller VM over SSH, from the package directory, and end it with the
 exit code:
 
 ```bash
-ssh gunstein@192.168.0.102 'cd ~/todo-operations && PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops --inventory initial.yaml replication-status; echo "exit=$?"'
+ssh gunstein@192.168.0.102 'cd ~/todo-operations && PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops --inventory initial.yaml replication-status; echo "exit=$?"'
 ```
 
 The controller is `.102` with `initial.yaml` for phases 4-5, and `.108` with

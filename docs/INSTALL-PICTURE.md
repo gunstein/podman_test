@@ -148,5 +148,5 @@ tools it needs, among them Podman, systemd and Python with Jinja2.
 - [Architecture](ARCHITECTURE.md): the seven pods and why they are grouped
   as they are.
 - [Secrets](SECRETS.md) and [TLS](TLS.md): passwords and certificates.
-- [app-ops](../deploy/ops/README.md): the second site, replication, failover
+- [app-ops](../deploy/dr/README.md): the second site, replication, failover
   and backup.

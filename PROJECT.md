@@ -108,7 +108,7 @@ How it got there, newest first:
 ## Current work and limitations
 
 Legacy runtime and migration tooling are retired. Active runtime and safety
-boundaries remain unchanged. app-ops (`deploy/ops`, plain SSH) is the only DR
+boundaries remain unchanged. app-ops (`deploy/dr`, plain SSH) is the only DR
 tool; the Ansible playbooks were retired after its CLEAN PASS, and Git history
 keeps them. Planned work, its order
 and its principles are in the [backlog](docs/BACKLOG.md), with a one-page

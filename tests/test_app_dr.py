@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-SCRIPT = Path(__file__).parents[1] / "deploy/scripts" / "app_dr.py"
+SCRIPT = Path(__file__).parents[1] / "deploy/dr/scripts" / "app_dr.py"
 SPEC = importlib.util.spec_from_file_location("app_dr", SCRIPT)
 assert SPEC and SPEC.loader
 app_dr = importlib.util.module_from_spec(SPEC)

@@ -7,7 +7,7 @@ import unittest.mock
 from tests import test_app_ops_commands as commands
 from tests.test_app_ops_commands import World, spec
 
-sys.path.insert(0, "deploy/ops")
+sys.path.insert(0, "deploy/dr")
 from app_ops import cli, failover  # noqa: E402
 from app_ops.transport import Host  # noqa: E402
 
@@ -141,12 +141,12 @@ class FailoverTests(unittest.TestCase):
 
 class FailoverCliTests(unittest.TestCase):
     def test_the_cli_starts_in_a_clean_process(self):
-        # The hosts run python3 -m app_ops with only deploy/ops on the path.
+        # The hosts run python3 -m app_ops with only deploy/dr on the path.
         import subprocess
         from pathlib import Path
         root = Path(__file__).resolve().parents[1]
         result = subprocess.run([sys.executable, "-m", "app_ops", "failover", "--help"], cwd="/",
-                                env={"PYTHONPATH": str(root / "deploy/ops"), "PATH": "/usr/bin:/bin"},
+                                env={"PYTHONPATH": str(root / "deploy/dr"), "PATH": "/usr/bin:/bin"},
                                 capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--confirm-primary-fenced", result.stdout)

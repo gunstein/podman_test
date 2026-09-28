@@ -54,9 +54,9 @@ and distribute both packages together after this layout change: older bundles
 with YAML under `kube/runtime/` do not match these tools.
 
 For DR, write a small YAML inventory with the real host names, roles and
-addresses; see [the app-ops inventory](ops/README.md#inventory).
+addresses; see [the app-ops inventory](dr/README.md#inventory).
 
-See the [runtime guide](runtime/README.md), [app-ops operations](ops/README.md),
+See the [runtime guide](runtime/README.md), [app-ops operations](dr/README.md),
 [offline delivery](offline/README.md), [architecture](../docs/ARCHITECTURE.md)
 and [acceptance procedure](../docs/ACCEPTANCE.md).
 Historical per-container definitions remain in `quadlet-reference-v1`; earlier

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "deploy/ops"))
+sys.path.insert(0, str(ROOT / "deploy/dr"))
 from app_ops import cli, inventory, quarantine, transport  # noqa: E402
 
 PRIMARY = inventory.HostSpec(name="todo-primary", role="primary", address="192.0.2.10",
@@ -155,11 +155,15 @@ class QuarantineToolTests(unittest.TestCase):
         runner = FakeRunner()
         self.assertTrue(self.install(runner))
         kinds = runner.kinds()
-        # Installer staging (controller trust, installs, target trust), then the helper the same way.
-        modules = len(list((ROOT / "deploy/installer/app_installer").glob("*.py")))
+        # Each package staged the same way (controller trust, installs, target trust):
+        # app_installer, then app_dr_host, then the helper.
+        installer = len(list((ROOT / "deploy/installer/app_installer").glob("*.py")))
+        dr_host = len(list((ROOT / "deploy/dr/app_dr_host").glob("*.py")))
         # install is the root-owned directory, put one trust-files install.
         self.assertEqual([kind for kind in kinds if kind in ("trust", "install", "put")],
-                         ["trust", "install"] + ["put"] * modules + ["trust", "trust", "install", "put", "trust"])
+                         ["trust", "install"] + ["put"] * installer + ["trust"]
+                         + ["trust", "install"] + ["put"] * dr_host + ["trust"]
+                         + ["trust", "install", "put", "trust"])
         controller_trust = [command for remote, command in runner.commands if not remote and command[4:5] == ["trust"]]
         self.assertTrue(all(argument.startswith(str(ROOT)) for command in controller_trust for argument in command[6:]))
         self.assertEqual(kinds[-1], "restorecon")

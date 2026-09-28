@@ -44,7 +44,7 @@ hosts:
   todo-standby: {role: primary, address: 192.168.0.108, local: true}
   todo-primary: {role: standby, address: 192.168.0.102}
 EOF
-export PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1
+export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
 python3 -m app_ops --inventory dr-tool.yaml install-dr-tool
 python3 -m app_ops --inventory recovery.yaml cluster-status
 ```

@@ -88,6 +88,9 @@ python3 -m app_installer install-workload postgres \
 ```
 
 The workload CLI emits one JSON result on stdout and diagnostics on stderr.
+The DR commands built on these workloads (replication, reseed, promoted
+deploy) live in `app_dr_host` under [deploy/dr](../dr/README.md); this
+package imports nothing from there.
 Use `--app notes` for an independent Notes postgres/application definition;
 `--app todo` is the default used by DR. The Todo application CLI also installs
 shared Keycloak for existing DR callers. Notes LAN replication publication is
@@ -101,6 +104,7 @@ package, under the supplied project's `deploy/quadlet` directory.
 
 ```bash
 python3 -m unittest discover --start-directory deploy/installer/tests
+python3 -m unittest discover --start-directory deploy/dr/tests
 python3 -m unittest discover --start-directory tests
 ```
 

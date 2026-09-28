@@ -133,7 +133,7 @@ class AcceptanceGuideTests(unittest.TestCase):
     def test_acceptance_reference_links_resolve_in_source(self):
         paths = [ROOT / 'docs' / name for name in (
             'ACCEPTANCE.md', 'ACCEPTANCE-TROUBLESHOOTING.md', 'ACCEPTANCE-AGENT.md', 'PROXMOX-QUARANTINE.md')]
-        for path in paths + sorted((ROOT / 'deploy/ops').glob('*.md')):
+        for path in paths + sorted((ROOT / 'deploy/dr').glob('*.md')):
             for target in re.findall(r'\]\(([^)]+)\)', path.read_text()):
                 if '://' in target or target.startswith('#'):
                     continue
@@ -162,7 +162,7 @@ class AppOpsGuideTests(unittest.TestCase):
     """The acceptance guides only use commands, flags and inventories app-ops accepts."""
 
     def setUp(self):
-        sys.path.insert(0, str(ROOT / 'deploy/ops'))
+        sys.path.insert(0, str(ROOT / 'deploy/dr'))
         from app_ops import cli, inventory
         self.cli, self.inventory = cli, inventory
         self.guide = ''.join((ROOT / 'docs' / name).read_text()

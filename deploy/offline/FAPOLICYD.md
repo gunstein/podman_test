@@ -25,9 +25,10 @@ moving the extraction requires refreshing those paths and hashes. The wrapper
 checks the internal manifest before importing the Python module.
 
 app-ops, the DR tool, is itself project Python, so its files are trusted once
-on each controller ([deploy/ops/README.md](../ops/README.md)). On every
+on each controller ([deploy/dr/README.md](../dr/README.md)). On every
 hardened host it touches, it installs root-owned copies of the installer
-module under `/opt/todo/lib/app_installer` and of the DR and backup tools under
+module under `/opt/todo/lib/app_installer`, of the DR host module under
+`/opt/todo/lib/app_dr_host`, and of the DR and backup tools under
 `/opt/todo/bin`, and waits for exact source and target trust. It refreshes
 exact source-file trust on the controller, sends each file over SSH standard
 input, and registers only those exact target files, with `sudo -n`. No other
@@ -119,7 +120,7 @@ or trusting an entire home, extraction or temporary directory.
 
 - **app-ops itself is denied on the controller:** Its files are not trusted
   yet, or the package was replaced. Run the trust command from
-  [deploy/ops/README.md](../ops/README.md) again.
+  [deploy/dr/README.md](../dr/README.md) again.
 
 - **A previously working tool fails after an update:** Its stored hash is stale.
   Run `--file update` for every registered copy and then
@@ -142,8 +143,8 @@ exact source entry on its controller and an exact installed entry on its target
 only when that tool is retired:
 
 ```bash
-sudo fapolicyd-cli --file delete "$HOME/todo-operations/deploy/scripts/app_dr.py" --trust-file todo
-sudo fapolicyd-cli --file delete "$HOME/todo-operations/deploy/scripts/app_backup.py" --trust-file todo
+sudo fapolicyd-cli --file delete "$HOME/todo-operations/deploy/dr/scripts/app_dr.py" --trust-file todo
+sudo fapolicyd-cli --file delete "$HOME/todo-operations/deploy/dr/scripts/app_backup.py" --trust-file todo
 
 sudo fapolicyd-cli --file delete /opt/todo/bin/app_dr.py --trust-file todo
 sudo fapolicyd-cli --file delete /opt/todo/bin/app_backup.py --trust-file todo

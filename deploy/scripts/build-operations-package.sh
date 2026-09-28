@@ -20,11 +20,8 @@ cp "$project_root/deploy/quadlet/app-network.network" "$project_root/deploy/quad
 "$project_root/deploy/scripts/render-kube-runtime.sh" "$project_root/deploy/environments/prod/values.yaml" "$package_directory/generated/kube-runtime"
 cp "$project_root/deploy/runtime/README.md" "$package_directory/deploy/runtime/"
 cp "$project_root/docs/history/RESULTS.md" "$package_directory/deploy/runtime/"
-cp "$project_root/deploy/scripts/app_dr.py" \
-  "$project_root/deploy/scripts/app-quarantine.sh" \
-  "$project_root/deploy/scripts/trust-files.sh" \
-  "$project_root/deploy/scripts/wait-ready.sh" \
-  "$project_root/deploy/scripts/app_backup.py" "$package_directory/deploy/scripts/"
+cp "$project_root/deploy/scripts/trust-files.sh" \
+  "$project_root/deploy/scripts/wait-ready.sh" "$package_directory/deploy/scripts/"
 cp "$project_root/deploy/offline/FAPOLICYD.md" "$project_root/deploy/offline/README.md" \
   "$package_directory/deploy/offline/"
 cp "$project_root/deploy/quadlet/README.md" "$package_directory/deploy/quadlet/"
@@ -43,9 +40,14 @@ mkdir -p "$package_directory/deploy/installer/app_installer"
 cp "$project_root/deploy/installer/README.md" "$project_root/deploy/installer/pyproject.toml" "$package_directory/deploy/installer/"
 cp "$project_root/deploy/installer/app_installer/"*.py \
   "$package_directory/deploy/installer/app_installer/"
-mkdir -p "$package_directory/deploy/ops/app_ops"
-cp "$project_root/deploy/ops/"*.md "$package_directory/deploy/ops/"
-cp "$project_root/deploy/ops/app_ops/"*.py "$package_directory/deploy/ops/app_ops/"
+# DR: app-ops on the controller, app_dr_host and the tools on the hosts, and their docs.
+mkdir -p "$package_directory/deploy/dr/app_ops" "$package_directory/deploy/dr/app_dr_host" \
+  "$package_directory/deploy/dr/scripts"
+cp "$project_root/deploy/dr/"*.md "$package_directory/deploy/dr/"
+cp "$project_root/deploy/dr/app_ops/"*.py "$package_directory/deploy/dr/app_ops/"
+cp "$project_root/deploy/dr/app_dr_host/"*.py "$package_directory/deploy/dr/app_dr_host/"
+cp "$project_root/deploy/dr/scripts/app_dr.py" "$project_root/deploy/dr/scripts/app_backup.py" \
+  "$project_root/deploy/dr/scripts/app-quarantine.sh" "$package_directory/deploy/dr/scripts/"
 
 source_revision=unknown
 source_state=unknown

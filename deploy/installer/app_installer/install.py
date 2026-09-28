@@ -51,7 +51,7 @@ def require_single_host(action):
         raise RuntimeError(
             f'{action} only supports a single-host deployment. This host contains '
             'clustered replication, promotion or backup state. Preserve it and '
-            'use the DR tools and runbooks instead (docs/ACCEPTANCE.md, deploy/ops).')
+            'use the DR tools and runbooks instead (docs/ACCEPTANCE.md, deploy/dr).')
 
 
 def setup_roles(app: apps.App = apps.APPS[0]):

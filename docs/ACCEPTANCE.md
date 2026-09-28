@@ -4,7 +4,7 @@ This is the canonical normal execution sequence for full two-VM acceptance of
 the seven-pod, two-application Podman Kube architecture: Todo and Notes, shared
 Keycloak and shared nginx, with three independently replicated PostgreSQL
 databases (Todo, Notes and Keycloak). Use the direct DR tools and the
-plain-SSH `app-ops` commands below ([app-ops](../deploy/ops/README.md)). The final rebuild permanently replaces old-primary database
+plain-SSH `app-ops` commands below ([app-ops](../deploy/dr/README.md)). The final rebuild permanently replaces old-primary database
 data; use disposable lab hosts and explicit infrastructure fencing.
 
 [688a0f6](history/ACCEPTANCE-688a0f6.md), [12c3bef](history/ACCEPTANCE-12c3bef.md),
@@ -14,7 +14,7 @@ state or authorization. A NEW run evaluates its own clean revision. Use
 [Proxmox quarantine](PROXMOX-QUARANTINE.md) supplies the specialized
 infrastructure procedure. An autonomous agent run additionally follows
 [ACCEPTANCE-AGENT.md](ACCEPTANCE-AGENT.md) for Proxmox API, sudo, secret and
-evidence handling. The pages under [deploy/ops](../deploy/ops/README.md#the-workflows)
+evidence handling. The pages under [deploy/dr](../deploy/dr/README.md#the-workflows)
 describe each operation's contract, not another acceptance sequence. Ansible is
 retired; runs before `f1f07b5` used its playbooks.
 
@@ -73,7 +73,7 @@ Next phase / where to run it / approval still required:
 Markers: original Todo and Notes ID/title; final authenticated Todo and Notes ID/title:
 Backup name per database / restore-point name / isolated comparisons / cleanup:
 Boot IDs before/after / TLS CA fingerprint / browser tests (no skips):
-Operations tool: app-ops (deploy/ops)
+Operations tool: app-ops (deploy/dr)
 Deviations and repairs (keep original failure evidence):
 Verdict: IN PROGRESS | BLOCKED | REPAIRED FUNCTIONAL PASS | CLEAN PASS
 ```
@@ -482,7 +482,7 @@ the initial standby before phase 7:
 cd "$HOME/todo-operations"
 sha256sum -c SHA256SUMS
 sudo sh deploy/scripts/trust-files.sh trust todo \
-  "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py
+  "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py
 ```
 
 This is the one step where sudo still asks for a password, typed by the
@@ -516,7 +516,7 @@ phase 2. Every app-ops command below starts from the package directory with:
 
 ```bash
 cd "$HOME/todo-operations"
-export PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1
+export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
 ```
 
 Each command prints one JSON line on success, and one `app-ops:` error line on
@@ -579,7 +579,7 @@ ssh -o BatchMode=yes gunstein@192.168.0.108 hostname
 If a snapshot restore changed or removed SSH state, verify the standby host-key
 fingerprint through an independently verified connection (for example the
 client/build host's already trusted SSH connection), then follow
-[STANDBY-ARCHITECTURE.md](../deploy/ops/STANDBY-ARCHITECTURE.md) to
+[STANDBY-ARCHITECTURE.md](../deploy/dr/STANDBY-ARCHITECTURE.md) to
 install primary's public automation key. Do not weaken host-key checking.
 
 Prove that the preflight refuses without the replication firewall rule, and

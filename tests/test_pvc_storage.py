@@ -67,8 +67,11 @@ class PVCStorageTests(unittest.TestCase):
         # replication.py's data_claim (used identically by bootstrap_standby and
         # reseed_standby) owns playing
         # only the canonical PVC before pg_basebackup, covered directly by
-        # deploy/installer/tests/test_replication.py.
-        from app_installer import apps, replication
+        # deploy/dr/tests/test_replication.py.
+        import sys
+        sys.path.insert(0, str(ROOT / "deploy/dr"))
+        from app_dr_host import replication
+        from app_installer import apps
         canonical = next(d for d in yaml.safe_load_all((RUNTIME / "postgres.yaml").read_text())
                          if d["metadata"]["name"] == "todo-postgres-data")
         self.assertEqual(yaml.safe_load(replication.data_claim(apps.SHARED_RESOURCE_OWNER, RUNTIME)), canonical)

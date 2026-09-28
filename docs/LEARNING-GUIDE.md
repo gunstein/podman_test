@@ -126,7 +126,7 @@ bootstrap, migrator, application, Keycloak and replication identities.
 The app pod's init container applies schema migrations before serving traffic.
 Ordinary app recovery does not repeat administrative role bootstrap.
 Read `todo-backend/`, `deploy/installer/app_installer/workloads.py` and
-`deploy/installer/app_installer/promoted.py`.
+`deploy/dr/app_dr_host/promoted.py`.
 
 ## 6. Browser, nginx, TLS and identity
 

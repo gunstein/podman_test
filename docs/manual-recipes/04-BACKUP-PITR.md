@@ -7,7 +7,7 @@ roles, and no existing disposable restore state. Configuration can restart the
 application, so obtain a maintenance window on an existing installation.
 Status and SELECT are observations; marker rows are lab writes. Never substitute
 a live volume as the restore target. If backup verification, archiving or restore
-fails, stop and use [backup/PITR](../../deploy/ops/BACKUP-PITR.md) and
+fails, stop and use [backup/PITR](../../deploy/dr/BACKUP-PITR.md) and
 [troubleshooting](../ACCEPTANCE-TROUBLESHOOTING.md).
 
 This builds on [the two-VM DR walkthrough](03-DR-TWO-VM.md): run it on VM2
@@ -44,7 +44,7 @@ from recipe 3 step 7 is still in place. On VM2:
 
 ```bash
 cd ~/todo-operations
-export PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1
+export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
 cat recovery.yaml
 ```
 

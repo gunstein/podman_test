@@ -183,7 +183,7 @@ operational documentation. It contains no images, credentials,
 site-specific inventory, SSH keys or database data.
 
 For a complete exercise, follow the single sequence in
-[Acceptance](docs/ACCEPTANCE.md). The [app-ops operation references](deploy/ops/README.md)
+[Acceptance](docs/ACCEPTANCE.md). The [app-ops operation references](deploy/dr/README.md)
 explain each tool's scope and safety contracts. Use
 [Acceptance troubleshooting](docs/ACCEPTANCE-TROUBLESHOOTING.md) for failed gates.
 
@@ -255,7 +255,7 @@ manual lab acceptance test.
 | Learn the system in dependency order | [Learning guide](docs/LEARNING-GUIDE.md) |
 | Run or hand off acceptance; change VM IPs (humans and agents: start here) | [Acceptance sequence](docs/ACCEPTANCE.md) |
 | Check demonstrated versus simplified concepts | [What you learn](docs/WHAT-YOU-LEARN.md) |
-| Operate deployment and recovery | [app-ops operations](deploy/ops/README.md) |
+| Operate deployment and recovery | [app-ops operations](deploy/dr/README.md) |
 | Understand SELinux and rootless ownership | [SELinux](docs/SELINUX.md) |
 | Understand runtime credentials | [Secrets](docs/SECRETS.md) |
 | Understand nginx and certificate trust | [TLS](docs/TLS.md) |

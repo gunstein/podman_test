@@ -62,7 +62,7 @@ else:
             for name in ("id", "hostname", "runuser", "python3"):
                 (directory / name).symlink_to(fake)
             result = subprocess.run(
-                ["sh", str(ROOT / "deploy/scripts/app-quarantine.sh"), action, expected, "gunstein"],
+                ["sh", str(ROOT / "deploy/dr/scripts/app-quarantine.sh"), action, expected, "gunstein"],
                 env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
                      "CALLS": str(log), "MANAGER_DELAY": "0", **settings},
                 capture_output=True, text=True, check=False,

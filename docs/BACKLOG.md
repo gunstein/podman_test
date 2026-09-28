@@ -128,7 +128,7 @@ such as a small cloud VM. Without one, the safe design is one human decision
   (`app_dr.py preflight/promote`, `deploy-promoted-application`,
   `configure-backup`), stopping at the first failure. It changes DNS through
   the provider's API if there is one (T5), or prints exactly what to do.
-  Implemented as `app-ops failover` (`deploy/ops/app_ops/failover.py`), and
+  Implemented as `app-ops failover` (`deploy/dr/app_ops/failover.py`), and
   acceptance phase 6 now runs it instead of `app_dr.py promote`: it prints
   the hostnames, address and CA fingerprint users need, since no DNS
   provider is chosen (T5). Run 18 accepted it
@@ -526,7 +526,7 @@ promoted primary.
   there.
 - **D3. `deploy-promoted-application` runs only on the promoted host.** *[docs]* It
   refuses unless that host is the machine running app-ops. Either lift the
-  limit or document it as deliberate in `deploy/ops/README.md`.
+  limit or document it as deliberate in `deploy/dr/README.md`.
 
 - **D5. pgBackRest only if the needs grow.** *[optional]* `app_backup.py` uses
   PostgreSQL's standard methods (`archive_command`, `pg_basebackup`,
@@ -553,14 +553,13 @@ promoted primary.
      ports-closed.sh and the other lab tools). No product change. Done:
      `deploy/scripts/README.md` lists what is where.
   2. Move DR to `deploy/dr/`: the host side as `app_dr_host` with its own CLI,
-     `app_ops` and its docs from `deploy/ops`, and `app_dr.py`,
-     `app_backup.py` and `app-quarantine.sh`. `app_installer` keeps only the
-     single host: render, images, secrets, Quadlet, workloads, Keycloak,
-     install, dev and uninstall. A test refuses any import from the installer
-     into DR. The offline bundle then carries only `app_installer`; the
-     operations package adds `deploy/dr`. Build scripts, fapolicyd trust,
-     `/opt/todo` paths, the acceptance guide, CI and docs follow. One
-     implementation of workload installation stays (AGENTS.md).
+     `app_ops` and its docs, and `app_dr.py`, `app_backup.py`,
+     `app-quarantine.sh` and `bootstrap-ssh-key.sh`. `app_installer` keeps
+     only the single host. A test refuses any import from the installer into
+     DR. Done: the offline bundle carries only `app_installer`, the operations
+     package adds `deploy/dr`, app-ops stages both packages on each host, and
+     the guides, CI, mutation testing and docs follow. One implementation of
+     workload installation stays (AGENTS.md).
   3. A full acceptance run.
   It covers much of item 9 below: `replication.py` and `cli.main()` shrink.
   While moving them, make the top comment (module docstring) of
@@ -573,7 +572,7 @@ promoted primary.
   nothing about roles. Say who calls whom (`publish_primaries` and
   `configure_primary` call `ensure_ca` and `install_server_tls`; the standby
   only uses the CA with `verify-full`), that this CA is not the nginx CA for
-  users (T4), and when the certificate is renewed (U2).
+  users (T4), and when the certificate is renewed (U2). Done in step 2.
 
 7. **One place for paths and constants** *[simplify]* in `settings.py`: the
    `todo-kube-runtime` directory (14 places), `/opt/todo` (11), the promotion

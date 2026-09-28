@@ -260,7 +260,7 @@ controller, from the extracted package (this asks for your sudo password):
 cd ~/todo-operations
 sha256sum -c SHA256SUMS
 sudo sh deploy/scripts/trust-files.sh trust todo \
-  "$PWD"/deploy/ops/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py
+  "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py
 ```
 
 Write the inventory. Host names must match `hostname` on each VM, and the
@@ -297,7 +297,7 @@ Every app-ops command below starts from the package directory with:
 
 ```bash
 cd ~/todo-operations
-export PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1
+export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
 ```
 
 ## 8. Open PostgreSQL only between VM2 and VM1
@@ -551,7 +551,7 @@ hosts:
   todo-standby: {role: current_primary, address: 192.168.1.51, local: true}
   todo-primary: {role: rebuild_standby, address: 192.168.1.50}
 EOF
-export PYTHONPATH="$PWD/deploy/ops" PYTHONDONTWRITEBYTECODE=1
+export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
 ```
 
 The roles now mean:
@@ -677,7 +677,7 @@ approval. Keep VM1 fenced. Use the existing specialized procedure:
   pair is healthy; for recovery boot with every link disconnected, stop all seven
   registered services through Guest Agent, require completed `exitcode=0` and `STOPPED`,
   inspect IPv4/IPv6 rules before reconnecting restricted SSH.
-- [Restore redundancy](../../deploy/ops/RESTORE-REDUNDANCY.md) and
+- [Restore redundancy](../../deploy/dr/RESTORE-REDUNDANCY.md) and
   [acceptance phase 9](../ACCEPTANCE.md#9-rebuild-old-primary-as-standby): verify
   reverse SSH/replication rules, run read-only preflight, then the separately
   approved reseed. Authenticated `IDENTIFY_SYSTEM` must precede deletion.

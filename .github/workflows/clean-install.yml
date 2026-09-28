@@ -39,11 +39,12 @@ jobs:
           )
           archive=dist/todo-operations.tar.gz
           for required in \
-            todo-operations/deploy/ops/app_ops/cli.py \
-            todo-operations/deploy/ops/README.md \
+            todo-operations/deploy/dr/app_ops/cli.py \
+            todo-operations/deploy/dr/app_dr_host/cli.py \
+            todo-operations/deploy/dr/README.md \
             todo-operations/deploy/installer/app_installer/cli.py \
-            todo-operations/deploy/scripts/app_dr.py \
-            todo-operations/deploy/scripts/app_backup.py \
+            todo-operations/deploy/dr/scripts/app_dr.py \
+            todo-operations/deploy/dr/scripts/app_backup.py \
             todo-operations/deploy/scripts/wait-ready.sh \
             todo-operations/deploy/offline/FAPOLICYD.md \
             todo-operations/docs/SECRETS.md \
@@ -73,7 +74,7 @@ jobs:
         run: python -m pip install "ruff==0.16.5" "shellcheck-py==0.11.0.1" "PyYAML==6.0.3" jinja2
 
       - name: Lint Python
-        run: ruff check todo-backend notes-backend e2e deploy/scripts deploy/installer tests
+        run: ruff check todo-backend notes-backend e2e deploy/scripts deploy/installer deploy/dr tests
 
       - name: Test frontend authentication adapter and marker helper in Chromium
         run: |
@@ -95,10 +96,10 @@ jobs:
             deploy/scripts/dev/dev-down.sh \
             deploy/scripts/dev/smoke-proxy.sh \
             deploy/scripts/dev/run-e2e.sh \
-            deploy/scripts/app-quarantine.sh \
+            deploy/dr/scripts/app-quarantine.sh \
             deploy/scripts/trust-files.sh \
             deploy/scripts/lab/trust-serving-ca.sh \
-            deploy/scripts/bootstrap-ssh-key.sh \
+            deploy/dr/scripts/bootstrap-ssh-key.sh \
             deploy/scripts/wait-ready.sh \
             deploy/scripts/dev/run-mutation-tests.sh
 
@@ -152,7 +153,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PYTHONPATH=deploy/ops python - <<'PY'
+          PYTHONPATH=deploy/dr python - <<'PY'
           from app_ops import failover, inventory
           from app_ops.transport import Host
 

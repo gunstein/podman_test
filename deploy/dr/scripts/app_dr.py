@@ -25,14 +25,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence
 
-# The installer and DR host packages: side by side in /opt/todo/lib on a host
-# (/opt/todo/bin holds this script), in deploy/installer and deploy/dr in a
-# checkout or the operations package (deploy/dr/scripts holds it).
-_here = Path(__file__).resolve()
-for _directories in ((_here.parents[1] / 'lib',), (_here.parents[2] / 'installer', _here.parents[2] / 'dr')):
-    if (_directories[0] / 'app_installer').is_dir():
-        sys.path[:0] = [str(directory) for directory in _directories]
-        break
+# This DR tool reuses the installer (app_installer) and the DR building
+# blocks (app_dr_host). app-ops installs it in /opt/todo/bin and both
+# packages side by side in /opt/todo/lib, so they are found in lib next to
+# bin. In a checkout, set PYTHONPATH=deploy/installer:deploy/dr instead.
+# deploy/dr/README.md ("Where DR finds the installer") has the whole rule.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from app_dr_host import replication  # noqa: E402
 from app_installer import apps, quadlet  # noqa: E402
 

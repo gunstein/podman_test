@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -123,6 +124,43 @@ class OperationsDistributionTests(unittest.TestCase):
                 self.assertNotIn("docs/history", name)
                 self.assertFalse(name.endswith(".container"))
                 self.assertFalse(name.endswith(".container.j2"))
+
+    def test_every_dr_entry_point_starts_from_the_package_layout(self):
+        # Build the real package, unpack it outside the checkout, and lay it out
+        # as it is used: app-ops runs from the package on the controller, and
+        # on a host app-ops puts app_installer and app_dr_host side by side in
+        # /opt/todo/lib (trust.stage_installer) and the tools in /opt/todo/bin.
+        # Every entry point must start without reaching back into the checkout.
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            archive = directory / "operations.tar.gz"
+            subprocess.run(["bash", str(ROOT / "deploy/scripts/build-operations-package.sh"), str(archive)],
+                           check=True, capture_output=True)
+            with tarfile.open(archive) as package:
+                package.extractall(directory / "unpacked", filter="data")
+            package = directory / "unpacked/todo-operations"
+            host = directory / "opt/todo"
+            for name, source in (("app_installer", "deploy/installer/app_installer"),
+                                 ("app_dr_host", "deploy/dr/app_dr_host")):
+                (host / "lib" / name).mkdir(parents=True)
+                for module in (package / source).glob("*.py"):
+                    shutil.copy(module, host / "lib" / name)
+            (host / "bin").mkdir()
+            for tool in ("app_dr.py", "app_backup.py"):
+                shutil.copy(package / "deploy/dr/scripts" / tool, host / "bin")
+            environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+            environment["PYTHONDONTWRITEBYTECODE"] = "1"
+            for where, command, pythonpath in (
+                    ("controller", ["-m", "app_ops", "--help"], package / "deploy/dr"),
+                    ("host", ["-m", "app_dr_host", "--help"], host / "lib"),
+                    ("host", [str(host / "bin/app_dr.py"), "--help"], None),
+                    ("host", [str(host / "bin/app_backup.py"), "--help"], None)):
+                with self.subTest(where=where, command=command[-2]):
+                    env = {**environment, **({"PYTHONPATH": str(pythonpath)} if pythonpath else {})}
+                    result = subprocess.run([sys.executable, *command], cwd=directory, env=env,
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("usage:", result.stdout)
 
     def test_offline_archive_contains_quadlet_templates_and_all_image_slots(self):
         # Exercise the real packager; only expensive image production is substituted.

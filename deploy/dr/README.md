@@ -13,10 +13,24 @@ Everything DR lives here, apart from the single-host installer it builds on:
 | `app_dr_host/` | `python3 -m app_dr_host`: the building blocks app-ops runs on each host (replication, replication TLS, reseed, promoted deploy, secret transfer, pair checks) | each host, staged by app-ops |
 | `scripts/` | `app_dr.py` (promotion), `app_backup.py` (backup and PITR), `app-quarantine.sh`, `bootstrap-ssh-key.sh` | the hosts (`/opt/todo/bin`), the controller for the last |
 
-`app_dr_host` imports `app_installer` (deploy/installer) for the shared
-workloads, secrets and registry; the installer never imports DR
-(`tests/test_dr_boundary.py`). app-ops stages both packages side by side on a
-host, in `/opt/todo/lib` when fapolicyd is active.
+## Where DR finds the installer
+
+DR reuses the single-host installer instead of copying it: `app_installer`
+(deploy/installer) owns the app registry, the workloads, the secrets and the
+Quadlet files. DR imports the installer; the installer never imports DR
+(`tests/test_dr_boundary.py`). Where the two packages are depends on where
+the code runs:
+
+| Code | Runs on | Finds `app_installer` (and `app_dr_host`) |
+|---|---|---|
+| `app_ops` | the controller, from a checkout or the operations package | `deploy/installer` in the same tree, added by `app_ops/steps.py` |
+| `app_dr_host` | each host | `PYTHONPATH`, which app-ops sets to the directory it staged both packages in: `/opt/todo/lib` when fapolicyd is active |
+| `app_dr.py`, `app_backup.py` | each host, in `/opt/todo/bin` | `/opt/todo/lib`, the `lib` next to their own `bin`; in a checkout, set `PYTHONPATH=deploy/installer:deploy/dr` |
+| `app-quarantine.sh` | the old primary | `PYTHONPATH=/opt/todo/lib` in the script |
+
+`tests/test_operations_distribution.py` unpacks the operations package, lays
+it out as app-ops does on a host, and starts every entry point, so a broken
+path fails in CI rather than in the lab.
 
 These operations protect one group of three databases: Todo, Notes and the
 shared Keycloak database (`apps.REPLICATED_DATABASES`). Each has its own host

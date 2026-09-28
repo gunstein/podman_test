@@ -7,6 +7,9 @@ from pathlib import Path
 from . import trust
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# app-ops reuses the installer's registry and settings. On the controller it
+# runs from a checkout or the operations package, where the installer is
+# deploy/installer; see deploy/dr/README.md ("Where DR finds the installer").
 sys.path.insert(0, str(PROJECT_ROOT / 'deploy/installer'))
 from app_installer import apps, settings  # noqa: E402
 

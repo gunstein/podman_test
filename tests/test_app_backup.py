@@ -1,12 +1,16 @@
 import importlib.util
 import json
 import subprocess
+import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
 SCRIPT = Path(__file__).parents[1] / "deploy/dr/scripts" / "app_backup.py"
+# On a host the script finds both packages in lib next to it; here they come
+# from the checkout, as PYTHONPATH=deploy/installer:deploy/dr would give them.
+sys.path[:0] = [str(Path(__file__).parents[1] / "deploy/installer"), str(Path(__file__).parents[1] / "deploy/dr")]
 SPEC = importlib.util.spec_from_file_location("app_backup", SCRIPT)
 assert SPEC and SPEC.loader
 app_backup = importlib.util.module_from_spec(SPEC)

@@ -575,14 +575,15 @@ to bottom.
   `TodoBackup(database=...)`); the `--app` options and the `applications`
   key in the DR config and promotion record stay, as files and guides use
   them.
-- **R3. One visible bootstrap for DR paths.** *[simplify]* DR finds
-  `app_installer` through `sys.path` lookups spread over `app_dr.py`,
-  `app_backup.py` and app-ops staging. Put it in one small function whose
-  comment says why DR needs the installer (the rule in
-  `tests/test_dr_boundary.py`). Add a smoke test that unpacks the operations
-  package and runs `--help` on `app_ops`, `app_dr_host`, `app_dr.py` and
-  `app_backup.py`, so a broken path fails in CI, not in the lab. Needs a full
-  acceptance run afterwards. Covers the `sys.path` part of item 10.
+- **R3. One visible rule for where DR finds the installer.** *[simplify]*
+  Done: `deploy/dr/README.md` ("Where DR finds the installer") says, for each
+  DR entry point, where it runs and where it finds `app_installer` and
+  `app_dr_host`; each path line in the code points there. `app_dr.py` and
+  `app_backup.py` no longer search two places: on a host they use the `lib`
+  next to their `bin` (`/opt/todo/lib`), in a checkout `PYTHONPATH`. A test
+  unpacks the operations package, lays it out as app-ops does on a host, and
+  starts `app_ops`, `app_dr_host`, `app_dr.py` and `app_backup.py`. R1-R3
+  need a full acceptance run.
 - **R4. Shared backend code.** *[simplify]* Item 11 below: the largest and
   least urgent; last, possibly with its own run.
 - *[optional]* Smaller points from the same review: the PostgreSQL image is
@@ -635,8 +636,8 @@ to bottom.
    Give each `app_installer/cli.py` and `app_backup.py` command its own small
    function; `cli.main()` is over 200 lines and `install()` over 100.
 10. **Small cleanups.** *[simplify]* Rename `TodoDr` and `TodoBackup` (they
-    handle all three databases); replace the manual `sys.path` setup in the
-    scripts (R3). The typed boundaries are done (R2).
+    handle all three databases). The typed boundaries (R2) and the path
+    setup (R3) are done.
 11. **Backend duplication.** *[simplify]* `todo-backend` and `notes-backend` have identical
     `migrate.py` and near-identical `setup_roles.py` and `main.py`. Share them;
     this touches the image builds.

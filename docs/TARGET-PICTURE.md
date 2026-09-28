@@ -8,7 +8,7 @@ separate sites, and no third machine.
 
 ```mermaid
 flowchart LR
-  users(["Users"]) --> dns{{"todo / notes names<br>DNS, short TTL (T5)"}}
+  users(["Users"]) --> dns{{"todo / notes names<br>DNS, short TTL (O1)"}}
   op(["Operator<br>runbooks (O1)"])
 
   subgraph OSLO["Oslo: primary"]
@@ -36,7 +36,7 @@ flowchart LR
   o_time <-->|"journal copy (L6)<br>secrets, CA (G2, T4)"| t_time
   dns ~~~ o_apps & o_db & o_bk
   op -->|app-ops over SSH| o_time
-  op -.->|"failover (G1)"| t_time
+  op -.->|"app-ops failover"| t_time
 ```
 
 ## When Oslo burns: running in Trondheim within 30 minutes
@@ -44,8 +44,8 @@ flowchart LR
 ```mermaid
 flowchart LR
   a["Oslo lost<br>alert from the<br>checks (M1)"] --> b["Operator decides<br>Oslo is lost and<br>fenced (T3)"]
-  b --> c["One command in<br>Trondheim (G1):<br>promote, apps,<br>backups, login check"]
-  c --> d["Names point to<br>Trondheim (T5)"]
+  b --> c["One command in<br>Trondheim, app-ops failover:<br>promote, apps,<br>backups, login check"]
+  c --> d["Names point to<br>Trondheim (O1)"]
   d --> e["Users log in,<br>same CA: no<br>certificate errors (T4)"]
 ```
 
@@ -64,7 +64,7 @@ switchover with no data loss moves operation back (T6).
 | Area | After the backlog |
 |---|---|
 | On the hosts | Only Python's standard library, systemd, journald, Podman and PostgreSQL. No new services. |
-| Tools | `install.sh` for one host, app-ops over plain SSH for the pair: failover (G1), updates (U1), switchover (T6). Ansible is retired. |
+| Tools | `install.sh` for one host, app-ops over plain SSH for the pair: `app-ops failover`, updates (U1), switchover (T6). Ansible is retired. |
 | Between the sites | Replication encrypted with TLS and verify-full; one CA (T4); DR secrets synchronised (G2). |
 | Backups | Each host backs up its own copy: a full backup every night and the WAL archive, 7 days, so PITR works even if one site is lost (D2, M2). |
 | Security | Keycloak lockout and password policy, HTTP security headers, fapolicyd trusts only root-owned files (F), tool-owned firewall rules (W). |

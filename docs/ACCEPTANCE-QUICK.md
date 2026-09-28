@@ -13,7 +13,7 @@ installs again. It never touches VM 108.
 The verdict is `QUICK PASS` or `QUICK FAIL`. A quick pass accepts the change
 for single-host behaviour only; it is not a CLEAN PASS of the DR design.
 
-The run uses `deploy/scripts/acceptance.py` for everything around the
+The run uses `deploy/scripts/lab/acceptance.py` for everything around the
 product's own commands. Each call writes its own log and one line in
 `record.jsonl`, compares the result itself and prints `RESULT: PASS`,
 `FAIL` or `REFUSED`. The product's commands (`install.sh`, the fapolicyd
@@ -58,7 +58,7 @@ Set the run once, in every shell you use:
 ```bash
 RUN_ID=<run ID from the kickoff>
 RUN=~/todo-acceptance-runs/$RUN_ID
-A="python3 deploy/scripts/acceptance.py --run $RUN_ID"
+A="python3 deploy/scripts/lab/acceptance.py --run $RUN_ID"
 mkdir -p "$RUN/logs"
 ```
 

@@ -14,7 +14,7 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-2dbc561.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
-`deploy/scripts/acceptance.py`. Its `report full` found all 104 steps PASS
+`deploy/scripts/lab/acceptance.py`. Its `report full` found all 104 steps PASS
 on one clean revision and compared them with the agent guide: every step and
 log it names, nothing else. Install, standby bootstrap, quarantine rehearsal,
 fencing, the one `failover` command (group promotion, application tier,

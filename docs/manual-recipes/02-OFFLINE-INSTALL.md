@@ -135,7 +135,7 @@ Then open <https://todo.test:8443>.
 You need to trust the public demo CA from the installation to avoid
 certificate warnings. Follow the repository's [TLS guide](../TLS.md) to
 export and install the CA certificate — or use
-`deploy/scripts/trust-serving-ca.sh todo@192.168.1.50` from the laptop, which does
+`deploy/scripts/lab/trust-serving-ca.sh todo@192.168.1.50` from the laptop, which does
 the fetch, fingerprint verification and trust-store update in one step.
 
 **Note:** the installation creates the Keycloak realm and client, but no

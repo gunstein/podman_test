@@ -20,5 +20,5 @@ lab-dr.*.local.toml
 ansible/inventory-initial.ini
 ansible/inventory-recovery.ini
 
-# Mutation testing working copy (deploy/scripts/run-mutation-tests.sh).
+# Mutation testing working copy (deploy/scripts/dev/run-mutation-tests.sh).
 mutants/

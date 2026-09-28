@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Validate the actual rendered proxy configuration and persistent TLS bootstrap.
 set -euo pipefail
-project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 work_directory=$(mktemp -d)
 image="localhost/todo-proxy-smoke:$$"
 volume="todo-proxy-smoke-$$"

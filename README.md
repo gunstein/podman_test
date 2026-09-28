@@ -237,7 +237,7 @@ Browser tests use `todo-backend/requirements-e2e.txt` and Playwright. The helper
 creates or updates `testuser` without storing either password:
 
 ```bash
-deploy/scripts/run-e2e.sh
+deploy/scripts/dev/run-e2e.sh
 ```
 
 CI runs backend tests, Python and shell lint, nginx runtime smoke tests, and

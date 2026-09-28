@@ -74,7 +74,7 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'deploy/installer'))
 from app_installer import apps  # noqa: E402  (the registry of services, read-only)
 
@@ -443,7 +443,7 @@ echo "wal {database} $(podman exec {database}-postgres du -sk /var/lib/postgresq
 # --- do (changes state) -------------------------------------------------------------
 
 def pve(step, *arguments):
-    return step.run([sys.executable, ROOT / 'deploy/scripts/pve_lab.py', *arguments], timeout=900)
+    return step.run([sys.executable, ROOT / 'deploy/scripts/lab/pve_lab.py', *arguments], timeout=900)
 
 
 def boot_id(step, host):
@@ -603,7 +603,7 @@ PORTS = ('22', '5432', '5433', '5434', '8443')
 
 def check_ports_closed(step, host, source):
     """Phase 6: nothing on the fenced host accepts a connection, seen from source."""
-    script = (ROOT / 'deploy/scripts/ports-closed.sh').read_text()
+    script = (ROOT / 'deploy/scripts/lab/ports-closed.sh').read_text()
     result = on(step, source, script, host, *PORTS)
     step.expect(result.returncode == 0 and f'CLOSED: {host}' in result.stdout, f'{host} is closed seen from {source}')
 

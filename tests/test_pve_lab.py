@@ -11,7 +11,7 @@ import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "deploy/scripts"))
+sys.path.insert(0, str(ROOT / "deploy/scripts/lab"))
 
 import pve_lab  # noqa: E402
 
@@ -169,7 +169,7 @@ class PveLabTests(unittest.TestCase):
 
 
 class PortsClosedTests(unittest.TestCase):
-    SCRIPT = ROOT / "deploy/scripts/ports-closed.sh"
+    SCRIPT = ROOT / "deploy/scripts/lab/ports-closed.sh"
 
     def run_script(self, *arguments):
         return subprocess.run(["bash", str(self.SCRIPT), *arguments], capture_output=True, text=True,

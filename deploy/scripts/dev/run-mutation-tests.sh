@@ -4,7 +4,7 @@
 # Needs: python -m pip install mutmut==3.8.0 pytest jinja2 PyYAML
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")/../installer"
+cd "$(dirname "${BASH_SOURCE[0]}")/../../installer"
 checks='reseed_check rebuild_primary_check require_promoted_group require_standby
 require_primary status streaming_status archive_health require_stopped_service
 require_quarantined_group require_reseed_confirmations identifier address lsn unreplayed_bytes'

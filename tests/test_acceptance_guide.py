@@ -106,12 +106,12 @@ class AcceptanceGuideTests(unittest.TestCase):
         # Fencing and the quarantine stop run through acceptance.py, which calls exactly these.
         self.assertIn('do fence 107', guide)
         self.assertIn('do quarantine-stop 107 todo-primary', guide)
-        tool = (ROOT / 'deploy/scripts/acceptance.py').read_text()
+        tool = (ROOT / 'deploy/scripts/lab/acceptance.py').read_text()
         self.assertIn("pve(step, 'fence', vmid)", tool)
         self.assertIn("'/opt/todo/bin/app-quarantine.sh', action, name, step.user", tool)
 
     def test_every_acceptance_tool_line_in_the_agent_guide_is_a_valid_command(self):
-        sys.path.insert(0, str(ROOT / 'deploy/scripts'))
+        sys.path.insert(0, str(ROOT / 'deploy/scripts/lab'))
         import acceptance
         guide = (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text()
         lines = re.findall(r'^\$A --step (\S+) (check|do) (\S+)(.*)$', guide, re.M)
@@ -202,6 +202,6 @@ class BrowserFlowTests(unittest.TestCase):
         self.assertEqual(flows('ACCEPTANCE.md'), {'e2e/test_todo_flow.py', 'e2e/test_notes_flow.py',
                                                   'e2e/test_multi_app.py'})
         # The agent runs them through acceptance.py check browser.
-        tool = (ROOT / 'deploy/scripts/acceptance.py').read_text()
+        tool = (ROOT / 'deploy/scripts/lab/acceptance.py').read_text()
         self.assertEqual(set(re.findall(r"'(e2e/test_\w+\.py)'", tool)), flows('ACCEPTANCE.md'))
         self.assertIn('check browser', (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text())

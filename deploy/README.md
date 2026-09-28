@@ -26,8 +26,8 @@ deploy/scripts/render-kube-runtime.sh
 
 # Development uses local values and direct podman kube play/down.
 # Every missing secret is generated; none require an interactive terminal.
-deploy/scripts/dev-up.sh
-deploy/scripts/dev-down.sh
+deploy/scripts/dev/dev-up.sh
+deploy/scripts/dev/dev-down.sh
 
 # Production installation uses Quadlet/user-systemd.
 PYTHONPATH=deploy/installer python3 -m app_installer install --mode server

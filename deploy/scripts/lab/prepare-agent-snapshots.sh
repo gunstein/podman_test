@@ -63,4 +63,4 @@ for item in "$@"; do
   wait_for_ssh "$ip"
   echo "VM $vmid ready: snapshot $new_snapshot taken, VM running."
 done
-echo "Done. Now run deploy/scripts/acceptance_preflight.py."
+echo "Done. Now run deploy/scripts/lab/acceptance_preflight.py."

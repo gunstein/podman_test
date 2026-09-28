@@ -4,8 +4,8 @@
 Run on the client/build host from the repository root. It changes nothing:
 local checks, Proxmox API GET requests and read-only SSH commands only.
 
-  python3 deploy/scripts/acceptance_preflight.py
-  python3 deploy/scripts/acceptance_preflight.py --snapshot clean-agent --revision <sha>
+  python3 deploy/scripts/lab/acceptance_preflight.py
+  python3 deploy/scripts/lab/acceptance_preflight.py --snapshot clean-agent --revision <sha>
 
 Prints PASS/WARN/FAIL per check and exits 1 if anything FAILed.
 """
@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pve_lab  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 REQUIRED_PRIVILEGES = ('VM.Audit', 'VM.PowerMgmt', 'VM.Config.Network', 'VM.Config.Options',
                        'VM.Snapshot.Rollback')
 GUEST_EXEC_PRIVILEGES = ('VM.Monitor', 'VM.GuestAgent.Unrestricted')
@@ -210,7 +210,7 @@ def check_guest(report, args, address, hostname):
     report.check(facts.get('linger') == 'yes', 'User lingering', facts.get('linger', ''))
     report.check(facts.get('rootless') == 'true', 'Rootless Podman', facts.get('podman', ''))
     report.check(facts.get('jinja2_yaml') == 'ok', 'Python Jinja2 and PyYAML installed',
-                 'run deploy/scripts/prepare-agent-snapshots.sh, or dnf install -y python3-jinja2 python3-pyyaml')
+                 'run deploy/scripts/lab/prepare-agent-snapshots.sh, or dnf install -y python3-jinja2 python3-pyyaml')
     report.check(facts.get('sudo') == 'ok', 'Passwordless sudo in the running VM', facts.get('sudo', ''), level='WARN')
     report.line('INFO', 'Lab sudoers file', facts.get('sudoers_file', '') +
                 ' (what matters is that the clean snapshot contains it)')

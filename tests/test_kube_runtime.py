@@ -263,7 +263,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertLess(healthy, setup[0])
         self.assertLess(setup[0], keycloak)
         self.assertEqual(len(setup), 4)
-        self.assertIn("app_installer install --mode dev", read(ROOT / "deploy/scripts/dev-up.sh"))
+        self.assertIn("app_installer install --mode dev", read(ROOT / "deploy/scripts/dev/dev-up.sh"))
 
     def test_offline_bundle_packages_rendered_kube_runtime(self):
         offline = read(ROOT / "deploy/offline" / "build-bundle.sh")

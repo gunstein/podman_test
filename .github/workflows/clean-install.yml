@@ -91,16 +91,16 @@ jobs:
             proxy/proxy-entrypoint.sh \
             deploy/scripts/build-operations-package.sh \
             deploy/scripts/render-kube-runtime.sh \
-            deploy/scripts/dev-up.sh \
-            deploy/scripts/dev-down.sh \
-            deploy/scripts/smoke-proxy.sh \
-            deploy/scripts/run-e2e.sh \
+            deploy/scripts/dev/dev-up.sh \
+            deploy/scripts/dev/dev-down.sh \
+            deploy/scripts/dev/smoke-proxy.sh \
+            deploy/scripts/dev/run-e2e.sh \
             deploy/scripts/app-quarantine.sh \
             deploy/scripts/trust-files.sh \
-            deploy/scripts/trust-serving-ca.sh \
+            deploy/scripts/lab/trust-serving-ca.sh \
             deploy/scripts/bootstrap-ssh-key.sh \
             deploy/scripts/wait-ready.sh \
-            deploy/scripts/run-mutation-tests.sh
+            deploy/scripts/dev/run-mutation-tests.sh
 
       - name: Prepare rootless Podman for smoke test
         shell: bash
@@ -114,7 +114,7 @@ jobs:
           test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
 
       - name: Smoke-test nginx and TLS bootstrap
-        run: deploy/scripts/smoke-proxy.sh
+        run: deploy/scripts/dev/smoke-proxy.sh
 
 
   full-stack:
@@ -146,7 +146,7 @@ jobs:
           echo '127.0.0.1 todo.test notes.test' | sudo tee -a /etc/hosts
 
       - name: Start the stack with dev-up.sh
-        run: deploy/scripts/dev-up.sh
+        run: deploy/scripts/dev/dev-up.sh
 
       - name: failover's login-page check against the real Keycloak and nginx
         shell: bash
@@ -204,7 +204,7 @@ jobs:
 
       - name: Stop the stack with dev-down.sh
         if: always()
-        run: deploy/scripts/dev-down.sh
+        run: deploy/scripts/dev/dev-down.sh
 
 
   postgres-version:

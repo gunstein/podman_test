@@ -61,7 +61,7 @@ because of commands the agent typed around the product: a firewall rule
 without `--permanent`, a proof run before the Proxmox firewall applied, a
 write probe against a column that does not exist, an exit status lost in a
 pipe, a hand-copied fingerprint. The fix is fewer hand-written commands, not
-more rules. `deploy/scripts/acceptance.py` runs on the client only (standard
+more rules. `deploy/scripts/lab/acceptance.py` runs on the client only (standard
 library, `pve_lab.py`, SSH, `wait-ready.sh`); it is lab tooling, never shipped
 to a host. The product's own commands (`install.sh`, app-ops, `app_dr.py`,
 `app_backup.py`) stay exactly as the guide writes them: they are what is
@@ -76,7 +76,7 @@ being accepted.
   `check ca`, `do reboot`, `do markers`, `do firewall-https`. With them, a
   quick acceptance (phases 1-3 with reboot and repeat install on one VM, about
   20 minutes) for changes that do not touch installer, Quadlet, replication,
-  app-ops or backup. Implemented (`deploy/scripts/acceptance.py`,
+  app-ops or backup. Implemented (`deploy/scripts/lab/acceptance.py`,
   [ACCEPTANCE-QUICK.md](ACCEPTANCE-QUICK.md)), plus `check clean-host`,
   `check browser`, `check markers` and `do rollback`. The first quick run
   passed with every step PASS ([record](history/QUICK-b9bffbf.md)); the item
@@ -550,7 +550,8 @@ promoted primary.
   one way (DR uses the installer; `install.py` imports no DR module), so:
   1. Split `deploy/scripts` into shared scripts, `dev/` (dev-up, dev-down,
      run-e2e, smoke-proxy) and `lab/` (acceptance.py, pve_lab.py,
-     ports-closed.sh and the other lab tools). No product change.
+     ports-closed.sh and the other lab tools). No product change. Done:
+     `deploy/scripts/README.md` lists what is where.
   2. Move DR to `deploy/dr/`: the host side as `app_dr_host` with its own CLI,
      `app_ops` and its docs from `deploy/ops`, and `app_dr.py`,
      `app_backup.py` and `app-quarantine.sh`. `app_installer` keeps only the

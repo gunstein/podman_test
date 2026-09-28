@@ -109,7 +109,7 @@ chmod 600 ~/.config/todo-acceptance/pve.env
 
 ### A3. Passwordless sudo for the service user, inside the clean snapshots
 
-Shortcut: after A1 and A2, `deploy/scripts/prepare-agent-snapshots.sh` does
+Shortcut: after A1 and A2, `deploy/scripts/lab/prepare-agent-snapshots.sh` does
 this whole step for both VMs through the token (rollback to the existing clean
 snapshots, `ssh-copy-id`, the sudoers file, shutdown, snapshot `clean-agent`,
 start). It asks for your VM password and sudo password. The manual steps are:
@@ -150,7 +150,7 @@ It changes nothing: local checks, Proxmox API GET requests and read-only SSH
 commands. Pass the kickoff values if they differ from the lab defaults:
 
 ```bash
-python3 deploy/scripts/acceptance_preflight.py --snapshot clean-agent --revision "$(git rev-parse HEAD)"
+python3 deploy/scripts/lab/acceptance_preflight.py --snapshot clean-agent --revision "$(git rev-parse HEAD)"
 ```
 
 Fix every `FAIL` before starting the agent. `WARN` lines need a look but may be
@@ -198,7 +198,7 @@ Not approved: anything else destructive, any source change, commit or push.
 You execute the eleven phases of `docs/ACCEPTANCE.md` on two Proxmox lab VMs,
 in order, on one clean Git revision, and you collect evidence for every phase.
 You work alone: you use SSH to the VMs, the Proxmox API through
-`deploy/scripts/pve_lab.py`, and passwordless sudo inside the VMs. You do
+`deploy/scripts/lab/pve_lab.py`, and passwordless sudo inside the VMs. You do
 as much as possible yourself. You ask the operator only in the cases listed in
 C4, as seldom as possible, and always in the form C4a describes. You never
 change source code. At the end you write a verdict. Being careful is more
@@ -218,7 +218,7 @@ Before phase 1, and before anything that changes a VM:
    ran the check but not into the log, and was not clean):
 
    ```bash
-   { echo "# start $(date --iso-8601=seconds)"; python3 deploy/scripts/acceptance_preflight.py --snapshot clean-agent --revision "$(git rev-parse HEAD)" --primary 192.168.0.102 --standby 192.168.0.108 --primary-vmid 107 --standby-vmid 108 --user gunstein --client-ip 192.168.0.100; echo "exit=$?"; } >> "$RUN/logs/00-readiness.log" 2>&1; tail -n 20 "$RUN/logs/00-readiness.log"
+   { echo "# start $(date --iso-8601=seconds)"; python3 deploy/scripts/lab/acceptance_preflight.py --snapshot clean-agent --revision "$(git rev-parse HEAD)" --primary 192.168.0.102 --standby 192.168.0.108 --primary-vmid 107 --standby-vmid 108 --user gunstein --client-ip 192.168.0.100; echo "exit=$?"; } >> "$RUN/logs/00-readiness.log" 2>&1; tail -n 20 "$RUN/logs/00-readiness.log"
    ```
 
    Also run `sudo -n true` on the client. If `CLIENT_SUDO: yes` but that fails,
@@ -245,7 +245,7 @@ Before phase 1, and before anything that changes a VM:
 | Node firewall disabled | Node Shell: `pvesh set /nodes/<node>/firewall/options -enable 1` and `systemctl enable --now pve-firewall`. |
 | Datacenter firewall disabled | Node Shell: `pvesh get /cluster/firewall/options`, then `pvesh set /cluster/firewall/options -enable 1`. Say that Proxmox then blocks incoming traffic to the Proxmox host except the web GUI (8006) and SSH (22) from its local network. The operator decides; do not enable it yourself (C2 rule 6). |
 | QEMU Guest Agent not enabled on a VM | Node Shell: `qm set <VMID> --agent enabled=1`, **before** the snapshot step, so that the new snapshot contains it. |
-| Snapshot `clean-agent` missing, passwordless sudo missing, Jinja2/PyYAML missing, or client SSH key not accepted | ThinkPad, in the checkout: `bash deploy/scripts/prepare-agent-snapshots.sh 107:192.168.0.102:<existing clean snapshot> 108:192.168.0.108:<existing clean snapshot>`. Say that it destroys the current state of both VMs, and that it asks for each VM's login password and sudo password. |
+| Snapshot `clean-agent` missing, passwordless sudo missing, Jinja2/PyYAML missing, or client SSH key not accepted | ThinkPad, in the checkout: `bash deploy/scripts/lab/prepare-agent-snapshots.sh 107:192.168.0.102:<existing clean snapshot> 108:192.168.0.108:<existing clean snapshot>`. Say that it destroys the current state of both VMs, and that it asks for each VM's login password and sudo password. |
 | `clean-agent` exists but a guest check still fails | STOP and ask. The snapshot is not the documented baseline, and deleting a snapshot is the operator's decision. |
 | Client tool missing and no client sudo | ThinkPad: one `sudo apt-get install -y ...` line with exactly the missing packages (`podman`, `libnss3-tools`, `python3-venv`). |
 | Hostname or VM identity mismatch | STOP: wrong VM or wrong kickoff values. |
@@ -381,7 +381,7 @@ Next I will: <what you do afterwards>
 
 **Run folder and the acceptance tool.** Every step of C9 writes into
 `~/todo-acceptance-runs/<RUN_ID>/` (outside the checkout): the checks and
-state changes around the product through `deploy/scripts/acceptance.py`
+state changes around the product through `deploy/scripts/lab/acceptance.py`
 (`$A`), the product's own commands through the `product`, `vm` and `ops`
 helpers (C9.1). Both put each step's full output and exit status in its own
 `logs/<step>...log`; `acceptance.py` also appends a line to `record.jsonl` and
@@ -392,24 +392,24 @@ there as you go (what you did, any STOP).
 curl commands with the token:
 
 ```bash
-python3 deploy/scripts/pve_lab.py get /nodes/{node}/qemu/107/status/current
-python3 deploy/scripts/pve_lab.py get /nodes/{node}/qemu/107/config
-python3 deploy/scripts/pve_lab.py task /nodes/{node}/qemu/107/snapshot/clean-agent/rollback
-python3 deploy/scripts/pve_lab.py task /nodes/{node}/qemu/107/status/start
-python3 deploy/scripts/pve_lab.py task /nodes/{node}/qemu/107/status/shutdown
-python3 deploy/scripts/pve_lab.py task /nodes/{node}/qemu/107/status/stop
-python3 deploy/scripts/pve_lab.py task /nodes/{node}/qemu/107/status/reboot
-python3 deploy/scripts/pve_lab.py post /nodes/{node}/qemu/107/agent/ping
-python3 deploy/scripts/pve_lab.py exec 107 -- /opt/todo/bin/app-quarantine.sh check todo-primary gunstein
-python3 deploy/scripts/pve_lab.py nic 107 link_down 1
-python3 deploy/scripts/pve_lab.py set /nodes/{node}/qemu/107/config onboot=0
-python3 deploy/scripts/pve_lab.py get /nodes/{node}/qemu/107/firewall/options
-python3 deploy/scripts/pve_lab.py get /nodes/{node}/qemu/107/firewall/rules
-python3 deploy/scripts/pve_lab.py get /cluster/firewall/options
-python3 deploy/scripts/pve_lab.py get /cluster/ha/resources
-python3 deploy/scripts/pve_lab.py fence 107
-bash deploy/scripts/ports-closed.sh 192.168.0.102 22 5432 5433 5434 8443
-ssh gunstein@192.168.0.108 'bash -s' -- 192.168.0.102 22 5432 5433 5434 8443 < deploy/scripts/ports-closed.sh
+python3 deploy/scripts/lab/pve_lab.py get /nodes/{node}/qemu/107/status/current
+python3 deploy/scripts/lab/pve_lab.py get /nodes/{node}/qemu/107/config
+python3 deploy/scripts/lab/pve_lab.py task /nodes/{node}/qemu/107/snapshot/clean-agent/rollback
+python3 deploy/scripts/lab/pve_lab.py task /nodes/{node}/qemu/107/status/start
+python3 deploy/scripts/lab/pve_lab.py task /nodes/{node}/qemu/107/status/shutdown
+python3 deploy/scripts/lab/pve_lab.py task /nodes/{node}/qemu/107/status/stop
+python3 deploy/scripts/lab/pve_lab.py task /nodes/{node}/qemu/107/status/reboot
+python3 deploy/scripts/lab/pve_lab.py post /nodes/{node}/qemu/107/agent/ping
+python3 deploy/scripts/lab/pve_lab.py exec 107 -- /opt/todo/bin/app-quarantine.sh check todo-primary gunstein
+python3 deploy/scripts/lab/pve_lab.py nic 107 link_down 1
+python3 deploy/scripts/lab/pve_lab.py set /nodes/{node}/qemu/107/config onboot=0
+python3 deploy/scripts/lab/pve_lab.py get /nodes/{node}/qemu/107/firewall/options
+python3 deploy/scripts/lab/pve_lab.py get /nodes/{node}/qemu/107/firewall/rules
+python3 deploy/scripts/lab/pve_lab.py get /cluster/firewall/options
+python3 deploy/scripts/lab/pve_lab.py get /cluster/ha/resources
+python3 deploy/scripts/lab/pve_lab.py fence 107
+bash deploy/scripts/lab/ports-closed.sh 192.168.0.102 22 5432 5433 5434 8443
+ssh gunstein@192.168.0.108 'bash -s' -- 192.168.0.102 22 5432 5433 5434 8443 < deploy/scripts/lab/ports-closed.sh
 ```
 
 `exec` prints `exited`, `exitcode`, `out-data` and `err-data` and exits with the
@@ -557,7 +557,7 @@ root on the client, in one shell where you first set:
 RUN_ID="<run ID from the kickoff>"
 RUN=~/todo-acceptance-runs/$RUN_ID
 mkdir -p "$RUN/logs"
-A="python3 deploy/scripts/acceptance.py --run $RUN_ID"
+A="python3 deploy/scripts/lab/acceptance.py --run $RUN_ID"
 # A product command: its start time, full output and exit status in logs/<step>.log.
 # It runs once: an existing log means the step already ran, and it refuses.
 product() { local log="$RUN/logs/$1.log"; shift; if [ -e "$log" ]; then echo "STOP: $log exists, the step already ran; never run it again" >&2; return 1; fi; echo "# start $(date --iso-8601=seconds)" > "$log"; "$@" >> "$log" 2>&1; echo "exit=$?" >> "$log"; tail -n 4 "$log"; }
@@ -566,7 +566,7 @@ vm() { product "$1" ssh -o BatchMode=yes gunstein@"$2" "$3"; }
 ops() { vm "$1" "$2" "cd ~/todo-operations && PYTHONPATH=\$PWD/deploy/ops PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops $3"; }
 ```
 
-- `$A ...` is `deploy/scripts/acceptance.py`: it runs the glue around the
+- `$A ...` is `deploy/scripts/lab/acceptance.py`: it runs the glue around the
   product the same way every time, writes its own log and a line in
   `record.jsonl`, compares the result itself and ends with `RESULT: PASS`,
   `FAIL` or `REFUSED`. FAIL or REFUSED: STOP (C3). It refuses to repeat a
@@ -646,7 +646,7 @@ wait:
 ```bash
 IP=192.168.0.102
 sudo sed -i -e '/[[:space:]]todo\.test\([[:space:]]\|$\)/d' -e '/[[:space:]]notes\.test\([[:space:]]\|$\)/d' /etc/hosts && echo "$IP todo.test notes.test" | sudo tee -a /etc/hosts
-deploy/scripts/trust-serving-ca.sh "gunstein@$IP"
+deploy/scripts/lab/trust-serving-ca.sh "gunstein@$IP"
 ```
 
 Phase 3 only, once per run: the browser environment and the test user.

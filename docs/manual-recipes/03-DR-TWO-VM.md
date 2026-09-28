@@ -623,7 +623,7 @@ echo '192.168.1.51 todo.test notes.test' | sudo tee -a /etc/hosts
 
 VM2 creates its own demo CA the first time nginx starts, so you also need to
 trust VM2's public CA on the laptop — use
-`deploy/scripts/trust-serving-ca.sh todo@192.168.1.51`, or follow the
+`deploy/scripts/lab/trust-serving-ca.sh todo@192.168.1.51`, or follow the
 [TLS guide](../TLS.md) manually.
 
 Open <https://todo.test:8443>.

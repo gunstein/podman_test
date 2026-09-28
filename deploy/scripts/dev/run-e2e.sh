@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 python="$project_root/todo-backend/.venv/bin/python"
 
 if [[ ! -x "$python" ]]; then

@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "deploy/scripts"))
+sys.path.insert(0, str(ROOT / "deploy/scripts/lab"))
 
 import acceptance_preflight  # noqa: E402
 import pve_lab  # noqa: E402

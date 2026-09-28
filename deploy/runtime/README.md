@@ -131,7 +131,7 @@ host-local raw secrets. Install Python 3.9+ and Jinja2 first. Render
 and start the six workloads with:
 
 ```bash
-deploy/scripts/dev-up.sh
+deploy/scripts/dev/dev-up.sh
 ```
 
 Map both `todo.test` and `notes.test` to the serving host and trust one shared
@@ -146,7 +146,7 @@ prompted or printed. It provisions database roles before
 Keycloak/app startup and reapplies grants after proxy startup. Stop the workloads in reverse order with:
 
 ```bash
-deploy/scripts/dev-down.sh
+deploy/scripts/dev/dev-down.sh
 ```
 
 Never run that development command against a production user's container store:

@@ -361,7 +361,7 @@ test double do not replace them.
 
 ### Client trust and real browser verification
 
-`deploy/scripts/trust-serving-ca.sh user@serving-host` performs the fingerprint
+`deploy/scripts/lab/trust-serving-ca.sh user@serving-host` performs the fingerprint
 comparison and both trust-store updates below in one step, for operators who
 already understand the manual sequence. It changes nothing that the commands
 below do not already do explicitly.

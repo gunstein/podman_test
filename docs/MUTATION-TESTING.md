@@ -40,7 +40,7 @@ is never installed on a target host. Its settings are in
 ```bash
 python3 -m venv /tmp/mutmut-venv
 /tmp/mutmut-venv/bin/python -m pip install mutmut==3.8.0 pytest==9.1.1 jinja2 PyYAML
-PATH=/tmp/mutmut-venv/bin:$PATH deploy/scripts/run-mutation-tests.sh
+PATH=/tmp/mutmut-venv/bin:$PATH deploy/scripts/dev/run-mutation-tests.sh
 ```
 
 It takes well under a minute. It prints each surviving mutant as a diff and

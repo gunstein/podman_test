@@ -69,8 +69,8 @@ podman network inspect app-network
 
 ## 3. Learn development and production lifecycle separately
 
-Development uses direct `podman kube play/down` through `deploy/scripts/dev-up.sh`
-and `deploy/scripts/dev-down.sh`; read their cleanup scope before running them.
+Development uses direct `podman kube play/down` through `deploy/scripts/dev/dev-up.sh`
+and `deploy/scripts/dev/dev-down.sh`; read their cleanup scope before running them.
 Production uses generated user services from `.kube` Quadlets.
 `todo-app.service` requires its PostgreSQL and Keycloak; Keycloak requires
 `keycloak-postgres.service`; each PostgreSQL is also a

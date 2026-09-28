@@ -26,7 +26,7 @@ jobs:
       - name: Mutate the checks that guard promotion and data deletion
         shell: bash
         run: |
-          deploy/scripts/run-mutation-tests.sh | tee mutation-report.txt
+          deploy/scripts/dev/run-mutation-tests.sh | tee mutation-report.txt
           {
             echo '## Surviving mutants'
             echo

@@ -1,4 +1,4 @@
-"""deploy/scripts/acceptance.py with every external command faked."""
+"""deploy/scripts/lab/acceptance.py with every external command faked."""
 import contextlib
 import io
 import json
@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "deploy/scripts"))
+sys.path.insert(0, str(ROOT / "deploy/scripts/lab"))
 import acceptance  # noqa: E402
 
 FINGERPRINT = ":".join(["AB"] * 32)
@@ -489,7 +489,7 @@ class ReportTests(ToolTest):
         rules = [("wait-ready", (0, "READY: x\n"))]
         self.tool("--step", "03-4", "check", "services", "192.168.0.102", "app", rules=rules)
         self.tool("--step", "06-5", "check", "services", "192.168.0.102", "app",
-                  rules=rules + [("status --porcelain", (0, " M deploy/scripts/acceptance.py\n"))])
+                  rules=rules + [("status --porcelain", (0, " M deploy/scripts/lab/acceptance.py\n"))])
         self.assertIn("is not clean", self.log(self.record()[-1]))
         code, text = self.report()
         self.assertEqual(code, 1)

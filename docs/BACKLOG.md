@@ -32,6 +32,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 0. Acceptance tooling (A1-A4): every later item needs a trustworthy run, and
    runs 11 and 12 failed on the agent's own commands, not on the product.
    Then E1 and E2, the cheapest way to find errors before the lab does.
+   After run 21: S1, the installer and DR apart in the tree, before more DR
+   code is added.
 1. Failover to Trondheim within 30 minutes (see the goal below): G1 (one
    failover command), G2 (Trondheim is ready), G3 (time it in the drill), T3
    (fencing without the Oslo hypervisor), T4 (one CA), T5 (moving the names),
@@ -539,6 +541,27 @@ promoted primary.
   tier, Keycloak and the quarantine.
 
 ## DR code structure
+
+- **S1. Separate the installer from DR in the tree.** *[simplify]* Decided
+  (2026-09-28); starts after run 21. A third of `app_installer` is DR only
+  (`replication.py`, `replication_tls.py`, `promoted.py`, the transfer of
+  replication secrets, 13 of the 18 CLI commands), and `deploy/scripts` mixes
+  DR host tools, development, lab and shared scripts. The imports already go
+  one way (DR uses the installer; `install.py` imports no DR module), so:
+  1. Split `deploy/scripts` into shared scripts, `dev/` (dev-up, dev-down,
+     run-e2e, smoke-proxy) and `lab/` (acceptance.py, pve_lab.py,
+     ports-closed.sh and the other lab tools). No product change.
+  2. Move DR to `deploy/dr/`: the host side as `app_dr_host` with its own CLI,
+     `app_ops` and its docs from `deploy/ops`, and `app_dr.py`,
+     `app_backup.py` and `app-quarantine.sh`. `app_installer` keeps only the
+     single host: render, images, secrets, Quadlet, workloads, Keycloak,
+     install, dev and uninstall. A test refuses any import from the installer
+     into DR. The offline bundle then carries only `app_installer`; the
+     operations package adds `deploy/dr`. Build scripts, fapolicyd trust,
+     `/opt/todo` paths, the acceptance guide, CI and docs follow. One
+     implementation of workload installation stays (AGENTS.md).
+  3. A full acceptance run.
+  It covers much of item 9 below: `replication.py` and `cli.main()` shrink.
 
 7. **One place for paths and constants** *[simplify]* in `settings.py`: the
    `todo-kube-runtime` directory (14 places), `/opt/todo` (11), the promotion

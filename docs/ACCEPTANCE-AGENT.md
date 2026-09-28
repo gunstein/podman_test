@@ -212,13 +212,13 @@ Before phase 1, and before anything that changes a VM:
    is not the kickoff revision, run `git fetch origin` and
    `git checkout --detach <revision>`; that is not a source change. A dirty
    tree is a STOP.
-2. Run the read-only readiness check with the kickoff values and save it to
-   `logs/00-readiness.log`:
+2. Set `RUN` as in C9.1 and run the read-only readiness check exactly like
+   this, with the kickoff values. It appends every attempt, with its time and
+   exit status, to `logs/00-readiness.log`; the report needs that log (run 21
+   ran the check but not into the log, and was not clean):
 
    ```bash
-   python3 deploy/scripts/acceptance_preflight.py --snapshot clean-agent \
-     --revision "$(git rev-parse HEAD)" --primary 192.168.0.102 --standby 192.168.0.108 \
-     --primary-vmid 107 --standby-vmid 108 --user gunstein --client-ip 192.168.0.100
+   { echo "# start $(date --iso-8601=seconds)"; python3 deploy/scripts/acceptance_preflight.py --snapshot clean-agent --revision "$(git rev-parse HEAD)" --primary 192.168.0.102 --standby 192.168.0.108 --primary-vmid 107 --standby-vmid 108 --user gunstein --client-ip 192.168.0.100; echo "exit=$?"; } >> "$RUN/logs/00-readiness.log" 2>&1; tail -n 20 "$RUN/logs/00-readiness.log"
    ```
 
    Also run `sudo -n true` on the client. If `CLIENT_SUDO: yes` but that fails,
@@ -235,7 +235,7 @@ Before phase 1, and before anything that changes a VM:
    `pve_lab.py get /nodes/{node}/qemu/<VMID>/snapshot` once the token works.
    If the token does not work yet, give the operator the command that shows
    them: `qm listsnapshot <VMID>` in the node Shell.
-5. After "done", run the readiness check again. If a FAIL remains, send one
+5. After "done", run the same readiness line again (it appends). If a FAIL remains, send one
    follow-up request that covers only what is still missing, with the error.
    Start phase 1 only when nothing FAILs.
 

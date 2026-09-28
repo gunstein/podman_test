@@ -1,17 +1,15 @@
 """The DR secret copy: the credentials and replication CA a standby needs from its primary."""
 from app_installer import apps
 from app_installer.commands import exists, run
-from app_installer.secrets import read
+from app_installer.secrets import installed_names, read
 
 
 def replicated_names():
-    """Every raw credential the standby needs, for the complete replication group."""
-    names = []
-    for database in apps.REPLICATED_DATABASES:
-        for name in apps.describe(database)["raw_secrets"]:
-            if name not in names:
-                names.append(name)
-    return names
+    """Every raw credential the standby needs, for the complete replication group.
+
+    What the install created, plus each database's replication password.
+    """
+    return installed_names() + [database.secret("replicator") for database in apps.REPLICATED_DATABASES]
 
 
 def transfer_names():

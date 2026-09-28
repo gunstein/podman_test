@@ -6,7 +6,7 @@ from . import steps, trust
 
 def firewall_rule(primary, standby):
     """The firewalld rich rule that lets only the standby reach the primary's replication ports."""
-    ports = [entry['replication_port'] for entry in steps.GROUP]
+    ports = [database.replication_port for database in steps.GROUP]
     return (f'rule family="ipv4" source address="{standby.spec.address}/32" '
             f'destination address="{primary.spec.address}" port port="{min(ports)}-{max(ports)}" '
             'protocol="tcp" accept')
@@ -84,9 +84,9 @@ def sync_secrets(project_root, controller, primary, standby):
 
 def streaming(primary, pythonpath, *, rebuilt=False):
     """Wait until every database streams to its standby: 15 tries, 2 seconds apart."""
-    for entry in steps.GROUP:
-        steps.retry(lambda entry=entry: steps.app_dr_host(
-            primary, pythonpath, 'replicate-workload', 'streaming', '--app', entry['name'],
+    for database in steps.GROUP:
+        steps.retry(lambda database=database: steps.app_dr_host(
+            primary, pythonpath, 'replicate-workload', 'streaming', '--app', database.name,
             *(['--rebuilt'] if rebuilt else [])), 15, 2)
 
 
@@ -104,10 +104,10 @@ def bootstrap(project_root, controller, primary, standby):
     changed = sync_secrets(project_root, controller, primary, standby) or changed
     standby_path = steps.stage_postgres_group(project_root, controller, standby)
     images = steps.paths(standby)['bundle'] + '/images/'
-    for entry in steps.GROUP:
+    for database in steps.GROUP:
         changed = steps.changed(steps.app_dr_host(
-            standby, standby_path, 'replicate-workload', 'standby', '--app', entry['name'],
-            '--primary-address', primary.spec.address, '--image-archive', images + entry['postgres_archive'],
+            standby, standby_path, 'replicate-workload', 'standby', '--app', database.name,
+            '--primary-address', primary.spec.address, '--image-archive', images + database.image_archive('postgres'),
             *steps.group_paths(standby), timeout=steps.COPY_STEP_TIMEOUT)) or changed
     streaming(primary, primary_path)
     return changed
@@ -118,11 +118,11 @@ def replication_status(project_root, controller, primary, standby):
     primary_path = trust.stage_installer(project_root, controller, primary)
     streaming(primary, primary_path)
     standby_path = trust.stage_installer(project_root, controller, standby)
-    for entry in steps.GROUP:
+    for database in steps.GROUP:
         state = json.loads(steps.app_dr_host(standby, standby_path, 'replicate-workload', 'status',
-                                               '--app', entry['name']).stdout)['status']
+                                               '--app', database.name).stdout)['status']
         if not (state['in_recovery'] and state['transaction_read_only']):
-            raise RuntimeError(f'{entry["name"]}: a member of the standby group is writable')
+            raise RuntimeError(f'{database.name}: a member of the standby group is writable')
     return False
 
 

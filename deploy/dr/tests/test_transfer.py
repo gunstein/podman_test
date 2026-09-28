@@ -47,9 +47,10 @@ class ReplicatedSecretTests(unittest.TestCase):
 
     def test_names_cover_the_complete_group_once(self):
         names = transfer.replicated_names()
-        expected = [name for database in apps.REPLICATED_DATABASES
-                    for name in apps.describe(database)['raw_secrets']]
-        self.assertEqual(sorted(names), sorted(set(expected)))
+        expected = [name for app in apps.APPS for name in (
+            app.secret('db'), app.secret('migrator'), app.secret('app'), app.secret('replicator'))]
+        expected += [apps.KEYCLOAK_DATABASE.secret('db'), apps.KEYCLOAK_DATABASE.secret('replicator')]
+        self.assertEqual(sorted(names), sorted(expected + [apps.KEYCLOAK_ADMIN_SECRET]))
         self.assertEqual(len(names), len(set(names)))
         self.assertIn(apps.KEYCLOAK_ADMIN_SECRET, names)
         for database in apps.REPLICATED_DATABASES:

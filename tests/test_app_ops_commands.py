@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT / "deploy/dr"))
 from app_ops import cli, inventory, recovery, standby, steps  # noqa: E402
 from app_ops.transport import Host  # noqa: E402
 
-NAMES = [entry["name"] for entry in steps.GROUP]
+NAMES = [database.name for database in steps.GROUP]
 
 
 def setUpModule():

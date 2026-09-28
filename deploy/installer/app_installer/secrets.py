@@ -2,13 +2,13 @@
 import base64
 import json
 
-from . import apps
+from . import apps, stack
 from .commands import exists, run
 
 
-def postgres_secret_mapping(app: apps.App):
+def postgres_secret_mapping(database: stack.Database):
     """Kube secret name -> {key: raw Podman secret} for the PostgreSQL pod."""
-    return {app.kube_secret("postgres"): {"database-password": app.secret("db")}}
+    return {database.kube_secret("postgres"): {"database-password": database.secret("db")}}
 
 
 def application_secret_mapping(app: apps.App):
@@ -69,15 +69,20 @@ def _kube_data(name):
         return None
 
 
+def installed_names(applications=None):
+    """The raw Podman secrets an install creates: each app's three database
+    passwords, Keycloak's database password and its admin password."""
+    applications = apps.APPS if applications is None else applications
+    names = [app.secret(role) for app in applications for role in ("db", "migrator", "app")]
+    return names + [apps.KEYCLOAK_DATABASE.secret("db"), apps.KEYCLOAK_ADMIN_SECRET]
+
+
 def provision(applications=None):
     """Keep existing credentials; generate every missing password."""
     import secrets as random
     import string
 
-    applications = apps.APPS if applications is None else applications
-    names = [app.secret(role) for app in applications for role in ("db", "migrator", "app")]
-    names.extend((apps.KEYCLOAK_DATABASE.secret("db"), apps.KEYCLOAK_ADMIN_SECRET))
-    for name in names:
+    for name in installed_names(applications):
         if exists('secret', name):
             continue
         value = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(32))

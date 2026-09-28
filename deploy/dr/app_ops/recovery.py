@@ -48,16 +48,16 @@ def preflight_rebuild(project_root, controller, current, rebuild, confirm_fenced
     """Read-only gates on both hosts; the reseed itself repeats every rebuild-host check."""
     require_identity(current)
     current_path = trust.stage_installer(project_root, controller, current)
-    for entry in steps.GROUP:
-        app_dr_host(current, current_path, 'replicate-workload', 'rebuild-primary-check', '--app', entry['name'])
+    for database in steps.GROUP:
+        app_dr_host(current, current_path, 'replicate-workload', 'rebuild-primary-check', '--app', database.name)
     require_identity(rebuild)
     if confirm_fenced != f'{rebuild.name} is fenced' or confirm_reseed != rebuild.name:
         raise RuntimeError('Rebuild host must remain infrastructure-fenced and both exact confirmations are '
                            'required before any destructive reseed.')
     rebuild_path = steps.stage_postgres_group(project_root, controller, rebuild)
-    app_dr_host(rebuild, rebuild_path, 'replicate-workload', 'quarantined', '--app', steps.GROUP[0]['name'])
-    for entry in steps.GROUP:
-        app_dr_host(rebuild, rebuild_path, 'replicate-workload', 'reseed-check', '--app', entry['name'],
+    app_dr_host(rebuild, rebuild_path, 'replicate-workload', 'quarantined', '--app', steps.GROUP[0].name)
+    for database in steps.GROUP:
+        app_dr_host(rebuild, rebuild_path, 'replicate-workload', 'reseed-check', '--app', database.name,
                       '--primary-address', current.spec.address, '--confirm-fenced', confirm_fenced,
                       '--confirm-reseed', confirm_reseed, *steps.group_paths(rebuild))
     return rebuild_path
@@ -83,8 +83,8 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
     # The rebuild host needs the replication CA that publishing may just have
     # created (a pair set up before replication TLS); existing values must match.
     standby.sync_secrets(project_root, controller, current, rebuild_host)
-    for entry in steps.GROUP:
-        app_dr_host(rebuild_host, rebuild_path, 'replicate-workload', 'replication-path', '--app', entry['name'],
+    for database in steps.GROUP:
+        app_dr_host(rebuild_host, rebuild_path, 'replicate-workload', 'replication-path', '--app', database.name,
                       '--primary-address', current.spec.address)
     app_dr_host(rebuild_host, rebuild_path, 'reseed-group', '--primary-address', current.spec.address,
                   '--confirm-fenced', confirm_fenced, '--confirm-reseed', confirm_reseed,

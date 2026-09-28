@@ -1,19 +1,21 @@
 import ast
 import dataclasses
+import io
+import json
 import re
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_installer.apps import (  # noqa: E402
     APPS,
-    KEYCLOAK_ADMIN_SECRET,
     KEYCLOAK_DATABASE,
     REPLICATED_DATABASES,
     App,
-    describe,
 )
+from app_installer.stack import Database  # noqa: E402
 
 
 class AppRegistryTests(unittest.TestCase):
@@ -64,25 +66,22 @@ class AppRegistryTests(unittest.TestCase):
         self.assertIs(REPLICATED_DATABASES[-1], KEYCLOAK_DATABASE)
         self.assertEqual(KEYCLOAK_DATABASE.replication_port, 5434)
 
-    def test_describe_shape_matches_what_app_ops_reads_per_entry(self):
-        # app_ops.steps.GROUP and replication-apps --details read describe();
-        # every loop there depends on todo/notes describing as applications (hostname,
-        # application_unit, manifests.application) and keycloak describing as a bare
-        # database (none of those keys), never the other way around.
+    def test_the_replicated_group_holds_only_databases(self):
+        # An App is not a database: DR code takes these, and must not find
+        # a hostname or an OAuth client on them.
         for database in REPLICATED_DATABASES:
-            entry = describe(database)
-            with self.subTest(name=database.name):
-                if database.name == "keycloak":
-                    for key in ("hostname", "api_path", "application_unit", "keycloak_client"):
-                        self.assertNotIn(key, entry)
-                    self.assertNotIn("application", entry["manifests"])
-                    self.assertEqual(entry["application_service"], "keycloak.service")
-                    self.assertIn(KEYCLOAK_ADMIN_SECRET, entry["raw_secrets"])
-                else:
-                    for key in ("hostname", "api_path", "application_unit", "keycloak_client"):
-                        self.assertIn(key, entry)
-                    self.assertIn("application", entry["manifests"])
-                    self.assertEqual(entry["application_service"], database.name + "-app.service")
+            self.assertIs(type(database), Database)
+        self.assertEqual(REPLICATED_DATABASES[:-1], tuple(app.database for app in APPS))
+
+    def test_replication_apps_details_match_the_acceptance_table(self):
+        from app_installer import cli
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(cli.main(["replication-apps", "--details"]), 0)
+        self.assertEqual(json.loads(output.getvalue())[1], {
+            "name": "notes", "container": "notes-postgres", "service": "notes-postgres.service",
+            "replication_port": 5433, "standby_slot": "notes_standby",
+            "rebuilt_slot": "notes_rebuilt_standby"})
 
     def test_images_come_from_the_app(self):
         from app_installer.images import image_list, shared_images

@@ -10,7 +10,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT / 'deploy/installer'))
 from app_installer import apps, settings  # noqa: E402
 
-GROUP = [apps.describe(database) for database in apps.REPLICATED_DATABASES]
+GROUP = apps.REPLICATED_DATABASES
+# The Quadlet templates app_dr_host needs on a host: the network, each
+# database's unit, and the serving tier's units for a promoted host.
+QUADLET_TEMPLATES = ('app-network.network', *(database.unit('postgres') + '.j2' for database in GROUP),
+                     *(app.unit('app') + '.j2' for app in apps.APPS), 'keycloak.kube.j2', 'shared-proxy.kube.j2')
 
 # A backstop for one app_dr_host step on a host. Each command inside it has
 # its own limit (settings.COMMAND_TIMEOUT and the longer ones), so this only
@@ -57,9 +61,9 @@ def stage_postgres_group(project_root, controller, host, rendered=None):
     pythonpath = trust.stage_installer(project_root, controller, host)
     target = paths(host)['target']
     rendered = Path(rendered or Path(project_root) / 'generated/kube-runtime')
-    for name in sorted({name for entry in GROUP for name in entry['templates']}):
+    for name in sorted(QUADLET_TEMPLATES):
         put(host, f'{target}/deploy/quadlet/{name}', (Path(project_root) / 'deploy/quadlet' / name).read_text())
-    for name in sorted({name for entry in GROUP for name in entry['manifests']['postgres']}):
+    for name in sorted(database.manifest(kind) for database in GROUP for kind in ('postgres', 'config')):
         put(host, f'{target}/generated/kube-runtime/{name}', (rendered / name).read_text())
     return pythonpath
 

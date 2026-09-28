@@ -16,6 +16,13 @@ def paths(parser):
     parser.add_argument('--kube-runtime-dir', type=Path)
 
 
+def _details(database):
+    """One database's names as the table in docs/ACCEPTANCE.md lists them, for comparing the two."""
+    return {'name': database.name, 'container': database.resource('postgres'),
+            'service': database.service('postgres'), 'replication_port': database.replication_port,
+            'standby_slot': database.replication_slot(), 'rebuilt_slot': database.replication_slot(rebuilt=True)}
+
+
 def main(argv=None):
     """Parse one subcommand, run it, and return the exit code.
 
@@ -44,9 +51,6 @@ def main(argv=None):
     workload.add_argument('--publish-address', default='127.0.0.1')
     workload.add_argument('--postgres-publish-address', default='')
     workload.add_argument('--service-port', type=int, default=settings.HTTPS_PORT)
-    info = subcommands.add_parser('app-info')
-    info.add_argument('--app', choices=[app.name for app in apps.APPS] + [apps.KEYCLOAK_DATABASE.name],
-                      default=apps.SHARED_RESOURCE_OWNER.name)
     registry = subcommands.add_parser('replication-apps')
     registry.add_argument('--details', action='store_true')
     subcommands.add_parser('configure-clients')
@@ -60,13 +64,8 @@ def main(argv=None):
                       default=Path(__file__).resolve().parents[3] / 'generated/dev')
     args = parser.parse_args(argv)
     try:
-        if args.command == 'app-info':
-            selected = (apps.KEYCLOAK_DATABASE if args.app == apps.KEYCLOAK_DATABASE.name
-                       else next(app for app in apps.APPS if app.name == args.app))
-            print(json.dumps(apps.describe(selected)))
-        elif args.command == 'replication-apps':
-            print(json.dumps([apps.describe(d) if args.details else d.name
-                              for d in apps.REPLICATED_DATABASES]))
+        if args.command == 'replication-apps':
+            print(json.dumps([_details(d) if args.details else d.name for d in apps.REPLICATED_DATABASES]))
         elif args.command == 'configure-clients':
             from . import keycloak, secrets
             changed = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET),

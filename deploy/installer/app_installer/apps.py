@@ -10,9 +10,10 @@ class App:
 
     Every resource name comes from the application name through
     stack.Database, so the "todo" app owns todo-postgres, todo-app.service,
-    todo-db-password and so on. The methods below that forward to
-    self.database exist so callers can treat an App and a database-only
-    workload (Keycloak's) the same way. Build one with keyword arguments
+    todo-db-password and so on; the methods below forward to self.database
+    for that. An App is not a database: code that works on the replicated
+    database group takes REPLICATED_DATABASES, which holds only Databases.
+    Build one with keyword arguments
     only (tests/test_apps.py checks it): the string fields are easy to mix
     up, and the hosts' Python 3.9 has no dataclass kw_only.
     """
@@ -94,88 +95,9 @@ KEYCLOAK_KUBE_ADMIN_SECRET = "keycloak-kube-admin-secret"
 KEYCLOAK_ADMIN_SECRET = "keycloak-admin-password"
 # The replication CA (key, certificate), shared by both hosts; see replication_tls.py.
 REPLICATION_CA_SECRETS = ("replication-ca-key", "replication-ca-cert")
-# Keep todo/notes as Apps here, not Databases: describe() dispatches on
-# isinstance(workload, stack.Database), and App already forwards every
-# Database-shaped method a database-only consumer needs.
-REPLICATED_DATABASES = APPS + (KEYCLOAK_DATABASE,)
-
-
-def describe(workload):
-    """Every name and file one replicated database needs, as a plain dict.
-
-    The DR tools (app_ops and the replication-apps command)
-    read names from here rather than rebuilding them, so a new app only needs
-    an entry in APPS. Keycloak's database has no application of its own, so
-    it gets a shorter entry that also carries the Keycloak admin secret.
-    """
-    if isinstance(workload, stack.Database):
-        return _describe_database(workload)
-    return _describe_application(workload)
-
-
-def _describe_database(database):
-    raw_secrets = [database.secret(role) for role in ("db", "replicator")]
-    if database == KEYCLOAK_DATABASE:
-        # Keycloak's own admin credential has no App/frontend to carry it;
-        # sync it here so the promoted host can still install_keycloak.
-        raw_secrets.append(KEYCLOAK_ADMIN_SECRET)
-    return {
-        "name": database.name,
-        "postgres_unit": database.unit("postgres"),
-        "raw_secrets": raw_secrets,
-        "postgres_container": database.resource("postgres"),
-        "postgres_service": database.service("postgres"),
-        # The database-only entry's co-located workload is the shared identity pod.
-        "application_service": "keycloak.service",
-        "data_volume": database.volume("data"),
-        "backup_volume": database.volume("backup"),
-        "archive_check_prefix": database.database_role("archive_check"),
-        "replication_secret": database.secret("replicator"),
-        "replication_role": database.database_role("replicator"),
-        "replication_slot": database.replication_slot(),
-        "rebuild_slot": database.replication_slot(rebuilt=True),
-        "replication_port": database.replication_port,
-        "postgres_image": database.image("postgres"),
-        "postgres_archive": database.image_archive("postgres"),
-        "templates": ["app-network.network", database.unit("postgres") + ".j2",
-                      "keycloak.kube.j2", "shared-proxy.kube.j2"],
-        "manifests": {"postgres": [database.manifest("postgres"), database.manifest("config")]},
-    }
-
-
-def _describe_application(app):
-    owns_shared_resources = app == SHARED_RESOURCE_OWNER
-    return {
-        "name": app.name,
-        "hostname": app.hostname,
-        "api_path": app.api_path(),
-        "keycloak_client": app.keycloak_client,
-        "application_unit": app.unit("app"),
-        "postgres_unit": app.unit("postgres"),
-        "raw_secrets": [app.secret(role) for role in ("db", "migrator", "app", "replicator")],
-        "postgres_container": app.resource("postgres"),
-        "postgres_service": app.service("postgres"),
-        "application_service": app.service("app"),
-        "data_volume": app.volume("data"),
-        "backup_volume": app.volume("backup"),
-        "archive_check_prefix": app.database_role("archive_check"),
-        "replication_secret": app.secret("replicator"),
-        "replication_role": app.database_role("replicator"),
-        "replication_slot": app.replication_slot(),
-        "rebuild_slot": app.replication_slot(rebuilt=True),
-        "replication_port": app.replication_port,
-        "postgres_image": app.image("postgres"),
-        "postgres_archive": app.image_archive("postgres"),
-        "templates": ["app-network.network", app.unit("postgres") + ".j2",
-                      app.unit("app") + ".j2", "keycloak.kube.j2", "shared-proxy.kube.j2"],
-        "manifests": {
-            "postgres": [app.manifest("postgres"), app.manifest("config")],
-            "application": [app.manifest("app"), app.manifest("config")]
-                           + (["keycloak.yaml"] if owns_shared_resources else []),
-            "keycloak": ["keycloak.yaml"],
-            "shared-proxy": ["shared-proxy.yaml", SHARED_RESOURCE_OWNER.manifest("config")],
-        },
-    }
+# The DR group: every app's database, then Keycloak's. Bootstrap, promotion,
+# backup and rebuild always act on all of them together.
+REPLICATED_DATABASES = tuple(app.database for app in APPS) + (KEYCLOAK_DATABASE,)
 
 
 def services(applications=None, *, databases=True):

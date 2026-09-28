@@ -562,6 +562,17 @@ promoted primary.
      implementation of workload installation stays (AGENTS.md).
   3. A full acceptance run.
   It covers much of item 9 below: `replication.py` and `cli.main()` shrink.
+  While moving them, make the top comment (module docstring) of
+  `replication.py` and `replication_tls.py` explain the split plainly:
+  `replication.py` owns each database's role and the replication itself
+  (reading state, preparing a primary, bootstrapping a standby, promotion,
+  reseeding the old primary, with their safety gates), grouped as in the
+  file; `replication_tls.py` only encrypts the stream (the replication CA,
+  the primary's certificate for its own address, `ssl = on`) and knows
+  nothing about roles. Say who calls whom (`publish_primaries` and
+  `configure_primary` call `ensure_ca` and `install_server_tls`; the standby
+  only uses the CA with `verify-full`), that this CA is not the nginx CA for
+  users (T4), and when the certificate is renewed (U2).
 
 7. **One place for paths and constants** *[simplify]* in `settings.py`: the
    `todo-kube-runtime` directory (14 places), `/opt/todo` (11), the promotion

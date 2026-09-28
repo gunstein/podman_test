@@ -189,6 +189,31 @@ class RenderErrorTests(unittest.TestCase):
             self.assertEqual({path.name: path.read_bytes() for path in output.iterdir()}, before)
             self.assertEqual(sorted(path.name for path in Path(directory).iterdir()), ["output"])
 
+    def test_values_file_mistakes_name_the_file_and_the_setting(self):
+        good = {"publicHostname": "todo.test", "publicPort": 8443, "logLevel": "info"}
+        cases = [
+            ("runtime: [1]\n", "needs a runtime section"),
+            ("other: {}\n", "needs a runtime section"),
+            ("", "needs a runtime section"),
+            ("runtime: [\n", "not valid YAML"),
+            (yaml.safe_dump({"runtime": {"publicHostname": "todo.test"}}),
+             "runtime is missing publicPort, logLevel"),
+            (yaml.safe_dump({"runtime": {**good, "publicPort": "8443"}}), "publicPort must be a port"),
+            (yaml.safe_dump({"runtime": {**good, "publicPort": 70000}}), "publicPort must be a port"),
+            (yaml.safe_dump({"runtime": {**good, "publicPort": True}}), "publicPort must be a port"),
+            (yaml.safe_dump({"runtime": {**good, "publicHostname": 7}}), "publicHostname must be"),
+            (yaml.safe_dump({"runtime": {**good, "logLevel": ""}}), "logLevel must be"),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            values = Path(directory) / "values.yaml"
+            output = Path(directory) / "output"
+            for text, message in cases:
+                with self.subTest(message=message, text=text):
+                    values.write_text(text)
+                    with self.assertRaisesRegex(ValueError, "values.yaml: .*" + message):
+                        render.render(ROOT, values, output)
+                    self.assertFalse(output.exists())
+
     def test_malicious_public_hostname_is_rejected_before_any_rendering(self):
         with tempfile.TemporaryDirectory() as directory:
             values = Path(directory) / "values.yaml"

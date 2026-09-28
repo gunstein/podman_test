@@ -17,6 +17,33 @@ def _validate(name, content):
         raise RuntimeError(f'Rendered {name} is not valid YAML: {error}') from error
 
 
+def read_values(values_file):
+    """publicHostname, publicPort and logLevel from the runtime section of values.yaml.
+
+    Checked here, so a mistake in the file gives an error that names the
+    file and the setting instead of a KeyError or a broken manifest.
+    """
+    try:
+        document = yaml.safe_load(Path(values_file).read_text())
+    except yaml.YAMLError as error:
+        raise ValueError(f'{values_file}: not valid YAML: {error}') from error
+    runtime = document.get('runtime') if isinstance(document, dict) else None
+    if not isinstance(runtime, dict):
+        raise ValueError(f'{values_file}: needs a runtime section')
+    missing = [key for key in ('publicHostname', 'publicPort', 'logLevel') if key not in runtime]
+    if missing:
+        raise ValueError(f'{values_file}: runtime is missing {", ".join(missing)}')
+    hostname, port, log_level = runtime['publicHostname'], runtime['publicPort'], runtime['logLevel']
+    if not isinstance(hostname, str):
+        raise ValueError(f'{values_file}: runtime.publicHostname must be a hostname')
+    manifests.validate_hostname(hostname)
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError(f'{values_file}: runtime.publicPort must be a port number, 1-65535')
+    if not isinstance(log_level, str) or not log_level:
+        raise ValueError(f'{values_file}: runtime.logLevel must be a word such as info')
+    return hostname, port, log_level
+
+
 def render(project_root, values_file, output_directory, application_names=()):
     """Render every Kube YAML file for the selected apps into output_directory.
 
@@ -31,9 +58,7 @@ def render(project_root, values_file, output_directory, application_names=()):
     selected = [app for app in apps.APPS if not application_names or app.name in application_names]
     if not selected or set(application_names) - {app.name for app in apps.APPS}:
         raise ValueError('Unknown or empty application selection')
-    runtime = yaml.safe_load(Path(values_file).read_text())['runtime']
-    hostname, port, log_level = runtime['publicHostname'], runtime['publicPort'], runtime['logLevel']
-    manifests.validate_hostname(hostname)
+    hostname, port, log_level = read_values(values_file)
 
     files = {}
     for app in selected:

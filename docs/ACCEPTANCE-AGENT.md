@@ -812,11 +812,20 @@ vm 08-7-mark 192.168.0.108 'python3 /opt/todo/bin/app_backup.py mark --name acce
 vm 08-8-after-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR after restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR after restore point');\""
 ```
 
-Put the Todo and Notes backup names from `08-4` into these two commands:
+The two restores use the Todo and Notes backup names that `08-4` logged.
+These fixed lines read them; STOP if either is empty:
 
 ```bash
-vm 08-9-restore-todo 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app todo restore --backup <todo base-...> --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app todo restore-status && podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec todo-postgres-restore psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec todo-postgres psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
-vm 08-10-restore-notes 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app notes restore --backup <notes base-...> --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app notes restore-status && podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec notes-postgres-restore psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec notes-postgres psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
+todo_backup=$(sed -n 's/^todo: Verified base backup: \(base-[0-9TZ]*\)$/\1/p' "$RUN/logs/08-4-backup-create.log")
+notes_backup=$(sed -n 's/^notes: Verified base backup: \(base-[0-9TZ]*\)$/\1/p' "$RUN/logs/08-4-backup-create.log")
+echo "todo=$todo_backup notes=$notes_backup"   # two base-... names; STOP if either is empty
+```
+
+Only when both names are printed, restore:
+
+```bash
+vm 08-9-restore-todo 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app todo restore --backup $todo_backup --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app todo restore-status && podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec todo-postgres-restore psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec todo-postgres psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
+vm 08-10-restore-notes 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app notes restore --backup $notes_backup --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app notes restore-status && podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec notes-postgres-restore psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec notes-postgres psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
 ```
 
 Each must show `recovery|paused|read_only = t|t|on`, network `none`, only the

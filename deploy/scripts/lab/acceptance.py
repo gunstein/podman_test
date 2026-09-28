@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fixed acceptance steps for the Proxmox lab, each with its own log (BACKLOG A1).
+"""Fixed acceptance steps for the Proxmox lab, each with its own log.
 
 Runs on the client/build host from the repository root. It never replaces the
 product's own commands (install.sh, app-ops, app_dr.py, app_backup.py): those
@@ -21,7 +21,7 @@ Each call writes logs/<step>-<kind>-<command>.log in the run folder
 JSON line to record.jsonl. Exit status: 0 PASS, 1 FAIL, 2 usage, 3 refused.
 
 report writes REPORT.md in the run folder from record.jsonl and the other
-logs, so no value in the run record is copied by hand (BACKLOG A3), and
+logs, so no value in the run record is copied by hand, and
 compares the run with the guide (full: ACCEPTANCE-AGENT.md, quick:
 ACCEPTANCE-QUICK.md) as it was at the recorded revision: every acceptance.py
 line and every log the guide names must be there, and nothing else. It exits

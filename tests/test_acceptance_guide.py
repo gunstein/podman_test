@@ -4,6 +4,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -36,6 +37,33 @@ class AcceptanceGuideTests(unittest.TestCase):
             if "podman exec nginx nginx -t" in line:
                 self.assertIn("-c /etc/todo-nginx/nginx.conf", line)
 
+
+    def test_agent_commands_have_nothing_to_fill_in_by_hand(self):
+        # Run 23 stopped because the agent filled in "<todo base-...>" wrongly.
+        # Every product, vm, ops and acceptance.py line is used as written.
+        guide = (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text()
+        commands = [line for line in guide.splitlines()
+                    if re.match(r'(product|vm|ops|\$A) ', line)]
+        self.assertTrue(commands)
+        for line in commands:
+            self.assertNotRegex(line.split('  #')[0], r'<[^<>]+>', line)
+
+    def test_pitr_backup_names_are_read_from_the_create_log(self):
+        guide = (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text()
+        lines = [line for line in guide.splitlines() if line.startswith(('todo_backup=', 'notes_backup='))]
+        self.assertEqual(len(lines), 2)
+        with tempfile.TemporaryDirectory() as run:
+            (Path(run) / 'logs').mkdir()
+            (Path(run) / 'logs/08-4-backup-create.log').write_text(
+                '# start 2026-09-28T19:19:40+02:00\n'
+                'todo: Verified base backup: base-20260928T191946Z\n'
+                'notes: Verified base backup: base-20260928T191948Z\n'
+                'keycloak: Verified base backup: base-20260928T191950Z\n'
+                'exit=0\n')
+            script = '\n'.join(lines) + '\necho "$todo_backup $notes_backup"\n'
+            result = subprocess.run(['bash', '-c', script], env={'RUN': run, 'PATH': '/usr/bin:/bin'},
+                                    capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout, 'base-20260928T191946Z base-20260928T191948Z\n')
 
     def test_direct_mutation_examples_keep_exact_confirmation_arguments(self):
         commands = '\n'.join(shell_blocks()).replace('\\\n', '')

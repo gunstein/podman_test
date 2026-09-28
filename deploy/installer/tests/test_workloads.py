@@ -38,7 +38,7 @@ class WorkloadsTests(unittest.TestCase):
                     (rendered / f'{name}.yaml').write_text(f'fixture: {name}\n')
                 for name in obsolete + ['unrelated']:
                     (directory / f'{name}.volume').touch()
-                known = set()
+                known = {}
                 calls = []
 
                 def command(argv, **kwargs):
@@ -47,7 +47,7 @@ class WorkloadsTests(unittest.TestCase):
                     if argv == ['podman', 'kube', 'play', '--help']:
                         stdout = '--no-pod-prefix'
                     elif argv[:3] == ['podman', 'secret', 'inspect']:
-                        stdout = ' password-with-spaces \n'
+                        stdout = known.get(argv[-1], ' password-with-spaces \n')
                     elif argv[:3] == ['podman', 'secret', 'exists']:
                         rc = 0 if argv[3] in known else 1
                     elif argv[:3] == ['podman', 'secret', 'create']:
@@ -55,7 +55,7 @@ class WorkloadsTests(unittest.TestCase):
                         self.assertEqual(payload['metadata']['name'], argv[3])
                         for value in payload['data'].values():
                             self.assertEqual(base64.b64decode(value), b' password-with-spaces ')
-                        known.add(argv[3])
+                        known[argv[3]] = kwargs['input']
                     else:
                         self.assertEqual(argv, ['systemctl', '--user', 'daemon-reload'])
                     return subprocess.CompletedProcess(argv, rc, stdout, '')

@@ -38,6 +38,7 @@ class InstallTests(unittest.TestCase):
             for filename in filenames:
                 (rendered / filename).write_text('fixture: true\n')
             calls = []
+            kube_secrets = {}
 
             def command(argv, **kwargs):
                 calls.append(argv)
@@ -47,11 +48,15 @@ class InstallTests(unittest.TestCase):
                 elif argv[:3] == ['podman', 'image', 'inspect']:
                     stdout = '[{"Labels":{"io.todo.proxy":"nginx"}}]'
                 elif argv[:3] == ['podman', 'secret', 'inspect']:
-                    stdout = 'fixture-password\n'
+                    stdout = kube_secrets.get(argv[-1], 'fixture-password\n')
+                elif argv[:3] == ['podman', 'secret', 'create'] and '-kube-' in argv[3]:
+                    kube_secrets[argv[3]] = kwargs['input']
                 elif argv[:3] == ['systemctl', '--user', 'show']:
                     stdout = (source_override or str(runtime / argv[3].replace('.service', '.kube'))) + '\n'
                 rc = 1 if argv[:3] == ['podman', 'pod', 'exists'] or (
-                    argv[:3] == ['podman', 'secret', 'exists'] and argv[3].endswith('-replicator-password')) else 0
+                    argv[:3] == ['podman', 'secret', 'exists'] and (
+                        argv[3].endswith('-replicator-password')
+                        or '-kube-' in argv[3] and argv[3] not in kube_secrets)) else 0
                 return subprocess.CompletedProcess(argv, rc, stdout, '')
 
             with patch('subprocess.run', side_effect=command), \
@@ -130,6 +135,7 @@ class InstallTests(unittest.TestCase):
             for filename in filenames:
                 (rendered / filename).write_text('fixture: true\n')
             calls = []
+            kube_secrets = {}
 
             def command(argv, **kwargs):
                 calls.append(argv)
@@ -139,12 +145,16 @@ class InstallTests(unittest.TestCase):
                 elif argv[:3] == ['podman', 'image', 'inspect']:
                     stdout = '[{"Labels":{"io.todo.proxy":"nginx"}}]'
                 elif argv[:3] == ['podman', 'secret', 'inspect']:
-                    stdout = 'fixture-password\n'
+                    stdout = kube_secrets.get(argv[-1], 'fixture-password\n')
+                elif argv[:3] == ['podman', 'secret', 'create'] and '-kube-' in argv[3]:
+                    kube_secrets[argv[3]] = kwargs['input']
                 elif argv[:3] == ['systemctl', '--user', 'show']:
                     stdout = str(directory / 'todo-kube-runtime'
                                 / argv[3].replace('.service', '.kube')) + '\n'
                 rc = 1 if argv[:3] == ['podman', 'pod', 'exists'] or (
-                    argv[:3] == ['podman', 'secret', 'exists'] and argv[3].endswith('-replicator-password')) else 0
+                    argv[:3] == ['podman', 'secret', 'exists'] and (
+                        argv[3].endswith('-replicator-password')
+                        or '-kube-' in argv[3] and argv[3] not in kube_secrets)) else 0
                 return subprocess.CompletedProcess(argv, rc, stdout, '')
 
             with patch('subprocess.run', side_effect=command), \

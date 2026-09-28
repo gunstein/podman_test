@@ -22,6 +22,7 @@ class BuildInstallTests(unittest.TestCase):
                 runtime = directory / 'todo-kube-runtime'
                 calls = []
                 known_images = set()
+                kube_secrets = {}
 
                 def command(argv, **kwargs):
                     calls.append(argv)
@@ -41,6 +42,10 @@ class BuildInstallTests(unittest.TestCase):
                         rc = 1
                     elif argv[:3] == ['podman', 'secret', 'exists'] and argv[3].endswith('-replicator-password'):
                         rc = 1  # a single host has no replication secret
+                    elif argv[:3] == ['podman', 'secret', 'exists'] and '-kube-' in argv[3]:
+                        rc = int(argv[3] not in kube_secrets)
+                    elif argv[:3] == ['podman', 'secret', 'create'] and '-kube-' in argv[3]:
+                        kube_secrets[argv[3]] = kwargs['input']
                     elif argv[:2] == ['podman', 'build']:
                         known_images.add(argv[argv.index('--tag') + 1])
                     elif argv[:2] == ['podman', 'pull']:
@@ -48,7 +53,7 @@ class BuildInstallTests(unittest.TestCase):
                     elif argv[:3] == ['podman', 'image', 'inspect']:
                         stdout = '[{"Labels":{"io.todo.proxy":"nginx"}}]'
                     elif argv[:3] == ['podman', 'secret', 'inspect']:
-                        stdout = 'fixture-password'
+                        stdout = kube_secrets.get(argv[-1], 'fixture-password')
                     elif argv[:3] == ['systemctl', '--user', 'show']:
                         stdout = str(runtime / argv[3].replace('.service', '.kube'))
                     return subprocess.CompletedProcess(argv, rc, stdout, '')

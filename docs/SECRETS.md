@@ -62,7 +62,10 @@ controlled rotation therefore needs this order:
    rollback plan.
 2. Change the corresponding database, Keycloak or external-service credential
    with an overlap or rollback plan.
-3. Provision the new Podman secret on every host that may run the workload.
+3. Provision the new Podman secret on every host that may run the workload,
+   and remove the Kube secret made from it (named `*-kube-*`). The next
+   install creates it again from the new value; while the two differ, the
+   installer stops and names the Kube secret.
 4. Recreate the affected containers and verify readiness and authentication.
 5. Retire the old credential only after all consumers are verified.
 

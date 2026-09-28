@@ -192,6 +192,25 @@ class KubeRuntimeTests(unittest.TestCase):
             key = "bootstrap-admin-password" if name == "keycloak-kube-admin-secret" else "database-password"
             self.assertEqual(payload["data"][key], "Zml4dHVyZS1wYXNzd29yZA==")
 
+    def test_a_kube_secret_that_differs_from_its_podman_secret_is_refused(self):
+        from app_installer import secrets
+        mapping = secrets.application_secret_mapping(secrets.apps.APPS[0])
+        migrator, backend = mapping
+        stale = json.dumps({"kind": "Secret", "data": {"database-password": "b2xkLXBhc3N3b3Jk"}})
+        current = json.dumps({"kind": "Secret", "data": {"database-password": "Zml4dHVyZS1wYXNzd29yZA=="}})
+        stored = {migrator: stale, backend: current}
+        with patch.object(secrets, "read", side_effect=lambda name: stored.get(name, "fixture-password")), \
+                patch.object(secrets, "exists", side_effect=lambda kind, name: name in stored), \
+                patch.object(secrets, "run") as run:
+            with self.assertRaisesRegex(RuntimeError, migrator) as refused:
+                secrets.create_kube(mapping)
+            self.assertNotIn(backend, str(refused.exception))
+            self.assertNotIn("fixture-password", str(refused.exception))
+            run.assert_not_called()
+            stored[migrator] = current
+            self.assertFalse(secrets.create_kube(mapping))
+            run.assert_not_called()
+
     def test_superseded_separate_app_workloads_are_removed(self):
         for filename in (
             "backend.yaml",

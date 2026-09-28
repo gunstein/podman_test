@@ -37,21 +37,36 @@ def create_kube(mapping, values=None):
     podman kube play reads these secrets; the values are base64-encoded as
     Kubernetes expects, and exist only in memory and in Podman's secret
     store, never in a file. values can supply raw values directly.
-    An existing Kube secret is kept as it is. Returns True if one was created.
+    An existing Kube secret must already hold the same values. If one
+    differs, nothing is created and the error names it, never its values.
+    Returns True if a secret was created.
     """
-    changed = False
     values = values or {}
+    wanted = {}
     for name, fields in mapping.items():
-        data = {}
+        wanted[name] = {}
         for key, source in fields.items():
             raw = values[source] if source in values else read(source)
-            data[key] = base64.b64encode(raw.encode()).decode()
-        if not exists("secret", name):
-            payload = {"apiVersion": "v1", "kind": "Secret",
-                       "metadata": {"name": name}, "data": data}
-            run("podman", "secret", "create", name, "-", input=json.dumps(payload))
-            changed = True
-    return changed
+            wanted[name][key] = base64.b64encode(raw.encode()).decode()
+    missing = [name for name in wanted if not exists("secret", name)]
+    different = [name for name in wanted if name not in missing and _kube_data(name) != wanted[name]]
+    if different:
+        raise RuntimeError(
+            "Kube secrets differ from the Podman secrets they are made from: " + ", ".join(different)
+            + ". No secret was created; find out which value the databases use before removing either.")
+    for name in missing:
+        payload = {"apiVersion": "v1", "kind": "Secret",
+                   "metadata": {"name": name}, "data": wanted[name]}
+        run("podman", "secret", "create", name, "-", input=json.dumps(payload))
+    return bool(missing)
+
+
+def _kube_data(name):
+    """The data of an existing Kube secret, or None if it does not hold one."""
+    try:
+        return json.loads(read(name)).get("data")
+    except (ValueError, AttributeError):
+        return None
 
 
 def provision(applications=None):

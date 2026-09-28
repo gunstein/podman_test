@@ -27,6 +27,10 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `1a276fe` run 21: functional pass, not clean
+  ([record](docs/history/ACCEPTANCE-1a276fe.md)). `failover` ran once and
+  promoted, every tool step passed, but the readiness check before phase 1
+  was not logged. The guide now gives it as a fixed line.
 - `8e4e492` run 20: functional pass, not clean
   ([record](docs/history/ACCEPTANCE-8e4e492.md)). `REPORT.md` said ALL STEPS
   PASS, but `failover` ran twice: the agent's harness killed the first run

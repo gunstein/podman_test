@@ -550,23 +550,20 @@ installer and DR code must be easy to understand and get into. Starts after
 run 22 is recorded. The long CLI dispatches stay as they are: they read top
 to bottom.
 
-- **R1. The code does what its comments promise.** *[simplify]* One commit
-  each, each with a test that fails first:
-  1. `render.py` promises that a failed render never leaves a half-updated
-     directory, but copies into the existing output (`mkdir(exist_ok=True)`
-     and `copyfile`), so stale files stay. Render into a temporary directory
-     next to it and replace the whole directory at the end.
-  2. `secrets.create_kube` only checks that the Kube secret exists, so it can
-     drift from the raw Podman secret. Fail with a clear message when they
-     differ.
-  3. The PITR restore in `app_backup.py` cleans up in `except` with
-     `podman rm`; if that fails, it hides the original error. Keep the
-     original error and report the cleanup failure next to it.
-  4. `values.yaml` is read with direct indexing (`['runtime']`); a missing
-     key gives a `KeyError`. Check it once and name what is missing.
-  5. `tests/test_apps.py` builds `App("notes", "notes", "notes.test",
-     "notes-frontend")` with arguments in the wrong places and still passes.
-     Make `App` `kw_only=True` and correct the test.
+- **R1. The code does what its comments promise.** *[simplify]* Done, one
+  commit each with a test that failed first; to be accepted with R3's run:
+  1. `render()` writes a new directory next to the output and swaps it in,
+     so the output holds exactly one render. Development teardown had relied
+     on the stale files; the dev state file now records the YAML it played.
+  2. `secrets.create_kube` refuses, before creating anything, a Kube secret
+     that differs from the raw Podman secret it is made from.
+  3. A failed PITR cleanup no longer hides why the restore start failed.
+  4. `render.read_values()` checks `values.yaml` and names the file and the
+     setting.
+  5. Every `App` is built with keyword arguments, enforced by a test:
+     `dataclass(kw_only=True)` needs Python 3.10, and the hosts run 3.9.
+  Found on the way: `logLevel` becomes `LOG_LEVEL` in each app's ConfigMap,
+  but no backend reads it. Use it or remove it.
 - **R2. Honest types.** *[simplify]* The typing part of item 10 below:
   `REPLICATED_DATABASES` mixes `App` and `Database`, so an `App` pretends to
   be a database. Give `App` a `Database` instead, make

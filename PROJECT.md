@@ -10,8 +10,8 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `9627adb` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-9627adb.md)),
+**Current verdict: CLEAN PASS** on `24b32ee` for the seven-pod, three-database
+topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-24b32ee.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 104 steps PASS
@@ -22,12 +22,21 @@ backup, services and the login page), backup and isolated PITR,
 rebuild of the old primary and sequential reboots all passed as written.
 CI now also runs the Todo API as `todo_app` and the whole stack with the
 browser tests on Podman 5.7. The single-host installer
-(`deploy/installer`) and DR (`deploy/dr`) are separate in the tree.
+(`deploy/installer`) and DR (`deploy/dr`) are separate in the tree, and the
+fixes from the code review of `9627adb` (R1-R3) are accepted.
 Final topology: VM 108 primary with application and backup, VM 107
 database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `24b32ee` run 25: CLEAN PASS ([record](docs/history/ACCEPTANCE-24b32ee.md)),
+  accepting R1-R3 from the code review of `9627adb`, with a new agent
+  session.
+- `24b32ee` run 24: stopped in phases 1-3 by the agent, which replaced and
+  changed the guide's commands; no product defect (same record).
+- `68eece4` run 23: stopped in phase 8, where the guide asked for the backup
+  names by hand and the agent filled in an empty one; the guide now reads
+  them from the log (same record).
 - `9627adb` run 22: CLEAN PASS ([record](docs/history/ACCEPTANCE-9627adb.md)),
   the first run with DR moved to `deploy/dr` apart from the installer (S1),
   and the first clean run with the fixes from runs 20 and 21.

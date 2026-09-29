@@ -1,7 +1,7 @@
 # Backlog
 
 Agreed work that is not done yet. The baseline to compare against is the
-CLEAN PASS on `9627adb` ([record](history/ACCEPTANCE-9627adb.md)). Do not
+CLEAN PASS on `24b32ee` ([record](history/ACCEPTANCE-24b32ee.md)). Do not
 change checked code while an acceptance run is in progress: the run would then
 test a different revision from the one in its kickoff message. Remove an item
 when its change has passed acceptance; the acceptance records and Git keep
@@ -30,7 +30,7 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-0. After run 23: R5, then S2-S6, so the installer and DR code is easy to read
+0. Now: R5, then S2-S6 and E6-E9, so the installer and DR code is easy to read
    before more is built on it.
 1. Failover to Trondheim within 30 minutes (see the goal below): G2
    (Trondheim is ready), T3 (fencing without the Oslo hypervisor), T4 (one
@@ -49,23 +49,6 @@ physical sites. D2 and L6 are therefore designed for two hosts that each keep
 what the other would lose: each host backs up its own database copy (D2), and
 each holds the other's logs (L6). Everything between them crosses a network
 between sites, and replication across it uses TLS.
-
-## Waiting for acceptance
-
-From the code review of `9627adb`; done in code, CI green, accepted when run
-23 passes. Then remove this section.
-
-- **R1. The code does what its comments promise.** `render()` replaces the
-  whole output directory, and the dev state file records the YAML it played;
-  a Kube secret that differs from its Podman secret is refused; a failed PITR
-  cleanup keeps the original error; `values.yaml` is checked; every `App` is
-  built with keyword arguments.
-- **R2. Honest types.** `REPLICATED_DATABASES` holds only `Database`s,
-  `describe()` is gone, and the DR code says `database` for a member of the
-  group.
-- **R3. Where DR finds the installer.** One written rule in
-  `deploy/dr/README.md`, the DR scripts look only in `/opt/todo/lib`, and a
-  test starts every DR entry point from the unpacked operations package.
 
 ## Goal: Trondheim running within 30 minutes
 
@@ -427,7 +410,7 @@ and get into. The long CLI dispatches stay as they are: they read top to
 bottom.
 
 - **R5. Separate names from the database.** *[simplify]* Decided
-  (2026-09-28); first after run 23. `stack.Database` is named after a
+  (2026-09-28); next. `stack.Database` is named after a
   database but is the naming rules for everything that shares one name:
   `resource("app")` gives `todo-app`, `service("app")` `todo-app.service` and
   `image("backend")` `localhost/todo-backend:m12`. That is why `App` forwards

@@ -214,6 +214,16 @@ class RenderErrorTests(unittest.TestCase):
                         render.render(ROOT, values, output)
                     self.assertFalse(output.exists())
 
+    def test_only_dns_names_are_hostnames(self):
+        for hostname in ("todo.test", "notes.test", "a", "x-1.example.org", "a" * 63 + ".test"):
+            with self.subTest(hostname=hostname):
+                manifests.validate_hostname(hostname)
+        for hostname in ("", ".", "..", "todo..test", ".todo.test", "todo.test.", "-todo.test",
+                         "todo-.test", "Todo.test", "todo_app.test", "todo.test\n", "todo.test\nx",
+                         "evil.test; return 200", "a" * 64 + ".test", ("a" * 62 + ".") * 4 + "test", None):
+            with self.subTest(hostname=hostname), self.assertRaisesRegex(ValueError, "safe hostname"):
+                manifests.validate_hostname(hostname)
+
     def test_malicious_public_hostname_is_rejected_before_any_rendering(self):
         with tempfile.TemporaryDirectory() as directory:
             values = Path(directory) / "values.yaml"

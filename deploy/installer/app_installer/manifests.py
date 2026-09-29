@@ -16,13 +16,18 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 # there). Validate every hostname that reaches it - both the operator-supplied
 # runtime.publicHostname and each App's own registry hostname - so neither can
 # inject an nginx directive or break the surrounding YAML with a stray ';',
-# '#' or newline.
-HOSTNAME_PATTERN = re.compile(r'^[a-z0-9.-]+$')
+# '#' or newline. The check also requires a real DNS name, so a name such as
+# ".." or "-todo.test" fails here and not later in nginx, TLS or Keycloak.
+#
+# One DNS label: lowercase letters and digits, with hyphens only inside, at
+# most 63 characters. fullmatch, because '$' would also accept a final newline.
+DNS_LABEL = re.compile(r'[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?')
 
 
 def validate_hostname(hostname):
-    """Raise unless hostname is only lowercase letters, digits, dots and hyphens."""
-    if not HOSTNAME_PATTERN.match(hostname):
+    """Raise unless hostname is a DNS name: labels as above, joined by single dots."""
+    if not (isinstance(hostname, str) and len(hostname) <= 253
+            and all(DNS_LABEL.fullmatch(label) for label in hostname.split('.'))):
         raise ValueError(f'Not a safe hostname: {hostname!r}')
 
 

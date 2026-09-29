@@ -454,9 +454,11 @@ between them is not a goal: each app should read on its own.
   `StandbyGroup` (status, preflight and promotion of the whole group) and
   `TodoBackup` is `DatabaseBackup` (archiving, backups and PITR of one
   database). Internal names only; files, commands and paths are unchanged.
-- *[optional]* Smaller points from the code review of `9627adb`: the
-  PostgreSQL image is set per app, and hostnames are not validated
-  everywhere.
+- Smaller points from the code review of `9627adb`. Done: PostgreSQL is
+  one shared image (`images.shared_images`), prepared once however many
+  apps there are, so a refresh pulls it once; and `validate_hostname`
+  requires a DNS name (labels of letters, digits and inner hyphens), with
+  `fullmatch`, since the old `$` also let a final newline through.
 
 ## Tests and CI
 
@@ -484,8 +486,8 @@ full-stack job and acceptance cover that.
   describe only their scenario (the build test adds the render script in a
   small subclass). The order checks still read `host.calls`.
 - **E8. Error paths in `images.py`.** *[new]* The `commands.run` part is
-  done (S3). For `images.py`: a wrong proxy label, offline with `refresh_images` refused, a
-  missing bundle, and the shared PostgreSQL image loaded once.
+  done (S3). For `images.py`: a wrong proxy label, offline with `refresh_images` refused and
+  a missing bundle. The shared PostgreSQL image is done (review of `9627adb`).
 - **E9. The Kube secret test belongs with the installer.** *[simplify]*
   Done: the two `secrets.create_kube` tests (built in memory, and a
   differing Kube secret refused) moved from `tests/test_kube_runtime.py` to

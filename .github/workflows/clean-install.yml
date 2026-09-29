@@ -8,8 +8,8 @@ permissions:
   contents: read
 
 jobs:
-  dr-tools:
-    name: DR tools and operations package (Python ${{ matrix.python }})
+  python-tests:
+    name: Python tests and operations package (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -26,7 +26,12 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install "PyYAML==6.0.3" jinja2
 
-      - name: Test DR and backup tools
+      # tests/ also runs the package suites: tests/test_installer.py loads the
+      # installer tests from deploy/installer/tests and tests/test_dr_host.py
+      # the DR host tests from deploy/dr/tests (load_tests). The operations
+      # package smoke test, which unpacks the tarball and starts app_ops,
+      # app_dr_host, app_dr.py and app_backup.py, is tests/test_operations_distribution.py.
+      - name: "Python tests: installer, DR, app-ops, acceptance tool and packages"
         run: python -m unittest discover --start-directory tests --verbose
       - name: Build and verify the operations package
         shell: bash

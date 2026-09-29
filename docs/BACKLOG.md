@@ -473,12 +473,10 @@ full-stack job and acceptance cover that.
 - **E5. Browser tests for failure.** *[optional]* An expired session and a real
   token refresh against Keycloak, and what the user sees when the backend or
   Keycloak is down.
-- **E6. Say in CI that the package suites run.** *[config]* The step that
-  runs `tests/` is named "Test DR and backup tools", but it also runs the 77
-  installer tests (`tests/test_installer.py`) and the DR host tests
-  (`tests/test_dr_host.py`) through `load_tests`. A reviewer concluded that
-  the installer tests do not run in CI. Name the step for what it runs and
-  say in a comment how the package suites are included.
+- **E6. Say in CI that the package suites run.** *[config]* Done: the job
+  is "Python tests and operations package", its test step names what it runs
+  (installer, DR, app-ops, acceptance tool and packages), and a comment says
+  how the package suites and the operations package smoke test are included.
 - **E7. One fake host for the installer tests.** *[simplify]*
   `test_install.py`, `test_build.py` and `test_workloads.py` each carry
   their own fake `subprocess.run`, with the same rules for secrets, pods and

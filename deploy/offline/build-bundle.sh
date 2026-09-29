@@ -2,9 +2,14 @@
 set -euo pipefail
 
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-output=${1:-"$project_root/dist/todo-offline-m12.tar.gz"}
+# The bundle is named after the image tag in app_installer/settings.py, where
+# app-ops also looks for it on a host (steps.paths): one place, no drift.
+image_tag=$(PYTHONPATH="$project_root/deploy/installer" python3 -c \
+  'from app_installer import settings; print(settings.IMAGE_TAG)')
+bundle_name="todo-offline-$image_tag"
+output=${1:-"$project_root/dist/$bundle_name.tar.gz"}
 work_directory=$(mktemp -d)
-bundle_directory="$work_directory/todo-offline-m12"
+bundle_directory="$work_directory/$bundle_name"
 trap 'rm -rf "$work_directory"' EXIT
 
 mkdir -p "$bundle_directory/images" "$bundle_directory/docs" \
@@ -56,8 +61,8 @@ if source_revision=$(git -C "$project_root" rev-parse --verify HEAD 2>/dev/null)
     source_state=dirty
   fi
 fi
-printf 'package=todo-offline-m12\nsource_revision=%s\nsource_state=%s\n' \
-  "$source_revision" "$source_state" > "$bundle_directory/VERSION"
+printf 'package=%s\nsource_revision=%s\nsource_state=%s\n' \
+  "$bundle_name" "$source_revision" "$source_state" > "$bundle_directory/VERSION"
 (
   cd "$bundle_directory"
   find . -type f ! -name SHA256SUMS -print0 |

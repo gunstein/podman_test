@@ -7,7 +7,9 @@ quarantine helper) also derive independently, so it belongs there, not here.
 """
 from pathlib import Path
 
-# Image build tag; bump together with a rebuilt offline bundle.
+# Image build tag; bump together with a rebuilt offline bundle. It also names
+# the bundle, todo-offline-<tag>: build-bundle.sh reads it from here, and the
+# guides that name the bundle must follow (tests/test_fixed_layout.py).
 IMAGE_TAG = "m12"
 
 # Upstream PostgreSQL version, pinned like every other image tag above.
@@ -28,7 +30,12 @@ QUADLET_DIR = Path.home() / ".config/containers/systemd"
 KUBE_RUNTIME = "todo-kube-runtime"
 
 # Where app-ops installs the DR tools (app_dr.py, app_backup.py, the
-# quarantine helper) and, under fapolicyd, the packages they import.
+# quarantine helper) and, under fapolicyd, the packages they import. This is a
+# fixed layout, not a setting: the tools must find the packages before they
+# can read this file, so app_dr.py and app_backup.py look in the lib next to
+# their own bin, and app-quarantine.sh names /opt/todo/lib itself
+# (tests/test_fixed_layout.py checks both). The installer also uses these
+# paths, and DR_CONFIG below, to recognise and refuse a DR host.
 TOOLS_BIN = Path("/opt/todo/bin")
 TOOLS_LIB = Path("/opt/todo/lib")
 

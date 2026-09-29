@@ -186,7 +186,8 @@ class OperationsDistributionTests(unittest.TestCase):
             subprocess.run(["bash", str(ROOT / "deploy/offline/build-bundle.sh"), str(archive)],
                            check=True, capture_output=True,
                            env={**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"]})
-            files = verify_package(self, archive, "todo-offline-m12")
+            from app_installer import settings
+            files = verify_package(self, archive, f"todo-offline-{settings.IMAGE_TAG}")
             for source in (ROOT / "deploy/quadlet").glob("*.kube.j2"):
                 name = str(source.relative_to(ROOT))
                 self.assertEqual(files.get(name), source.read_bytes(), name)

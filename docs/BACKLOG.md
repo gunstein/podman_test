@@ -442,8 +442,10 @@ bottom.
   its own and can be tested without the rest of the lifecycle. The one
   candidate today is `install.install()` (118 lines), into named steps, if
   that reads better.
-- **S5. Names that say what they do.** *[simplify]* Rename `TodoDr` and
-  `TodoBackup`: they handle all three databases.
+- **S5. Names that say what they do.** *[simplify]* Done: `TodoDr` is
+  `StandbyGroup` (status, preflight and promotion of the whole group) and
+  `TodoBackup` is `DatabaseBackup` (archiving, backups and PITR of one
+  database). Internal names only; files, commands and paths are unchanged.
 - **S6. Shared backend code.** *[simplify]* `todo-backend` and
   `notes-backend` have identical `migrate.py` and near-identical
   `setup_roles.py`, `main.py`, auth and database code. Share them; this

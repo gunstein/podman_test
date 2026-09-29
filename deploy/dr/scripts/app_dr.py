@@ -129,7 +129,7 @@ def write_config(path: Path, primary_name: str, primary_address: str, standby_na
     return quadlet.write(path, json.dumps(raw).encode(), 0o600)
 
 
-class TodoDr:
+class StandbyGroup:
     """Status, preflight and promotion for every replicated database on this host.
 
     Commands run through commands.run and SQL through replication.sql(), like
@@ -333,7 +333,7 @@ def main(arguments: Optional[Sequence[str]] = None):
             print(json.dumps({'changed': write_config(args.config, args.primary_name, args.primary_address,
                                                       args.standby_name, args.rpo_target_seconds)}))
             return 0
-        tool = TodoDr(load_config(args.config), journal_path=args.config.with_name(settings.PROMOTION_RECORD))
+        tool = StandbyGroup(load_config(args.config), journal_path=args.config.with_name(settings.PROMOTION_RECORD))
         if args.command == 'status':
             print('\n'.join(tool.status_lines()))
         elif args.command == 'preflight':

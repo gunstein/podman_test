@@ -50,7 +50,7 @@ class FakeRunner:
         raise AssertionError(f"Unexpected command: {command}")
 
 
-class TodoDrTests(unittest.TestCase):
+class StandbyGroupTests(unittest.TestCase):
     def setUp(self):
         registry = mock.patch.object(app_dr.apps, 'REPLICATED_DATABASES', (app_dr.apps.APPS[0].database,))
         registry.start()
@@ -65,7 +65,7 @@ class TodoDrTests(unittest.TestCase):
     def tool(self, outputs, reachable=False):
         runner = FakeRunner(outputs)
         route_commands(self, runner)
-        tool = app_dr.TodoDr(
+        tool = app_dr.StandbyGroup(
             self.config(),
             connector=lambda address, port, timeout: reachable,
             journal_path=self.journal,
@@ -185,7 +185,7 @@ class TodoDrTests(unittest.TestCase):
             raise subprocess.TimeoutExpired(arguments, timeout)
 
         route_commands(self, timeout_runner)
-        tool = app_dr.TodoDr(self.config())
+        tool = app_dr.StandbyGroup(self.config())
         with self.assertRaisesRegex(RuntimeError, "systemd status check timed out after 120 seconds"):
             tool.service_status()
 
@@ -231,7 +231,7 @@ class GroupPromotionTests(unittest.TestCase):
         def connect(address, port, timeout):
             self.endpoints.append(port)
             return port == reachable_port
-        return app_dr.TodoDr(app_dr.Config('primary', '192.0.2.50', 'standby', 30, ('todo', 'notes')),
+        return app_dr.StandbyGroup(app_dr.Config('primary', '192.0.2.50', 'standby', 30, ('todo', 'notes')),
                               connector=connect, journal_path=self.journal)
 
     def test_last_app_lag_prevents_every_promotion(self):
@@ -284,7 +284,7 @@ class GroupPromotionTests(unittest.TestCase):
     def test_explicit_complete_group_is_required(self):
         for names in ((), ('todo',), ('notes', 'todo')):
             with self.assertRaisesRegex(app_dr.DrError, 'complete ordered'):
-                app_dr.TodoDr(app_dr.Config('primary', '192.0.2.50', 'standby', 30, names))
+                app_dr.StandbyGroup(app_dr.Config('primary', '192.0.2.50', 'standby', 30, names))
 
     def test_failed_durable_decision_prevents_every_promotion(self):
         tool = self.tool()
@@ -334,7 +334,7 @@ class ConfigureTests(unittest.TestCase):
             self.assertEqual(loaded.applications, tuple(d.name for d in app_dr.apps.REPLICATED_DATABASES))
             self.assertEqual((loaded.primary_name, loaded.primary_address, loaded.standby_name,
                               loaded.rpo_target_seconds), ("todo-primary", "192.0.2.10", "todo-standby", 30))
-            app_dr.TodoDr(loaded)
+            app_dr.StandbyGroup(loaded)
 
     def test_repeat_is_unchanged_and_existing_ansible_written_config_is_byte_identical(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -25,9 +25,9 @@ def completed(stdout="", stderr="", returncode=0):
 
 
 def backup(test, runner, **kwargs):
-    """A TodoBackup whose commands go to runner for the rest of test."""
+    """A DatabaseBackup whose commands go to runner for the rest of test."""
     route_commands(test, runner)
-    return app_backup.TodoBackup(**kwargs)
+    return app_backup.DatabaseBackup(**kwargs)
 
 
 class FakeRunner:
@@ -84,7 +84,7 @@ def fake_time():
     return {"sleeper": time.sleep, "monotonic": time.monotonic}
 
 
-class TodoBackupTests(unittest.TestCase):
+class DatabaseBackupTests(unittest.TestCase):
     def tool(self, runner):
         return backup(self, 
             runner,
@@ -152,9 +152,9 @@ class TodoBackupTests(unittest.TestCase):
 
     def test_rejects_unsafe_backup_and_restore_point_names(self):
         with self.assertRaises(app_backup.BackupError):
-            app_backup.TodoBackup._validate_backup_name("../../data")
+            app_backup.DatabaseBackup._validate_backup_name("../../data")
         with self.assertRaises(app_backup.BackupError):
-            app_backup.TodoBackup._validate_restore_point("bad point; rm")
+            app_backup.DatabaseBackup._validate_restore_point("bad point; rm")
 
     def test_restore_point_checks_exact_wal_file_after_archiver_advances(self):
         runner = FakeRunner(
@@ -396,7 +396,7 @@ class ApplicationBackupTests(unittest.TestCase):
         instances[0].archive_status.return_value = 'on|'
         instances[1].archive_status.return_value = 'on|'
         instances[2].require_writable_primary.side_effect = app_backup.BackupError('keycloak is read-only')
-        with mock.patch.object(app_backup, 'TodoBackup', side_effect=instances):
+        with mock.patch.object(app_backup, 'DatabaseBackup', side_effect=instances):
             self.assertEqual(app_backup.main(['create']), 1)
         for tool in instances:
             tool.create_backup.assert_not_called()

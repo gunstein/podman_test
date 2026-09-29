@@ -66,7 +66,7 @@ class BackupError(RuntimeError):
 TIMEOUT = 30
 
 
-class TodoBackup:
+class DatabaseBackup:
     """Backup, archiving and disposable restore for one database.
 
     Commands run through commands.run and SQL through replication.sql(), like
@@ -486,7 +486,7 @@ class TodoBackup:
             )
 
 
-def configure(tools: Sequence[TodoBackup], journal: Path) -> dict:
+def configure(tools: Sequence[DatabaseBackup], journal: Path) -> dict:
     """Turn on WAL archiving for the complete group, restarting the app tier at most once.
 
     Every database is checked before the first change. Databases whose
@@ -570,7 +570,7 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
             raise BackupError('Disposable restore operations require an explicit --app')
         if args.command == 'configure' and args.app is not None:
             raise BackupError('configure always covers the complete database group')
-        tools = [TodoBackup(database=database) for database in selected]
+        tools = [DatabaseBackup(database=database) for database in selected]
         if args.command == 'configure':
             print(json.dumps(configure(tools, args.journal)))
             return 0

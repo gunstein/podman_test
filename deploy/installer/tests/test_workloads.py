@@ -1,6 +1,5 @@
 import base64
 import json
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -10,6 +9,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_installer import apps, images, quadlet, stack, workloads  # noqa: E402
+
+from fake_host import FakeHost  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -38,39 +39,28 @@ class WorkloadsTests(unittest.TestCase):
                     (rendered / f'{name}.yaml').write_text(f'fixture: {name}\n')
                 for name in obsolete + ['unrelated']:
                     (directory / f'{name}.volume').touch()
-                known = {}
-                calls = []
-
-                def command(argv, **kwargs):
-                    calls.append((argv, kwargs))
-                    rc, stdout = 0, ''
-                    if argv == ['podman', 'kube', 'play', '--help']:
-                        stdout = '--no-pod-prefix'
-                    elif argv[:3] == ['podman', 'secret', 'inspect']:
-                        stdout = known.get(argv[-1], ' password-with-spaces \n')
-                    elif argv[:3] == ['podman', 'secret', 'exists']:
-                        rc = 0 if argv[3] in known else 1
-                    elif argv[:3] == ['podman', 'secret', 'create']:
-                        payload = json.loads(kwargs['input'])
-                        self.assertEqual(payload['metadata']['name'], argv[3])
-                        for value in payload['data'].values():
-                            self.assertEqual(base64.b64decode(value), b' password-with-spaces ')
-                        known[argv[3]] = kwargs['input']
-                    else:
-                        self.assertEqual(argv, ['systemctl', '--user', 'daemon-reload'])
-                    return subprocess.CompletedProcess(argv, rc, stdout, '')
-
-                with patch('subprocess.run', side_effect=command):
+                with FakeHost(password=' password-with-spaces \n') as host:
                     self.assertTrue(function(ROOT, directory, runtime, rendered))
                     initial = {p: p.stat().st_mtime_ns for p in runtime.iterdir()}
-                    calls.clear()
+                    first_run = list(host.calls)
+                    host.calls.clear()
                     self.assertFalse(function(ROOT, directory, runtime, rendered))
                     self.assertEqual(initial, {p: p.stat().st_mtime_ns for p in runtime.iterdir()})
-                    self.assertFalse(any(a[:3] == ['podman', 'secret', 'create'] for a, _ in calls))
+                    self.assertFalse(host.ran('podman', 'secret', 'create'))
                     config = ('keycloak.yaml' if function == workloads.install_keycloak else
                               'notes-config.yaml' if names[0].startswith('notes-') else 'config.yaml')
                     (rendered / config).write_text('changed: true\n')
                     self.assertTrue(function(ROOT, directory, runtime, rendered))
+                # Each Kube secret carries the raw password, spaces and all, under its own name;
+                # apart from secrets, a workload only reloads systemd.
+                for argv in (a for a in first_run if a[:3] == ['podman', 'secret', 'create']):
+                    payload = json.loads(host.secrets[argv[3]])
+                    self.assertEqual(payload['metadata']['name'], argv[3])
+                    for value in payload['data'].values():
+                        self.assertEqual(base64.b64decode(value), b' password-with-spaces ')
+                self.assertEqual({tuple(a) for a in first_run + host.calls if a[:2] != ['podman', 'secret']}
+                                 - {('podman', 'kube', 'play', '--help')},
+                                 {('systemctl', '--user', 'daemon-reload')})
                 for name in names:
                     self.assertTrue((runtime / f'{name}.kube').is_file())
                 self.assertEqual(list(directory.glob('*.volume')), [directory / 'unrelated.volume'])
@@ -124,16 +114,9 @@ class WorkloadsTests(unittest.TestCase):
     def test_image_build_load_and_identity(self):
         for mode, present, refresh in [('build', False, False), ('build', True, False),
                                        ('build', True, True), ('offline', False, False)]:
-            calls = []
-
-            def command(argv, **kwargs):
-                calls.append(argv)
-                rc = int(not present) if argv[1:3] == ['image', 'exists'] else 0
-                return subprocess.CompletedProcess(argv, rc,
-                                                   '[{"Labels":{"io.todo.proxy":"nginx"}}]', '')
-
             with self.subTest(mode=mode, present=present, refresh=refresh), \
-                    patch('subprocess.run', side_effect=command):
+                    FakeHost(images_present=present) as host:
+                calls = host.calls
                 changed = images.prepare(ROOT, mode, '/bundle', refresh)
                 self.assertEqual(set(changed.values()), {not present or refresh})
                 if mode == 'offline':

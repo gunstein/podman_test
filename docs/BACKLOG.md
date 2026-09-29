@@ -477,14 +477,12 @@ full-stack job and acceptance cover that.
   is "Python tests and operations package", its test step names what it runs
   (installer, DR, app-ops, acceptance tool and packages), and a comment says
   how the package suites and the operations package smoke test are included.
-- **E7. One fake host for the installer tests.** *[simplify]*
-  `test_install.py`, `test_build.py` and `test_workloads.py` each carry
-  their own fake `subprocess.run`, with the same rules for secrets, pods and
-  `systemctl show` spelled out several times; R1.2 had to change two
-  identical copies the same way. Move the rules into one small `FakeHost`
-  helper in `deploy/installer/tests`, so the tests describe scenarios. Keep
-  the order checks that find commands in the call list: the order is part
-  of what the installer must get right.
+- **E7. One fake host for the installer tests.** *[simplify]* Done:
+  `deploy/installer/tests/fake_host.py` has one `FakeHost` that keeps a
+  single host's secrets and images and records every command;
+  `test_install.py`, `test_build.py` and `test_workloads.py` use it and
+  describe only their scenario (the build test adds the render script in a
+  small subclass). The order checks still read `host.calls`.
 - **E8. Error paths in `images.py`.** *[new]* The `commands.run` part is
   done (S3). For `images.py`: a wrong proxy label, offline with `refresh_images` refused, a
   missing bundle, and the shared PostgreSQL image loaded once.

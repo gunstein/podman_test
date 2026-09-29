@@ -19,7 +19,22 @@ from app_installer import (  # noqa: E402
     uninstall,
 )
 
+from fake_host import FakeHost  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def write_rendered_manifests(root, applications):
+    """The rendered manifests an offline install reads, as fixtures."""
+    rendered = root / 'generated/kube-runtime'
+    rendered.mkdir(parents=True)
+    filenames = [name for app in applications
+                 for name in (app.database.manifest, app.manifest, app.config_manifest)] + [
+        apps.KEYCLOAK_DATABASE.manifest, apps.KEYCLOAK_DATABASE.config_manifest,
+        'keycloak.yaml', 'shared-proxy.yaml']
+    for filename in filenames:
+        (rendered / filename).write_text('fixture: true\n')
+    return rendered
 
 
 class InstallTests(unittest.TestCase):
@@ -29,39 +44,12 @@ class InstallTests(unittest.TestCase):
             root = Path(temp)
             directory = root / 'quadlet'
             runtime = directory / 'todo-kube-runtime'
-            rendered = root / 'generated/kube-runtime'
-            rendered.mkdir(parents=True)
-            filenames = [name for app in applications
-                         for name in (app.database.manifest, app.manifest, app.config_manifest)] + [
-                apps.KEYCLOAK_DATABASE.manifest, apps.KEYCLOAK_DATABASE.config_manifest,
-                'keycloak.yaml', 'shared-proxy.yaml']
-            for filename in filenames:
-                (rendered / filename).write_text('fixture: true\n')
-            calls = []
-            kube_secrets = {}
+            write_rendered_manifests(root, applications)
 
-            def command(argv, **kwargs):
-                calls.append(argv)
-                stdout = ''
-                if argv == ['podman', 'kube', 'play', '--help']:
-                    stdout = '--no-pod-prefix'
-                elif argv[:3] == ['podman', 'image', 'inspect']:
-                    stdout = '[{"Labels":{"io.todo.proxy":"nginx"}}]'
-                elif argv[:3] == ['podman', 'secret', 'inspect']:
-                    stdout = kube_secrets.get(argv[-1], 'fixture-password\n')
-                elif argv[:3] == ['podman', 'secret', 'create'] and '-kube-' in argv[3]:
-                    kube_secrets[argv[3]] = kwargs['input']
-                elif argv[:3] == ['systemctl', '--user', 'show']:
-                    stdout = (source_override or str(runtime / argv[3].replace('.service', '.kube'))) + '\n'
-                rc = 1 if argv[:3] == ['podman', 'pod', 'exists'] or (
-                    argv[:3] == ['podman', 'secret', 'exists'] and (
-                        argv[3].endswith('-replicator-password')
-                        or '-kube-' in argv[3] and argv[3] not in kube_secrets)) else 0
-                return subprocess.CompletedProcess(argv, rc, stdout, '')
-
-            with patch('subprocess.run', side_effect=command), \
+            with FakeHost(unit_directory=runtime, source=source_override) as host, \
                     patch.object(keycloak, 'configure') as configure, \
                     patch.object(settings, 'DEV_STATE_FILE', root / 'app-installer-dev.json'):
+                calls = host.calls
                 install.install(ROOT, mode=mode, deployment_mode='offline',
                                 bundle_directory=root, quadlet_dir=directory,
                                 applications=applications)
@@ -69,7 +57,7 @@ class InstallTests(unittest.TestCase):
                     configure.assert_called_once_with('fixture-password', [
                         (app.keycloak_client, app.hostname) for app in applications])
                     self.assertEqual(len(list(runtime.glob('*.kube'))), 2 * len(applications) + 3)
-                    self.assertEqual(len([a for a in calls if a[:3] == ['systemctl', '--user', 'show']]),
+                    self.assertEqual(len(host.ran('systemctl', '--user', 'show')),
                                      2 * len(applications) + 3)
                 else:
                     self.assertFalse(directory.exists())
@@ -79,8 +67,8 @@ class InstallTests(unittest.TestCase):
                     calls.clear()
                     install.install(ROOT, mode=mode, deployment_mode='offline',
                                     bundle_directory=root, quadlet_dir=directory,
-                                applications=applications)
-                    self.assertFalse(any(a[:3] == ['systemctl', '--user', 'stop'] for a in calls))
+                                    applications=applications)
+                    self.assertFalse(host.ran('systemctl', '--user', 'stop'))
             bootstrap = [i for i, a in enumerate(calls) if a[-1] == 'backend.setup_roles']
             self.assertEqual(len(bootstrap), 2 * len(applications))
             wait = next(i for i, a in enumerate(calls) if a[:2] == ['podman', 'wait'])
@@ -126,47 +114,18 @@ class InstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             directory = root / 'quadlet'
-            rendered = root / 'generated/kube-runtime'
-            rendered.mkdir(parents=True)
-            filenames = [name for app in applications
-                         for name in (app.database.manifest, app.manifest, app.config_manifest)] + [
-                apps.KEYCLOAK_DATABASE.manifest, apps.KEYCLOAK_DATABASE.config_manifest,
-                'keycloak.yaml', 'shared-proxy.yaml']
-            for filename in filenames:
-                (rendered / filename).write_text('fixture: true\n')
-            calls = []
-            kube_secrets = {}
+            rendered = write_rendered_manifests(root, applications)
 
-            def command(argv, **kwargs):
-                calls.append(argv)
-                stdout = ''
-                if argv == ['podman', 'kube', 'play', '--help']:
-                    stdout = '--no-pod-prefix'
-                elif argv[:3] == ['podman', 'image', 'inspect']:
-                    stdout = '[{"Labels":{"io.todo.proxy":"nginx"}}]'
-                elif argv[:3] == ['podman', 'secret', 'inspect']:
-                    stdout = kube_secrets.get(argv[-1], 'fixture-password\n')
-                elif argv[:3] == ['podman', 'secret', 'create'] and '-kube-' in argv[3]:
-                    kube_secrets[argv[3]] = kwargs['input']
-                elif argv[:3] == ['systemctl', '--user', 'show']:
-                    stdout = str(directory / 'todo-kube-runtime'
-                                / argv[3].replace('.service', '.kube')) + '\n'
-                rc = 1 if argv[:3] == ['podman', 'pod', 'exists'] or (
-                    argv[:3] == ['podman', 'secret', 'exists'] and (
-                        argv[3].endswith('-replicator-password')
-                        or '-kube-' in argv[3] and argv[3] not in kube_secrets)) else 0
-                return subprocess.CompletedProcess(argv, rc, stdout, '')
-
-            with patch('subprocess.run', side_effect=command), \
+            with FakeHost(unit_directory=directory / 'todo-kube-runtime') as host, \
                     patch.object(keycloak, 'configure'), \
                     patch.object(settings, 'DEV_STATE_FILE', root / 'app-installer-dev.json'):
                 install.install(ROOT, mode='server', deployment_mode='offline',
                                 bundle_directory=root, quadlet_dir=directory, applications=applications)
                 (rendered / apps.APPS[0].manifest).write_text('fixture: changed\n')
-                calls.clear()
+                host.calls.clear()
                 install.install(ROOT, mode='server', deployment_mode='offline',
                                 bundle_directory=root, quadlet_dir=directory, applications=applications)
-            stopped = {a[3] for a in calls if a[:3] == ['systemctl', '--user', 'stop']}
+            stopped = {a[3] for a in host.ran('systemctl', '--user', 'stop')}
             self.assertEqual(stopped, {'todo-app.service'})
 
     def test_source_path_must_be_the_expected_workload_unit(self):

@@ -1,5 +1,4 @@
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -9,7 +8,24 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_installer import install  # noqa: E402
 
+from fake_host import FakeHost  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class RenderingHost(FakeHost):
+    """A host where the render script writes the manifests an install reads."""
+
+    def answer(self, argv, input):
+        if argv[0].endswith('render-kube-runtime.sh'):
+            target = Path(argv[-1])
+            target.mkdir(parents=True)
+            for name in ('postgres', 'app', 'keycloak', 'shared-proxy', 'config',
+                         'notes-app', 'notes-postgres', 'notes-config',
+                         'keycloak-postgres', 'keycloak-config'):
+                (target / (name + '.yaml')).write_text('fixture: true\n')
+            return 0, ''
+        return super().answer(argv, input)
 
 
 class BuildInstallTests(unittest.TestCase):
@@ -20,47 +36,10 @@ class BuildInstallTests(unittest.TestCase):
                 shutil.copytree(ROOT / 'deploy/quadlet', root / 'deploy/quadlet')
                 directory = root / 'quadlet'
                 runtime = directory / 'todo-kube-runtime'
-                calls = []
-                known_images = set()
-                kube_secrets = {}
-
-                def command(argv, **kwargs):
-                    calls.append(argv)
-                    stdout, rc = '', 0
-                    if argv[0].endswith('render-kube-runtime.sh'):
-                        target = Path(argv[-1])
-                        target.mkdir(parents=True)
-                        for name in ('postgres', 'app', 'keycloak', 'shared-proxy', 'config',
-                                     'notes-app', 'notes-postgres', 'notes-config',
-                                     'keycloak-postgres', 'keycloak-config'):
-                            (target / (name + '.yaml')).write_text('fixture: true\n')
-                    elif argv == ['podman', 'kube', 'play', '--help']:
-                        stdout = '--no-pod-prefix'
-                    elif argv[:3] == ['podman', 'image', 'exists']:
-                        rc = int(argv[3] not in known_images)
-                    elif argv[:3] == ['podman', 'pod', 'exists']:
-                        rc = 1
-                    elif argv[:3] == ['podman', 'secret', 'exists'] and argv[3].endswith('-replicator-password'):
-                        rc = 1  # a single host has no replication secret
-                    elif argv[:3] == ['podman', 'secret', 'exists'] and '-kube-' in argv[3]:
-                        rc = int(argv[3] not in kube_secrets)
-                    elif argv[:3] == ['podman', 'secret', 'create'] and '-kube-' in argv[3]:
-                        kube_secrets[argv[3]] = kwargs['input']
-                    elif argv[:2] == ['podman', 'build']:
-                        known_images.add(argv[argv.index('--tag') + 1])
-                    elif argv[:2] == ['podman', 'pull']:
-                        known_images.add(argv[-1])
-                    elif argv[:3] == ['podman', 'image', 'inspect']:
-                        stdout = '[{"Labels":{"io.todo.proxy":"nginx"}}]'
-                    elif argv[:3] == ['podman', 'secret', 'inspect']:
-                        stdout = kube_secrets.get(argv[-1], 'fixture-password')
-                    elif argv[:3] == ['systemctl', '--user', 'show']:
-                        stdout = str(runtime / argv[3].replace('.service', '.kube'))
-                    return subprocess.CompletedProcess(argv, rc, stdout, '')
-
-                with patch('subprocess.run', side_effect=command), \
+                with RenderingHost(images_present=False, unit_directory=runtime) as host, \
                         patch('app_installer.keycloak.configure'):
                     install.install(root, mode=mode, quadlet_dir=directory)
+                calls = host.calls
                 render = [str(root / 'deploy/scripts/render-kube-runtime.sh'),
                           str(root / f'deploy/environments/{profile}/values.yaml'),
                           str(root / 'generated' / output)]

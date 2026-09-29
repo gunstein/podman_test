@@ -106,7 +106,7 @@ class PromotedDeployTests(unittest.TestCase):
             self.assertFalse(self.deploy(host, directory))
             self.assertFalse([s for s in host.steps if s[:3] == ('systemctl', '--user', 'stop')])
             starts = [s[2] for s in host.steps if s[:2] == ('systemctl', 'start')]
-            self.assertEqual(starts, [app.service('app') for app in apps.APPS]
+            self.assertEqual(starts, [app.service for app in apps.APPS]
                              + ['keycloak.service', 'shared-proxy.service'])
             for app in apps.APPS:
                 self.assertLess(self.index(host, ('systemctl', 'start', 'shared-proxy.service')),

@@ -31,9 +31,9 @@ class InstallTests(unittest.TestCase):
             runtime = directory / 'todo-kube-runtime'
             rendered = root / 'generated/kube-runtime'
             rendered.mkdir(parents=True)
-            filenames = [app.manifest(component) for app in applications
-                         for component in ('postgres', 'app', 'config')] + [
-                apps.KEYCLOAK_DATABASE.manifest('postgres'), apps.KEYCLOAK_DATABASE.manifest('config'),
+            filenames = [name for app in applications
+                         for name in (app.database.manifest, app.manifest, app.config_manifest)] + [
+                apps.KEYCLOAK_DATABASE.manifest, apps.KEYCLOAK_DATABASE.config_manifest,
                 'keycloak.yaml', 'shared-proxy.yaml']
             for filename in filenames:
                 (rendered / filename).write_text('fixture: true\n')
@@ -93,12 +93,12 @@ class InstallTests(unittest.TestCase):
     def test_six_pod_server_and_repeat(self):
         calls, bootstrap = self.exercise_install('server', applications=apps.APPS, repeat=True)
         for app in apps.APPS:
-            setup = [calls[i] for i in bootstrap if f'DATABASE_HOST={app.resource("postgres")}' in calls[i]]
+            setup = [calls[i] for i in bootstrap if f'DATABASE_HOST={app.database.container}' in calls[i]]
             self.assertEqual(len(setup), 2)
             for command in setup:
-                self.assertIn(app.secret('db'), command)
-                self.assertIn(app.secret('migrator'), command)
-                self.assertIn(app.secret('app'), command)
+                self.assertIn(app.database.secret('db'), command)
+                self.assertIn(app.database.secret('migrator'), command)
+                self.assertIn(app.database.secret('app'), command)
         for service in ('keycloak', 'keycloak-postgres', 'shared-proxy'):
             self.assertEqual(calls.count(['systemctl', '--user', 'start', service + '.service']), 1)
 
@@ -128,9 +128,9 @@ class InstallTests(unittest.TestCase):
             directory = root / 'quadlet'
             rendered = root / 'generated/kube-runtime'
             rendered.mkdir(parents=True)
-            filenames = [app.manifest(component) for app in applications
-                         for component in ('postgres', 'app', 'config')] + [
-                apps.KEYCLOAK_DATABASE.manifest('postgres'), apps.KEYCLOAK_DATABASE.manifest('config'),
+            filenames = [name for app in applications
+                         for name in (app.database.manifest, app.manifest, app.config_manifest)] + [
+                apps.KEYCLOAK_DATABASE.manifest, apps.KEYCLOAK_DATABASE.config_manifest,
                 'keycloak.yaml', 'shared-proxy.yaml']
             for filename in filenames:
                 (rendered / filename).write_text('fixture: true\n')
@@ -162,7 +162,7 @@ class InstallTests(unittest.TestCase):
                     patch.object(settings, 'DEV_STATE_FILE', root / 'app-installer-dev.json'):
                 install.install(ROOT, mode='server', deployment_mode='offline',
                                 bundle_directory=root, quadlet_dir=directory, applications=applications)
-                (rendered / apps.APPS[0].manifest('app')).write_text('fixture: changed\n')
+                (rendered / apps.APPS[0].manifest).write_text('fixture: changed\n')
                 calls.clear()
                 install.install(ROOT, mode='server', deployment_mode='offline',
                                 bundle_directory=root, quadlet_dir=directory, applications=applications)

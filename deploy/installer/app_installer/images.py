@@ -20,9 +20,9 @@ class Image:
 
 def image_list(app: apps.App) -> tuple[Image, ...]:
     """The backend, frontend and PostgreSQL images of one app."""
-    return tuple(Image(component, app.image(component), app.image_archive(component),
-                       None if component == "postgres" else app.resource(component))
-                 for component in ("backend", "frontend", "postgres"))
+    return (*(Image(component, app.image(component), app.image_archive(component), app.names.resource(component))
+              for component in ("backend", "frontend")),
+            Image("postgres", app.database.image, app.database.image_archive, None))
 
 
 def shared_images() -> tuple[Image, ...]:

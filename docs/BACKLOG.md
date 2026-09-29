@@ -409,18 +409,16 @@ The owner's priority: the installer and DR code must be easy to understand
 and get into. The long CLI dispatches stay as they are: they read top to
 bottom.
 
-- **R5. Separate names from the database.** *[simplify]* Decided
-  (2026-09-28); next. `stack.Database` is named after a
-  database but is the naming rules for everything that shares one name:
-  `resource("app")` gives `todo-app`, `service("app")` `todo-app.service` and
-  `image("backend")` `localhost/todo-backend:m12`. That is why `App` forwards
-  every naming method to its `Database`, and why a reader of "Every resource
-  name comes from the application name through stack.Database" looks for a
-  database. Split it: one small class for the naming rules of a name
-  (resource, unit, service, manifest, image, archive), used by both `App` and
-  the database, and a `Database` that holds only what belongs to PostgreSQL
-  (replication port, slots, roles, secrets, volumes). Touches many files;
-  needs a full acceptance run.
+- **R5. Separate names from the database.** *[simplify]* Done in code, CI
+  to confirm; needs a full acceptance run. `stack.Names` holds only the
+  naming rules (`resource`, `unit`, `service`, `manifest`, `kube_secret`,
+  `image`, `image_archive`). `Database` names its own pod (`container`,
+  `unit`, `service`, `manifest`, `config_manifest`, `kube_secret`, `image`,
+  `image_archive`) and holds what belongs to PostgreSQL (`volume`, `role`,
+  `secret`, `replication_slot`, `replication_passfile`). `App` names its own
+  pod (`pod`, `unit`, `service`, `manifest`, `config_manifest`, `image`) and
+  has `names` and `database`; it forwards nothing. Every name and every
+  rendered file is byte-identical before and after.
 - **S2. One place for paths and constants.** *[simplify]* In `settings.py`:
   the `todo-kube-runtime` directory (17 places in the code), `/opt/todo` (13),
   the promotion record path, the service port 8443 and the RPO of 30 seconds

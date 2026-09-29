@@ -108,7 +108,7 @@ class WorkloadsTests(unittest.TestCase):
 
     def test_databases_publish_distinct_ports_from_the_registry(self):
         for app in apps.APPS:
-            rendered = quadlet.render(ROOT, app.unit('postgres'), {
+            rendered = quadlet.render(ROOT, app.database.unit, {
                 'postgres_publish_port': app.replication_port,
                 'postgres_publish_address': '192.0.2.50',
             }).decode()

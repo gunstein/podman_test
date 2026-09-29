@@ -170,12 +170,12 @@ class RenderErrorTests(unittest.TestCase):
             todo, notes = apps.APPS
             output = Path(directory) / "output"
             render.render(ROOT, VALUES, output)
-            self.assertTrue((output / notes.manifest("app")).is_file())
+            self.assertTrue((output / notes.manifest).is_file())
             (output / "left-over.yaml").write_text("stale")
             render.render(ROOT, VALUES, output, (todo.name,))
             self.assertFalse((output / "left-over.yaml").exists())
-            self.assertFalse((output / notes.manifest("app")).exists())
-            self.assertTrue((output / todo.manifest("app")).is_file())
+            self.assertFalse((output / notes.manifest).exists())
+            self.assertTrue((output / todo.manifest).is_file())
             self.assertEqual(sorted(path.name for path in Path(directory).iterdir()), ["output"])
 
     def test_failed_render_leaves_the_earlier_output_as_it_was(self):

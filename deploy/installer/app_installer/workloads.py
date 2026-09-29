@@ -61,7 +61,7 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
         raise ValueError("Replication publication requires membership in the verified DR group.")
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        manifests=(database.manifest("postgres"), database.manifest("config")), units=(database.unit("postgres"),),
+        manifests=(database.manifest, database.config_manifest), units=(database.unit,),
         obsolete=(database.volume("data"), database.volume("backup")),
         capability="PostgreSQL", mapping=secrets.postgres_secret_mapping(database),
         variables={"postgres_publish_address": publish_address,
@@ -76,7 +76,7 @@ def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_ma
     """Install one app's pod (migration, backend and frontend)."""
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        manifests=(app.manifest("app"), app.manifest("config")), units=(app.unit("app"),), obsolete=(),
+        manifests=(app.manifest, app.config_manifest), units=(app.unit,), obsolete=(),
         capability="application", mapping=secrets.application_secret_mapping(app),
         variables={"todo_publish_address": publish_address, "todo_service_port": service_port},
     )
@@ -112,8 +112,8 @@ def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_m
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         manifests=("shared-proxy.yaml", "config.yaml"), units=("shared-proxy.kube",),
-        obsolete=(apps.SHARED_RESOURCE_OWNER.resource("nginx-data"),),
+        obsolete=(apps.SHARED_RESOURCE_OWNER.names.resource("nginx-data"),),
         capability="shared proxy", mapping={},
         variables={"todo_publish_address": publish_address, "todo_service_port": service_port,
-                  "app_services": [app.service("app") for app in applications]},
+                  "app_services": [app.service for app in applications]},
     )

@@ -67,7 +67,7 @@ def issue(directory, ca_key, ca_certificate, node_address):
     """
     directory = Path(directory)
     key, request, certificate = directory / 'server.key', directory / 'server.csr', directory / 'server.crt'
-    names = ','.join([f'IP:{node_address}'] + [f'DNS:{database.resource("postgres")}'
+    names = ','.join([f'IP:{node_address}'] + [f'DNS:{database.container}'
                                                  for database in apps.REPLICATED_DATABASES])
     extensions = directory / 'server.ext'
     extensions.write_text(f'subjectAltName={names}\nbasicConstraints=critical,CA:FALSE\n'
@@ -116,7 +116,7 @@ def install_server_tls(database, node_address):
     waits until the server reports ssl on. A primary copied from another host
     (after promotion) gets a certificate for its own address here.
     """
-    container = database.resource('postgres')
+    container = database.container
     changed = False
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)

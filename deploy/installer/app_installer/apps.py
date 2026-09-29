@@ -8,14 +8,15 @@ from . import settings, stack
 class App:
     """One web application: its public hostname, OAuth client and database.
 
-    Every resource name comes from the application name through
-    stack.Database, so the "todo" app owns todo-postgres, todo-app.service,
-    todo-db-password and so on; the methods below forward to self.database
-    for that. An App is not a database: code that works on the replicated
-    database group takes REPLICATED_DATABASES, which holds only Databases.
-    Build one with keyword arguments
-    only (tests/test_apps.py checks it): the string fields are easy to mix
-    up, and the hosts' Python 3.9 has no dataclass kw_only.
+    Its resource names come from its name through stack.Names, so the "todo"
+    app runs the todo-app pod (unit todo-app.kube, service todo-app.service)
+    from the images localhost/todo-backend and localhost/todo-frontend.
+    Its PostgreSQL workload is self.database (todo-postgres, todo-db-password,
+    the todo_migrator role and so on). An App is not a database: code that
+    works on the replicated database group takes REPLICATED_DATABASES.
+    Build an App with keyword arguments only (tests/test_apps.py checks it):
+    the string fields are easy to mix up, and the hosts' Python 3.9 has no
+    dataclass kw_only.
     """
 
     name: str
@@ -23,6 +24,11 @@ class App:
     keycloak_client: str
     replication_port: int = 5432
     api_collection: str = ""
+
+    @property
+    def names(self) -> stack.Names:
+        """The naming rules for this app's name."""
+        return stack.Names(self.name)
 
     @property
     def database(self) -> stack.Database:
@@ -33,41 +39,35 @@ class App:
         """The REST collection nginx routes to this app's backend, e.g. /api/todos."""
         return "/api/" + (self.api_collection or self.name)
 
-    def resource(self, component: str) -> str:
-        return self.database.resource(component)
+    # The app pod: migration, backend and frontend.
 
-    def unit(self, component: str) -> str:
-        return self.database.unit(component)
+    @property
+    def pod(self) -> str:
+        return self.names.resource("app")
 
-    def service(self, component: str) -> str:
-        return self.database.service(component)
+    @property
+    def unit(self) -> str:
+        return self.names.unit("app")
 
-    def manifest(self, component: str) -> str:
-        return self.database.manifest(component)
+    @property
+    def service(self) -> str:
+        return self.names.service("app")
 
-    def secret(self, role: str) -> str:
-        return self.database.secret(role)
+    @property
+    def manifest(self) -> str:
+        return self.names.manifest("app")
 
-    def kube_secret(self, component: str) -> str:
-        return self.database.kube_secret(component)
-
-    def database_role(self, role: str) -> str:
-        return self.database.database_role(role)
-
-    def replication_slot(self, rebuilt: bool = False) -> str:
-        return self.database.replication_slot(rebuilt)
-
-    def replication_passfile(self) -> str:
-        return self.database.replication_passfile()
-
-    def volume(self, purpose: str) -> str:
-        return self.database.volume(purpose)
+    @property
+    def config_manifest(self) -> str:
+        """The ConfigMap file, shared with the database pod (self.database.config_manifest)."""
+        return self.names.manifest("config")
 
     def image(self, component: str) -> str:
-        return self.database.image(component)
+        """The app's image for component "backend" or "frontend"."""
+        return self.names.image(component)
 
     def image_archive(self, component: str) -> str:
-        return self.database.image_archive(component)
+        return self.names.image_archive(component)
 
 
 APPS = (
@@ -82,11 +82,11 @@ APPS = (
 SHARED_RESOURCE_OWNER = APPS[0]
 NETWORK = "app-network"
 # Keycloak itself is the identity server, not a per-app/per-database resource,
-# so it does not go through Database.image()'s "<name>-<component>" naming.
+# so its image does not follow the "<name>-<component>" naming.
 KEYCLOAK_IMAGE = f"localhost/keycloak:{settings.IMAGE_TAG}"
 KEYCLOAK_ARCHIVE = f"keycloak-{settings.IMAGE_TAG}.tar"
-PROXY_IMAGE = SHARED_RESOURCE_OWNER.image("proxy")
-PROXY_ARCHIVE = SHARED_RESOURCE_OWNER.image_archive("proxy")
+PROXY_IMAGE = SHARED_RESOURCE_OWNER.names.image("proxy")
+PROXY_ARCHIVE = SHARED_RESOURCE_OWNER.names.image_archive("proxy")
 
 # Keycloak has its own dedicated database (no frontend/backend/OAuth client of
 # its own), replicated for DR parity alongside every registered Application.
@@ -111,6 +111,6 @@ def services(applications=None, *, databases=True):
     database-only standby must not run.
     """
     selected = APPS if applications is None else applications
-    return ['shared-proxy.service', *[app.service('app') for app in selected], 'keycloak.service'] + (
-        [app.service('postgres') for app in selected] + [KEYCLOAK_DATABASE.service('postgres')]
+    return ['shared-proxy.service', *[app.service for app in selected], 'keycloak.service'] + (
+        [app.database.service for app in selected] + [KEYCLOAK_DATABASE.service]
         if databases else [])

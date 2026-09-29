@@ -159,18 +159,18 @@ class TodoDr:
     def service_status(self, database=None):
         """systemctl --user is-active for the database service, e.g. 'active'."""
         database = database or self.databases[0]
-        return self._run(['systemctl', '--user', 'is-active', database.service('postgres')],
+        return self._run(['systemctl', '--user', 'is-active', database.service],
                          f'{database.name}: PostgreSQL systemd status check')
 
     def container_health(self, database=None):
         """The database container's health check result, e.g. 'healthy'."""
         database = database or self.databases[0]
         return self._run(['podman', 'inspect', '--format', '{{.State.Health.Status}}',
-                          database.resource('postgres')], f'{database.name}: PostgreSQL container health check')
+                          database.container], f'{database.name}: PostgreSQL container health check')
 
     def _query(self, database, statement):
         """Run one SQL statement with psql in the database's container."""
-        return self._run(['podman', 'exec', database.resource('postgres'), 'psql', '--username', database.name,
+        return self._run(['podman', 'exec', database.container, 'psql', '--username', database.name,
                          '--dbname', 'postgres', '--tuples-only', '--no-align', '--field-separator=|',
                          '--command', statement], f'{database.name}: PostgreSQL recovery query')
 

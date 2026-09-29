@@ -121,7 +121,7 @@ class TodoBackupTests(unittest.TestCase):
         self.tool(runner).create_restore_point("after_old_failure")
 
     def test_restore_rejects_existing_disposable_state_without_replace(self):
-        restore_container = app_backup.apps.SHARED_RESOURCE_OWNER.resource("postgres-restore")
+        restore_container = app_backup.apps.SHARED_RESOURCE_OWNER.names.resource("postgres-restore")
         runner = FakeRunner(containers={restore_container})
         with self.assertRaisesRegex(app_backup.BackupError, "--replace"):
             self.tool(runner).restore(
@@ -173,7 +173,7 @@ class RestoreEdgeTests(unittest.TestCase):
 
     def live_names(self, tool):
         app = tool.database
-        return {app.resource("postgres"), app.volume("data"), app.volume("backup")}
+        return {app.container, app.volume("data"), app.volume("backup")}
 
     def removals(self, runner):
         return [command for command in runner.commands
@@ -321,14 +321,14 @@ class ApplicationBackupTests(unittest.TestCase):
             tool.restore('base-20260829T123456Z', 'before_delete', False)
             commands = runner.commands
             backup = next(command for command in commands if 'pg_basebackup' in command)
-            self.assertIn('--host=' + app.resource('postgres'), backup)
-            self.assertIn('--username=' + app.database_role('replicator'), backup)
+            self.assertIn('--host=' + app.container, backup)
+            self.assertIn('--username=' + app.role('replicator'), backup)
             self.assertIn(app.secret('replicator') + ',type=env,target=PGPASSWORD', backup)
             self.assertIn(app.volume('backup') + ':/backup:z', backup)
             for other in app_backup.apps.REPLICATED_DATABASES:
                 if other == app:
                     continue
-                self.assertFalse(any(other.resource('postgres') in argument
+                self.assertFalse(any(other.container in argument
                                      for command in commands for argument in command))
             self.assertFalse(any(app.volume('data') in argument
                                  for command in commands for argument in command))
@@ -337,16 +337,16 @@ class ApplicationBackupTests(unittest.TestCase):
 
     def test_cleanup_cannot_target_the_other_apps_restore(self):
         for app in app_backup.apps.REPLICATED_DATABASES:
-            runner = FakeRunner(containers={app.resource('postgres-restore')},
+            runner = FakeRunner(containers={app.names.resource('postgres-restore')},
                                 volumes={app.volume('restore-data')})
             tool = app_backup.TodoBackup(runner=runner, database=app)
             with self.assertRaises(app_backup.BackupError):
                 tool.cleanup_restore('yes')
             self.assertEqual(runner.commands, [])
-            tool.cleanup_restore(app.resource('postgres-restore'))
+            tool.cleanup_restore(app.names.resource('postgres-restore'))
             removals = [command for command in runner.commands if 'rm' in command]
             self.assertEqual(removals, [
-                ['podman', 'rm', '--force', app.resource('postgres-restore')],
+                ['podman', 'rm', '--force', app.names.resource('postgres-restore')],
                 ['podman', 'volume', 'rm', app.volume('restore-data')]])
 
     def test_group_backup_checks_last_app_before_first_base_backup(self):
@@ -364,7 +364,7 @@ class FakeHost:
     """One promoted host running every registered database, for the configure command."""
 
     def __init__(self, configured=(), directories_ready=(), mounts=None, source=None, active=True):
-        self.databases = {d.resource('postgres'): d for d in app_backup.apps.REPLICATED_DATABASES}
+        self.databases = {d.container: d for d in app_backup.apps.REPLICATED_DATABASES}
         self.configured = set(configured)
         self.directories_ready = set(directories_ready)
         self.mounts = mounts or {}
@@ -382,8 +382,8 @@ class FakeHost:
         if command[:3] == ["systemctl", "--user", "is-active"]:
             return completed("active\n" if self.active else "inactive\n", returncode=0 if self.active else 3)
         if command[:3] == ["systemctl", "--user", "show"]:
-            database = next(d for d in self.databases.values() if d.service('postgres') == command[3])
-            default = "/home/u/.config/containers/systemd/todo-kube-runtime/" + database.unit('postgres')
+            database = next(d for d in self.databases.values() if d.service == command[3])
+            default = "/home/u/.config/containers/systemd/todo-kube-runtime/" + database.unit
             return completed(self.source.get(database.name, default) + "\n")
         if command[:2] == ["systemctl", "--user"]:
             return completed()
@@ -461,7 +461,7 @@ class ConfigureArchiveTests(unittest.TestCase):
         stops = host.matching(lambda c: c[:3] == ["systemctl", "--user", "stop"])
         self.assertEqual([c[3] for c in stops], app_backup.apps.services(databases=False))
         restarts = host.matching(lambda c: c[:3] == ["systemctl", "--user", "restart"])
-        self.assertEqual([c[3] for c in restarts], [d.service('postgres') for d in self.DATABASES])
+        self.assertEqual([c[3] for c in restarts], [d.service for d in self.DATABASES])
         start = host.index(lambda c: c == ["systemctl", "--user", "start", "shared-proxy.service"])
         self.assertLess(host.index(lambda c: c[:3] == ["systemctl", "--user", "stop"]),
                         host.index(lambda c: c[:3] == ["systemctl", "--user", "restart"]))
@@ -471,7 +471,7 @@ class ConfigureArchiveTests(unittest.TestCase):
                          [('/ready', app.hostname) for app in app_backup.apps.APPS])
 
     def test_configured_group_is_left_running_and_unverified(self):
-        host = FakeHost(configured={d.resource('postgres') for d in self.DATABASES},
+        host = FakeHost(configured={d.container for d in self.DATABASES},
                         directories_ready={d.volume('backup') for d in self.DATABASES})
         result = self.configure(host)
         self.assertEqual(result, {'changed': False, 'restarted': [], 'verified': {}})
@@ -482,7 +482,7 @@ class ConfigureArchiveTests(unittest.TestCase):
         self.assertTrue(host.matching(lambda c: c == ["systemctl", "--user", "start", "shared-proxy.service"]))
 
     def test_changed_replication_access_alone_reports_change_without_restart(self):
-        host = FakeHost(configured={d.resource('postgres') for d in self.DATABASES},
+        host = FakeHost(configured={d.container for d in self.DATABASES},
                         directories_ready={d.volume('backup') for d in self.DATABASES})
         self.assertEqual(self.configure(host, access_changed=True),
                          {'changed': True, 'restarted': [], 'verified': {}})
@@ -507,7 +507,7 @@ class ConfigureArchiveTests(unittest.TestCase):
 
     def test_only_the_changed_database_restarts_and_is_verified(self):
         last = self.DATABASES[-1]
-        host = FakeHost(configured={d.resource('postgres') for d in self.DATABASES[:-1]},
+        host = FakeHost(configured={d.container for d in self.DATABASES[:-1]},
                         directories_ready={d.volume('backup') for d in self.DATABASES})
         result = self.configure(host)
         self.assertEqual(result['restarted'], [last.name])

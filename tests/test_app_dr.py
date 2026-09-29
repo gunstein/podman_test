@@ -45,7 +45,7 @@ class FakeRunner:
 
 class TodoDrTests(unittest.TestCase):
     def setUp(self):
-        registry = mock.patch.object(app_dr.apps, 'REPLICATED_DATABASES', (app_dr.apps.APPS[0],))
+        registry = mock.patch.object(app_dr.apps, 'REPLICATED_DATABASES', (app_dr.apps.APPS[0].database,))
         registry.start()
         self.addCleanup(registry.stop)
         self.temporary = tempfile.TemporaryDirectory()
@@ -183,18 +183,17 @@ class TodoDrTests(unittest.TestCase):
 
 class GroupPromotionTests(unittest.TestCase):
     def setUp(self):
-        from dataclasses import replace
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.journal = Path(self.temporary.name) / 'promotion.json'
-        self.apps = (app_dr.apps.APPS[0], replace(app_dr.apps.APPS[1], replication_port=5433))
+        self.apps = (app_dr.apps.APPS[0].database, app_dr.apps.APPS[1].database)
         self.registry = mock.patch.object(app_dr.apps, 'REPLICATED_DATABASES', self.apps)
         self.registry.start()
         self.addCleanup(self.registry.stop)
         self.hostname = mock.patch.object(socket, 'gethostname', return_value='standby')
         self.hostname.start()
         self.addCleanup(self.hostname.stop)
-        self.states = {app.resource('postgres'): 't|on|0/10|0/10' for app in self.apps}
+        self.states = {app.container: 't|on|0/10|0/10' for app in self.apps}
         self.commands = []
         self.endpoints = []
         self.failed_promotion = None
@@ -252,7 +251,7 @@ class GroupPromotionTests(unittest.TestCase):
         self.assertTrue(all(not state.in_recovery for state in states.values()))
         first = next(i for i, command in enumerate(self.commands) if 'pg_ctl' in command)
         for app in self.apps:
-            self.assertTrue(any('psql' in command and app.resource('postgres') in command
+            self.assertTrue(any('psql' in command and app.container in command
                                 for command in self.commands[:first]))
         decision = json.loads(self.journal.read_text())
         self.assertEqual(decision['state'], 'complete')

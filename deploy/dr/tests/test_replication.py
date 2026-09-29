@@ -15,7 +15,7 @@ from app_installer import apps  # noqa: E402
 class ReplicationTests(unittest.TestCase):
     def test_registry_replicates_each_independent_database(self):
         self.assertEqual([app.name for app in apps.APPS], ['todo', 'notes'])
-        app = apps.SHARED_RESOURCE_OWNER
+        app = apps.SHARED_RESOURCE_OWNER.database
         self.assertEqual(app.replication_slot(), 'todo_standby')
         self.assertEqual(app.replication_slot(rebuilt=True), 'todo_rebuilt_standby')
         self.assertEqual(app.replication_passfile(), '.todo-replication.pgpass')
@@ -53,8 +53,8 @@ class ReplicationTests(unittest.TestCase):
                 patch.object(replication, 'exists', side_effect=lambda *_: state['secret']), \
                 patch.object(replication.replication_tls, 'install_server_tls', install_tls), \
                 patch.object(replication.secrets, 'read', return_value='A' * 32):
-            self.assertTrue(replication.configure_primary(apps.APPS[0], '192.0.2.50'))
-            self.assertFalse(replication.configure_primary(apps.APPS[0], '192.0.2.50'))
+            self.assertTrue(replication.configure_primary(apps.APPS[0].database, '192.0.2.50'))
+            self.assertFalse(replication.configure_primary(apps.APPS[0].database, '192.0.2.50'))
         self.assertTrue(any('--command=IDENTIFY_SYSTEM;' in argv for argv, _ in calls))
         # TLS is on before the hostssl line and before the replication login is probed.
         order = [argv[0] if argv[0] == 'install-tls' else 'hba' if kw.get('input') == replication.REFRESH_HBA_SCRIPT
@@ -71,19 +71,19 @@ class ReplicationTests(unittest.TestCase):
         with patch.object(replication, 'status', return_value={'in_recovery': True}), \
                 patch.object(replication, 'run') as run:
             with self.assertRaisesRegex(RuntimeError, 'writable primary'):
-                replication.configure_primary(apps.APPS[0], '192.0.2.50')
+                replication.configure_primary(apps.APPS[0].database, '192.0.2.50')
             run.assert_not_called()
 
     def test_bootstrap_preserves_the_canonical_pvc_and_final_selinux_handoff(self):
         import yaml
-        app = apps.APPS[0]
+        app = apps.APPS[0].database
         claim = {'apiVersion': 'v1', 'kind': 'PersistentVolumeClaim', 'metadata': {
             'name': app.volume('data'), 'annotations': {
                 'volume.podman.io/uid': '999', 'volume.podman.io/gid': '999'}}}
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / app.manifest('postgres')).write_text(yaml.safe_dump_all([
-                claim, {'kind': 'Pod', 'metadata': {'name': app.resource('postgres')}}]))
+            (root / app.manifest).write_text(yaml.safe_dump_all([
+                claim, {'kind': 'Pod', 'metadata': {'name': app.container}}]))
             with patch.object(replication, 'run', return_value=subprocess.CompletedProcess([], 0, '1|1|0/10|', '')) as run, \
                     patch.object(replication, 'exists', side_effect=lambda kind, _: kind != 'volume'), \
                     patch.object(replication.workloads, 'install_postgres'), \
@@ -113,7 +113,7 @@ class ReplicationTests(unittest.TestCase):
                 patch.object(replication, 'exists', return_value=True), \
                 patch.object(replication, 'run') as run:
             with self.assertRaisesRegex(RuntimeError, 'never overwrites'):
-                replication.bootstrap_standby(apps.APPS[0], '192.0.2.50', project_root='/tmp',
+                replication.bootstrap_standby(apps.APPS[0].database, '192.0.2.50', project_root='/tmp',
                                              quadlet_dir='/tmp', kube_runtime_dir='/tmp/todo-kube-runtime',
                                              rendered_manifest_dir='/tmp')
             run.assert_not_called()
@@ -123,7 +123,7 @@ class ReplicationTests(unittest.TestCase):
                 patch.object(replication, 'exists', side_effect=lambda kind, _: kind != 'volume'), \
                 patch.object(replication, 'run', return_value=subprocess.CompletedProcess([], 2, '', '')) as run:
             with self.assertRaisesRegex(RuntimeError, 'authentication failed'):
-                replication.bootstrap_standby(apps.APPS[0], '192.0.2.50', project_root='/tmp',
+                replication.bootstrap_standby(apps.APPS[0].database, '192.0.2.50', project_root='/tmp',
                                              quadlet_dir='/tmp', kube_runtime_dir='/tmp/todo-kube-runtime',
                                              rendered_manifest_dir='/tmp')
             self.assertEqual(run.call_count, 1)
@@ -135,11 +135,11 @@ class ReplicationTests(unittest.TestCase):
             'receive_lsn': '0/20', 'replay_lsn': '0/10', 'apply_lag_bytes': 16,
         }), patch.object(replication, 'run') as run:
             with self.assertRaisesRegex(RuntimeError, 'unreplayed local WAL: 16 bytes'):
-                replication.promote(apps.APPS[0])
+                replication.promote(apps.APPS[0].database)
             run.assert_not_called()
 
     def test_streaming_requires_each_apps_own_usable_slot(self):
-        for app in apps.APPS:
+        for app in [a.database for a in apps.APPS]:
             slot = app.replication_slot()
             with patch.object(replication, 'require_primary'), patch.object(replication, 'sql') as sql:
                 sql.side_effect = [f'{slot}|192.0.2.51|streaming|async|0|t', f'{slot}|t|reserved|1000|']
@@ -179,9 +179,9 @@ class ReplicationTests(unittest.TestCase):
                                       capture_output=True, env={**os.environ, 'PGDATA': temp})
 
             with patch.object(replication, 'run', side_effect=command), patch.object(replication, 'sql') as sql:
-                self.assertTrue(replication.refresh_hba(apps.APPS[0]))
-                self.assertFalse(replication.refresh_hba(apps.APPS[0]))
-                sql.assert_called_with(apps.APPS[0], 'SELECT pg_reload_conf();')
+                self.assertTrue(replication.refresh_hba(apps.APPS[0].database))
+                self.assertFalse(replication.refresh_hba(apps.APPS[0].database))
+                sql.assert_called_with(apps.APPS[0].database, 'SELECT pg_reload_conf();')
             self.assertEqual(hba.read_text().splitlines(), [
                 'host replication notes_replicator 10.77.0.0/24 scram-sha-256',
                 'host all all 127.0.0.1/32 scram-sha-256',
@@ -192,13 +192,13 @@ class ReplicationTests(unittest.TestCase):
                 patch.object(replication, 'run') as run:
             for fenced, confirmed in (('yes', 'old-primary'), ('old-primary is fenced', 'other-host')):
                 with self.assertRaisesRegex(RuntimeError, 'Exact local hostname'):
-                    replication.reseed_check(apps.APPS[0], '192.0.2.51', project_root='/tmp',
+                    replication.reseed_check(apps.APPS[0].database, '192.0.2.51', project_root='/tmp',
                         quadlet_dir='/tmp/q', kube_runtime_dir='/tmp/q/todo-kube-runtime',
                         rendered_manifest_dir='/tmp', confirm_fenced=fenced, confirm_reseed=confirmed)
             run.assert_not_called()
 
     def test_reseed_failure_cannot_delete_data_or_backup(self):
-        for app in apps.APPS:
+        for app in [a.database for a in apps.APPS]:
             with patch.object(replication, 'reseed_check', side_effect=RuntimeError('authentication failed')), \
                     patch.object(replication, 'run') as run:
                 with self.assertRaisesRegex(RuntimeError, 'authentication failed'):
@@ -206,7 +206,7 @@ class ReplicationTests(unittest.TestCase):
                 run.assert_not_called()
 
     def test_confirmed_reseed_orders_checks_before_cleanup_before_deletion(self):
-        for app in apps.APPS:
+        for app in [a.database for a in apps.APPS]:
             order = []
             with patch.object(replication, 'reseed_check',
                               side_effect=lambda *a, **k: order.append('check')) as gate, \
@@ -228,7 +228,7 @@ class ReplicationTests(unittest.TestCase):
                 self.assertEqual(order, ['check', 'authenticate', 'cleanup', 'run'])
 
     def test_exited_containers_on_the_data_volume_are_removed_but_a_running_one_fails_closed(self):
-        volume = apps.APPS[0].volume('data')
+        volume = apps.APPS[0].database.volume('data')
         with patch.object(replication, 'run') as run:
             run.return_value.stdout = 'todo-postgres|exited\nold-helper|created'
             self.assertTrue(replication.remove_exited_containers_using(volume))
@@ -249,20 +249,20 @@ class ReplicationTests(unittest.TestCase):
         # The rebuild preflight runs reseed_check before the primary has published
         # its LAN endpoint (postgres_redundancy_primary runs later in the same
         # rebuild). It must pass without any network replication probe.
-        for app in apps.APPS:
+        for app in [a.database for a in apps.APPS]:
             with tempfile.TemporaryDirectory() as temp:
                 quadlet_dir = Path(temp) / 'q'
                 kube_runtime_dir = quadlet_dir / 'todo-kube-runtime'
                 kube_runtime_dir.mkdir(parents=True)
-                (kube_runtime_dir / app.manifest('config')).write_bytes(b'---\n')
-                (kube_runtime_dir / app.manifest('postgres')).write_text(json.dumps({
+                (kube_runtime_dir / app.config_manifest).write_bytes(b'---\n')
+                (kube_runtime_dir / app.manifest).write_text(json.dumps({
                     'kind': 'PersistentVolumeClaim',
                     'metadata': {'name': app.volume('data')},
                 }))
                 quadlet_root = Path(temp) / 'source'
                 (quadlet_root / 'deploy/quadlet').mkdir(parents=True)
                 (quadlet_root / 'deploy/quadlet/app-network.network').write_bytes(b'')
-                (quadlet_root / 'deploy/quadlet' / (app.unit('postgres') + '.j2')).write_text(
+                (quadlet_root / 'deploy/quadlet' / (app.unit + '.j2')).write_text(
                     '{{ postgres_publish_address }}:{{ postgres_publish_port }}')
 
                 def command(*argv, **kwargs):
@@ -382,7 +382,7 @@ class PublishPrimariesTests(unittest.TestCase):
         self.assertFalse([s for s in steps if s[:3] == ('systemctl', '--user', 'stop')
                           or s[:2] == ('systemctl', 'restart')])
         self.assertEqual([s[-1] for s in steps if s[:3] == ('podman', 'wait', '--condition=healthy')],
-                         [d.resource('postgres') for d in self.DATABASES])
+                         [d.container for d in self.DATABASES])
         self.assertIn(('systemctl', 'start', 'shared-proxy.service'), steps)
         self.assertEqual([s for s in steps if s[0] == 'wait'],
                          [('wait', '/ready', app.hostname) for app in apps.APPS])
@@ -394,7 +394,7 @@ class PublishPrimariesTests(unittest.TestCase):
         stops = [s for s in steps if s[:3] == ('systemctl', '--user', 'stop')]
         self.assertEqual(stops, [('systemctl', '--user', 'stop', *apps.services(databases=False))])
         restarts = [s for s in steps if s[:2] == ('systemctl', 'restart')]
-        self.assertEqual([s[2] for s in restarts], [d.service('postgres') for d in self.DATABASES[1:]])
+        self.assertEqual([s[2] for s in restarts], [d.service for d in self.DATABASES[1:]])
         self.assertLess(steps.index(stops[0]), steps.index(restarts[0]))
         self.assertLess(steps.index(restarts[-1]), steps.index(('systemctl', 'start', 'shared-proxy.service')))
         self.assertLess(steps.index(('systemctl', 'start', 'shared-proxy.service')),
@@ -432,8 +432,8 @@ class ReseedGroupTests(unittest.TestCase):
             runtime = Path(directory) / 'todo-kube-runtime'
             runtime.mkdir()
             tier = replication.SHARED_TIER_FILES + tuple(
-                name for app in apps.APPS for name in (app.unit('app'), app.manifest('app')))
-            for name in tier + tuple(d.unit('postgres') for d in self.DATABASES):
+                name for app in apps.APPS for name in (app.unit, app.manifest))
+            for name in tier + tuple(d.unit for d in self.DATABASES):
                 (runtime / name).write_text('fixture')
 
             def run(*argv, input=None, allowed=(0,), timeout=None):
@@ -494,7 +494,7 @@ class ReseedGroupTests(unittest.TestCase):
         self.reseed()
         first_reseed = self.steps[self.positions('reseed')[0]]
         self.assertFalse(set(self.tier) & set(first_reseed[3]))
-        self.assertEqual(self.remaining, sorted(d.unit('postgres') for d in self.DATABASES))
+        self.assertEqual(self.remaining, sorted(d.unit for d in self.DATABASES))
 
     def test_a_failed_local_check_on_the_last_database_deletes_nothing(self):
         with self.assertRaisesRegex(RuntimeError, 'required image'):

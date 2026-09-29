@@ -1,4 +1,4 @@
-{%- set pod = database.resource("postgres") -%}
+{%- set pod = database.container -%}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -42,7 +42,7 @@ spec:
           containerPort: 5432
       envFrom:
         - configMapRef:
-            name: {{ database.resource("postgres-config") | tojson }}
+            name: {{ database.names.resource("postgres-config") | tojson }}
             optional: false
       env:
         - name: POSTGRES_PASSWORD_FILE
@@ -80,6 +80,6 @@ spec:
         claimName: {{ database.volume("backup") | tojson }}
     - name: postgres-secret
       secret:
-        secretName: {{ database.kube_secret("postgres") | tojson }}
+        secretName: {{ database.kube_secret | tojson }}
         optional: false
         defaultMode: 0444

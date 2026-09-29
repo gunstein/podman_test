@@ -75,7 +75,7 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
                                           node_address, service_port)
     if images_changed or workloads_changed:
         run('systemctl', '--user', 'stop', *apps.services(databases=False), allowed=(0, 5))
-    for service in [app.service('app') for app in apps.APPS] + ['keycloak.service', 'shared-proxy.service']:
+    for service in [app.service for app in apps.APPS] + ['keycloak.service', 'shared-proxy.service']:
         quadlet.systemctl('start', service)
     for app in apps.APPS:
         require_application(app)

@@ -56,7 +56,7 @@ class PreflightHostPortTests(unittest.TestCase):
         checked = self.check_ports(set())
         for database in apps.REPLICATED_DATABASES:
             self.assertIn(database.replication_port, checked)
-            self.assertIn(f'"{database.resource("postgres")}:{database.replication_port}"', PREFLIGHT)
+            self.assertIn(f'"{database.container}:{database.replication_port}"', PREFLIGHT)
 
     def test_allowing_one_port_does_not_allow_another(self):
         with self.assertRaisesRegex(SystemExit, "8443"):

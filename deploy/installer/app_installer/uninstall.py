@@ -9,24 +9,24 @@ from .quadlet import systemctl
 SHARED = apps.SHARED_RESOURCE_OWNER
 # caddy-data is a retired Caddy-based proxy's volume name; kept here so a host
 # still carrying it from before the nginx migration gets it cleaned up too.
-TLS_VOLUMES = (SHARED.resource('nginx-data'), SHARED.resource('caddy-data'))
+TLS_VOLUMES = (SHARED.names.resource('nginx-data'), SHARED.names.resource('caddy-data'))
 QUADLET_FILES = (apps.NETWORK + '.network',
-                 *(app.volume(purpose) + '.volume' for app in apps.APPS
+                 *(app.database.volume(purpose) + '.volume' for app in apps.APPS
                    for purpose in ('data', 'backup')),
                  *(apps.KEYCLOAK_DATABASE.volume(purpose) + '.volume' for purpose in ('data', 'backup')),
                  *(volume + '.volume' for volume in TLS_VOLUMES))
-SERVICES = (*(app.resource(component) for app in apps.APPS
+SERVICES = (*(app.names.resource(component) for app in apps.APPS
               for component in ('app', 'frontend', 'backend', 'db-grants',
                                 'migrate', 'db-setup', 'postgres')),
-            'keycloak', apps.KEYCLOAK_DATABASE.resource('postgres'), 'shared-proxy', apps.NETWORK + '-network')
-CONTAINERS = (*(app.resource(component) for app in apps.APPS
+            'keycloak', apps.KEYCLOAK_DATABASE.container, 'shared-proxy', apps.NETWORK + '-network')
+CONTAINERS = (*(app.names.resource(component) for app in apps.APPS
                 for component in ('frontend', 'backend', 'migrate', 'db-grants', 'db-setup', 'postgres')),
               'nginx', 'keycloak')
-PODS = ('shared-proxy', *(app.resource('app') for app in reversed(apps.APPS)),
-        'keycloak', apps.KEYCLOAK_DATABASE.resource('postgres'),
-        *(app.resource('postgres') for app in reversed(apps.APPS)))
+PODS = ('shared-proxy', *(app.pod for app in reversed(apps.APPS)),
+        'keycloak', apps.KEYCLOAK_DATABASE.container,
+        *(app.database.container for app in reversed(apps.APPS)))
 MAPPINGS = {name: fields for app in apps.APPS
-            for name, fields in {**secrets.postgres_secret_mapping(app),
+            for name, fields in {**secrets.postgres_secret_mapping(app.database),
                                  **secrets.application_secret_mapping(app)}.items()}
 MAPPINGS.update(secrets.postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
 MAPPINGS.update(secrets.keycloak_secret_mapping())
@@ -82,7 +82,7 @@ def uninstall(remove_data=False, quadlet_dir=None):
     changed = unlink(settings.DEV_STATE_FILE) or changed
     if remove_data:
         for app in apps.APPS:
-            changed = remove('volume', app.volume('data')) or changed
+            changed = remove('volume', app.database.volume('data')) or changed
         changed = remove('volume', apps.KEYCLOAK_DATABASE.volume('data')) or changed
         for name in SECRETS:
             changed = remove('secret', name) or changed

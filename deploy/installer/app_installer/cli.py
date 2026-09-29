@@ -18,8 +18,8 @@ def paths(parser):
 
 def _details(database):
     """One database's names as the table in docs/ACCEPTANCE.md lists them, for comparing the two."""
-    return {'name': database.name, 'container': database.resource('postgres'),
-            'service': database.service('postgres'), 'replication_port': database.replication_port,
+    return {'name': database.name, 'container': database.container,
+            'service': database.service, 'replication_port': database.replication_port,
             'standby_slot': database.replication_slot(), 'rebuilt_slot': database.replication_slot(rebuilt=True)}
 
 

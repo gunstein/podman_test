@@ -111,7 +111,7 @@ class AcceptanceGuideTests(unittest.TestCase):
         for service in apps.services():
             self.assertIn(f'`{service}`', guide)
         for database in apps.REPLICATED_DATABASES:
-            row = (f'| {database.name} | `{database.resource("postgres")}` | `{database.name}` '
+            row = (f'| {database.name} | `{database.container}` | `{database.name}` '
                    f'| {database.replication_port} | `{database.replication_slot()}` '
                    f'| `{database.replication_slot(rebuilt=True)}` |')
             self.assertIn(row, guide)

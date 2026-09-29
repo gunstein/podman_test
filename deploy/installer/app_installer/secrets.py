@@ -8,14 +8,14 @@ from .commands import exists, run
 
 def postgres_secret_mapping(database: stack.Database):
     """Kube secret name -> {key: raw Podman secret} for the PostgreSQL pod."""
-    return {database.kube_secret("postgres"): {"database-password": database.secret("db")}}
+    return {database.kube_secret: {"database-password": database.secret("db")}}
 
 
 def application_secret_mapping(app: apps.App):
     """The same for the app pod: the migrator's and the backend's passwords."""
     return {
-        app.kube_secret("migrator"): {"database-password": app.secret("migrator")},
-        app.kube_secret("backend"): {"database-password": app.secret("app")},
+        app.names.kube_secret("migrator"): {"database-password": app.database.secret("migrator")},
+        app.names.kube_secret("backend"): {"database-password": app.database.secret("app")},
     }
 
 
@@ -73,7 +73,7 @@ def installed_names(applications=None):
     """The raw Podman secrets an install creates: each app's three database
     passwords, Keycloak's database password and its admin password."""
     applications = apps.APPS if applications is None else applications
-    names = [app.secret(role) for app in applications for role in ("db", "migrator", "app")]
+    names = [app.database.secret(role) for app in applications for role in ("db", "migrator", "app")]
     return names + [apps.KEYCLOAK_DATABASE.secret("db"), apps.KEYCLOAK_ADMIN_SECRET]
 
 

@@ -16,7 +16,7 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).res
 from app_dr_host import replication  # noqa: E402
 from app_installer import apps  # noqa: E402
 
-APP = apps.APPS[1]
+APP = apps.APPS[1].database
 HOST = replication.socket.gethostname()
 CONFIRMED = dict(confirm_fenced=HOST + ' is fenced', confirm_reseed=HOST)
 READ_ONLY = {('podman', 'info'), ('podman', 'ps'), ('podman', 'kube', 'play', '--help')}
@@ -33,13 +33,13 @@ class ReseedHost:
         self.quadlet = root / 'quadlet'
         self.runtime = self.quadlet / 'todo-kube-runtime'
         self.runtime.mkdir(parents=True)
-        (self.runtime / APP.manifest('config')).write_bytes(b'---\n')
-        (self.runtime / APP.manifest('postgres')).write_text(json.dumps({
+        (self.runtime / APP.config_manifest).write_bytes(b'---\n')
+        (self.runtime / APP.manifest).write_text(json.dumps({
             'kind': 'PersistentVolumeClaim', 'metadata': {'name': APP.volume('data')}}))
         self.source = root / 'source'
         (self.source / 'deploy/quadlet').mkdir(parents=True)
         (self.source / 'deploy/quadlet/app-network.network').write_bytes(b'')
-        (self.source / 'deploy/quadlet' / (APP.unit('postgres') + '.j2')).write_text(
+        (self.source / 'deploy/quadlet' / (APP.unit + '.j2')).write_text(
             '{{ postgres_publish_address }}:{{ postgres_publish_port }}')
         self.rootless, self.running, self.pod_prefix = 'true', '', True
         self.missing = set()
@@ -105,12 +105,12 @@ class ReseedCheckTests(unittest.TestCase):
         self.assertTrue(self.host.authenticated)
         self.assertEqual(self.host.commands, [
             ('podman', 'info', '--format', '{{.Host.Security.Rootless}}'),
-            ('podman', 'ps', '--filter', f"name=^{APP.resource('postgres')}$", '--format', '{{.Names}}'),
+            ('podman', 'ps', '--filter', f"name=^{APP.container}$", '--format', '{{.Names}}'),
             ('podman', 'kube', 'play', '--help'),
             ('podman', 'ps', '-a', '--filter', f"volume={APP.volume('data')}", '--format', '{{.Names}}|{{.State}}'),
             ('podman', 'volume', 'rm', APP.volume('data'))])
         self.assertTrue(self.host.bootstrapped)
-        self.assertEqual(self.host.stopped_checks, [(APP.service('postgres'),)])
+        self.assertEqual(self.host.stopped_checks, [(APP.service,)])
 
     def test_the_check_itself_changes_nothing(self):
         self.assertIs(self.host.check(), False)
@@ -131,18 +131,18 @@ class ReseedCheckTests(unittest.TestCase):
         self.assert_refused('requires rootless Podman')
 
     def test_postgres_must_not_be_running(self):
-        self.host.running = APP.resource('postgres')
+        self.host.running = APP.container
         self.assert_refused('PostgreSQL is still running')
 
     def test_every_required_object_must_exist(self):
-        for missing in (('volume', APP.volume('data')), ('image', APP.image('postgres')),
+        for missing in (('volume', APP.volume('data')), ('image', APP.image),
                         ('secret', APP.secret('replicator')), ('secret', APP.secret('db'))):
             with self.subTest(missing=missing):
                 self.host.missing, self.host.commands = {missing}, []
                 self.assert_refused(f'required {missing[0]} {missing[1]} is missing; data was not removed')
 
     def test_a_legacy_container_quadlet_is_refused(self):
-        (self.host.quadlet / (APP.resource('postgres') + '.container')).write_text('')
+        (self.host.quadlet / (APP.container + '.container')).write_text('')
         self.assert_refused('legacy PostgreSQL container Quadlet')
 
     def test_podman_must_support_no_pod_prefix(self):
@@ -150,7 +150,7 @@ class ReseedCheckTests(unittest.TestCase):
         self.assert_refused('--no-pod-prefix')
 
     def test_the_rendered_data_claim_must_exist(self):
-        (self.host.runtime / APP.manifest('postgres')).write_text(json.dumps({'kind': 'ConfigMap'}))
+        (self.host.runtime / APP.manifest).write_text(json.dumps({'kind': 'ConfigMap'}))
         self.assert_refused('exactly one canonical data PVC', ValueError)
 
     def test_the_kube_runtime_directory_must_be_the_real_one(self):

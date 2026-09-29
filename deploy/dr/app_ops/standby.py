@@ -107,7 +107,7 @@ def bootstrap(project_root, controller, primary, standby):
     for database in steps.GROUP:
         changed = steps.changed(steps.app_dr_host(
             standby, standby_path, 'replicate-workload', 'standby', '--app', database.name,
-            '--primary-address', primary.spec.address, '--image-archive', images + database.image_archive('postgres'),
+            '--primary-address', primary.spec.address, '--image-archive', images + database.image_archive,
             *steps.group_paths(standby), timeout=steps.COPY_STEP_TIMEOUT)) or changed
     streaming(primary, primary_path)
     return changed

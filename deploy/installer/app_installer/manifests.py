@@ -79,8 +79,8 @@ def render_shared_proxy(project_root, applications, identity_app, hostname, port
     context = [{
         "name": app.name,
         "hostname": hostname if app is identity_app else app.hostname,
-        "frontend": app.resource("app") + ":8080",
-        "backend": app.resource("app") + ":8000",
+        "frontend": app.pod + ":8080",
+        "backend": app.pod + ":8000",
     } for app in applications]
     for entry in context:
         validate_hostname(entry["hostname"])

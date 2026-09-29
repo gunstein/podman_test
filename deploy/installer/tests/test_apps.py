@@ -49,15 +49,15 @@ class AppRegistryTests(unittest.TestCase):
     def test_app_owns_every_derived_name(self):
         for name in ("todo", "notes", "third"):
             app = App(name=name, hostname=name + ".test", keycloak_client=name + "-frontend")
-            self.assertEqual(app.resource("postgres"), name + "-postgres")
-            self.assertEqual(app.unit("app"), name + "-app.kube")
-            self.assertEqual(app.service("app"), name + "-app.service")
-            self.assertEqual(app.manifest("app"), "app.yaml" if name == "todo"
+            self.assertEqual(app.database.container, name + "-postgres")
+            self.assertEqual(app.unit, name + "-app.kube")
+            self.assertEqual(app.service, name + "-app.service")
+            self.assertEqual(app.manifest, "app.yaml" if name == "todo"
                              else name + "-app.yaml")
-            self.assertEqual(app.secret("db"), name + "-db-password")
-            self.assertEqual(app.kube_secret("postgres"), name + "-kube-postgres-secret")
-            self.assertEqual(app.database_role("app"), name + "_app")
-            self.assertEqual(app.volume("data"), name + "-postgres-data")
+            self.assertEqual(app.database.secret("db"), name + "-db-password")
+            self.assertEqual(app.database.kube_secret, name + "-kube-postgres-secret")
+            self.assertEqual(app.database.role("app"), name + "_app")
+            self.assertEqual(app.database.volume("data"), name + "-postgres-data")
             self.assertEqual(app.image("backend"), "localhost/" + name + "-backend:m12")
             self.assertEqual(app.image_archive("backend"), name + "-backend-m12.tar")
 
@@ -99,7 +99,7 @@ class AppRegistryTests(unittest.TestCase):
         mappings = []
         for name in ("todo", "notes"):
             app = App(name=name, hostname=name + ".test", keycloak_client=name + "-frontend")
-            mapping = {**postgres_secret_mapping(app), **application_secret_mapping(app)}
+            mapping = {**postgres_secret_mapping(app.database), **application_secret_mapping(app)}
             self.assertEqual(mapping, {
                 name + "-kube-postgres-secret": {"database-password": name + "-db-password"},
                 name + "-kube-migrator-secret": {"database-password": name + "-migrator-password"},

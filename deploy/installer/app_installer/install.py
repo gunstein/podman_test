@@ -4,15 +4,15 @@ from pathlib import Path
 from . import apps, images, keycloak, quadlet, secrets, settings, workloads
 from .commands import exists, run
 
-LEGACY = tuple(app.resource(component) for app in apps.APPS
+LEGACY = tuple(app.names.resource(component) for app in apps.APPS
                for component in ('postgres', 'db-setup', 'migrate', 'db-grants', 'backend', 'frontend')) + (
                    'todo-keycloak', 'keycloak')
 
 
 def services(applications):
     """Pod and service base names for the selected apps, including the shared ones."""
-    return (*(app.resource('app') for app in applications), 'keycloak',
-            *(app.resource('postgres') for app in applications), 'keycloak-postgres', 'shared-proxy')
+    return (*(app.pod for app in applications), 'keycloak',
+            *(app.database.container for app in applications), 'keycloak-postgres', 'shared-proxy')
 
 
 SERVICES = services(apps.APPS)
@@ -63,8 +63,8 @@ def setup_roles(app: apps.App = apps.APPS[0]):
     argv = ['podman', 'run', '--rm', '--network', apps.NETWORK]
     roles = ['db', 'migrator', 'app']
     for role in roles:
-        argv += ['--secret', app.secret(role)]
-    for value in (f'DATABASE_HOST={app.resource("postgres")}',
+        argv += ['--secret', app.database.secret(role)]
+    for value in (f'DATABASE_HOST={app.database.container}',
                   f'DATABASE_NAME={app.name}', f'DATABASE_BOOTSTRAP_USER={app.name}'):
         argv += ['--env', value]
     run(*argv, '--security-opt', 'no-new-privileges', '--cap-drop', 'ALL',
@@ -123,7 +123,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     if mode == 'dev':
         from .kube_play import up
         for app in applications:
-            secrets.create_kube(secrets.postgres_secret_mapping(app))
+            secrets.create_kube(secrets.postgres_secret_mapping(app.database))
             secrets.create_kube(secrets.application_secret_mapping(app))
         secrets.create_kube(secrets.postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
         secrets.create_kube(secrets.keycloak_secret_mapping())
@@ -144,16 +144,16 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         postgres_changed = workloads.install_postgres(*arguments, database=app.database)
         changed = postgres_changed or changed
         if postgres_changed or postgres_image_changed:
-            restart.add(app.resource('postgres'))
+            restart.add(app.database.container)
         application_changed = workloads.install_application(
             *arguments, publish_address, service_port, app=app)
         changed = application_changed or changed
         if application_changed or image_changes[app.name]['backend'] or image_changes[app.name]['frontend']:
-            restart.add(app.resource('app'))
+            restart.add(app.pod)
     keycloak_database_changed = workloads.install_postgres(*arguments, database=apps.KEYCLOAK_DATABASE)
     changed = keycloak_database_changed or changed
     if keycloak_database_changed or postgres_image_changed:
-        restart.add(apps.KEYCLOAK_DATABASE.resource('postgres'))
+        restart.add(apps.KEYCLOAK_DATABASE.container)
     keycloak_changed = workloads.install_keycloak(*arguments)
     changed = keycloak_changed or changed
     if keycloak_changed or shared_images['keycloak']:
@@ -168,16 +168,16 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         if service in restart:
             quadlet.systemctl('stop', service + '.service')
     for app in applications:
-        quadlet.systemctl('start', app.service('postgres'))
-        run('podman', 'wait', '--condition=healthy', app.resource('postgres'),
+        quadlet.systemctl('start', app.database.service)
+        run('podman', 'wait', '--condition=healthy', app.database.container,
             timeout=settings.HEALTH_TIMEOUT)
         setup_roles(app)
-    quadlet.systemctl('start', apps.KEYCLOAK_DATABASE.service('postgres'))
-    run('podman', 'wait', '--condition=healthy', apps.KEYCLOAK_DATABASE.resource('postgres'),
+    quadlet.systemctl('start', apps.KEYCLOAK_DATABASE.service)
+    run('podman', 'wait', '--condition=healthy', apps.KEYCLOAK_DATABASE.container,
         timeout=settings.HEALTH_TIMEOUT)
     quadlet.systemctl('start', 'keycloak.service')
     for app in applications:
-        quadlet.systemctl('start', app.service('app'))
+        quadlet.systemctl('start', app.service)
         setup_roles(app)
     quadlet.systemctl('start', 'shared-proxy.service')
     configured = keycloak.configure(

@@ -59,7 +59,7 @@ def sql(database, statement, *, dbname='postgres'):
     The statement goes on stdin, never in argv. Fields come back separated by
     "|" with no header, and psql stops at the first error.
     """
-    return run('podman', 'exec', '--interactive', database.resource('postgres'), 'psql',
+    return run('podman', 'exec', '--interactive', database.container, 'psql',
                '--no-psqlrc', '--set', 'ON_ERROR_STOP=1', '--username', database.name,
                '--dbname', dbname, '--tuples-only', '--no-align', '--field-separator=|',
                input=statement + '\n').stdout.strip()
@@ -150,11 +150,11 @@ def refresh_hba(database):
     PostgreSQL. A connection without TLS then finds no matching line and is
     refused. Returns True if the line changed.
     """
-    role = identifier(database.database_role('replicator'))
+    role = identifier(database.role('replicator'))
     network = json.loads(run('podman', 'network', 'inspect', apps.NETWORK).stdout)
     subnet = str(ipaddress.ip_network(network[0]['subnets'][0]['subnet']))
     rule = f'hostssl replication {role} {subnet} scram-sha-256'
-    result = run('podman', 'exec', '-i', database.resource('postgres'), 'sh', '-s', '--',
+    result = run('podman', 'exec', '-i', database.container, 'sh', '-s', '--',
                  role, rule, input=REFRESH_HBA_SCRIPT)
     sql(database, 'SELECT pg_reload_conf();')
     return result.stdout.strip() == 'changed'
@@ -171,14 +171,14 @@ def replication_probe(database, primary_address, *, local=False):
     from argv. Exit code 2 (connection refused, TLS or login failed) is
     returned to the caller, not raised.
     """
-    host = database.resource('postgres') if local else address(primary_address)
+    host = database.container if local else address(primary_address)
     port = 5432 if local else database.replication_port
-    role = identifier(database.database_role('replicator'))
+    role = identifier(database.role('replicator'))
     ca = apps.REPLICATION_CA_SECRETS[1]
     return run('podman', 'run', '--rm', '--network', apps.NETWORK if local else 'host',
                '--user', 'postgres', '--security-opt', 'no-new-privileges', '--cap-drop', 'all',
                '--pids-limit', '64', '--secret', database.secret('replicator') + ',type=env,target=PGPASSWORD',
-               '--secret', ca, database.image('postgres'), 'psql',
+               '--secret', ca, database.image, 'psql',
                f'--dbname=host={host} port={port} user={role} replication=true connect_timeout=5 '
                f'sslmode=verify-full sslrootcert=/run/secrets/{ca}',
                '--no-psqlrc', '--no-password', '--tuples-only', '--no-align',
@@ -229,7 +229,7 @@ def configure_primary(database, node_address):
     """
     address(node_address)
     require_primary(database)
-    role = identifier(database.database_role('replicator'))
+    role = identifier(database.role('replicator'))
     slot = identifier(database.replication_slot())
     changed = False
     if not exists('secret', database.secret('replicator')):
@@ -287,9 +287,9 @@ def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kub
         run('systemctl', '--user', 'stop', *apps.services(databases=False), allowed=(0, 5))
     quadlet.systemctl('daemon-reload')
     for database in restart:
-        quadlet.systemctl('restart', database.service('postgres'))
+        quadlet.systemctl('restart', database.service)
     for database in apps.REPLICATED_DATABASES:
-        run('podman', 'wait', '--condition=healthy', database.resource('postgres'),
+        run('podman', 'wait', '--condition=healthy', database.container,
             timeout=settings.HEALTH_TIMEOUT)
     quadlet.systemctl('start', 'shared-proxy.service')
     for app in apps.APPS:
@@ -305,7 +305,7 @@ def data_claim(database, rendered_manifest_dir):
     """
     # YAML parsing is a DR-only dependency; never reconstruct the PVC in Python.
     import yaml
-    path = Path(rendered_manifest_dir) / database.manifest('postgres')
+    path = Path(rendered_manifest_dir) / database.manifest
     claims = [document for document in yaml.safe_load_all(path.read_text())
               if isinstance(document, dict) and document.get('kind') == 'PersistentVolumeClaim'
               and document.get('metadata', {}).get('name') == database.volume('data')]
@@ -353,13 +353,13 @@ def bootstrap_standby(database, primary_address, *, project_root, quadlet_dir,
     """
     primary_address = address(primary_address)
     slot = identifier(slot or database.replication_slot())
-    role = identifier(database.database_role('replicator'))
+    role = identifier(database.role('replicator'))
     claim = data_claim(database, rendered_manifest_dir)
     if Path(kube_runtime_dir) != Path(quadlet_dir) / 'todo-kube-runtime':
         raise ValueError('kube_runtime_dir must be quadlet_dir/todo-kube-runtime')
     if exists('volume', database.volume('data')):
         raise RuntimeError(f'{database.volume("data")} already exists; bootstrap never overwrites data')
-    if not exists('image', database.image('postgres')):
+    if not exists('image', database.image):
         if image_archive is None or not Path(image_archive).is_file():
             raise RuntimeError('PostgreSQL image is missing; supply the verified offline archive')
         run('podman', 'load', '--input', image_archive)
@@ -375,22 +375,22 @@ def bootstrap_standby(database, primary_address, *, project_root, quadlet_dir,
     run(*common, '--network', 'host', '--pids-limit', '128', '--volume',
         f'{database.volume("data")}:{DATA}:U,Z', '--secret',
         database.secret('replicator') + ',type=env,target=PGPASSWORD', '--secret', ca,
-        '--env', 'PGSSLMODE=verify-full', '--env', f'PGSSLROOTCERT=/run/secrets/{ca}', database.image('postgres'),
+        '--env', 'PGSSLMODE=verify-full', '--env', f'PGSSLROOTCERT=/run/secrets/{ca}', database.image,
         'pg_basebackup', f'--host={primary_address}', f'--port={database.replication_port}',
         f'--username={role}', f'--pgdata={DATA}', '--format=plain', '--wal-method=stream',
         '--write-recovery-conf', '--create-slot', f'--slot={slot}', '--progress',
         timeout=settings.DATA_COPY_TIMEOUT)
     run(*common, '--volume', f'{database.volume("data")}:{DATA}:Z', '--entrypoint', 'chmod',
-        database.image('postgres'), '0700', DATA)
+        database.image, '0700', DATA)
     # The final helper must leave the shared Kube SELinux label, not a private MCS label.
     run(*common, '-i', '--volume', f'{database.volume("data")}:{DATA}:z', '--secret', database.secret('replicator'),
-        '--secret', ca, '--entrypoint', '/bin/sh', database.image('postgres'), '-s', '--',
+        '--secret', ca, '--entrypoint', '/bin/sh', database.image, '-s', '--',
         primary_address, str(database.replication_port), role, slot,
         database.replication_passfile(), database.secret('replicator'), ca, input=WRITE_RECOVERY_CONF_SCRIPT)
     workloads.install_postgres(project_root, quadlet_dir, kube_runtime_dir,
                                rendered_manifest_dir, database=database)
-    quadlet.systemctl('start', database.service('postgres'))
-    run('podman', 'wait', '--condition=healthy', database.resource('postgres'),
+    quadlet.systemctl('start', database.service)
+    run('podman', 'wait', '--condition=healthy', database.container,
         timeout=settings.HEALTH_TIMEOUT)
     state = status(database)
     if not state['in_recovery'] or not state['transaction_read_only']:
@@ -402,7 +402,7 @@ def promote(database, *, query=None, command=None):
     """Low-level promotion; only call after fencing and all-app preflight gates."""
     require_standby(database, query)
     command = command or run
-    command('podman', 'exec', database.resource('postgres'), 'pg_ctl', '-D', DATA, 'promote', '-w', '-t', '60')
+    command('podman', 'exec', database.container, 'pg_ctl', '-D', DATA, 'promote', '-w', '-t', '60')
     return require_primary(database, query)
 
 
@@ -472,10 +472,10 @@ def require_promoted_group(journal_path):
             or decision.get('completed') != names):
         raise RuntimeError('Promotion record does not confirm the complete database group')
     for database in apps.REPLICATED_DATABASES:
-        if run('systemctl', '--user', 'is-active', database.service('postgres')).stdout.strip() != 'active':
+        if run('systemctl', '--user', 'is-active', database.service).stdout.strip() != 'active':
             raise RuntimeError(f'{database.name}: database service is not active')
         if run('podman', 'inspect', '--format', '{{.State.Health.Status}}',
-               database.resource('postgres')).stdout.strip() != 'healthy':
+               database.container).stdout.strip() != 'healthy':
             raise RuntimeError(f'{database.name}: database is not healthy')
         require_primary(database)
     return False
@@ -513,12 +513,12 @@ def rebuild_primary_check(database):
     needs a person to look at it before anything is retried.
     """
     require_primary(database)
-    if run('systemctl', '--user', 'is-active', database.service('postgres')).stdout.strip() != 'active':
+    if run('systemctl', '--user', 'is-active', database.service).stdout.strip() != 'active':
         raise RuntimeError(f'{database.name}: current database service is not active')
     for kind, name in (('secret', database.secret('replicator')), ('volume', database.volume('backup'))):
         if not exists(kind, name):
             raise RuntimeError(f'{database.name}: required {kind} {name} is missing')
-    role = identifier(database.database_role('replicator'))
+    role = identifier(database.role('replicator'))
     if sql(database, f"SELECT rolreplication FROM pg_roles WHERE rolname = '{role}';") != 't':
         raise RuntimeError(f'{database.name}: replication role is missing or invalid')
     slot = identifier(database.replication_slot(rebuilt=True))
@@ -555,23 +555,23 @@ def reseed_check(database, primary_address, *, project_root, quadlet_dir, kube_r
         raise ValueError('kube_runtime_dir must be quadlet_dir/todo-kube-runtime')
     if run('podman', 'info', '--format', '{{.Host.Security.Rootless}}').stdout.strip() != 'true':
         raise RuntimeError('Destructive reseed requires rootless Podman')
-    require_stopped_service(database.service('postgres'))
-    if run('podman', 'ps', '--filter', 'name=^' + database.resource('postgres') + '$',
+    require_stopped_service(database.service)
+    if run('podman', 'ps', '--filter', 'name=^' + database.container + '$',
            '--format', '{{.Names}}').stdout.strip():
         raise RuntimeError(f'{database.name}: PostgreSQL is still running')
-    for kind, name in (('volume', database.volume('data')), ('image', database.image('postgres')),
+    for kind, name in (('volume', database.volume('data')), ('image', database.image),
                        ('secret', database.secret('replicator')), ('secret', database.secret('db'))):
         if not exists(kind, name):
             raise RuntimeError(f'{database.name}: required {kind} {name} is missing; data was not removed')
-    if (directory / (database.resource('postgres') + '.container')).exists():
+    if (directory / (database.container + '.container')).exists():
         raise RuntimeError('Destructive reseed refuses a legacy PostgreSQL container Quadlet')
     if '--no-pod-prefix' not in run('podman', 'kube', 'play', '--help').stdout:
         raise RuntimeError('Destructive reseed requires Podman --no-pod-prefix')
     # Validate every file before erasing anything, including the canonical PVC.
     data_claim(database, rendered_manifest_dir)
-    (Path(rendered_manifest_dir) / database.manifest('config')).read_bytes()
+    (Path(rendered_manifest_dir) / database.config_manifest).read_bytes()
     (Path(project_root) / 'deploy/quadlet/app-network.network').read_bytes()
-    quadlet.render(project_root, database.unit('postgres'), {
+    quadlet.render(project_root, database.unit, {
         'postgres_publish_address': '', 'postgres_publish_port': database.replication_port})
     return False
 
@@ -628,7 +628,7 @@ def reseed_group(primary_address, *, confirm_fenced, confirm_reseed, **paths):
         authenticate(database, primary_address)
     runtime = Path(paths['kube_runtime_dir'])
     for name in SHARED_TIER_FILES + tuple(name for app in apps.APPS
-                                          for name in (app.unit('app'), app.manifest('app'))):
+                                          for name in (app.unit, app.manifest)):
         (runtime / name).unlink(missing_ok=True)
     for database in apps.REPLICATED_DATABASES:
         reseed_standby(database, primary_address, **confirmations, **paths)

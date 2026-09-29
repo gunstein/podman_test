@@ -18,7 +18,7 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).res
 from app_dr_host import replication  # noqa: E402
 from app_installer import apps  # noqa: E402
 
-APP = apps.APPS[1]
+APP = apps.APPS[1].database
 HEALTHY_STANDBY = 't|on|0/3000060|0/3000060'
 
 
@@ -260,10 +260,10 @@ class CommandContractTests(unittest.TestCase):
                 patch.object(replication, 'sql', side_effect=sql):
             self.assertIs(replication.rebuild_primary_check(APP), False)
         primary.assert_called_once_with(APP)
-        self.assertEqual(commands, [('systemctl', '--user', 'is-active', APP.service('postgres'))])
+        self.assertEqual(commands, [('systemctl', '--user', 'is-active', APP.service)])
         self.assertEqual(looked_up, [('secret', APP.secret('replicator')), ('volume', APP.volume('backup'))])
         self.assertEqual([app for app, _ in statements], [APP, APP])
-        self.assertIn(f"rolname = '{APP.database_role('replicator')}'", statements[0][1])
+        self.assertIn(f"rolname = '{APP.role('replicator')}'", statements[0][1])
         self.assertIn(f"slot_name = '{APP.replication_slot(rebuilt=True)}'", statements[1][1])
 
     def test_require_promoted_group_checks_each_database_exactly(self):
@@ -277,9 +277,9 @@ class CommandContractTests(unittest.TestCase):
                 replication.require_promoted_group(journal)
         expected = []
         for database in apps.REPLICATED_DATABASES:
-            expected += [('systemctl', '--user', 'is-active', database.service('postgres')),
+            expected += [('systemctl', '--user', 'is-active', database.service),
                          ('podman', 'inspect', '--format', '{{.State.Health.Status}}',
-                          database.resource('postgres'))]
+                          database.container)]
         self.assertEqual(commands, expected)
         self.assertEqual([call.args for call in primary.call_args_list],
                          [(database,) for database in apps.REPLICATED_DATABASES])

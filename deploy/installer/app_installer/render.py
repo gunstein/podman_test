@@ -62,16 +62,16 @@ def render(project_root, values_file, output_directory, application_names=()):
 
     files = {}
     for app in selected:
-        files[app.manifest('postgres')] = manifests.render_postgres(root, app.database, app.image('postgres'))
-        files[app.manifest('config')] = (manifests.render_postgres_config(root, app.database) + b'---\n'
+        files[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
+        files[app.config_manifest] = (manifests.render_postgres_config(root, app.database) + b'---\n'
                                           + manifests.render_app_config(root, app, hostname, port, log_level))
-        files[app.manifest('app')] = manifests.render_app(root, app, app.image('backend'), app.image('frontend'))
+        files[app.manifest] = manifests.render_app(root, app, app.image('backend'), app.image('frontend'))
 
     files['keycloak.yaml'] = manifests.render_keycloak(
         root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_KUBE_ADMIN_SECRET, hostname, port, apps.KEYCLOAK_IMAGE)
-    files[apps.KEYCLOAK_DATABASE.manifest('postgres')] = manifests.render_postgres(
-        root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_DATABASE.image('postgres'))
-    files[apps.KEYCLOAK_DATABASE.manifest('config')] = manifests.render_postgres_config(root, apps.KEYCLOAK_DATABASE)
+    files[apps.KEYCLOAK_DATABASE.manifest] = manifests.render_postgres(
+        root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_DATABASE.image)
+    files[apps.KEYCLOAK_DATABASE.config_manifest] = manifests.render_postgres_config(root, apps.KEYCLOAK_DATABASE)
     files['shared-proxy.yaml'] = manifests.render_shared_proxy(
         root, selected, apps.SHARED_RESOURCE_OWNER, hostname, port, apps.PROXY_IMAGE)
 

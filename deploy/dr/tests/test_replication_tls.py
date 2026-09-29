@@ -10,7 +10,7 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).res
 from app_dr_host import replication_tls  # noqa: E402
 from app_installer import apps, commands  # noqa: E402
 
-APP = apps.APPS[0]
+APP = apps.APPS[0].database
 
 
 class CertificateTests(unittest.TestCase):
@@ -27,7 +27,7 @@ class CertificateTests(unittest.TestCase):
         names = commands.run('openssl', 'x509', '-in', str(certificate), '-noout',
                              '-ext', 'subjectAltName').stdout
         for database in apps.REPLICATED_DATABASES:
-            self.assertIn(f'DNS:{database.resource("postgres")}', names)
+            self.assertIn(f'DNS:{database.container}', names)
         self.assertIn('BEGIN PRIVATE KEY', key.read_text())
 
     def test_another_ca_or_a_certificate_about_to_expire_is_not_kept(self):
@@ -82,10 +82,10 @@ class InstallServerTlsTests(unittest.TestCase):
         def run(*argv, input=None, allowed=(0,), timeout=None):
             if argv[0] == 'openssl':
                 return commands.run(*argv, allowed=allowed)
-            if argv[:3] == ('podman', 'exec', APP.resource('postgres')) and argv[3] == 'cat':
+            if argv[:3] == ('podman', 'exec', APP.container) and argv[3] == 'cat':
                 return subprocess.CompletedProcess(argv, 0 if 'crt' in self.container else 1,
                                                    self.container.get('crt', ''), '')
-            self.assertEqual(argv[:6], ('podman', 'exec', '-i', APP.resource('postgres'), 'sh', '-c'))
+            self.assertEqual(argv[:6], ('podman', 'exec', '-i', APP.container, 'sh', '-c'))
             target = argv[6].rsplit('/', 1)[1]
             writes.append(target)
             self.container['crt' if target == 'server.crt' else 'key'] = input

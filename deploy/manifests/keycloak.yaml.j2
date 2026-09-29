@@ -29,7 +29,7 @@ spec:
         - name: KCRAW_DB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: {{ database.kube_secret("postgres") | tojson }}
+              name: {{ database.kube_secret | tojson }}
               key: database-password
               optional: false
         - name: KCRAW_BOOTSTRAP_ADMIN_PASSWORD
@@ -69,7 +69,7 @@ metadata:
 data:
   KC_BOOTSTRAP_ADMIN_USERNAME: admin
   KC_DB: postgres
-  KC_DB_URL_HOST: {{ database.resource("postgres") | tojson }}
+  KC_DB_URL_HOST: {{ database.container | tojson }}
   KC_DB_URL_PORT: "5432"
   KC_DB_URL_DATABASE: {{ database.name | tojson }}
   KC_DB_USERNAME: {{ database.name | tojson }}

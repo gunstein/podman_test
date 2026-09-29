@@ -17,7 +17,6 @@ import fcntl
 import json
 import os
 import socket
-import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -33,9 +32,13 @@ from typing import Callable, List, Optional, Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from app_dr_host import replication  # noqa: E402
 from app_installer import apps, quadlet, settings  # noqa: E402
+from app_installer.commands import run  # noqa: E402
 
 DEFAULT_CONFIG = Path.home() / settings.DR_CONFIG / 'todo-dr.json'
 DEFAULT_JOURNAL = DEFAULT_CONFIG.with_name(settings.PROMOTION_RECORD)
+# Status and promotion commands answer within seconds. Two minutes is
+# generous, and keeps a hung command from stalling a failover.
+TIMEOUT = 120
 
 
 class DrError(RuntimeError):
@@ -64,13 +67,7 @@ class DatabaseStatus:
     apply_lag_bytes: int
 
 
-Runner = Callable[[Sequence[str], float], subprocess.CompletedProcess]
 Connector = Callable[[str, int, float], bool]
-
-
-def run_command(arguments: Sequence[str], timeout: float = 120) -> subprocess.CompletedProcess:
-    """Run a command and capture its output; the caller decides what a failure means."""
-    return subprocess.run(list(arguments), check=False, capture_output=True, text=True, timeout=timeout)
 
 
 def tcp_reachable(address: str, port: int, timeout: float) -> bool:
@@ -130,14 +127,15 @@ def write_config(path: Path, primary_name: str, primary_address: str, standby_na
 class TodoDr:
     """Status, preflight and promotion for every replicated database on this host.
 
-    runner and connector replace subprocess and TCP checks in tests. The
+    Commands run through commands.run and SQL through replication.sql(), like
+    every DR tool; connector replaces the TCP check in tests. The
     configuration must list exactly the registered database group, in order,
     so a tool configured for an older group refuses to promote a newer one.
     """
 
-    def __init__(self, config: Config, runner: Runner = run_command,
-                 connector: Connector = tcp_reachable, journal_path: Path = DEFAULT_JOURNAL):
-        self.config, self.runner, self.connector = config, runner, connector
+    def __init__(self, config: Config, connector: Connector = tcp_reachable,
+                 journal_path: Path = DEFAULT_JOURNAL):
+        self.config, self.connector = config, connector
         self.databases = apps.REPLICATED_DATABASES
         expected = tuple(database.name for database in self.databases)
         if (config.applications and config.applications != expected) or (
@@ -145,34 +143,23 @@ class TodoDr:
             raise DrError('DR configuration must explicitly match the complete ordered application registry')
         self.journal_path = Path(journal_path)
 
-    def _run(self, arguments, description):
-        """Run a command through runner with a 120-second limit; return stdout or raise DrError."""
-        try:
-            result = self.runner(arguments, 120)
-        except subprocess.TimeoutExpired as error:
-            raise DrError(f'{description} timed out after 120 seconds') from error
-        if result.returncode:
-            detail = (result.stderr or result.stdout).strip()
-            raise DrError(f'{description} failed' + (f': {detail}' if detail else ''))
-        return result.stdout.strip()
-
     def service_status(self, database=None):
         """systemctl --user is-active for the database service, e.g. 'active'."""
         database = database or self.databases[0]
-        return self._run(['systemctl', '--user', 'is-active', database.service],
-                         f'{database.name}: PostgreSQL systemd status check')
+        return run('systemctl', '--user', 'is-active', database.service, timeout=TIMEOUT,
+                   description=f'{database.name}: PostgreSQL systemd status check').stdout.strip()
 
     def container_health(self, database=None):
         """The database container's health check result, e.g. 'healthy'."""
         database = database or self.databases[0]
-        return self._run(['podman', 'inspect', '--format', '{{.State.Health.Status}}',
-                          database.container], f'{database.name}: PostgreSQL container health check')
+        return run('podman', 'inspect', '--format', '{{.State.Health.Status}}', database.container,
+                   timeout=TIMEOUT, description=f'{database.name}: PostgreSQL container health check').stdout.strip()
 
-    def _query(self, database, statement):
-        """Run one SQL statement with psql in the database's container."""
-        return self._run(['podman', 'exec', database.container, 'psql', '--username', database.name,
-                         '--dbname', 'postgres', '--tuples-only', '--no-align', '--field-separator=|',
-                         '--command', statement], f'{database.name}: PostgreSQL recovery query')
+    @staticmethod
+    def _query(database, statement):
+        """replication.sql() with this tool's time limit."""
+        return replication.sql(database, statement, timeout=TIMEOUT,
+                               description=f'{database.name}: PostgreSQL recovery query')
 
     def database_status(self, database=None):
         """The database's role and replay position; raises DrError if it cannot be read."""
@@ -303,8 +290,8 @@ class TodoDr:
             self._record(decision)  # Durable decision before any irreversible operation.
             try:
                 for database in self.databases:
-                    replication.promote(database, query=self._query,
-                                        command=lambda *argv: self._run(argv, f'{database.name}: PostgreSQL promotion'))
+                    replication.promote(database, query=self._query, command=lambda *argv: run(
+                        *argv, timeout=TIMEOUT, description=f'{database.name}: PostgreSQL promotion'))
                     decision['completed'].append(database.name)
                     self._record(decision)
                 result = {database.name: self.database_status(database) for database in self.databases}

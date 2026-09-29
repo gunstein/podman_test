@@ -22,6 +22,18 @@ def completed(stdout="", stderr="", returncode=0):
     return subprocess.CompletedProcess([], returncode, stdout, stderr)
 
 
+def route_commands(test, runner):
+    """Send every command app_dr runs (through commands.run) to runner(arguments, timeout)."""
+    patcher = mock.patch("subprocess.run", side_effect=lambda argv, **kwargs: runner(argv, kwargs.get("timeout")))
+    patcher.start()
+    test.addCleanup(patcher.stop)
+
+
+def container(arguments):
+    """The container a podman exec command runs in; sql() adds --interactive before it."""
+    return arguments[3] if arguments[2] == "--interactive" else arguments[2]
+
+
 class FakeRunner:
     def __init__(self, database_outputs):
         self.database_outputs = iter(database_outputs)
@@ -57,9 +69,9 @@ class TodoDrTests(unittest.TestCase):
 
     def tool(self, outputs, reachable=False):
         runner = FakeRunner(outputs)
+        route_commands(self, runner)
         tool = app_dr.TodoDr(
             self.config(),
-            runner=runner,
             connector=lambda address, port, timeout: reachable,
             journal_path=self.journal,
         )
@@ -177,8 +189,9 @@ class TodoDrTests(unittest.TestCase):
         def timeout_runner(arguments, timeout=None):
             raise subprocess.TimeoutExpired(arguments, timeout)
 
-        tool = app_dr.TodoDr(self.config(), runner=timeout_runner)
-        with self.assertRaisesRegex(app_dr.DrError, "timed out"):
+        route_commands(self, timeout_runner)
+        tool = app_dr.TodoDr(self.config())
+        with self.assertRaisesRegex(RuntimeError, "systemd status check timed out after 120 seconds"):
             tool.service_status()
 
 class GroupPromotionTests(unittest.TestCase):
@@ -197,6 +210,8 @@ class GroupPromotionTests(unittest.TestCase):
         self.commands = []
         self.endpoints = []
         self.failed_promotion = None
+        self.active_runner = self.runner
+        route_commands(self, lambda arguments, timeout: self.active_runner(arguments, timeout))
 
     def runner(self, arguments, timeout=None):
         self.commands.append(list(arguments))
@@ -205,7 +220,7 @@ class GroupPromotionTests(unittest.TestCase):
         if arguments[:3] == ['podman', 'inspect', '--format']:
             return completed('healthy')
         if 'psql' in arguments:
-            return completed(self.states[arguments[2]])
+            return completed(self.states[container(arguments)])
         if 'pg_ctl' in arguments:
             # A durable decision naming BOTH apps must precede the first promotion.
             decision = json.loads(self.journal.read_text())
@@ -222,7 +237,7 @@ class GroupPromotionTests(unittest.TestCase):
             self.endpoints.append(port)
             return port == reachable_port
         return app_dr.TodoDr(app_dr.Config('primary', '192.0.2.50', 'standby', 30, ('todo', 'notes')),
-                              runner=self.runner, connector=connect, journal_path=self.journal)
+                              connector=connect, journal_path=self.journal)
 
     def test_last_app_lag_prevents_every_promotion(self):
         self.states['notes-postgres'] = 't|on|0/20|0/10'
@@ -261,7 +276,7 @@ class GroupPromotionTests(unittest.TestCase):
     def test_partial_failure_is_recorded_and_blind_retry_is_refused(self):
         self.failed_promotion = 'notes-postgres'
         tool = self.tool()
-        with self.assertRaisesRegex(app_dr.DrError, 'injected'):
+        with self.assertRaisesRegex(RuntimeError, 'notes: PostgreSQL promotion failed .*injected'):
             tool.promote('primary is fenced', 'standby')
         decision = json.loads(self.journal.read_text())
         self.assertEqual(decision['state'], 'failed')
@@ -295,7 +310,7 @@ class GroupPromotionTests(unittest.TestCase):
                     return completed('starting')
                 return original(arguments, timeout)
 
-            tool.runner = failed
+            self.active_runner = failed
             with self.assertRaises(app_dr.DrError):
                 tool.promote('primary is fenced', 'standby')
             self.assertFalse(any('pg_ctl' in command for command in self.commands))

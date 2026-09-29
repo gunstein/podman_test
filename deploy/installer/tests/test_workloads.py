@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_installer import apps, images, quadlet, stack, workloads  # noqa: E402
-
 from fake_host import FakeHost  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]

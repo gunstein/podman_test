@@ -18,7 +18,6 @@ from app_installer import (  # noqa: E402
     settings,
     uninstall,
 )
-
 from fake_host import FakeHost  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]

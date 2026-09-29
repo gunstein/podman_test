@@ -5,7 +5,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_installer import apps, secrets  # noqa: E402
-
 from fake_host import FakeHost  # noqa: E402
 
 # base64 of "fixture-password", the value FakeHost gives every password secret.

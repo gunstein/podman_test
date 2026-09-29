@@ -125,8 +125,10 @@ rest (accepted in runs 18-22).
   CA, so after a failover every client must trust a new CA before users stop
   seeing certificate errors (`failover` prints its fingerprint; acceptance
   trusts it on its one client by hand). Kept as it is for now (owner's
-  decision, 2026-09-27). To decide before G3, whose timing must either include
-  that trust step or not need it:
+  decision, 2026-09-27, confirmed 2026-09-29: no offline CA administration yet,
+  perhaps later). Until then G3's timing includes that trust step. The client
+  CA and the replication CA stay separate in every option. The options, for
+  when it is taken up again:
   - *Only a CA outside the nodes*, the mode `docs/TLS.md` already recommends:
     a protected issuing machine holds the CA; Oslo and Trondheim each get
     their own server certificate and private key for the same names, issued
@@ -142,6 +144,20 @@ rest (accepted in runs 18-22).
     CA from the primary to the standby at bootstrap, like the replication CA,
     so failover keeps client trust at the cost of the CA key on both nodes.
     Full acceptance would then run `provided`; CI keeps covering `local`.
+  - *Preferred when it is taken up (2026-09-29):* `provided`, with the CA
+    offline rather than on a server: an encrypted USB stick or folder on an
+    administrator's machine, used about once a year to issue both hosts'
+    certificates, with a backup copy and an expiry reminder (U2). No third
+    machine runs anything; the code work is that of `provided`, in three
+    steps: one host with `provided` while dev and CI keep `local`, then DR
+    (the standby's certificate at bootstrap, `preflight-standby` and
+    `failover` refuse a missing or invalid one, `failover` no longer asks for
+    client trust), then the acceptance guide (the client issues the root and
+    both certificates before phase 1; phase 7 loses its trust step).
+  - *If a CA on the hosts is ever chosen instead:* limit it with
+    `nameConstraints` to the registered app names, keep its key in Podman
+    secrets on the two hosts only, and plan how to replace it if a host is
+    compromised.
 - **T6. Planned switchover and switchback.** *[new]* Today roles change only
   through a disaster promotion: fence, promote, then rebuild the old primary
   with a full copy of every database. For maintenance at one site, switch in a

@@ -53,16 +53,21 @@ def address(value):
     return str(ipaddress.IPv4Address(value))
 
 
-def sql(database, statement, *, dbname='postgres'):
-    """Run one SQL statement with psql inside the database's container.
+def sql(database, statement, *, dbname='postgres', container=None, description=None,
+        timeout=settings.COMMAND_TIMEOUT, secret_output=False):
+    """Run SQL with psql inside the database's container; the one way DR code runs SQL.
 
     The statement goes on stdin, never in argv. Fields come back separated by
-    "|" with no header, and psql stops at the first error.
+    "|" with no header, and psql stops at the first error. container defaults
+    to the database's own (a disposable restore passes its own), description
+    names the step in an error, and secret_output hides psql's output in an
+    error for SQL that holds a password (commands.run).
     """
-    return run('podman', 'exec', '--interactive', database.container, 'psql',
+    return run('podman', 'exec', '--interactive', container or database.container, 'psql',
                '--no-psqlrc', '--set', 'ON_ERROR_STOP=1', '--username', database.name,
                '--dbname', dbname, '--tuples-only', '--no-align', '--field-separator=|',
-               input=statement + '\n').stdout.strip()
+               input=statement + '\n', description=description or f'{database.name}: SQL',
+               timeout=timeout, secret_output=secret_output).stdout.strip()
 
 
 def lsn(value):
@@ -249,7 +254,7 @@ def configure_primary(database, node_address):
         sql(database, f"DO $role$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{role}') "
             f'THEN CREATE ROLE {role} LOGIN REPLICATION; END IF; END $role$; '
             f'ALTER ROLE {role} WITH LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE '
-            f"NOINHERIT PASSWORD '{value}';")
+            f"NOINHERIT PASSWORD '{value}';", secret_output=True)
         changed = True
     # Bootstrap creates the slot, rather than reusing an unexplained existing one.
     existing = sql(database, 'SELECT slot_type, COALESCE(invalidation_reason, \'\') '

@@ -18,8 +18,9 @@ turn it into a monster in code, maintenance or operation.
    only.
 3. **Reuse before new.** Build on what exists (app-ops commands, systemd
    timers, the DR secret synchronisation), not on new services.
-4. **Less code in total.** Once the duplication is gone, the project should
-   have less code than today, new features included.
+4. **Less code in total.** The project should end up with less code than
+   today, new features included. The two example apps stay separate on
+   purpose (see Code structure): that is not duplication to remove.
 5. **Optional means optional.** Drop an optional item without regret when it
    costs more than it gives.
 
@@ -30,8 +31,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-0. Now: R5, then S2-S6 and E6-E9, so the installer and DR code is easy to read
-   before more is built on it.
+0. Now: E6, E7 and E9, then a full acceptance run for R5, S2, S3 and S5, so
+   the installer and DR code is easy to read before more is built on it.
 1. Failover to Trondheim within 30 minutes (see the goal below): G2
    (Trondheim is ready), T3 (fencing without the Oslo hypervisor), T4 (one
    CA, decided before G3), G3 (time it in the drill), M1 (alerts), O1
@@ -254,16 +255,17 @@ why. The seven workloads already log to journald (`LogDriver=journald`), and
   through `logger -t app-ops`): timestamp, host, command, database, result and
   duration, never a secret. app-ops also keeps one log file per run on the
   controller.
-- **L2. Keep the failure reason.** *[simplify]* Done for commands (with
-  S3): an error from `commands.run` names the step and shows the last three
-  lines the command printed, never for `podman secret` or SQL that sets a
-  password. Left: the backends answer a missing OIDC setting with "invalid
-  token"; they should refuse to start without it.
-- **L3. Backend logging.** *[new]* The backends log almost nothing, and
-  `logLevel` in `values.yaml` becomes `LOG_LEVEL` in each app's ConfigMap,
-  but no backend reads it. Use it (or remove it), and log rejected tokens
-  with the reason (never the token), database errors with context, and
-  changes with the user's `sub`.
+- **L2. Keep the failure reason.** *[simplify]* Done in code with S3: an
+  error from `commands.run` names the step and shows the last three lines
+  the command printed, never for `podman secret` or SQL that sets a
+  password. Remove after the next acceptance run.
+- **L3. Backend logging.** *[new]* *[optional]* The example apps, not the
+  core of the repository. The backends log almost nothing, and `logLevel`
+  in `values.yaml` becomes `LOG_LEVEL` in each app's ConfigMap, but no
+  backend reads it. Use it (or remove it), and log rejected tokens with the
+  reason (never the token), database errors with context, and changes with
+  the user's `sub`. A backend should also refuse to start without its OIDC
+  settings, instead of answering every request with "invalid token".
 - **L4. Persistent, bounded journald.** *[config]* Whether logs survive a
   reboot depends on journald storage on the hosts, which is neither set nor
   documented, and nothing bounds size or age. Configure persistent storage
@@ -406,6 +408,12 @@ The owner's priority: the installer and DR code must be easy to understand
 and get into. The long CLI dispatches stay as they are: they read top to
 bottom.
 
+The todo and notes backends are deliberately separate examples. The
+repository is about Podman, the installer and DR; the apps are there so the
+installer and DR have two independent apps, each with its own database,
+roles, secrets and images, to install, replicate and fail over. Sharing code
+between them is not a goal: each app should read on its own.
+
 - **R5. Separate names from the database.** *[simplify]* Done in code, CI
   to confirm; needs a full acceptance run. `stack.Names` holds only the
   naming rules (`resource`, `unit`, `service`, `manifest`, `kube_secret`,
@@ -446,15 +454,9 @@ bottom.
   `StandbyGroup` (status, preflight and promotion of the whole group) and
   `TodoBackup` is `DatabaseBackup` (archiving, backups and PITR of one
   database). Internal names only; files, commands and paths are unchanged.
-- **S6. Shared backend code.** *[simplify]* `todo-backend` and
-  `notes-backend` have identical `migrate.py` and near-identical
-  `setup_roles.py`, `main.py`, auth and database code. Share them; this
-  touches the image builds. The largest item here; last, possibly with its
-  own run.
 - *[optional]* Smaller points from the code review of `9627adb`: the
-  PostgreSQL image is set per app, hostnames are not validated everywhere,
-  and there is no fixed rule for how much of a failed command's output an
-  error message shows.
+  PostgreSQL image is set per app, and hostnames are not validated
+  everywhere.
 
 ## Tests and CI
 

@@ -2,10 +2,12 @@
 import re
 import time
 
+from app_installer import settings
+
 from . import trust
 
-HELPER = '/opt/todo/bin/app-quarantine.sh'
-HELPER_REGEX = '/opt/todo/bin/app-quarantine\\.sh'
+HELPER = str(settings.TOOLS_BIN / 'app-quarantine.sh')
+HELPER_REGEX = HELPER.replace('.', '\\.')
 HELPER_TYPE = 'virt_qemu_ga_unconfined_exec_t'
 GA_POLICY = '/etc/sysconfig/qemu-ga'
 
@@ -87,7 +89,7 @@ def install(project_root, controller, primary, *, guest_exec=False, selinux_entr
         changed = enable_guest_exec(primary) or changed
     changed = trust.install_trusted(project_root, controller, primary,
                                     [(f'{project_root}/deploy/dr/scripts/app-quarantine.sh', HELPER, '0755')],
-                                    '/opt/todo/bin') or changed
+                                    settings.TOOLS_BIN) or changed
     if selinux_entrypoint:
         changed = enable_selinux_entrypoint(primary) or changed
     # Atomic replacement can lose the persistent label: apply only existing policy.

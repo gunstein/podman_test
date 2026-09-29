@@ -106,7 +106,7 @@ class ProxyConfigurationTests(unittest.TestCase):
 
         from app_installer import apps
         self.assertEqual(apps.SHARED_RESOURCE_OWNER.hostname, 'todo.test')
-        self.assertIn("'--service-port', '8443'", read("deploy/dr/app_ops/recovery.py"))
+        self.assertIn("'--service-port', str(settings.HTTPS_PORT)", read("deploy/dr/app_ops/recovery.py"))
         self.assertIn(
             "PublishPort={{ todo_publish_address }}:"
             "{{ todo_service_port }}:8443",

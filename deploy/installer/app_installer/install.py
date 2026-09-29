@@ -42,10 +42,10 @@ def require_single_host(action):
     LAN publication, which silently cuts off the standby; uninstall would
     remove clustered state. A person has to decide what to do on such a host.
     """
-    markers = (Path.home() / '.config/todo/todo-standby-entrypoint.sh',
-               Path('/opt/todo/bin/app_dr.py'), Path('/opt/todo/bin/app_backup.py'),
+    markers = (Path.home() / settings.DR_CONFIG / 'todo-standby-entrypoint.sh',
+               settings.TOOLS_BIN / 'app_dr.py', settings.TOOLS_BIN / 'app_backup.py',
                # Names installed before the tools were renamed still mark a clustered host.
-               Path('/opt/todo/bin/todo_dr.py'), Path('/opt/todo/bin/todo_backup.py'))
+               settings.TOOLS_BIN / 'todo_dr.py', settings.TOOLS_BIN / 'todo_backup.py')
     if any(exists('secret', d.secret('replicator')) for d in apps.REPLICATED_DATABASES) or any(
             path.exists() for path in markers):
         raise RuntimeError(
@@ -100,9 +100,9 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     require_single_host('install')
     root = Path(project_root).resolve()
     directory = Path(quadlet_dir or settings.QUADLET_DIR).resolve()
-    runtime = Path(kube_runtime_dir or directory / 'todo-kube-runtime').resolve()
-    if mode == 'server' and runtime != directory / 'todo-kube-runtime':
-        raise ValueError('kube_runtime_dir must be quadlet_dir/todo-kube-runtime')
+    runtime = Path(kube_runtime_dir or directory / settings.KUBE_RUNTIME).resolve()
+    if mode == 'server' and runtime != directory / settings.KUBE_RUNTIME:
+        raise ValueError(f'kube_runtime_dir must be quadlet_dir/{settings.KUBE_RUNTIME}')
     preflight(directory)
     run('podman', '--version')
     rendered = (Path(bundle_directory) / 'generated/kube-runtime' if deployment_mode == 'offline'

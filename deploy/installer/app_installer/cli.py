@@ -94,7 +94,7 @@ def main(argv=None):
         else:
             directory = args.quadlet_dir.resolve()
             install.preflight(directory)
-            runtime = (args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve()
+            runtime = (args.kube_runtime_dir or directory / settings.KUBE_RUNTIME).resolve()
             manifests = args.rendered_manifest_dir or args.project_root / 'generated/kube-runtime'
             kwargs = {'publish_address': args.publish_address, 'service_port': args.service_port}
             if args.workload == 'postgres':

@@ -22,8 +22,8 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
     """
     root, directory, runtime, rendered = map(Path, (
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir))
-    if runtime != directory / "todo-kube-runtime" or runtime.is_symlink():
-        raise ValueError("kube_runtime_dir must be quadlet_dir/todo-kube-runtime")
+    if runtime != directory / settings.KUBE_RUNTIME or runtime.is_symlink():
+        raise ValueError(f"kube_runtime_dir must be quadlet_dir/{settings.KUBE_RUNTIME}")
     if "--no-pod-prefix" not in run("podman", "kube", "play", "--help").stdout:
         raise RuntimeError(f"The {capability} Kube runtime requires Podman --no-pod-prefix.")
     # install.preflight() already refuses a legacy per-container Quadlet host-wide,

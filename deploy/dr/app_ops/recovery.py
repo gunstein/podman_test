@@ -2,7 +2,7 @@
 import json
 
 from . import standby, steps, trust
-from .steps import app_dr_host
+from .steps import app_dr_host, settings
 
 
 def require_identity(host):
@@ -25,7 +25,8 @@ def deploy_promoted(project_root, controller, current):
     return steps.changed(app_dr_host(
         current, pythonpath, 'deploy-promoted', '--project-root', str(project_root), '--quadlet-dir', p['quadlet'],
         '--bundle-dir', p['bundle'], '--inventory-hostname', current.name, '--node-address', current.spec.address,
-        '--service-port', '8443', '--journal', p['config'] + '/promotion.json', '--config-dir', p['config']))
+        '--service-port', str(settings.HTTPS_PORT), '--journal', steps.promotion_record(current),
+        '--config-dir', p['config']))
 
 
 def configure_backup(project_root, controller, current):
@@ -34,12 +35,13 @@ def configure_backup(project_root, controller, current):
     Refuses unless the promotion record shows the whole group was promoted.
     """
     pythonpath = trust.stage_installer(project_root, controller, current)
-    journal = steps.paths(current)['config'] + '/promotion.json'
+    journal = steps.promotion_record(current)
     app_dr_host(current, pythonpath, 'require-promoted-group', '--journal', journal)
     changed = trust.install_trusted(
         project_root, controller, current,
-        [(f'{project_root}/deploy/dr/scripts/app_backup.py', '/opt/todo/bin/app_backup.py', '0644')], '/opt/todo/bin')
-    result = current.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', '/opt/todo/bin/app_backup.py',
+        [(f'{project_root}/deploy/dr/scripts/app_backup.py', settings.TOOLS_BIN / 'app_backup.py', '0644')],
+        settings.TOOLS_BIN)
+    result = current.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', str(settings.TOOLS_BIN / 'app_backup.py'),
                           'configure', '--journal', journal], timeout=steps.STEP_TIMEOUT)
     return steps.changed(result) or changed
 

@@ -23,7 +23,7 @@ the code runs:
 
 | Code | Runs on | Finds `app_installer` (and `app_dr_host`) |
 |---|---|---|
-| `app_ops` | the controller, from a checkout or the operations package | `deploy/installer` in the same tree, added by `app_ops/steps.py` |
+| `app_ops` | the controller, from a checkout or the operations package | `deploy/installer` in the same tree, added by `app_ops/__init__.py` |
 | `app_dr_host` | each host | `PYTHONPATH`, which app-ops sets to the directory it staged both packages in: `/opt/todo/lib` when fapolicyd is active |
 | `app_dr.py`, `app_backup.py` | each host, in `/opt/todo/bin` | `/opt/todo/lib`, the `lib` next to their own `bin`; in a checkout, set `PYTHONPATH=deploy/installer:deploy/dr` |
 | `app-quarantine.sh` | the old primary | `PYTHONPATH=/opt/todo/lib` in the script |

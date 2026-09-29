@@ -59,14 +59,14 @@ def main(argv=None):
     publish.add_argument('--rendered-manifest-dir', type=Path, required=True)
     promoted_group = subcommands.add_parser('require-promoted-group')
     promoted_group.add_argument('--journal', type=Path,
-                          default=Path.home() / '.config/todo/promotion.json')
+                          default=Path.home() / settings.DR_CONFIG / settings.PROMOTION_RECORD)
     promoted_tier = subcommands.add_parser('deploy-promoted')
     paths(promoted_tier)
     promoted_tier.add_argument('--bundle-dir', type=Path, required=True)
     promoted_tier.add_argument('--inventory-hostname', required=True)
     promoted_tier.add_argument('--node-address', required=True)
     promoted_tier.add_argument('--service-port', type=int, default=settings.HTTPS_PORT)
-    promoted_tier.add_argument('--journal', type=Path, default=Path.home() / '.config/todo/promotion.json')
+    promoted_tier.add_argument('--journal', type=Path, default=Path.home() / settings.DR_CONFIG / settings.PROMOTION_RECORD)
     promoted_tier.add_argument('--config-dir', type=Path, default=Path.home() / '.config/todo')
     node = subcommands.add_parser('node-facts')
     node.add_argument('--inventory-hostname', required=True)
@@ -87,7 +87,7 @@ def main(argv=None):
             elif args.operation in ('standby', 'reseed-check'):
                 directory = args.quadlet_dir.resolve()
                 options = dict(project_root=args.project_root, quadlet_dir=directory,
-                               kube_runtime_dir=(args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve(),
+                               kube_runtime_dir=(args.kube_runtime_dir or directory / settings.KUBE_RUNTIME).resolve(),
                                rendered_manifest_dir=args.rendered_manifest_dir or args.project_root / 'generated/kube-runtime')
                 if args.operation == 'standby':
                     result['changed'] = replication.bootstrap_standby(
@@ -121,14 +121,14 @@ def main(argv=None):
             print(json.dumps({'changed': True, 'reseeded': replication.reseed_group(
                 args.primary_address, confirm_fenced=args.confirm_fenced, confirm_reseed=args.confirm_reseed,
                 project_root=args.project_root, quadlet_dir=directory,
-                kube_runtime_dir=(args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve(),
+                kube_runtime_dir=(args.kube_runtime_dir or directory / settings.KUBE_RUNTIME).resolve(),
                 rendered_manifest_dir=args.rendered_manifest_dir)}))
         elif args.command == 'publish-primaries':
             directory = args.quadlet_dir.resolve()
             print(json.dumps(replication.publish_primaries(
                 args.node_address, bootstrap=args.mode == 'bootstrap', project_root=args.project_root,
                 quadlet_dir=directory,
-                kube_runtime_dir=(args.kube_runtime_dir or directory / 'todo-kube-runtime').resolve(),
+                kube_runtime_dir=(args.kube_runtime_dir or directory / settings.KUBE_RUNTIME).resolve(),
                 rendered_manifest_dir=args.rendered_manifest_dir)))
         elif args.command == 'require-promoted-group':
             print(json.dumps({'changed': replication.require_promoted_group(args.journal)}))

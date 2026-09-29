@@ -32,10 +32,10 @@ from typing import Callable, List, Optional, Sequence
 # deploy/dr/README.md ("Where DR finds the installer") has the whole rule.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from app_dr_host import replication  # noqa: E402
-from app_installer import apps, quadlet  # noqa: E402
+from app_installer import apps, quadlet, settings  # noqa: E402
 
-DEFAULT_CONFIG = Path.home() / '.config/todo/todo-dr.json'
-DEFAULT_JOURNAL = DEFAULT_CONFIG.with_name('promotion.json')
+DEFAULT_CONFIG = Path.home() / settings.DR_CONFIG / 'todo-dr.json'
+DEFAULT_JOURNAL = DEFAULT_CONFIG.with_name(settings.PROMOTION_RECORD)
 
 
 class DrError(RuntimeError):
@@ -330,7 +330,7 @@ def parser():
     configure.add_argument('--primary-name', required=True)
     configure.add_argument('--primary-address', required=True)
     configure.add_argument('--standby-name', required=True)
-    configure.add_argument('--rpo-target-seconds', type=int, default=30)
+    configure.add_argument('--rpo-target-seconds', type=int, default=settings.RPO_TARGET_SECONDS)
     preflight = commands.add_parser('preflight')
     preflight.add_argument('--confirm-primary-fenced', required=True)
     promote = commands.add_parser('promote')
@@ -347,7 +347,7 @@ def main(arguments: Optional[Sequence[str]] = None):
             print(json.dumps({'changed': write_config(args.config, args.primary_name, args.primary_address,
                                                       args.standby_name, args.rpo_target_seconds)}))
             return 0
-        tool = TodoDr(load_config(args.config), journal_path=args.config.with_name('promotion.json'))
+        tool = TodoDr(load_config(args.config), journal_path=args.config.with_name(settings.PROMOTION_RECORD))
         if args.command == 'status':
             print('\n'.join(tool.status_lines()))
         elif args.command == 'preflight':

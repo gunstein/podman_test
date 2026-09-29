@@ -419,10 +419,15 @@ bottom.
   pod (`pod`, `unit`, `service`, `manifest`, `config_manifest`, `image`) and
   has `names` and `database`; it forwards nothing. Every name and every
   rendered file is byte-identical before and after.
-- **S2. One place for paths and constants.** *[simplify]* In `settings.py`:
-  the `todo-kube-runtime` directory (17 places in the code), `/opt/todo` (13),
-  the promotion record path, the service port 8443 and the RPO of 30 seconds
-  in app-ops.
+- **S2. One place for paths and constants.** *[simplify]* Done in code; in
+  the next acceptance run. `settings.py` now holds `KUBE_RUNTIME`
+  (`todo-kube-runtime`), `TOOLS_BIN` and `TOOLS_LIB` (`/opt/todo/bin` and
+  `/lib`), `DR_CONFIG` and `PROMOTION_RECORD` (`~/.config/todo/promotion.json`)
+  and `RPO_TARGET_SECONDS`; app-ops passes `HTTPS_PORT` instead of `'8443'`,
+  and `steps.promotion_record(host)` names the record once. app-ops puts the
+  installer on its path in `app_ops/__init__.py`, so every module can use
+  `settings`. The lab tools keep their own literals: they check the product
+  from outside.
 - **S3. One way to run commands and SQL.** *[simplify]* `app_dr.py` and
   `app_backup.py` have their own command runners and error types, and
   `app_backup.py` spells out its own `psql` calls; use `replication.sql()` and

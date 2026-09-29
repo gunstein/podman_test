@@ -2,8 +2,10 @@
 import base64
 from pathlib import Path
 
+from app_installer import settings
+
 TRUST_FILE = 'todo'
-LIBRARY = Path('/opt/todo/lib')
+LIBRARY = settings.TOOLS_LIB
 
 
 def script(project_root):

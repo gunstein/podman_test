@@ -2,6 +2,7 @@
 import json
 
 from . import steps, trust
+from .steps import settings
 
 
 def firewall_rule(primary, standby):
@@ -130,10 +131,10 @@ def install_dr_tool(project_root, controller, standby, primary_spec):
     """Install app_dr.py on the standby with exact-file trust, then write its DR settings."""
     trust.stage_installer(project_root, controller, standby)
     changed = trust.install_trusted(project_root, controller, standby,
-                                    [(f'{project_root}/deploy/dr/scripts/app_dr.py', '/opt/todo/bin/app_dr.py', '0644')],
-                                    '/opt/todo/bin')
-    result = standby.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', '/opt/todo/bin/app_dr.py', '--config',
+                                    [(f'{project_root}/deploy/dr/scripts/app_dr.py', settings.TOOLS_BIN / 'app_dr.py',
+                                      '0644')], settings.TOOLS_BIN)
+    result = standby.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', str(settings.TOOLS_BIN / 'app_dr.py'), '--config',
                           steps.paths(standby)['config'] + '/todo-dr.json', 'configure',
                           '--primary-name', primary_spec.name, '--primary-address', primary_spec.address,
-                          '--standby-name', standby.name, '--rpo-target-seconds', '30'])
+                          '--standby-name', standby.name, '--rpo-target-seconds', str(settings.RPO_TARGET_SECONDS)])
     return steps.changed(result) or changed

@@ -1,4 +1,4 @@
-"""The installer's few actually-adjustable values, gathered in one place.
+"""Fixed values and paths the installer and the DR tools share, in one place.
 
 Everything else here (container, secret, unit and volume names) is a naming
 rule derived from the App/Database registry in apps.py, not a setting: it
@@ -22,6 +22,24 @@ HTTPS_PORT = 8443
 
 # Default Quadlet directory for a single-host install; DR passes its own.
 QUADLET_DIR = Path.home() / ".config/containers/systemd"
+
+# The directory next to the Quadlet units that holds the rendered Kube YAML
+# the .kube units point at: QUADLET_DIR / KUBE_RUNTIME.
+KUBE_RUNTIME = "todo-kube-runtime"
+
+# Where app-ops installs the DR tools (app_dr.py, app_backup.py, the
+# quarantine helper) and, under fapolicyd, the packages they import.
+TOOLS_BIN = Path("/opt/todo/bin")
+TOOLS_LIB = Path("/opt/todo/lib")
+
+# The DR settings and the promotion record, relative to the service user's
+# home directory: ~/.config/todo/promotion.json on a host.
+DR_CONFIG = ".config/todo"
+PROMOTION_RECORD = "promotion.json"
+
+# The recovery point objective app-ops writes into the DR settings. It is
+# informational: app_dr.py status prints it, nothing enforces it.
+RPO_TARGET_SECONDS = 30
 
 # Dev mode (direct `podman kube play`/`down`, no Quadlet units) records what it
 # played here so `down` can find and remove it, independent of whatever

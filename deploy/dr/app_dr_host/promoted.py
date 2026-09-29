@@ -2,7 +2,17 @@
 import time
 from pathlib import Path
 
-from app_installer import apps, images, install, keycloak, preflight, quadlet, secrets, workloads
+from app_installer import (
+    apps,
+    images,
+    install,
+    keycloak,
+    preflight,
+    quadlet,
+    secrets,
+    settings,
+    workloads,
+)
 from app_installer.commands import exists, run
 
 from . import replication, transfer
@@ -29,7 +39,7 @@ def require_identity(inventory_hostname, node_address, service_port):
 def install_workloads(project_root, quadlet_dir, rendered, node_address, service_port):
     """Install every app, Keycloak and the proxy, published on this host's own address."""
     install.preflight(quadlet_dir)
-    runtime = quadlet_dir / 'todo-kube-runtime'
+    runtime = quadlet_dir / settings.KUBE_RUNTIME
     arguments = (project_root, quadlet_dir, runtime, rendered)
     changed = False
     for app in apps.APPS:

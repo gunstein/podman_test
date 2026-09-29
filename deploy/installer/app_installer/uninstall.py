@@ -62,7 +62,7 @@ def uninstall(remove_data=False, quadlet_dir=None):
     stopped = run('systemctl', '--user', 'stop', *(name + '.service' for name in SERVICES),
                   allowed=(0, 5)).returncode == 0
     changed = any([unlink(directory / name) for name in QUADLET_FILES]) or stopped
-    runtime = directory / 'todo-kube-runtime'
+    runtime = directory / settings.KUBE_RUNTIME
     if runtime.is_symlink():
         runtime.unlink()
         changed = True

@@ -1,17 +1,13 @@
 """Shared host steps: run app_dr_host on a host, stage files, and retry bounded checks."""
 import json
-import sys
 import time
 from pathlib import Path
+
+from app_installer import apps, settings
 
 from . import trust
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-# app-ops reuses the installer's registry and settings. On the controller it
-# runs from a checkout or the operations package, where the installer is
-# deploy/installer; see deploy/dr/README.md ("Where DR finds the installer").
-sys.path.insert(0, str(PROJECT_ROOT / 'deploy/installer'))
-from app_installer import apps, settings  # noqa: E402
 
 GROUP = apps.REPLICATED_DATABASES
 # The Quadlet templates app_dr_host needs on a host: the network, each
@@ -31,8 +27,13 @@ def paths(host):
     home = host.spec.home
     quadlet = f'{home}/.config/containers/systemd'
     return {'target': f'{home}/.local/share/app-installer', 'quadlet': quadlet,
-            'runtime': f'{quadlet}/todo-kube-runtime', 'config': f'{home}/.config/todo',
-            'bundle': host.spec.bundle or f'{home}/todo-offline-m12'}
+            'runtime': f'{quadlet}/{settings.KUBE_RUNTIME}', 'config': f'{home}/{settings.DR_CONFIG}',
+            'bundle': host.spec.bundle or f'{home}/todo-offline-{settings.IMAGE_TAG}'}
+
+
+def promotion_record(host):
+    """The path of the promotion record on host, which app_dr.py writes when it promotes."""
+    return f'{paths(host)["config"]}/{settings.PROMOTION_RECORD}'
 
 
 def installed_pythonpath(host):

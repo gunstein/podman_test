@@ -355,8 +355,8 @@ def bootstrap_standby(database, primary_address, *, project_root, quadlet_dir,
     slot = identifier(slot or database.replication_slot())
     role = identifier(database.role('replicator'))
     claim = data_claim(database, rendered_manifest_dir)
-    if Path(kube_runtime_dir) != Path(quadlet_dir) / 'todo-kube-runtime':
-        raise ValueError('kube_runtime_dir must be quadlet_dir/todo-kube-runtime')
+    if Path(kube_runtime_dir) != Path(quadlet_dir) / settings.KUBE_RUNTIME:
+        raise ValueError(f'kube_runtime_dir must be quadlet_dir/{settings.KUBE_RUNTIME}')
     if exists('volume', database.volume('data')):
         raise RuntimeError(f'{database.volume("data")} already exists; bootstrap never overwrites data')
     if not exists('image', database.image):
@@ -551,8 +551,8 @@ def reseed_check(database, primary_address, *, project_root, quadlet_dir, kube_r
     require_reseed_confirmations(confirm_fenced, confirm_reseed)
     address(primary_address)
     directory, runtime = Path(quadlet_dir), Path(kube_runtime_dir)
-    if runtime != directory / 'todo-kube-runtime' or runtime.is_symlink():
-        raise ValueError('kube_runtime_dir must be quadlet_dir/todo-kube-runtime')
+    if runtime != directory / settings.KUBE_RUNTIME or runtime.is_symlink():
+        raise ValueError(f'kube_runtime_dir must be quadlet_dir/{settings.KUBE_RUNTIME}')
     if run('podman', 'info', '--format', '{{.Host.Security.Rootless}}').stdout.strip() != 'true':
         raise RuntimeError('Destructive reseed requires rootless Podman')
     require_stopped_service(database.service)

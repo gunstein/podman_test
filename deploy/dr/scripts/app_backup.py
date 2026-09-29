@@ -313,7 +313,7 @@ class TodoBackup:
             ["systemctl", "--user", "show", service, "--property=SourcePath", "--value"],
             "PostgreSQL service source query",
         )
-        if not source.endswith("/todo-kube-runtime/" + self.database.unit):
+        if not source.endswith(f"/{settings.KUBE_RUNTIME}/{self.database.unit}"):
             raise BackupError("Backup configuration refuses to replace a non-Kube PostgreSQL runtime")
 
     def prepare_archive(self) -> tuple[bool, bool, bool]:
@@ -668,7 +668,7 @@ def parser() -> argparse.ArgumentParser:
         "configure", help="Configure and verify continuous WAL archiving for the whole group"
     )
     configuration.add_argument("--journal", type=Path,
-                               default=Path.home() / ".config/todo/promotion.json")
+                               default=Path.home() / settings.DR_CONFIG / settings.PROMOTION_RECORD)
     cleanup = commands.add_parser(
         "cleanup-restore", help="Delete only the disposable PITR container and volume"
     )

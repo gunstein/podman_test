@@ -28,14 +28,14 @@ from urllib.parse import urlencode
 from . import recovery, steps
 from .steps import apps, settings
 
-APP_DR = '/opt/todo/bin/app_dr.py'
+APP_DR = str(settings.TOOLS_BIN / 'app_dr.py')
 # Any valid S256 PKCE challenge: the login form is only shown, never submitted.
 PKCE_CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'
 
 
 def promotion_state(host):
     """The state in the host's promotion record ('complete', 'failed', ...), or None if there is none."""
-    journal = steps.paths(host)['config'] + '/promotion.json'
+    journal = steps.promotion_record(host)
     text = host.run(['sh', '-c', 'test ! -e "$1" || cat "$1"', 'read-record', journal]).stdout
     return json.loads(text)['state'] if text.strip() else None
 
@@ -47,7 +47,7 @@ def promote(host, confirm_fenced, confirm_promotion):
         return False
     if state is not None:
         raise RuntimeError(f'the promotion record says "{state}". Inspect every database role and '
-                           f'{steps.paths(host)["config"]}/promotion.json; failover never retries a promotion.')
+                           f'{steps.promotion_record(host)}; failover never retries a promotion.')
     host.run(['python3', APP_DR, 'promote', '--confirm-primary-fenced', confirm_fenced,
               '--confirm-promotion', confirm_promotion], timeout=steps.STEP_TIMEOUT)
     return True

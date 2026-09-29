@@ -477,6 +477,30 @@ full-stack job and acceptance cover that.
 - **E5. Browser tests for failure.** *[optional]* An expired session and a real
   token refresh against Keycloak, and what the user sees when the backend or
   Keycloak is down.
+- **E6. Say in CI that the package suites run.** *[config]* The step that
+  runs `tests/` is named "Test DR and backup tools", but it also runs the 77
+  installer tests (`tests/test_installer.py`) and the DR host tests
+  (`tests/test_dr_host.py`) through `load_tests`. A reviewer concluded that
+  the installer tests do not run in CI. Name the step for what it runs and
+  say in a comment how the package suites are included.
+- **E7. One fake host for the installer tests.** *[simplify]*
+  `test_install.py`, `test_build.py` and `test_workloads.py` each carry
+  their own fake `subprocess.run`, with the same rules for secrets, pods and
+  `systemctl show` spelled out several times; R1.2 had to change two
+  identical copies the same way. Move the rules into one small `FakeHost`
+  helper in `deploy/installer/tests`, so the tests describe scenarios. Keep
+  the order checks that find commands in the call list: the order is part
+  of what the installer must get right.
+- **E8. Error paths in `commands.run` and `images.py`.** *[new]* Test that a
+  non-zero exit raises, that `allowed=(0, 1)` works, that stdout and stderr
+  never reach the error message, and decide and test what a missing program
+  gives (today `FileNotFoundError` escapes). Do it together with L2. For
+  `images.py`: a wrong proxy label, offline with `refresh_images` refused, a
+  missing bundle, and the shared PostgreSQL image loaded once.
+- **E9. The Kube secret test belongs with the installer.** *[simplify]*
+  `test_a_kube_secret_that_differs_from_its_podman_secret_is_refused` (R1.2)
+  lies in `tests/test_kube_runtime.py`; move it to `deploy/installer/tests`,
+  next to the code it tests.
 - **Q1. Replication in CI.** *[optional]* *[decision]* Stream between two
   PostgreSQL instances on one runner, so replication is tested before the lab.
   The full-stack job already covers the single host.

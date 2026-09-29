@@ -17,16 +17,11 @@ assert SPEC and SPEC.loader
 app_dr = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(app_dr)
 
+from tests.fake_commands import route_commands  # noqa: E402
+
 
 def completed(stdout="", stderr="", returncode=0):
     return subprocess.CompletedProcess([], returncode, stdout, stderr)
-
-
-def route_commands(test, runner):
-    """Send every command app_dr runs (through commands.run) to runner(arguments, timeout)."""
-    patcher = mock.patch("subprocess.run", side_effect=lambda argv, **kwargs: runner(argv, kwargs.get("timeout")))
-    patcher.start()
-    test.addCleanup(patcher.stop)
 
 
 def container(arguments):

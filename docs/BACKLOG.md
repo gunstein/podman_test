@@ -432,10 +432,16 @@ bottom.
   psql calls; their short limits (120 and 30 seconds) stay. The tests send
   commands to their fake hosts by patching `subprocess.run`. app-ops keeps
   its SSH transport, which runs commands on other hosts.
-- **S4. Smaller files and functions.** *[simplify]* Split `app_backup.py`
-  (722 lines: archiving, backup, restore) and `replication.py` (635 lines:
-  bootstrap and reseed, status checks), and `install.install()` (118 lines)
-  into named steps. The CLI dispatches stay.
+- **S4. Split only along a real contract.** *[simplify]* Not by line
+  count: after S3, `app_backup.py` is 108 lines shorter, and its parts
+  (archiving, base backup, restore point, disposable PITR) share one
+  database, volume, image and set of invariants; `replication.py` follows
+  one lifecycle (inspect, prepare a primary, bootstrap a standby, promote,
+  reseed). Splitting them into manager classes would make one operation
+  harder to follow. Split a part out only when it has a public contract of
+  its own and can be tested without the rest of the lifecycle. The one
+  candidate today is `install.install()` (118 lines), into named steps, if
+  that reads better.
 - **S5. Names that say what they do.** *[simplify]* Rename `TodoDr` and
   `TodoBackup`: they handle all three databases.
 - **S6. Shared backend code.** *[simplify]* `todo-backend` and

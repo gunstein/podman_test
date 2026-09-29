@@ -10,25 +10,32 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `24b32ee` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-24b32ee.md)),
+**Current verdict: CLEAN PASS** on `196c2c7` for the seven-pod, three-database
+topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-196c2c7.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 104 steps PASS
 on one clean revision and compared them with the agent guide: every step and
-log it names, nothing else. Install, standby bootstrap, quarantine rehearsal,
-fencing, the one `failover` command (group promotion, application tier,
-backup, services and the login page), backup and isolated PITR,
-rebuild of the old primary and sequential reboots all passed as written.
-CI now also runs the Todo API as `todo_app` and the whole stack with the
-browser tests on Podman 5.7. The single-host installer
-(`deploy/installer`) and DR (`deploy/dr`) are separate in the tree, and the
-fixes from the code review of `9627adb` (R1-R3) are accepted.
+log it names, nothing else. Every step ran through `acceptance.py step`, which
+runs the guide's line as written and only after the step before it passed,
+and each product log records its exact command. Install, standby bootstrap,
+quarantine rehearsal, fencing, the one `failover` command (group promotion,
+application tier, backup, services and the login page), backup and isolated
+PITR, rebuild of the old primary and sequential reboots all passed as written.
+CI also runs the Todo API as `todo_app` and the whole stack with the browser
+tests on Podman 5.7. The single-host installer (`deploy/installer`) and DR
+(`deploy/dr`) are separate in the tree, and the code clean-up since `24b32ee`
+is accepted: the naming model (R5), paths and constants in one place (S2), one
+way to run commands and SQL (S3), clearer DR class names (S5), the shared
+PostgreSQL image and DNS-name hostnames.
 Final topology: VM 108 primary with application and backup, VM 107
 database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `196c2c7` run 27: CLEAN PASS ([record](docs/history/ACCEPTANCE-196c2c7.md)),
+  accepting R5, S2, S3, S5 and the rest since `24b32ee`, the first run with
+  every step through `acceptance.py step`.
 - `37c49c1` run 26: stopped in phase 6 by the agent, which ran `06-6` and
   `06-10` without their confirmation arguments and went on past the
   failure; the product refused both before any change, no promotion

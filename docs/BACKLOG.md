@@ -1,7 +1,7 @@
 # Backlog
 
 Agreed work that is not done yet. The baseline to compare against is the
-CLEAN PASS on `24b32ee` ([record](history/ACCEPTANCE-24b32ee.md)). Do not
+CLEAN PASS on `196c2c7` ([record](history/ACCEPTANCE-196c2c7.md)). Do not
 change checked code while an acceptance run is in progress: the run would then
 test a different revision from the one in its kickoff message. Remove an item
 when its change has passed acceptance; the acceptance records and Git keep
@@ -31,17 +31,16 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-0. Now: E6, E7 and E9, then a full acceptance run for R5, S2, S3 and S5, so
-   the installer and DR code is easy to read before more is built on it.
 1. Failover to Trondheim within 30 minutes (see the goal below): G2
    (Trondheim is ready), T3 (fencing without the Oslo hypervisor), T4 (one
-   CA, decided before G3), G3 (time it in the drill), M1 (alerts), O1
+   CA; kept as it is for now, so G3 includes the client trust step), G3
+   (time it in the drill), M1 (alerts), O1
    (incident runbooks), G4 (the disaster drill in the lab) and G5 (rebuilding
    Oslo on new hardware).
 2. What operation needs: U1 (updating a replicated pair), T6 (planned
    switchover), U2 (certificate renewal, before replication stops by itself),
-   M4 (a durable WAL archive), M2 (scheduled backups with pruning), L1 and L2
-   (command logging, failure reasons).
+   M4 (a durable WAL archive), M2 (scheduled backups with pruning), L1
+   (command logging).
 3. fapolicyd (F0 first), firewalls (W) and data checks (C).
 4. The rest.
 
@@ -271,10 +270,6 @@ why. The seven workloads already log to journald (`LogDriver=journald`), and
   through `logger -t app-ops`): timestamp, host, command, database, result and
   duration, never a secret. app-ops also keeps one log file per run on the
   controller.
-- **L2. Keep the failure reason.** *[simplify]* Done in code with S3: an
-  error from `commands.run` names the step and shows the last three lines
-  the command printed, never for `podman secret` or SQL that sets a
-  password. Remove after the next acceptance run.
 - **L3. Backend logging.** *[new]* *[optional]* The example apps, not the
   core of the repository. The backends log almost nothing, and `logLevel`
   in `values.yaml` becomes `LOG_LEVEL` in each app's ConfigMap, but no
@@ -430,32 +425,6 @@ installer and DR have two independent apps, each with its own database,
 roles, secrets and images, to install, replicate and fail over. Sharing code
 between them is not a goal: each app should read on its own.
 
-- **R5. Separate names from the database.** *[simplify]* Done in code, CI
-  to confirm; needs a full acceptance run. `stack.Names` holds only the
-  naming rules (`resource`, `unit`, `service`, `manifest`, `kube_secret`,
-  `image`, `image_archive`). `Database` names its own pod (`container`,
-  `unit`, `service`, `manifest`, `config_manifest`, `kube_secret`, `image`,
-  `image_archive`) and holds what belongs to PostgreSQL (`volume`, `role`,
-  `secret`, `replication_slot`, `replication_passfile`). `App` names its own
-  pod (`pod`, `unit`, `service`, `manifest`, `config_manifest`, `image`) and
-  has `names` and `database`; it forwards nothing. Every name and every
-  rendered file is byte-identical before and after.
-- **S2. One place for paths and constants.** *[simplify]* Done in code; in
-  the next acceptance run. `settings.py` now holds `KUBE_RUNTIME`
-  (`todo-kube-runtime`), `TOOLS_BIN` and `TOOLS_LIB` (`/opt/todo/bin` and
-  `/lib`), `DR_CONFIG` and `PROMOTION_RECORD` (`~/.config/todo/promotion.json`)
-  and `RPO_TARGET_SECONDS`; app-ops passes `HTTPS_PORT` instead of `'8443'`,
-  and `steps.promotion_record(host)` names the record once. app-ops puts the
-  installer on its path in `app_ops/__init__.py`, so every module can use
-  `settings`. The lab tools keep their own literals: they check the product
-  from outside.
-- **S3. One way to run commands and SQL.** *[simplify]* Done in code; in
-  the next acceptance run. `commands.run` is the one way the installer and
-  the DR tools run a program, and `replication.sql()` the one way they run
-  SQL (on stdin). `app_dr.py` and `app_backup.py` lost their own runners and
-  psql calls; their short limits (120 and 30 seconds) stay. The tests send
-  commands to their fake hosts by patching `subprocess.run`. app-ops keeps
-  its SSH transport, which runs commands on other hosts.
 - **S4. Split only along a real contract.** *[simplify]* Not by line
   count: after S3, `app_backup.py` is 108 lines shorter, and its parts
   (archiving, base backup, restore point, disposable PITR) share one
@@ -466,16 +435,6 @@ between them is not a goal: each app should read on its own.
   its own and can be tested without the rest of the lifecycle. The one
   candidate today is `install.install()` (118 lines), into named steps, if
   that reads better.
-- **S5. Names that say what they do.** *[simplify]* Done: `TodoDr` is
-  `StandbyGroup` (status, preflight and promotion of the whole group) and
-  `TodoBackup` is `DatabaseBackup` (archiving, backups and PITR of one
-  database). Internal names only; files, commands and paths are unchanged.
-- Smaller points from the code review of `9627adb`. Done: PostgreSQL is
-  one shared image (`images.shared_images`), prepared once however many
-  apps there are, so a refresh pulls it once; and `validate_hostname`
-  requires a DNS name (labels of letters, digits and inner hyphens), with
-  `fullmatch`, since the old `$` also let a final newline through.
-
 ## Tests and CI
 
 The fakes check commands and order, not real SQL or Podman behaviour; CI's
@@ -491,24 +450,8 @@ full-stack job and acceptance cover that.
 - **E5. Browser tests for failure.** *[optional]* An expired session and a real
   token refresh against Keycloak, and what the user sees when the backend or
   Keycloak is down.
-- **E6. Say in CI that the package suites run.** *[config]* Done: the job
-  is "Python tests and operations package", its test step names what it runs
-  (installer, DR, app-ops, acceptance tool and packages), and a comment says
-  how the package suites and the operations package smoke test are included.
-- **E7. One fake host for the installer tests.** *[simplify]* Done:
-  `deploy/installer/tests/fake_host.py` has one `FakeHost` that keeps a
-  single host's secrets and images and records every command;
-  `test_install.py`, `test_build.py` and `test_workloads.py` use it and
-  describe only their scenario (the build test adds the render script in a
-  small subclass). The order checks still read `host.calls`.
-- **E8. Error paths in `images.py`.** *[new]* The `commands.run` part is
-  done (S3). For `images.py`: a wrong proxy label, offline with `refresh_images` refused and
-  a missing bundle. The shared PostgreSQL image is done (review of `9627adb`).
-- **E9. The Kube secret test belongs with the installer.** *[simplify]*
-  Done: the two `secrets.create_kube` tests (built in memory, and a
-  differing Kube secret refused) moved from `tests/test_kube_runtime.py` to
-  `deploy/installer/tests/test_secrets.py`, next to the code they test, and
-  use `FakeHost` instead of patching the module's own functions.
+- **E8. Error paths in `images.py`.** *[new]* A wrong proxy label, offline
+  with `refresh_images` refused, and a missing bundle.
 - **Q1. Replication in CI.** *[optional]* *[decision]* Stream between two
   PostgreSQL instances on one runner, so replication is tested before the lab.
   The full-stack job already covers the single host.

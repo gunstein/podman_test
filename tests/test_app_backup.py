@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 import subprocess
 import sys
@@ -19,6 +20,37 @@ SPEC.loader.exec_module(app_backup)
 
 def completed(stdout="", stderr="", returncode=0):
     return subprocess.CompletedProcess([], returncode, stdout, stderr)
+
+
+class Route:
+    """The fake host that receives every command app_backup runs through commands.run.
+
+    Standard input (the SQL replication.sql() sends to psql) is passed on as a
+    last argument, so a fake finds a statement where psql's --command put it.
+    """
+
+    runner = None
+
+    def __call__(self, argv, input=None, timeout=None, **_):
+        return self.runner(list(argv) + ([input.rstrip("\n")] if input is not None else []), timeout)
+
+
+ROUTE = Route()
+_subprocess = mock.patch("subprocess.run", side_effect=ROUTE)
+
+
+def setUpModule():
+    _subprocess.start()
+
+
+def tearDownModule():
+    _subprocess.stop()
+
+
+def backup(runner, **kwargs):
+    """A TodoBackup whose commands go to runner."""
+    ROUTE.runner = runner
+    return app_backup.TodoBackup(**kwargs)
 
 
 class FakeRunner:
@@ -77,8 +109,8 @@ def fake_time():
 
 class TodoBackupTests(unittest.TestCase):
     def tool(self, runner):
-        return app_backup.TodoBackup(
-            runner=runner,
+        return backup(
+            runner,
             clock=lambda: datetime(2026, 8, 29, 12, 34, 56, tzinfo=timezone.utc),
             **fake_time(),
         )
@@ -159,8 +191,16 @@ class TodoBackupTests(unittest.TestCase):
         def timeout_runner(arguments, timeout=None):
             raise subprocess.TimeoutExpired(arguments, timeout)
 
-        with self.assertRaisesRegex(app_backup.BackupError, "timed out"):
+        with self.assertRaisesRegex(app_backup.CommandError, "Live PostgreSQL role check timed out after 30 seconds"):
             self.tool(timeout_runner).database_state()
+
+
+class CommandLineTests(unittest.TestCase):
+    def test_a_failed_command_is_printed_as_an_error_not_a_traceback(self):
+        ROUTE.runner = lambda arguments, timeout: completed(stderr="connection refused", returncode=2)
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual(app_backup.main(["--app", "todo", "status"]), 1)
+        self.assertIn("ERROR: Live PostgreSQL role check failed (exit 2): connection refused", stderr.getvalue())
 
 
 class RestoreEdgeTests(unittest.TestCase):
@@ -169,7 +209,7 @@ class RestoreEdgeTests(unittest.TestCase):
     BACKUP = "base-20260829T123456Z"
 
     def tool(self, runner):
-        return app_backup.TodoBackup(runner=runner, **fake_time())
+        return backup(runner, **fake_time())
 
     def live_names(self, tool):
         app = tool.database
@@ -182,7 +222,7 @@ class RestoreEdgeTests(unittest.TestCase):
     def test_replace_removes_only_the_old_restore_state_then_restores(self):
         tool = self.tool(None)
         runner = FakeRunner(containers={tool.restore_container}, volumes={tool.restore_volume})
-        tool.runner = runner
+        ROUTE.runner = runner
         tool.restore(self.BACKUP, "before_delete", replace=True)
         self.assertEqual(self.removals(runner), [
             ["podman", "rm", "--force", tool.restore_container],
@@ -207,8 +247,8 @@ class RestoreEdgeTests(unittest.TestCase):
 
         tool = self.tool(None)
         runner = MissingBackup(containers={tool.restore_container}, volumes={tool.restore_volume})
-        tool.runner = runner
-        with self.assertRaisesRegex(app_backup.BackupError, "Selected base backup check failed"):
+        ROUTE.runner = runner
+        with self.assertRaisesRegex(app_backup.CommandError, "Selected base backup check failed"):
             tool.restore(self.BACKUP, "before_delete", replace=True)
         self.assertEqual(self.removals(runner), [])
 
@@ -222,7 +262,7 @@ class RestoreEdgeTests(unittest.TestCase):
 
         runner = FailingStart()
         tool = self.tool(runner)
-        with self.assertRaisesRegex(app_backup.BackupError, "Disposable PITR container start failed"):
+        with self.assertRaisesRegex(app_backup.CommandError, r"Disposable PITR container start failed \(exit 125\): cannot start"):
             tool.restore(self.BACKUP, "before_delete", replace=False)
         self.assertEqual(self.removals(runner), [["podman", "rm", "--force", tool.restore_container]])
 
@@ -242,10 +282,10 @@ class RestoreEdgeTests(unittest.TestCase):
                 tool = self.tool(FailingStartAndRemoval())
                 with self.assertRaisesRegex(
                         app_backup.BackupError,
-                        "Disposable PITR container start failed: cannot start; removing "
+                        r"Disposable PITR container start failed \(exit 125\): cannot start; removing "
                         + tool.restore_container + " afterwards failed too") as raised:
                     tool.restore(self.BACKUP, "before_delete", replace=False)
-                self.assertIsInstance(raised.exception.__cause__, app_backup.BackupError)
+                self.assertIsInstance(raised.exception.__cause__, app_backup.CommandError)
 
     def test_a_restore_that_never_pauses_or_stops_early_is_reported(self):
         class NeverPaused(FakeRunner):
@@ -278,7 +318,7 @@ class RestoreEdgeTests(unittest.TestCase):
             time.now += 20
             return completed("t|f\n") if arguments[1] == "exec" else completed()
 
-        tool = app_backup.TodoBackup(runner=slow, sleeper=time.sleep, monotonic=time.monotonic)
+        tool = backup(slow, sleeper=time.sleep, monotonic=time.monotonic)
         with self.assertRaisesRegex(app_backup.BackupError, "within 60 seconds"):
             tool._wait_for_restore_pause()
         self.assertLessEqual(time.now, 60 + 2 * 20 + 1)
@@ -290,11 +330,12 @@ class RestoreEdgeTests(unittest.TestCase):
             self.tool(FakeRunner()).restore_status()
 
     def test_wal_that_is_never_archived_or_cannot_be_inspected(self):
-        for code, message in ((1, "was not archived within 30 seconds"), (125, "WAL archive inspection failed")):
+        for code, message in ((1, "was not archived within 30 seconds"),
+                              (125, r"WAL archive inspection failed \(exit 125\): boom")):
             with self.subTest(code=code):
                 def runner(arguments, timeout=None, code=code):
                     return completed(returncode=code, stderr="boom")
-                with self.assertRaisesRegex(app_backup.BackupError, message):
+                with self.assertRaisesRegex(RuntimeError, message):
                     self.tool(runner)._wait_for_archived_wal("000000010000000000000001")
         with self.assertRaisesRegex(app_backup.BackupError, "Unexpected WAL segment name"):
             self.tool(FakeRunner())._wait_for_archived_wal("../etc/passwd")
@@ -308,7 +349,7 @@ class RestoreEdgeTests(unittest.TestCase):
                               (lambda: tool._wait_for_archived_wal("000000010000000000000001"),
                                "WAL archive inspection timed out"),
                               (lambda: tool._exists("volume", "x"), "inspection timed out")):
-            with self.subTest(message=message), self.assertRaisesRegex(app_backup.BackupError, message):
+            with self.subTest(message=message), self.assertRaisesRegex(app_backup.CommandError, message):
                 call()
 
 
@@ -316,15 +357,15 @@ class ApplicationBackupTests(unittest.TestCase):
     def test_each_backup_and_restore_stays_within_its_app(self):
         for app in app_backup.apps.REPLICATED_DATABASES:
             runner = FakeRunner()
-            tool = app_backup.TodoBackup(runner=runner, database=app)
+            tool = backup(runner, database=app)
             tool.create_backup()
             tool.restore('base-20260829T123456Z', 'before_delete', False)
             commands = runner.commands
-            backup = next(command for command in commands if 'pg_basebackup' in command)
-            self.assertIn('--host=' + app.container, backup)
-            self.assertIn('--username=' + app.role('replicator'), backup)
-            self.assertIn(app.secret('replicator') + ',type=env,target=PGPASSWORD', backup)
-            self.assertIn(app.volume('backup') + ':/backup:z', backup)
+            basebackup = next(command for command in commands if 'pg_basebackup' in command)
+            self.assertIn('--host=' + app.container, basebackup)
+            self.assertIn('--username=' + app.role('replicator'), basebackup)
+            self.assertIn(app.secret('replicator') + ',type=env,target=PGPASSWORD', basebackup)
+            self.assertIn(app.volume('backup') + ':/backup:z', basebackup)
             for other in app_backup.apps.REPLICATED_DATABASES:
                 if other == app:
                     continue
@@ -339,7 +380,7 @@ class ApplicationBackupTests(unittest.TestCase):
         for app in app_backup.apps.REPLICATED_DATABASES:
             runner = FakeRunner(containers={app.names.resource('postgres-restore')},
                                 volumes={app.volume('restore-data')})
-            tool = app_backup.TodoBackup(runner=runner, database=app)
+            tool = backup(runner, database=app)
             with self.assertRaises(app_backup.BackupError):
                 tool.cleanup_restore('yes')
             self.assertEqual(runner.commands, [])
@@ -427,7 +468,7 @@ class ConfigureArchiveTests(unittest.TestCase):
     DATABASES = app_backup.apps.REPLICATED_DATABASES
 
     def configure(self, host, promoted=True, access_changed=False):
-        tools = [app_backup.TodoBackup(runner=host, database=app, **fake_time(),
+        tools = [backup(host, database=app, **fake_time(),
                                         clock=lambda: datetime(2026, 9, 25, 12, 0, 0, 123456, tzinfo=timezone.utc))
                  for app in self.DATABASES]
         self.hba = []
@@ -534,7 +575,7 @@ class ConfigureArchiveTests(unittest.TestCase):
                                      ([{**good, "Destination": "/wrong"}], False),
                                      ([{**good, "RW": False}], False), ([{**good, "Type": "bind"}], False)]:
                 with self.subTest(database=database.name, mounts=mounts):
-                    tool = app_backup.TodoBackup(runner=FakeHost(mounts={database.name: mounts}), database=database)
+                    tool = backup(FakeHost(mounts={database.name: mounts}), database=database)
                     if accepted:
                         tool.require_archive_prerequisites()
                     else:

@@ -254,14 +254,11 @@ why. The seven workloads already log to journald (`LogDriver=journald`), and
   through `logger -t app-ops`): timestamp, host, command, database, result and
   duration, never a secret. app-ops also keeps one log file per run on the
   controller.
-- **L2. Keep the failure reason in the installer.** *[simplify]*
-  `commands.run` reports only `podman secret failed (exit 1)` and drops
-  stderr, so the command must be rerun by hand to see why. Include the stderr
-  tail, except for commands that can print secrets (such as `podman secret
-  inspect`), as app-ops and `app_dr.py` already do. Name the operation, the
-  workload and the step that failed, not only the program. The backends
-  answer a missing OIDC setting with "invalid token"; they should refuse to
-  start without it.
+- **L2. Keep the failure reason.** *[simplify]* Done for commands (with
+  S3): an error from `commands.run` names the step and shows the last three
+  lines the command printed, never for `podman secret` or SQL that sets a
+  password. Left: the backends answer a missing OIDC setting with "invalid
+  token"; they should refuse to start without it.
 - **L3. Backend logging.** *[new]* The backends log almost nothing, and
   `logLevel` in `values.yaml` becomes `LOG_LEVEL` in each app's ConfigMap,
   but no backend reads it. Use it (or remove it), and log rejected tokens
@@ -428,10 +425,13 @@ bottom.
   installer on its path in `app_ops/__init__.py`, so every module can use
   `settings`. The lab tools keep their own literals: they check the product
   from outside.
-- **S3. One way to run commands and SQL.** *[simplify]* `app_dr.py` and
-  `app_backup.py` have their own command runners and error types, and
-  `app_backup.py` spells out its own `psql` calls; use `replication.sql()` and
-  one shared runner.
+- **S3. One way to run commands and SQL.** *[simplify]* Done in code; in
+  the next acceptance run. `commands.run` is the one way the installer and
+  the DR tools run a program, and `replication.sql()` the one way they run
+  SQL (on stdin). `app_dr.py` and `app_backup.py` lost their own runners and
+  psql calls; their short limits (120 and 30 seconds) stay. The tests send
+  commands to their fake hosts by patching `subprocess.run`. app-ops keeps
+  its SSH transport, which runs commands on other hosts.
 - **S4. Smaller files and functions.** *[simplify]* Split `app_backup.py`
   (722 lines: archiving, backup, restore) and `replication.py` (635 lines:
   bootstrap and reseed, status checks), and `install.install()` (118 lines)
@@ -477,11 +477,8 @@ full-stack job and acceptance cover that.
   helper in `deploy/installer/tests`, so the tests describe scenarios. Keep
   the order checks that find commands in the call list: the order is part
   of what the installer must get right.
-- **E8. Error paths in `commands.run` and `images.py`.** *[new]* Test that a
-  non-zero exit raises, that `allowed=(0, 1)` works, that stdout and stderr
-  never reach the error message, and decide and test what a missing program
-  gives (today `FileNotFoundError` escapes). Do it together with L2. For
-  `images.py`: a wrong proxy label, offline with `refresh_images` refused, a
+- **E8. Error paths in `images.py`.** *[new]* The `commands.run` part is
+  done (S3). For `images.py`: a wrong proxy label, offline with `refresh_images` refused, a
   missing bundle, and the shared PostgreSQL image loaded once.
 - **E9. The Kube secret test belongs with the installer.** *[simplify]*
   `test_a_kube_secret_that_differs_from_its_podman_secret_is_refused` (R1.2)

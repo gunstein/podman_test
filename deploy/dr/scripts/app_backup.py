@@ -18,7 +18,6 @@ A restore never touches the live database.
 import argparse
 import json
 import re
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -33,6 +32,7 @@ from typing import Callable, Optional, Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from app_dr_host import replication  # noqa: E402
 from app_installer import apps, keycloak, settings, stack  # noqa: E402
+from app_installer.commands import CommandError, run  # noqa: E402
 
 DATA_DIRECTORY = "/var/lib/postgresql/data"
 BACKUP_DIRECTORY = "/var/lib/postgresql/backup"
@@ -62,32 +62,20 @@ class BackupError(RuntimeError):
     """An expected, operator-actionable backup error."""
 
 
-Runner = Callable[[Sequence[str], Optional[float]], subprocess.CompletedProcess]
-
-
-def run_command(
-    arguments: Sequence[str], timeout: Optional[float] = settings.COMMAND_TIMEOUT
-) -> subprocess.CompletedProcess:
-    """Run a command and capture its output; the caller decides what a failure means."""
-    return subprocess.run(
-        list(arguments),
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+# Most commands here answer within seconds; the copies pass longer limits.
+TIMEOUT = 30
 
 
 class TodoBackup:
     """Backup, archiving and disposable restore for one database.
 
-    runner, clock, sleeper and monotonic replace subprocess, the time of day,
+    Commands run through commands.run and SQL through replication.sql(), like
+    every DR tool. clock, sleeper and monotonic replace the time of day,
     sleeping and the wait deadline clock in tests.
     """
 
     def __init__(
         self,
-        runner: Runner = run_command,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         sleeper: Callable[[float], None] = time.sleep,
         *, database: stack.Database = apps.SHARED_RESOURCE_OWNER.database,
@@ -98,56 +86,29 @@ class TodoBackup:
         self.backup_volume = database.volume('backup')
         self.restore_volume = database.volume('restore-data')
         self.restore_container = database.names.resource('postgres-restore')
-        self.runner = runner
         self.clock = clock
         self.sleeper = sleeper
         self.monotonic = monotonic
 
-    def _run(
-        self,
-        arguments: Sequence[str],
-        description: str,
-        timeout: Optional[float] = 30,
-    ) -> str:
-        """Run a command, return its stdout, and raise BackupError naming description on failure."""
-        try:
-            result = self.runner(arguments, timeout)
-        except subprocess.TimeoutExpired as error:
-            raise BackupError(
-                f"{description} timed out after {timeout:g} seconds"
-            ) from error
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout).strip()
-            suffix = f": {detail}" if detail else ""
-            raise BackupError(f"{description} failed{suffix}")
-        return result.stdout.strip()
+    def _run(self, arguments: Sequence[str], description: str, timeout: float = TIMEOUT) -> str:
+        """commands.run with this tool's default limit; returns stdout."""
+        return run(*arguments, description=description, timeout=timeout).stdout.strip()
+
+    def _sql(self, sql: str, description: str, *, container: Optional[str] = None,
+             timeout: float = TIMEOUT) -> str:
+        """replication.sql() in the live database, or in container (the disposable restore)."""
+        return replication.sql(self.database, sql, container=container, description=description,
+                               timeout=timeout)
 
     def _exists(self, kind: str, name: str) -> bool:
         """podman <kind> exists <name>; any answer other than yes or no is an error."""
-        try:
-            result = self.runner(["podman", kind, "exists", name], 30)
-        except subprocess.TimeoutExpired as error:
-            raise BackupError(
-                f"Podman {kind} inspection timed out after 30 seconds"
-            ) from error
-        if result.returncode not in (0, 1):
-            detail = (result.stderr or result.stdout).strip()
-            raise BackupError(f"Could not inspect Podman {kind} {name}: {detail}")
-        return result.returncode == 0
+        return run("podman", kind, "exists", name, allowed=(0, 1), timeout=TIMEOUT,
+                   description=f"Podman {kind} {name} inspection").returncode == 0
 
     def database_state(self) -> tuple[bool, bool]:
         """Return (in recovery, read-only) for the live database."""
-        output = self._run(
-            [
-                "podman", "exec", self.database.container, "psql",
-                "--username", self.database.name, "--dbname", "postgres",
-                "--tuples-only", "--no-align", "--field-separator=|",
-                "--command",
-                "SELECT pg_is_in_recovery(), "
-                "current_setting('transaction_read_only');",
-            ],
-            "Live PostgreSQL role check",
-        )
+        output = self._sql("SELECT pg_is_in_recovery(), current_setting('transaction_read_only');",
+                           "Live PostgreSQL role check")
         if output not in ("t|on", "f|off"):
             raise BackupError(f"Unexpected live PostgreSQL role: {output!r}")
         recovery, read_only = output.split("|")
@@ -161,18 +122,12 @@ class TodoBackup:
 
     def archive_status(self) -> str:
         """Raw archive_mode, last archived and failed WAL, timeout and counters, '|'-separated."""
-        return self._run(
-            [
-                "podman", "exec", self.database.container, "psql",
-                "--username", self.database.name, "--dbname", "postgres",
-                "--tuples-only", "--no-align", "--field-separator=|",
-                "--command",
-                "SELECT current_setting('archive_mode'), "
-                "COALESCE(last_archived_wal, ''), "
-                "COALESCE(last_failed_wal, ''), "
-                "current_setting('archive_timeout'), archived_count, failed_count "
-                "FROM pg_stat_archiver;",
-            ],
+        return self._sql(
+            "SELECT current_setting('archive_mode'), "
+            "COALESCE(last_archived_wal, ''), "
+            "COALESCE(last_failed_wal, ''), "
+            "current_setting('archive_timeout'), archived_count, failed_count "
+            "FROM pg_stat_archiver;",
             "WAL archive status query",
         )
 
@@ -262,18 +217,6 @@ class TodoBackup:
         )
         return name
 
-    def _sql(self, sql: str, description: str) -> str:
-        """Run one SQL statement in the live database and return its output."""
-        return self._run(
-            [
-                "podman", "exec", self.database.container, "psql",
-                "--username", self.database.name, "--dbname", "postgres",
-                "--tuples-only", "--no-align", "--field-separator=|",
-                "--set", "ON_ERROR_STOP=1", "--command", sql,
-            ],
-            description,
-        )
-
     def _archive_settings(self) -> str:
         """The current archive_mode, archive_command and archive_timeout, '|'-separated."""
         return self._sql(
@@ -285,10 +228,9 @@ class TodoBackup:
     def require_archive_prerequisites(self) -> None:
         """Read-only gates; the group checks all of them before its first write."""
         service = self.database.service
-        try:
-            active = self.runner(["systemctl", "--user", "is-active", service], 30).stdout.strip()
-        except subprocess.TimeoutExpired as error:
-            raise BackupError(f"{service} state query timed out after 30 seconds") from error
+        # is-active exits 3 for an inactive or failed unit and 4 for an unknown one.
+        active = run("systemctl", "--user", "is-active", service, allowed=(0, 3, 4), timeout=TIMEOUT,
+                     description=f"{service} state query").stdout.strip()
         if active != "active":
             raise BackupError(f"{service} is not active")
         self.require_writable_primary()
@@ -330,14 +272,10 @@ class TodoBackup:
         )
         if self._archive_settings() == f"on|{ARCHIVE_COMMAND}|{ARCHIVE_TIMEOUT}":
             return access, directories == "changed", False
-        self._run(
-            [
-                "podman", "exec", self.database.container, "psql",
-                "--username", self.database.name, "--dbname", "postgres", "--set", "ON_ERROR_STOP=1",
-                "--command", "ALTER SYSTEM SET archive_mode = 'on';",
-                "--command", f"ALTER SYSTEM SET archive_command = '{ARCHIVE_COMMAND}';",
-                "--command", f"ALTER SYSTEM SET archive_timeout = '{ARCHIVE_TIMEOUT}';",
-            ],
+        self._sql(
+            "ALTER SYSTEM SET archive_mode = 'on';\n"
+            f"ALTER SYSTEM SET archive_command = '{ARCHIVE_COMMAND}';\n"
+            f"ALTER SYSTEM SET archive_timeout = '{ARCHIVE_TIMEOUT}';",
             "Continuous WAL archiving configuration",
         )
         return access, directories == "changed", True
@@ -358,34 +296,9 @@ class TodoBackup:
         """
         self.require_writable_primary()
         self._validate_restore_point(name)
-        output = self._run(
-            [
-                "podman", "exec", self.database.container, "psql",
-                "--username", self.database.name, "--dbname", "postgres",
-                "--tuples-only", "--no-align",
-                "--command",
-                f"SELECT pg_create_restore_point('{name}');",
-            ],
-            "Named restore point creation",
-        )
-        wal = self._run(
-            [
-                "podman", "exec", self.database.container, "psql",
-                "--username", self.database.name, "--dbname", "postgres",
-                "--tuples-only", "--no-align",
-                "--command", "SELECT pg_walfile_name(pg_current_wal_lsn());",
-            ],
-            "Current WAL segment query",
-        )
-        self._run(
-            [
-                "podman", "exec", self.database.container, "psql",
-                "--username", self.database.name, "--dbname", "postgres",
-                "--tuples-only", "--no-align",
-                "--command", "SELECT pg_switch_wal();",
-            ],
-            "WAL switch after restore point",
-        )
+        output = self._sql(f"SELECT pg_create_restore_point('{name}');", "Named restore point creation")
+        wal = self._sql("SELECT pg_walfile_name(pg_current_wal_lsn());", "Current WAL segment query")
+        self._sql("SELECT pg_switch_wal();", "WAL switch after restore point")
         self._wait_for_archived_wal(wal)
         return output
 
@@ -397,20 +310,10 @@ class TodoBackup:
         deadline = self.monotonic() + 30
         while self.monotonic() < deadline:
             limit = max(1.0, deadline - self.monotonic())
-            try:
-                result = self.runner(
-                    ["podman", "exec", self.database.container, "test", "-f", archive_path],
-                    limit,
-                )
-            except subprocess.TimeoutExpired as error:
-                raise BackupError(
-                    f"WAL archive inspection timed out after {limit:g} seconds"
-                ) from error
-            if result.returncode == 0:
+            found = run("podman", "exec", self.database.container, "test", "-f", archive_path,
+                        allowed=(0, 1), timeout=limit, description="WAL archive inspection")
+            if found.returncode == 0:
                 return
-            if result.returncode != 1:
-                detail = (result.stderr or result.stdout).strip()
-                raise BackupError(f"WAL archive inspection failed: {detail}")
             self.sleeper(1)
         raise BackupError(f"WAL segment was not archived within 30 seconds: {wal}")
 
@@ -523,31 +426,21 @@ class TodoBackup:
         The caller then reports why the start failed, not why the cleanup did.
         """
         try:
-            return self.runner(["podman", "rm", "--force", self.restore_container], 30).returncode == 0
-        except (subprocess.TimeoutExpired, OSError):
+            run("podman", "rm", "--force", self.restore_container, timeout=TIMEOUT)
+        except CommandError:
             return False
+        return True
 
     def _wait_for_restore_pause(self) -> None:
         """Wait up to 60 seconds for the restore to pause at its target: one deadline for every query."""
         deadline = self.monotonic() + 60
         while self.monotonic() < deadline:
             limit = max(1.0, deadline - self.monotonic())
-            try:
-                result = self.runner(
-                    [
-                        "podman", "exec", self.restore_container,
-                        "psql", "--username", self.database.name, "--dbname", "postgres",
-                        "--tuples-only", "--no-align", "--field-separator=|",
-                        "--command",
-                        "SELECT pg_is_in_recovery(), pg_is_wal_replay_paused();",
-                    ],
-                    limit,
-                )
-            except subprocess.TimeoutExpired as error:
-                raise BackupError(
-                    f"Disposable PITR status query timed out after {limit:g} seconds"
-                ) from error
-            if result.returncode == 0 and result.stdout.strip() == "t|t":
+            # psql exits 2 while PostgreSQL still refuses connections, and 1 while
+            # it cannot answer yet; keep waiting then. A hang is still an error.
+            if replication.sql(self.database, "SELECT pg_is_in_recovery(), pg_is_wal_replay_paused();",
+                               container=self.restore_container, timeout=limit, allowed=(0, 1, 2),
+                               description="Disposable PITR status query") == "t|t":
                 return
             if not self._exists("container", self.restore_container):
                 raise BackupError("Disposable PITR container stopped during recovery")
@@ -558,17 +451,9 @@ class TodoBackup:
         """'recovery|paused|read_only' for the restore container; 't|t|on' means paused at the target."""
         if not self._exists("container", self.restore_container):
             raise BackupError("Disposable PITR container does not exist")
-        return self._run(
-            [
-                "podman", "exec", self.restore_container,
-                "psql", "--username", self.database.name, "--dbname", "postgres",
-                "--tuples-only", "--no-align", "--field-separator=|",
-                "--command",
-                "SELECT pg_is_in_recovery(), pg_is_wal_replay_paused(), "
-                "current_setting('transaction_read_only');",
-            ],
-            "Disposable PITR status query",
-        )
+        return self._sql(
+            "SELECT pg_is_in_recovery(), pg_is_wal_replay_paused(), current_setting('transaction_read_only');",
+            "Disposable PITR status query", container=self.restore_container)
 
     def cleanup_restore(self, confirmation: str) -> None:
         """Delete the restore container and volume; confirmation must be the container name."""
@@ -609,7 +494,6 @@ def configure(tools: Sequence[TodoBackup], journal: Path) -> dict:
     stopped meanwhile. Each changed database then archives a restore point,
     which proves archiving works end to end.
     """
-    runner = tools[0].runner
     try:
         replication.require_promoted_group(journal)
         for tool in tools:
@@ -618,8 +502,9 @@ def configure(tools: Sequence[TodoBackup], journal: Path) -> dict:
         restart = [tool for tool, _access, _directories, needed in prepared if needed]
         if restart:
             for service in apps.services(databases=False):
-                if runner(["systemctl", "--user", "stop", service], settings.COMMAND_TIMEOUT).returncode not in (0, 5):
-                    raise BackupError(f"Could not stop {service} before the PostgreSQL restart")
+                # Exit 5 means the unit is not loaded, which is as good as stopped.
+                run("systemctl", "--user", "stop", service, allowed=(0, 5),
+                    description=f"Stopping {service} before the PostgreSQL restart")
         tools[0]._run(["systemctl", "--user", "daemon-reload"], "User systemd reload")
         for tool in restart:
             tool._run(["systemctl", "--user", "restart", tool.database.service],
@@ -639,7 +524,7 @@ def configure(tools: Sequence[TodoBackup], journal: Path) -> dict:
                 verified[tool.database.name] = point
     except BackupError:
         raise
-    except (RuntimeError, subprocess.TimeoutExpired) as error:
+    except RuntimeError as error:
         raise BackupError(str(error)) from error
     return {"changed": any(any(flags) for _tool, *flags in prepared),
             "restarted": [tool.database.name for tool in restart], "verified": verified}
@@ -713,7 +598,7 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
                 tool.cleanup_restore(args.confirm)
                 print(prefix + "Disposable PITR container and volume removed.")
         return 0
-    except BackupError as error:
+    except RuntimeError as error:  # BackupError, and CommandError from a failed command
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
 

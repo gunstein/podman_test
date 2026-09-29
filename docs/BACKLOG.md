@@ -487,9 +487,10 @@ full-stack job and acceptance cover that.
   done (S3). For `images.py`: a wrong proxy label, offline with `refresh_images` refused, a
   missing bundle, and the shared PostgreSQL image loaded once.
 - **E9. The Kube secret test belongs with the installer.** *[simplify]*
-  `test_a_kube_secret_that_differs_from_its_podman_secret_is_refused` (R1.2)
-  lies in `tests/test_kube_runtime.py`; move it to `deploy/installer/tests`,
-  next to the code it tests.
+  Done: the two `secrets.create_kube` tests (built in memory, and a
+  differing Kube secret refused) moved from `tests/test_kube_runtime.py` to
+  `deploy/installer/tests/test_secrets.py`, next to the code they test, and
+  use `FakeHost` instead of patching the module's own functions.
 - **Q1. Replication in CI.** *[optional]* *[decision]* Stream between two
   PostgreSQL instances on one runner, so replication is tested before the lab.
   The full-stack job already covers the single host.

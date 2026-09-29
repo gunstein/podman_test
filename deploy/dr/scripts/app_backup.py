@@ -59,7 +59,7 @@ WAL_SEGMENT = re.compile(r"[0-9A-F]{24}")
 
 
 class BackupError(RuntimeError):
-    """An expected, operator-actionable backup error."""
+    """A check of this tool's own refused, or configure() failed; a failed command is a CommandError."""
 
 
 # Most commands here answer within seconds; the copies pass longer limits.
@@ -598,7 +598,7 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
                 tool.cleanup_restore(args.confirm)
                 print(prefix + "Disposable PITR container and volume removed.")
         return 0
-    except RuntimeError as error:  # BackupError, and CommandError from a failed command
+    except (BackupError, CommandError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
 

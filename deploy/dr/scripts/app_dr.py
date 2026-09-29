@@ -42,7 +42,12 @@ TIMEOUT = 120
 
 
 class DrError(RuntimeError):
-    """An expected, operator-actionable DR error."""
+    """A check of this tool's own refused: wrong confirmation, host, settings or state.
+
+    A failed command raises commands.CommandError, and a broken replication
+    rule (replication.require_standby) a RuntimeError that says which; main()
+    prints all of them as "ERROR: ...".
+    """
 
 
 @dataclass(frozen=True)
@@ -162,12 +167,9 @@ class TodoDr:
                                description=f'{database.name}: PostgreSQL recovery query')
 
     def database_status(self, database=None):
-        """The database's role and replay position; raises DrError if it cannot be read."""
+        """The database's role and replay position; raises RuntimeError if it cannot be read."""
         database = database or self.databases[0]
-        try:
-            return DatabaseStatus(**replication.status(database, query=self._query))
-        except (ValueError, RuntimeError) as error:
-            raise DrError(str(error)) from error
+        return DatabaseStatus(**replication.status(database, query=self._query))
 
     def primary_reachable(self, database=None):
         """True if the configured primary still accepts TCP on this database's port."""
@@ -229,10 +231,7 @@ class TodoDr:
             if self.container_health(database) != 'healthy':
                 raise DrError(f'{database.name}: PostgreSQL container is not healthy')
             # The shared standby gate: read-only, both LSNs known, nothing left to replay.
-            try:
-                state = DatabaseStatus(**replication.require_standby(database, query=self._query))
-            except (ValueError, RuntimeError) as error:
-                raise DrError(str(error)) from error
+            state = DatabaseStatus(**replication.require_standby(database, query=self._query))
             if self.primary_reachable(database):
                 raise DrError('Primary PostgreSQL still answers at '
                               f'{self.config.primary_address}:{database.replication_port}; fencing is not demonstrated')
@@ -345,7 +344,7 @@ def main(arguments: Optional[Sequence[str]] = None):
             states = tool.promote(args.confirm_primary_fenced, args.confirm_promotion)
             print('Promotion completed: every database is writable: ' + ', '.join(states))
         return 0
-    except (DrError, OSError, RuntimeError, ValueError) as error:
+    except (OSError, RuntimeError, ValueError) as error:  # DrError, CommandError and replication's own
         print(f'ERROR: {error}', file=sys.stderr)
         return 1
 

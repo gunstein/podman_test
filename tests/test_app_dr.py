@@ -109,13 +109,13 @@ class TodoDrTests(unittest.TestCase):
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
     def test_preflight_rejects_missing_lsn(self, _hostname):
         tool, _runner = self.tool(["t|on||"])
-        with self.assertRaisesRegex(app_dr.DrError, "LSN is unavailable"):
+        with self.assertRaisesRegex(RuntimeError, "LSN is unavailable"):
             tool.preflight("todo-primary is fenced")
 
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
     def test_preflight_rejects_local_apply_lag(self, _hostname):
         tool, _runner = self.tool(["t|on|0/20|0/10"])
-        with self.assertRaisesRegex(app_dr.DrError, "unreplayed local WAL"):
+        with self.assertRaisesRegex(RuntimeError, "unreplayed local WAL"):
             tool.preflight("todo-primary is fenced")
 
     @mock.patch.object(socket, "gethostname", return_value="todo-standby")
@@ -127,7 +127,7 @@ class TodoDrTests(unittest.TestCase):
             with self.subTest(receive=receive, replay=replay):
                 tool, _runner = self.tool([f"t|on|{receive}|{replay}"])
                 if lag:
-                    with self.assertRaisesRegex(app_dr.DrError, "unreplayed local WAL: 1 bytes"):
+                    with self.assertRaisesRegex(RuntimeError, "unreplayed local WAL: 1 bytes"):
                         tool.preflight("todo-primary is fenced")
                 else:
                     self.assertEqual(tool.preflight("todo-primary is fenced")["todo"].apply_lag_bytes, 0)
@@ -241,7 +241,7 @@ class GroupPromotionTests(unittest.TestCase):
 
     def test_last_app_lag_prevents_every_promotion(self):
         self.states['notes-postgres'] = 't|on|0/20|0/10'
-        with self.assertRaisesRegex(app_dr.DrError, 'notes.*unreplayed'):
+        with self.assertRaisesRegex(RuntimeError, 'notes.*unreplayed'):
             self.tool().promote('primary is fenced', 'standby')
         self.assertFalse(any('pg_ctl' in command for command in self.commands))
         self.assertFalse(self.journal.exists())
@@ -249,7 +249,7 @@ class GroupPromotionTests(unittest.TestCase):
     def test_last_app_missing_lsn_or_wrong_role_prevents_every_promotion(self):
         for state in ('t|on||', 'f|off||', 't|off|0/10|0/10'):
             self.states['notes-postgres'] = state
-            with self.assertRaises(app_dr.DrError):
+            with self.assertRaisesRegex(RuntimeError, 'notes: '):
                 self.tool().promote('primary is fenced', 'standby')
         self.assertFalse(any('pg_ctl' in command for command in self.commands))
         self.assertFalse(self.journal.exists())

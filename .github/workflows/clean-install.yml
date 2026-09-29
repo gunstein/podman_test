@@ -104,6 +104,8 @@ jobs:
             deploy/dr/scripts/app-quarantine.sh \
             deploy/scripts/trust-files.sh \
             deploy/scripts/lab/trust-serving-ca.sh \
+            deploy/scripts/lab/helpers.sh \
+            deploy/scripts/lab/provision-user.sh \
             deploy/dr/scripts/bootstrap-ssh-key.sh \
             deploy/scripts/wait-ready.sh \
             deploy/scripts/dev/run-mutation-tests.sh

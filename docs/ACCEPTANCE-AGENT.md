@@ -186,7 +186,13 @@ Pre-approvals (durable for this run only; every STOP rule still applies):
   [x] Destructive reseed of VM 107's three databases after verified backup/PITR
   [x] Cleanup of the disposable PITR restore containers/volumes
   [x] Store the generated testuser password in a 0600 tmpfs file for this run
-Not approved: anything else destructive, any source change, commit or push.
+Not approved: anything else destructive, any source change, commit or push,
+and any change on the client outside the run folder (do not stop, start or
+reconfigure services or processes there; report a blocker instead).
+
+Run every C9 step with `$A step NAME`, one step at a time, and read its output
+before the next. Never type a step's command line yourself. A step that ends
+in STOP or REFUSED is a STOP at once.
 ```
 
 ---
@@ -311,6 +317,9 @@ echo "Wrote $dir/pve.env"
 12. Do not act on a theory. When something does not match the guide, record
     your observations and diagnosis, then STOP (C3). Fixing things is the
     operator's decision.
+13. **Never** type a C9 step's command line yourself, and never run two steps
+    in one command. Run each step alone with `$A step NAME` (C9.1), read what
+    it prints, and only then run the next.
 
 ### C3. What STOP means
 
@@ -383,8 +392,8 @@ Next I will: <what you do afterwards>
 `~/todo-acceptance-runs/<RUN_ID>/` (outside the checkout): the checks and
 state changes around the product through `deploy/scripts/lab/acceptance.py`
 (`$A`), the product's own commands through the `product`, `vm` and `ops`
-helpers (C9.1). Both put each step's full output and exit status in its own
-`logs/<step>...log`; `acceptance.py` also appends a line to `record.jsonl` and
+helpers; you run every step with `$A step NAME` (C9.1). Both put each step's
+full output and exit status in its own `logs/<step>...log`; `acceptance.py` also appends a line to `record.jsonl` and
 builds `REPORT.md` from it at the end. Keep short notes in `run-record.md`
 there as you go (what you did, any STOP).
 
@@ -430,12 +439,12 @@ commands inside the VMs so a missing sudo rule fails immediately instead of
 hanging. Run app-ops as C9.13 says; it uses `sudo -n` only and never asks
 for a password. Never run `ansible` or `ansible-playbook`: Ansible is retired.
 
-**Long commands.** Bundle builds, `bootstrap-standby` and `rebuild-standby`
-can take more than ten minutes. Start them in the background with output to a
-log file, for example
-the `ops ... &` line in C9.10,
-then read the log until the `exit=` line appears. If your tool times out, the
-command may still be running: read the log and `ps`; never start it a second time.
+**Long commands.** The bundle build, `bootstrap-standby`, `failover` and
+`rebuild-standby` can take more than ten minutes. Their lines end in `&`, so
+`$A step` starts them in the background with their log. Read the log until
+the `exit=` line appears; the next `$A step` refuses until then. If your own
+tool times out while waiting, the command is still running: read the log,
+never start it a second time.
 
 **Interactive prompts in ACCEPTANCE.md.** Replace `read -rp "Client IPv4..."`
 style prompts for non-secret values with the value from the kickoff. For
@@ -517,9 +526,10 @@ listings plus connection tests instead of `pve-firewall` output.
 
 The phases are those of `docs/ACCEPTANCE.md`; read each one there before you
 start it, for the why. What you run is the fixed list of commands below, in
-order: C9.1 explains the helpers, C9.2 to C9.11 are the phases. Values use the
-lab defaults (`.102` = VM 107 = `todo-primary`, `.108` = VM 108 =
-`todo-standby`, client `.100`); use the kickoff values.
+order, each with `$A step NAME`: C9.1 explains how, C9.2 to C9.11 are the
+phases. Values use the lab defaults (`.102` = VM 107 = `todo-primary`, `.108`
+= VM 108 = `todo-standby`, client `.100`); if the kickoff values differ, STOP
+and ask.
 
 #### C9.0 Before phase 1
 
@@ -548,40 +558,67 @@ lab defaults (`.102` = VM 107 = `todo-primary`, `.108` = VM 108 =
    `get /cluster/ha/resources`. `01-3 do rollback` records VM 107's `onboot`
    from its clean snapshot; phase 9 restores that value.
 
-#### C9.1 Commands, logs and the helpers you use
+#### C9.1 How you run the steps
 
-Everything below is a fixed command. Run them in order, from the repository
-root on the client, in one shell where you first set:
+Every line below that starts with `$A --step`, `vm`, `ops` or `product` is one
+step, and its name is the word after that: `06-3` for
+`$A --step 06-3 do fence 107`, `06-6-preflight` for `vm 06-6-preflight ...`.
+You never type those lines. You run each step by its name, from the
+repository root on the client, in one shell where you first set:
 
 ```bash
 RUN_ID="<run ID from the kickoff>"
 RUN=~/todo-acceptance-runs/$RUN_ID
 mkdir -p "$RUN/logs"
 A="python3 deploy/scripts/lab/acceptance.py --run $RUN_ID"
-# A product command: its start time, full output and exit status in logs/<step>.log.
-# It runs once: an existing log means the step already ran, and it refuses.
-product() { local log="$RUN/logs/$1.log"; shift; if [ -e "$log" ]; then echo "STOP: $log exists, the step already ran; never run it again" >&2; return 1; fi; echo "# start $(date --iso-8601=seconds)" > "$log"; "$@" >> "$log" 2>&1; echo "exit=$?" >> "$log"; tail -n 4 "$log"; }
-# A command on a VM, and an app-ops command on the controller VM.
-vm() { product "$1" ssh -o BatchMode=yes gunstein@"$2" "$3"; }
-ops() { vm "$1" "$2" "cd ~/todo-operations && PYTHONPATH=\$PWD/deploy/dr PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops $3"; }
 ```
 
-- `$A ...` is `deploy/scripts/lab/acceptance.py`: it runs the glue around the
-  product the same way every time, writes its own log and a line in
-  `record.jsonl`, compares the result itself and ends with `RESULT: PASS`,
-  `FAIL` or `REFUSED`. FAIL or REFUSED: STOP (C3). It refuses to repeat a
-  failed `do`; only the operator can allow that (`--operator-approved`).
-- `product`, `vm` and `ops` run the product's own commands exactly as written
-  here (the same as ACCEPTANCE.md). Read the tail it prints: the JSON line
-  must be the one given after `→`, and the last line `exit=0`. A step whose
-  log name ends in `-refused` must end in `exit=1` with the message given.
-  Anything else: STOP.
-- Values below are the lab defaults (`.102` = VM 107 = `todo-primary`,
-  `.108` = VM 108 = `todo-standby`, client `.100`, snapshot `clean-agent`);
-  use the kickoff values. Do not add commands of your own around these.
-- `rebuild-standby` and the builds can take over ten minutes: start those
-  `product`/`ops` lines with a trailing `&`, then read the log until its
-  `exit=` line appears (C5 "Long commands"). Never start one twice.
+and then, one step at a time, in the order of this guide:
+
+```text
+$A step 01-1
+$A step 01-2
+...
+```
+
+`$A step NAME` (`deploy/scripts/lab/acceptance.py`) reads the line from this
+guide in the checkout and runs it exactly as written, with the helpers from
+`deploy/scripts/lab/helpers.sh`. It refuses (`REFUSED: ...`, exit 3, nothing
+run) unless NAME is the next step of the guide and the step before it passed.
+It ends with `STEP NAME: PASS` or `STEP NAME: STOP, <why>`; a STOP is a STOP
+(C3). A step runs once; the one exception is C8 item 4, a failed `check` run
+once more. So a changed command, a skipped step or a step after a failure
+cannot run: that stopped runs 24 and 26.
+
+What `step` checks for you:
+
+- An `acceptance.py` line (`$A --step ...`): its `RESULT: PASS`. That tool runs
+  the glue around the product the same way every time, writes its own log and
+  a line in `record.jsonl`, and compares the result itself. It refuses to
+  repeat a failed `do`; only the operator can allow that
+  (`--operator-approved`).
+- A product line (`product`, `vm`, `ops`, the product's own commands as in
+  ACCEPTANCE.md): its log `logs/NAME.log` holds the start time, the exact
+  command (`# command: ...`), the full output and the exit status. It must end
+  with `exit=0`, or `exit=1` for a name ending in `-refused`, and print what
+  the comment gives after `→`: that JSON line, or that word.
+
+What you still check yourself, in the output `step` prints: everything else a
+comment says (for example `must print nothing` or `zero failed archive
+attempts`) and what the text under a block asks for. If it does not match:
+STOP, even when `step` said PASS.
+
+- Values are the lab defaults (`.102` = VM 107 = `todo-primary`, `.108` =
+  VM 108 = `todo-standby`, client `.100`, snapshot `clean-agent`). `step` runs
+  them as written; if the kickoff values differ, STOP and ask.
+- A line ending in `&` (`failover`, `rebuild-standby`) takes several minutes:
+  `step` starts it in the background and returns at once. Read its log until
+  the `exit=` line appears; the next step refuses until then. Never start it
+  twice (C5 "Long commands").
+- The only other commands you type are the read-only ones in C9.0, the
+  secret file in C6, the client trust in C9.4 (or the script you prepare for
+  the operator), `rm` of the secret file and `$A report full` at the end
+  (C9.11).
 
 #### C9.2 Phases 1 and 2 — Clean hosts, build and stage (pre-approved reset)
 
@@ -594,7 +631,7 @@ $A --step 01-5 check clean-host 192.168.0.102
 $A --step 01-6 check clean-host 192.168.0.108
 vm 01-7-prerequisites-102 192.168.0.102 'sudo -n dnf install -y python3-jinja2 python3-pyyaml'
 vm 01-8-prerequisites-108 192.168.0.108 'sudo -n dnf install -y python3-jinja2 python3-pyyaml'
-product 02-1-build-offline deploy/offline/build-bundle.sh
+product 02-1-build-offline deploy/offline/build-bundle.sh &   # wait for exit=
 product 02-2-build-operations deploy/scripts/build-operations-package.sh
 product 02-3-transfer-102 scp dist/todo-offline-m12.tar.gz dist/todo-offline-m12.tar.gz.sha256 dist/todo-operations.tar.gz dist/todo-operations.tar.gz.sha256 gunstein@192.168.0.102:
 product 02-4-transfer-108 scp dist/todo-offline-m12.tar.gz dist/todo-offline-m12.tar.gz.sha256 dist/todo-operations.tar.gz dist/todo-operations.tar.gz.sha256 gunstein@192.168.0.108:
@@ -616,10 +653,14 @@ $A --step 03-4 check services 192.168.0.102 app
 ```
 
 Client name resolution and CA trust for `.102`: C9.4 (the operator runs it
-when `CLIENT_SUDO: no`). Then generate the testuser password (C6) and
-provision the user (C9.4, last block):
+when `CLIENT_SUDO: no`). Then generate the testuser password (C6), and set up
+the browser environment and the test user. `todo-backend/.venv` is ignored by
+Git; `git status --porcelain` must stay empty. `provision-user.sh` forwards
+port 8080 through one SSH tunnel and closes exactly that tunnel:
 
 ```bash
+product 03-4a-browser-env sh -c 'python3 -m venv todo-backend/.venv && todo-backend/.venv/bin/python -m pip install -r todo-backend/requirements-e2e.txt && todo-backend/.venv/bin/python -m playwright install chromium'
+product 03-4b-provision-user deploy/scripts/lab/provision-user.sh gunstein@192.168.0.102
 $A --step 03-5 check ca 192.168.0.102
 $A --step 03-6 check headers
 $A --step 03-7 check browser
@@ -635,7 +676,7 @@ $A --step 03-14 check services 192.168.0.102 app
 The trust log shows `update` errors for files not yet trusted, then a
 successful `add`: expected.
 
-#### C9.4 Client trust and the test user (phases 3 and 7)
+#### C9.4 Client trust (phases 3 and 7)
 
 With `CLIENT_SUDO: yes` (and `sudo -n true` working on the client), run these
 yourself. With `CLIENT_SUDO: no`, write them as
@@ -649,28 +690,8 @@ sudo sed -i -e '/[[:space:]]todo\.test\([[:space:]]\|$\)/d' -e '/[[:space:]]note
 deploy/scripts/lab/trust-serving-ca.sh "gunstein@$IP"
 ```
 
-Phase 3 only, once per run: the browser environment and the test user.
-`todo-backend/.venv` is ignored by Git; `git status --porcelain` must stay
-empty. `e2e/provision_user.py` talks to `http://127.0.0.1:8080`, so forward
-that port; close exactly this tunnel with its control socket, never with
-`pkill -f` (the pattern matches your own shell):
-
-```bash
-product 03-4a-browser-env sh -c 'python3 -m venv todo-backend/.venv && todo-backend/.venv/bin/python -m pip install -r todo-backend/requirements-e2e.txt && todo-backend/.venv/bin/python -m playwright install chromium'
-tunnel="$XDG_RUNTIME_DIR/todo-acceptance/tunnel"
-ssh -o ExitOnForwardFailure=yes -o ControlMaster=yes -o ControlPath="$tunnel" \
-  -f -N -L 127.0.0.1:8080:127.0.0.1:8080 gunstein@192.168.0.102
-(
-  KEYCLOAK_ADMIN_PASSWORD="$(ssh gunstein@192.168.0.102 "podman secret inspect --showsecret --format '{{.SecretData}}' keycloak-admin-password")"
-  E2E_PASSWORD="$(cat "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password")"
-  export KEYCLOAK_ADMIN_PASSWORD E2E_PASSWORD
-  todo-backend/.venv/bin/python e2e/provision_user.py
-) > "$RUN/logs/03-4b-provision-user.log" 2>&1; echo "exit=$?" >> "$RUN/logs/03-4b-provision-user.log"
-ssh -o ControlPath="$tunnel" -O exit gunstein@192.168.0.102
-```
-
-The user lives in the replicated Keycloak database and survives failover; do
-not provision it again after promotion.
+The test user (`03-4b`, C9.3) lives in the replicated Keycloak database and
+survives failover; it is not provisioned again after promotion.
 
 #### C9.5 Phase 4 — Trust, inventories and standby bootstrap
 
@@ -681,13 +702,13 @@ Before phase 4, on `.102` (C9.13): trust app-ops twice (`changed`, then
 vm 04-1-trust-ops 192.168.0.102 'cd ~/todo-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
 vm 04-2-trust-ops-again 192.168.0.102 'cd ~/todo-operations && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → unchanged
 vm 04-3-inventory 192.168.0.102 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-primary: {role: primary, address: 192.168.0.102, local: true}" "  todo-standby: {role: standby, address: 192.168.0.108}" > initial.yaml && cat initial.yaml'
-echo "C9.13 item 1: first sudo refusal check skipped (lab sudoers)" > "$RUN/logs/04-4-sudo-refusal-skip.txt"
+product 04-4-sudo-refusal-skip echo 'C9.13 item 1: first sudo refusal check skipped (lab sudoers)'
 $A --step 04-5 do pin-ssh 192.168.0.102 192.168.0.108
 $A --step 04-6 do pin-ssh 192.168.0.108 192.168.0.102
 ops 04-7-preflight-refused 192.168.0.102 '--inventory initial.yaml preflight-standby'   # exit=1, message names the missing rich rule
 $A --step 04-8 do firewall-replication 192.168.0.108 192.168.0.102 add
 ops 04-9-preflight 192.168.0.102 '--inventory initial.yaml preflight-standby'           # → {"changed": false}
-ops 04-10-bootstrap 192.168.0.102 '--inventory initial.yaml bootstrap-standby'          # → {"changed": true}
+ops 04-10-bootstrap 192.168.0.102 '--inventory initial.yaml bootstrap-standby' &        # → {"changed": true}; wait for exit=
 ops 04-11-status 192.168.0.102 '--inventory initial.yaml replication-status'            # → {"changed": false}
 ops 04-12-status-again 192.168.0.102 '--inventory initial.yaml replication-status'      # → {"changed": false}
 vm 04-13-no-secrets 192.168.0.102 'cd ~/todo-operations && find . -newer SHA256SUMS -type f'   # only initial.yaml
@@ -812,20 +833,14 @@ vm 08-7-mark 192.168.0.108 'python3 /opt/todo/bin/app_backup.py mark --name acce
 vm 08-8-after-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR after restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR after restore point');\""
 ```
 
-The two restores use the Todo and Notes backup names that `08-4` logged.
-These fixed lines read them; STOP if either is empty:
+The two restores use the Todo and Notes backup names that `08-4` logged:
+`backup_name todo` reads the name from that log (`helpers.sh`). If a name is
+missing, `app_backup.py` refuses `--backup` without a value before it changes
+anything, and the step is a STOP.
 
 ```bash
-todo_backup=$(sed -n 's/^todo: Verified base backup: \(base-[0-9TZ]*\)$/\1/p' "$RUN/logs/08-4-backup-create.log")
-notes_backup=$(sed -n 's/^notes: Verified base backup: \(base-[0-9TZ]*\)$/\1/p' "$RUN/logs/08-4-backup-create.log")
-echo "todo=$todo_backup notes=$notes_backup"   # two base-... names; STOP if either is empty
-```
-
-Only when both names are printed, restore:
-
-```bash
-vm 08-9-restore-todo 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app todo restore --backup $todo_backup --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app todo restore-status && podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec todo-postgres-restore psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec todo-postgres psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
-vm 08-10-restore-notes 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app notes restore --backup $notes_backup --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app notes restore-status && podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec notes-postgres-restore psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec notes-postgres psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
+vm 08-9-restore-todo 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app todo restore --backup $(backup_name todo) --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app todo restore-status && podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec todo-postgres-restore psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec todo-postgres psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
+vm 08-10-restore-notes 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app notes restore --backup $(backup_name notes) --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app notes restore-status && podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec notes-postgres-restore psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec notes-postgres psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
 ```
 
 Each must show `recovery|paused|read_only = t|t|on`, network `none`, only the
@@ -876,8 +891,7 @@ $A --step 09-11f check replication-tls 192.168.0.108
 $A --step 09-11g do markers phase9
 $A --step 09-11h check markers 192.168.0.102
 $A --step 09-12a do proxmox-firewall 107 off
-ONBOOT="<the onboot value that 01-3 do rollback recorded, 0 or 1>"
-$A --step 09-12b do onboot 107 "$ONBOOT"
+$A --step 09-12b do onboot 107 "$(recorded_onboot)"   # the value 01-3 read from the clean snapshot
 ```
 
 #### C9.11 Phases 10 and 11 — Final reboots and verdict

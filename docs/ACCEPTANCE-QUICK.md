@@ -113,8 +113,9 @@ $A --step 04-1 check ca 192.168.0.102
 $A --step 04-2 check headers
 ```
 
-**5. Browser.** Generate the testuser password (C6), provision the user
-(C9.3 step 6), then:
+**5. Browser.** Generate the testuser password (C6), set up the browser
+environment and provision the user as steps `03-4a` and `03-4b` of C9.3 do
+(`deploy/scripts/lab/provision-user.sh gunstein@192.168.0.102`), then:
 
 ```bash
 $A --step 05-3 check browser

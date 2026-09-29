@@ -49,21 +49,13 @@ class AcceptanceGuideTests(unittest.TestCase):
             self.assertNotRegex(line.split('  #')[0], r'<[^<>]+>', line)
 
     def test_pitr_backup_names_are_read_from_the_create_log(self):
+        # Run 23 stopped because the agent typed the backup names; the restore
+        # lines read them from the 08-4 log (helpers.sh backup_name, tested in
+        # test_acceptance_step.py).
         guide = (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text()
-        lines = [line for line in guide.splitlines() if line.startswith(('todo_backup=', 'notes_backup='))]
-        self.assertEqual(len(lines), 2)
-        with tempfile.TemporaryDirectory() as run:
-            (Path(run) / 'logs').mkdir()
-            (Path(run) / 'logs/08-4-backup-create.log').write_text(
-                '# start 2026-09-28T19:19:40+02:00\n'
-                'todo: Verified base backup: base-20260928T191946Z\n'
-                'notes: Verified base backup: base-20260928T191948Z\n'
-                'keycloak: Verified base backup: base-20260928T191950Z\n'
-                'exit=0\n')
-            script = '\n'.join(lines) + '\necho "$todo_backup $notes_backup"\n'
-            result = subprocess.run(['bash', '-c', script], env={'RUN': run, 'PATH': '/usr/bin:/bin'},
-                                    capture_output=True, text=True, check=True)
-        self.assertEqual(result.stdout, 'base-20260928T191946Z base-20260928T191948Z\n')
+        for app in ('todo', 'notes'):
+            line = next(line for line in guide.splitlines() if line.startswith(f'vm 08-{9 if app == "todo" else 10}-'))
+            self.assertIn(f'--app {app} restore --backup $(backup_name {app}) --target acceptance_before_after', line)
 
     def test_direct_mutation_examples_keep_exact_confirmation_arguments(self):
         commands = '\n'.join(shell_blocks()).replace('\\\n', '')
@@ -168,24 +160,6 @@ class AcceptanceGuideTests(unittest.TestCase):
                 self.assertTrue((path.parent / target.split('#')[0]).is_file(), target)
 
 
-class ProductHelperTests(unittest.TestCase):
-    """The guide's product() helper, as written in C9.1: one log per step, and a step runs once."""
-
-    def test_a_second_run_of_a_step_refuses_and_keeps_the_first_log(self):
-        import tempfile
-        text = (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text()
-        helper = next(line for line in text.splitlines() if line.startswith('product() {'))
-        with tempfile.TemporaryDirectory() as run:
-            (Path(run) / 'logs').mkdir()
-            script = f'RUN={shlex.quote(run)}\n{helper}\nproduct 06-10-x echo first\nproduct 06-10-x echo second'
-            result = subprocess.run(['bash', '-c', script], capture_output=True, text=True, check=False)
-            log = (Path(run) / 'logs/06-10-x.log').read_text().splitlines()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('STOP:', result.stderr)
-        self.assertTrue(log[0].startswith('# start '))
-        self.assertEqual(log[1:], ['first', 'exit=0'])
-
-
 class AppOpsGuideTests(unittest.TestCase):
     """The acceptance guides only use commands, flags and inventories app-ops accepts."""
 
@@ -212,7 +186,6 @@ class AppOpsGuideTests(unittest.TestCase):
         self.assertEqual(used - {'sync-standby-secrets'}, set(self.cli.COMMANDS) - {'sync-standby-secrets'})
 
     def test_example_inventories_load_for_their_commands(self):
-        import tempfile
         examples = re.findall(r'```yaml\n(.*?)```', self.guide, re.S)
         self.assertEqual(len(examples), 2)
         for text, roles in zip(examples, (self.cli.INITIAL, self.cli.RECOVERY)):

@@ -7,9 +7,16 @@ are what acceptance tests, and they run exactly as docs/ACCEPTANCE.md writes
 them. This tool runs the glue around them the same way every time, compares
 the result with the expected values itself and records it.
 
+  acceptance.py --run RUN_ID step 03-4           (the next line of the guide)
   acceptance.py --run RUN_ID --step 03-4 check services 192.168.0.102 app
   acceptance.py --run RUN_ID --step 03-9 do reboot 107 192.168.0.102 app
   acceptance.py --run RUN_ID report full       (or quick)
+
+step    runs one command line of docs/ACCEPTANCE-AGENT.md C9 exactly as the
+        guide writes it, named by its step (what follows "$A --step", "vm",
+        "ops" or "product" on that line). It refuses unless that is the next
+        step of the guide and the step before it passed, so a changed
+        command, a skipped step or a step after a failure cannot run.
 
 check   reads only and may be repeated.
 do      changes state. After a FAIL it refuses the same command with the same
@@ -965,13 +972,126 @@ def report(run_directory, guide):
     return '\n'.join(lines) + '\n', passed
 
 
+# The agent guide's command lines, run one at a time by "step".
+AGENT_GUIDE = 'docs/ACCEPTANCE-AGENT.md'
+HELPERS = 'deploy/scripts/lab/helpers.sh'
+STEP_LINE = re.compile(r'^(?:\$A --step (\S+) |(?:vm|ops|product) ([0-9][\w.-]*) )')
+
+
+def guide_lines(text):
+    """The guide's steps in order: (name, command line) for each fixed line in its bash blocks."""
+    steps = []
+    for block in re.findall(r'```bash\n(.*?)```', text, re.S):
+        for line in block.splitlines():
+            match = STEP_LINE.match(line)
+            if match:
+                steps.append((match.group(1) or match.group(2), line))
+    return steps
+
+
+def without_comment(line):
+    """The command part of a guide line: everything before its '   # ...' comment."""
+    return re.sub(r'\s+#\s.*$', '', line)
+
+
+def product_state(run_directory, name, line):
+    """'not run', 'running', 'passed', or why a product step failed, read from its log.
+
+    It must end with exit=0 (exit=1 for a *-refused step), and print what its
+    comment gives after '→': a JSON line with those values, or that word.
+    """
+    log = run_directory / 'logs' / f'{name}.log'
+    if not log.exists():
+        return 'not run'
+    lines = log.read_text(errors='replace').splitlines()
+    exits = [text for text in lines if text.startswith('exit=')]
+    if not exits:
+        return 'running'
+    wanted = 'exit=1' if name.endswith('-refused') else 'exit=0'
+    if exits[-1] != wanted:
+        return f'ended with {exits[-1]}, not {wanted}'
+    expected = re.search(r'#\s*→\s*([^;]+)', line)
+    if expected:
+        text = expected.group(1).strip()
+        if text.startswith('{'):
+            pairs = re.findall(r'"\w+": (?:true|false|[0-9]+|"[^"]*")', text)
+            if not any(output.startswith('{"changed"') and all(pair in output for pair in pairs)
+                       for output in lines):
+                return f'did not print {text}'
+        elif text not in (output.strip() for output in lines):
+            return f'did not print {text}'
+    return 'passed'
+
+
+def tool_state(entries, name):
+    """'not run', 'running', 'passed', or why an acceptance.py step failed, read from record.jsonl."""
+    results = [entry for entry in entries if entry['step'] == name]
+    if not results:
+        return 'not run'
+    last = results[-1]
+    if last['result'] == 'STARTED':
+        return 'running'
+    return 'passed' if last['result'] == 'PASS' else f'{last["result"]} ({last["log"]})'
+
+
+def run_step(run_directory, run_id, name):
+    """Run the guide line named name if it is the next step and the one before passed; 0 if it passed."""
+    steps = guide_lines((ROOT / AGENT_GUIDE).read_text())
+    names = [step for step, _ in steps]
+    if name not in names:
+        raise Refused(f'{name} is not a step in {AGENT_GUIDE} C9')
+    entries = read_record(run_directory)
+
+    def state(step, line):
+        return tool_state(entries, step) if line.startswith('$A ') else product_state(run_directory, step, line)
+
+    states = [state(step, line) for step, line in steps]
+    index = names.index(name)
+    line = steps[index][1]
+    if states[index] != 'not run':
+        # C8: a failed read-only check may run once more (after check services passes).
+        checks = [entry for entry in entries if entry['step'] == name and entry['result'] != 'STARTED']
+        repeat = ' check ' in line and states[index] not in ('passed', 'running') and len(checks) == 1
+        if not repeat:
+            raise Refused(f'{name} already ran ({states[index]}); a step runs once. STOP and ask the operator')
+    else:
+        following = names[states.index('not run')]
+        if name != following:
+            raise Refused(f'the next step is {following}, not {name}')
+        if index and states[index - 1] != 'passed':
+            previous = names[index - 1]
+            if states[index - 1] == 'running':
+                raise Refused(f'{previous} is still running: wait until its log ends with exit=')
+            raise Refused(f'{previous} {states[index - 1]}: STOP (docs/ACCEPTANCE-AGENT.md C3)')
+
+    (run_directory / 'logs').mkdir(parents=True, exist_ok=True)
+    command = without_comment(line)
+    background = command.endswith('&')
+    script = f'source {HELPERS}\n{command.rstrip("& ")}\n'
+    environment = {**os.environ, 'RUN': str(run_directory), 'RUN_ID': run_id,
+                   'A': f'python3 deploy/scripts/lab/acceptance.py --run {run_id}'}
+    print(f'$ {line}', flush=True)
+    if background:
+        # A long step (failover, rebuild) runs on even if this process is stopped.
+        subprocess.Popen(['bash', '-c', script], cwd=ROOT, env=environment, start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f'STARTED in the background: logs/{name}.log ends with exit= when it is done; '
+              'the next step waits for that')
+        return 0
+    subprocess.run(['bash', '-c', script], cwd=ROOT, env=environment)
+    entries = read_record(run_directory)  # an acceptance.py step has added its result
+    result = state(name, line)
+    print(f'STEP {name}: ' + ('PASS' if result == 'passed' else f'STOP, {result}'))
+    return 0 if result == 'passed' else 1
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--run', required=True, help='run ID, the run folder name')
     parser.add_argument('--step', help='phase and step from the guide, for example 03-9 (not for report)')
     parser.add_argument('--user', default='gunstein', help='service user on the VMs')
     parser.add_argument('--operator-approved', default='', help='why the operator allows a second run')
-    parser.add_argument('kind', choices=('check', 'do', 'report'))
+    parser.add_argument('kind', choices=('check', 'do', 'report', 'step'))
     parser.add_argument('command', nargs='?')
     parser.add_argument('arguments', nargs='*')
     args = parser.parse_args(argv)
@@ -985,6 +1105,14 @@ def main(argv=None):
         (runs / args.run / 'REPORT.md').write_text(text)
         print(text, end='')
         return 0 if passed else 1
+    if args.kind == 'step':
+        if not args.command or args.arguments or args.step or not re.fullmatch(r'[0-9]{2}-[\w.-]+', args.command):
+            parser.error('step takes one step name from the guide, for example 06-6-preflight or 06-3')
+        try:
+            return run_step(runs / args.run, args.run, args.command)
+        except Refused as error:
+            print(f'REFUSED: {error}', file=sys.stderr)
+            return 3
     name = args.command
     if not name or not args.step:
         parser.error('check and do need --step and a command')

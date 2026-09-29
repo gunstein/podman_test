@@ -47,3 +47,14 @@ class BuildInstallTests(unittest.TestCase):
                 self.assertEqual(sum(a[:2] == ['podman', 'pull'] for a in calls), 1)
                 self.assertLess(calls.index(render), next(i for i, a in enumerate(calls)
                                                          if a[:2] == ['podman', 'build']))
+
+    def test_a_refresh_pulls_the_shared_postgres_image_once_for_every_app(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            shutil.copytree(ROOT / 'deploy/quadlet', root / 'deploy/quadlet')
+            directory = root / 'quadlet'
+            with RenderingHost(unit_directory=directory / 'todo-kube-runtime') as host, \
+                    patch('app_installer.keycloak.configure'):
+                install.install(root, mode='server', quadlet_dir=directory, refresh_images=True)
+            self.assertEqual(host.ran('podman', 'pull'), [['podman', 'pull', 'docker.io/library/postgres:17.11']])
+            self.assertEqual(len(host.ran('podman', 'build')), 6)

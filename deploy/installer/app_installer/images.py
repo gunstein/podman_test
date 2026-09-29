@@ -1,4 +1,4 @@
-"""Build or load application images and the singular shared infrastructure images."""
+"""Build or load each app's images and, once, the images every app shares."""
 from __future__ import annotations
 
 import json
@@ -19,15 +19,20 @@ class Image:
 
 
 def image_list(app: apps.App) -> tuple[Image, ...]:
-    """The backend, frontend and PostgreSQL images of one app."""
-    return (*(Image(component, app.image(component), app.image_archive(component), app.names.resource(component))
-              for component in ("backend", "frontend")),
-            Image("postgres", app.database.image, app.database.image_archive, None))
+    """The backend and frontend images of one app; only they are built per app."""
+    return tuple(Image(component, app.image(component), app.image_archive(component), app.names.resource(component))
+                 for component in ("backend", "frontend"))
 
 
 def shared_images() -> tuple[Image, ...]:
-    """The images every app shares: the nginx proxy and Keycloak."""
-    return (Image("proxy", apps.PROXY_IMAGE, apps.PROXY_ARCHIVE, "proxy"),
+    """The images that are prepared once however many apps there are.
+
+    PostgreSQL runs every database (each app's and Keycloak's), so it is one
+    shared image like the nginx proxy and Keycloak, not one per app.
+    """
+    postgres = apps.KEYCLOAK_DATABASE  # every Database has the same image and archive
+    return (Image("postgres", postgres.image, postgres.image_archive, None),
+            Image("proxy", apps.PROXY_IMAGE, apps.PROXY_ARCHIVE, "proxy"),
             Image("keycloak", apps.KEYCLOAK_IMAGE, apps.KEYCLOAK_ARCHIVE, "keycloak"))
 
 
@@ -73,12 +78,12 @@ def prepare(project_root, deployment_mode, bundle_directory="", refresh_images=F
     """Prepare one app's images, plus the shared ones unless include_shared is False."""
     specifications = image_list(app)
     if include_shared:
-        specifications = specifications[:2] + shared_images() + specifications[2:]
+        specifications += shared_images()
     return _prepare(project_root, deployment_mode, bundle_directory, refresh_images, specifications)
 
 
 def prepare_shared(project_root, deployment_mode, bundle_directory="", refresh_images=False):
-    """Prepare only the shared proxy and Keycloak images."""
+    """Prepare only the shared images: PostgreSQL, the proxy and Keycloak."""
     return _prepare(project_root, deployment_mode, bundle_directory, refresh_images, shared_images())
 
 

@@ -134,11 +134,11 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         return changed or configured
     arguments = (root, directory, runtime, rendered)
     changed = False
-    # postgres is the one image shared by every database (settings.POSTGRES_IMAGE), so a
+    # postgres is the one image shared by every database (images.shared_images), so a
     # postgres image change restarts every postgres service; backend/frontend images are
     # per-app and only ever restart that app's own service. This keeps an unrelated app's
     # (or component's) update from taking down the whole stack.
-    postgres_image_changed = any(image_changes[app.name]['postgres'] for app in applications)
+    postgres_image_changed = shared_images['postgres']
     restart = set()
     for app in applications:
         postgres_changed = workloads.install_postgres(*arguments, database=app.database)

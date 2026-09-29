@@ -29,6 +29,11 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `37c49c1` run 26: stopped in phase 6 by the agent, which ran `06-6` and
+  `06-10` without their confirmation arguments and went on past the
+  failure; the product refused both before any change, no promotion
+  ([record](docs/history/ACCEPTANCE-37c49c1.md)). R5, S2, S3, S5 and the
+  rest since `24b32ee` still wait for a clean run.
 - `24b32ee` run 25: CLEAN PASS ([record](docs/history/ACCEPTANCE-24b32ee.md)),
   accepting R1-R3 from the code review of `9627adb`, with a new agent
   session.

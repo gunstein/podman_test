@@ -436,10 +436,10 @@ class TodoBackup:
         deadline = self.monotonic() + 60
         while self.monotonic() < deadline:
             limit = max(1.0, deadline - self.monotonic())
-            # psql exits 2 while PostgreSQL still refuses connections, and 1 while
-            # it cannot answer yet; keep waiting then. A hang is still an error.
+            # psql exits 2 when it cannot connect, as while PostgreSQL still starts;
+            # keep waiting then. Any other failure, and a hang, is an error at once.
             if replication.sql(self.database, "SELECT pg_is_in_recovery(), pg_is_wal_replay_paused();",
-                               container=self.restore_container, timeout=limit, allowed=(0, 1, 2),
+                               container=self.restore_container, timeout=limit, allowed=(0, 2),
                                description="Disposable PITR status query") == "t|t":
                 return
             if not self._exists("container", self.restore_container):

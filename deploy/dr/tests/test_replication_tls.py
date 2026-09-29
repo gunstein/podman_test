@@ -79,7 +79,7 @@ class InstallServerTlsTests(unittest.TestCase):
     def install(self, settings):
         writes, statements = [], []
 
-        def run(*argv, input=None, allowed=(0,), timeout=None):
+        def run(*argv, input=None, allowed=(0,), timeout=None, secret_output=False):
             if argv[0] == 'openssl':
                 return commands.run(*argv, allowed=allowed)
             if argv[:3] == ('podman', 'exec', APP.container) and argv[3] == 'cat':
@@ -87,6 +87,8 @@ class InstallServerTlsTests(unittest.TestCase):
                                                    self.container.get('crt', ''), '')
             self.assertEqual(argv[:6], ('podman', 'exec', '-i', APP.container, 'sh', '-c'))
             target = argv[6].rsplit('/', 1)[1]
+            # The key goes on stdin, so an error must never show this command's output.
+            self.assertTrue(secret_output)
             writes.append(target)
             self.container['crt' if target == 'server.crt' else 'key'] = input
             return subprocess.CompletedProcess(argv, 0, '', '')

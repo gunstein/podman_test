@@ -48,6 +48,13 @@ class RunTests(unittest.TestCase):
         with self.assertRaisesRegex(commands.CommandError, "no-such-program is not installed or not on PATH"):
             commands.run("no-such-program", "--version")
 
+    def test_a_program_that_cannot_start_raises_command_error(self):
+        # So a caller that catches CommandError (a cleanup after a failure) never
+        # lets a PermissionError replace the error it reports.
+        with patch("subprocess.run", side_effect=PermissionError(13, "Permission denied")):
+            with self.assertRaisesRegex(commands.CommandError, "podman rm could not start: .*Permission denied"):
+                commands.run("podman", "rm", "--force", "x")
+
     def test_the_default_limit_is_finite(self):
         self.assertEqual(commands.run.__kwdefaults__["timeout"], settings.COMMAND_TIMEOUT)
         for limit in (settings.COMMAND_TIMEOUT, settings.HEALTH_TIMEOUT, settings.IMAGE_TIMEOUT,

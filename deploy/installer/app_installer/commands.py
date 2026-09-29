@@ -8,7 +8,7 @@ ERROR_LINES = 3
 
 
 class CommandError(RuntimeError):
-    """A command failed, ran out of time or is not installed."""
+    """A command failed, ran out of time, or could not start (not installed, no permission)."""
 
 
 def run(*argv, input=None, allowed=(0,), timeout=settings.COMMAND_TIMEOUT, description=None,
@@ -31,6 +31,8 @@ def run(*argv, input=None, allowed=(0,), timeout=settings.COMMAND_TIMEOUT, descr
         raise CommandError(f"{step} timed out after {timeout:g} seconds") from None
     except FileNotFoundError:
         raise CommandError(f"{step} failed: {argv[0]} is not installed or not on PATH") from None
+    except OSError as error:
+        raise CommandError(f"{step} could not start: {error}") from None
     if result.returncode not in allowed:
         message = f"{step} failed (exit {result.returncode})"
         if not (secret_output or argv[:2] == ["podman", "secret"]):

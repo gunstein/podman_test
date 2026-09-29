@@ -40,11 +40,8 @@ RENEW_SECONDS = 30 * 24 * 3600
 
 
 def openssl(*arguments, allowed=(0,)):
-    """Run the host's openssl; a missing command is named, not a bare traceback."""
-    try:
-        return run('openssl', *arguments, allowed=allowed)
-    except FileNotFoundError:
-        raise RuntimeError('openssl is required on the host for replication TLS') from None
+    """Run the host's openssl; commands.run names it if it is missing."""
+    return run('openssl', *arguments, allowed=allowed)
 
 
 def make_ca(directory):
@@ -131,9 +128,10 @@ def install_server_tls(database, node_address):
         if not current.read_text().strip() or not certificate_ok(current, ca_certificate, node_address):
             key, certificate = issue(directory, ca_key, ca_certificate, node_address)
             for source, target in ((key, 'server.key'), (certificate, 'server.crt')):
+                # stdin holds the private key: never show this command's output in an error.
                 run('podman', 'exec', '-i', container, 'sh', '-c',
                     f'umask 077 && cat > {DATA}/{target}.new && mv {DATA}/{target}.new {DATA}/{target}',
-                    input=source.read_text())
+                    input=source.read_text(), secret_output=True)
             changed = True
     from .replication import sql
     if sql(database, "SELECT current_setting('ssl'), current_setting('ssl_min_protocol_version');") != 'on|TLSv1.2':

@@ -53,9 +53,9 @@ def address(value):
     return str(ipaddress.IPv4Address(value))
 
 
-def sql(database, statement, *, dbname='postgres', container=None, description=None,
+def sql(database, statement, *, container=None, description=None,
         timeout=settings.COMMAND_TIMEOUT, secret_output=False, allowed=(0,)):
-    """Run SQL with psql inside the database's container; the one way DR code runs SQL.
+    """Run SQL with psql in the database's postgres database; the one way DR code runs SQL.
 
     The statement goes on stdin, never in argv. Fields come back separated by
     "|" with no header, and psql stops at the first error. container defaults
@@ -66,7 +66,7 @@ def sql(database, statement, *, dbname='postgres', container=None, description=N
     """
     return run('podman', 'exec', '--interactive', container or database.container, 'psql',
                '--no-psqlrc', '--set', 'ON_ERROR_STOP=1', '--username', database.name,
-               '--dbname', dbname, '--tuples-only', '--no-align', '--field-separator=|',
+               '--dbname', 'postgres', '--tuples-only', '--no-align', '--field-separator=|',
                input=statement + '\n', description=description or f'{database.name}: SQL',
                timeout=timeout, secret_output=secret_output, allowed=allowed).stdout.strip()
 

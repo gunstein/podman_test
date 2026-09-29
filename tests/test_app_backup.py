@@ -309,6 +309,30 @@ class RestoreEdgeTests(unittest.TestCase):
                 with self.assertRaisesRegex(app_backup.BackupError, message):
                     self.tool(runner)._wait_for_restore_pause()
 
+    def test_the_restore_wait_retries_only_while_psql_cannot_connect(self):
+        # psql exits 2 when the server refuses connections (still starting): wait.
+        # Exit 1 is a fatal error in psql itself: report it at once, not after 60 seconds.
+        class Starting(FakeRunner):
+            def __init__(self, first_code):
+                super().__init__(containers={app_backup.apps.SHARED_RESOURCE_OWNER.names.resource("postgres-restore")})
+                self.first_code, self.polls = first_code, 0
+
+            def __call__(self, arguments, timeout=None):
+                if "pg_is_wal_replay_paused" in arguments[-1]:
+                    self.polls += 1
+                    if self.polls == 1:
+                        return completed(stderr="psql: error", returncode=self.first_code)
+                    return completed("t|t\n")
+                return super().__call__(arguments, timeout)
+
+        runner = Starting(2)
+        self.tool(runner)._wait_for_restore_pause()
+        self.assertEqual(runner.polls, 2)
+        runner = Starting(1)
+        with self.assertRaisesRegex(app_backup.CommandError, r"PITR status query failed \(exit 1\): psql: error"):
+            self.tool(runner)._wait_for_restore_pause()
+        self.assertEqual(runner.polls, 1)
+
     def test_the_restore_wait_is_one_deadline_even_when_each_query_is_slow(self):
         time = FakeTime()
         limits = []

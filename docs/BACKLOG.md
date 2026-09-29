@@ -48,6 +48,12 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 4. fapolicyd (F0 first), firewalls (W) and data checks (C).
 5. The rest.
 
+For a single host without DR (`install.sh` only), what matters, in order:
+B1 (backups; today there are none), the nginx part of U2 (the certificate
+expires after 397 days without a restart), M1 for disk space and failed
+units, and Q3 (security updates, which `install.sh` can roll out). Then U3
+and L4. F0, S4, E3, E8 and O2 do not change how a single host runs.
+
 The real setup has two machines and no third, on separate hardware at separate
 physical sites. D2 and L6 are therefore designed for two hosts that each keep
 what the other would lose: each host backs up its own database copy (D2), and
@@ -231,6 +237,19 @@ WAL on the primary is bounded (`max_slot_wal_keep_size=1GB`): a standby that is
 down too long invalidates its slot, `cluster-status` reports it, and the standby
 is rebuilt. What is missing is anything that tells the operator.
 
+- **B1. Backups on a single host.** *[new]* A host installed with
+  `install.sh` alone has no backup at all: `app_backup.py` and WAL archiving
+  come only with DR (`app-ops install-dr-tool` and `configure-backup`), and
+  the installer treats `/opt/todo/bin/app_backup.py` as a sign of a DR host
+  and then refuses to install or update. A named volume is storage, not a
+  backup (ARCHITECTURE.md): a lost disk, a mistaken delete or a failed update
+  loses the data. Give a single host its own backups without making it a DR
+  host, so `install.sh` keeps working: a nightly full base backup of each
+  database with pruning, from the same kind of systemd timer as M2, and a
+  documented restore. Decide whether a single host also archives WAL (PITR
+  to any point, at the cost of M2's pruning and M4) or keeps only the
+  nightly backups (restore to last night). Reuse `app_backup.py` where it
+  fits rather than a second implementation.
 - **M1. Scheduled checks that alert.** *[new]* Today an operator only learns
   that replication stopped, a slot was invalidated, WAL archiving fails or a
   disk fills up by running `app_dr.py status`, `app_backup.py status` or

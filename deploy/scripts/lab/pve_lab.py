@@ -56,6 +56,20 @@ def load_config(environ=os.environ):
     return values
 
 
+def tls_context(cafile):
+    """Verify the Proxmox API against its own root CA only: certificate required, hostname checked.
+
+    Since Python 3.13 the default context also sets VERIFY_X509_STRICT, which
+    rejects a CA without the Key Usage extension, and the root CA Proxmox VE
+    generates (pve-root-ca.pem) has none. Only that strict RFC 5280 check is
+    turned off, as before Python 3.13; the chain must still lead to cafile and
+    the certificate must still name PVE_HOST.
+    """
+    context = ssl.create_default_context(cafile=cafile)
+    context.verify_flags &= ~getattr(ssl, 'VERIFY_X509_STRICT', 0)
+    return context
+
+
 class Client:
     """Proxmox API calls with the token, over TLS verified against PVE_CA."""
     def __init__(self, config, opener=None, sleep=time.sleep):
@@ -63,8 +77,7 @@ class Client:
         self.base = f'https://{config["PVE_HOST"]}:8006/api2/json'
         self.sleep = sleep
         if opener is None:
-            context = ssl.create_default_context(cafile=config['PVE_CA'])
-            handler = urllib.request.HTTPSHandler(context=context)
+            handler = urllib.request.HTTPSHandler(context=tls_context(config['PVE_CA']))
             opener = urllib.request.build_opener(handler).open
         self.open = opener
 

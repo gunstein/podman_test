@@ -202,3 +202,73 @@ class PortsClosedTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TlsContextTests(unittest.TestCase):
+    """Proxmox's own root CA has no Key Usage; tls_context still verifies the chain and the name."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.directory = Path(tempfile.mkdtemp())
+
+        def openssl(*arguments):
+            subprocess.run(['openssl', *arguments], cwd=cls.directory, check=True, capture_output=True)
+
+        for ca in ('pve-root', 'other-root'):
+            # Like pve-root-ca.pem: a CA certificate with basicConstraints and no keyUsage.
+            openssl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '2', '-subj', f'/CN={ca}',
+                    '-addext', 'basicConstraints=critical,CA:TRUE', '-keyout', f'{ca}.key', '-out', f'{ca}.pem')
+        openssl('req', '-new', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=localhost',
+                '-keyout', 'server.key', '-out', 'server.csr')
+        (cls.directory / 'server.ext').write_text('subjectAltName=DNS:localhost\nbasicConstraints=CA:FALSE\n'
+                                                  'keyUsage=digitalSignature,keyEncipherment\n'
+                                                  'extendedKeyUsage=serverAuth\n')
+        openssl('x509', '-req', '-in', 'server.csr', '-CA', 'pve-root.pem', '-CAkey', 'pve-root.key',
+                '-CAcreateserial', '-days', '2', '-extfile', 'server.ext', '-out', 'server.pem')
+
+    @classmethod
+    def tearDownClass(cls):
+        subprocess.run(['rm', '-rf', str(cls.directory)], check=True)
+
+    def handshake(self, context, hostname):
+        """Connect to a local TLS server with the Proxmox-like certificate; raise if verification fails."""
+        import ssl
+        import threading
+        server = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        server.load_cert_chain(self.directory / 'server.pem', self.directory / 'server.key')
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen(1)
+
+            def accept():
+                connection, _ = listener.accept()
+                try:
+                    with server.wrap_socket(connection, server_side=True):
+                        pass
+                except (ssl.SSLError, OSError):
+                    pass
+
+            thread = threading.Thread(target=accept)
+            thread.start()
+            try:
+                with socket.create_connection(listener.getsockname(), timeout=5) as raw, \
+                        context.wrap_socket(raw, server_hostname=hostname):
+                    pass
+            finally:
+                thread.join(5)
+
+    def test_the_proxmox_ca_without_key_usage_is_accepted_but_nothing_else_is_relaxed(self):
+        import ssl
+        context = pve_lab.tls_context(str(self.directory / 'pve-root.pem'))
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+        self.assertFalse(context.verify_flags & ssl.VERIFY_X509_STRICT)
+        self.handshake(context, 'localhost')
+        strict = pve_lab.tls_context(str(self.directory / 'pve-root.pem'))
+        strict.verify_flags |= ssl.VERIFY_X509_STRICT  # Python 3.13's default: this CA fails it
+        with self.assertRaisesRegex(ssl.SSLCertVerificationError, '(?i)key usage'):
+            self.handshake(strict, 'localhost')
+        with self.assertRaises(ssl.SSLCertVerificationError):
+            self.handshake(pve_lab.tls_context(str(self.directory / 'pve-root.pem')), 'pve.example.org')
+        with self.assertRaises(ssl.SSLCertVerificationError):
+            self.handshake(pve_lab.tls_context(str(self.directory / 'other-root.pem')), 'localhost')

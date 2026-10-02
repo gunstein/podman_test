@@ -1,7 +1,7 @@
 # Backlog
 
 Agreed work that is not done yet. The baseline to compare against is the
-CLEAN PASS on `e6e9dd9` ([record](history/ACCEPTANCE-e6e9dd9.md)). Do not
+CLEAN PASS on `13cef4a` ([record](history/ACCEPTANCE-13cef4a.md)). Do not
 change checked code while an acceptance run is in progress: the run would then
 test a different revision from the one in its kickoff message. Remove an item
 when its change has passed acceptance; the acceptance records and Git keep
@@ -31,8 +31,6 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-0. Now: the acceptance run of D6 (target values on primary and standby,
-   done in code), with the guide unchanged.
 1. First, so the service does not stop and a failover does not lose weeks of
    data: M1 (scheduled checks that alert, so a stopped replication is seen)
    and M2 (scheduled backups and pruning, so the disk does not fill) together,
@@ -372,27 +370,16 @@ promoted primary.
   - *Not now.* Incremental base backups (`pg_basebackup --incremental`) add a
     chain that must be combined to restore; add them only if a full backup
     one day takes too long.
-- **D6. Target values on primary and standby.** *[new]* Done in code;
-  waiting for its acceptance run with the guide unchanged (Order 0). What
-  differs between installations lives in the rendered Kube YAML and `.kube`
-  units as a `${TARGET_*}` placeholder (`TARGET_EXTERNAL_HOSTNAME`,
-  `TARGET_NOTES_HOSTNAME`, `TARGET_PUBLISH_ADDRESS`), filled in by
-  `target_render` on a single host and on DR primary and standby alike. The
-  host records its public hostnames (`~/.config/todo/target-values.json`);
-  `standby` and `rebuild` copy the primary's to the standby, and `failover`,
-  the promoted deploy and `wait-ready.sh` use the recorded names. The
-  operations package carries the same `bundle.json` and `generated/target`
-  as the offline bundle, and DR hosts need no Jinja2. Remove this item when
-  the run passes. Follow-ups, each its own small change after that:
-  - *Shrink the packages.* *[simplify]* Nothing installs
-    `generated/kube-runtime` or the `deploy/quadlet/*.kube.j2` templates from
-    a package any more; drop them from both packages and from the package
-    tests, which then compare `generated/target` instead.
-  - *A hostname in acceptance.* *[decision]* A hostname other than the
-    default is covered by unit tests only. Decide whether acceptance gets a
-    step that installs the primary with one and checks it after failover.
-  - *No Jinja2 on the VMs.* *[docs]* The acceptance guide still installs
-    `python3-jinja2` on both VMs; drop it the next time the guide changes.
+- **D7. Shrink the packages after D6.** *[simplify]* Nothing installs
+  `generated/kube-runtime` or the `deploy/quadlet/*.kube.j2` templates from a
+  package any more; drop them from both packages and from the package tests,
+  which then compare `generated/target` instead.
+- **D8. A hostname in acceptance.** *[decision]* A public hostname other than
+  the default is covered by unit tests only. Decide whether acceptance gets a
+  step that installs the primary with one and checks it after failover.
+- **D9. No Jinja2 on the VMs.** *[docs]* The acceptance guide still installs
+  `python3-jinja2` on both VMs, which no target needs since D6; drop it the
+  next time the guide changes.
 - **D3. Say that `deploy-promoted-application` runs on the promoted host.**
   *[docs]* It refuses unless that host is the machine running app-ops
   (`local: true`). `failover` runs there anyway, so document the limit as

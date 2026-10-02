@@ -10,8 +10,8 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `e6e9dd9` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-e6e9dd9.md)),
+**Current verdict: CLEAN PASS** on `13cef4a` for the seven-pod, three-database
+topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-13cef4a.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 104 steps PASS
@@ -20,8 +20,11 @@ log it names, nothing else. Every step ran through `acceptance.py step`, which
 runs the guide's line as written and only after the step before it passed,
 and each product log records its exact command. The offline install now
 installs files rendered on the build host and fills in the target values
-with the Python standard library alone (`target_render`, `bundle.json`); the
-targets need neither Jinja2 nor PyYAML for it. Install, standby bootstrap,
+with the Python standard library alone (`target_render`, `bundle.json`), on
+the single host and, since D6, on the DR primary and standby too: app-ops
+copies the primary's public hostnames to the standby, and failover and
+rebuild use the recorded names. No target renders, so none needs Jinja2.
+Install, standby bootstrap,
 quarantine rehearsal, fencing, the one `failover` command (group promotion,
 application tier, backup, services and the login page), backup and isolated
 PITR, rebuild of the old primary and sequential reboots all passed as written.
@@ -34,6 +37,9 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `13cef4a` run 31: CLEAN PASS ([record](docs/history/ACCEPTANCE-13cef4a.md)),
+  accepting D6 (target values on primary and standby) with the guide
+  unchanged.
 - `e6e9dd9` run 30: CLEAN PASS ([record](docs/history/ACCEPTANCE-e6e9dd9.md)),
   accepting the pre-rendered offline install, the first run with the build
   host on Ubuntu 26.04 and Python 3.14.

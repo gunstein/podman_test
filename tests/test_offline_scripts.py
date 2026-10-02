@@ -54,8 +54,18 @@ class OfflineScriptTests(unittest.TestCase):
         values = json.loads(result.stdout.splitlines()[-1])
         self.assertEqual(values[values.index("--publish-address") + 1], "127.0.0.1")
 
+    def test_a_target_hostname_is_passed_only_when_given(self):
+        result = self.install("--target-external-hostname", "shop.example.org", "--publish-address", "192.168.0.102")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = json.loads(result.stdout.splitlines()[-1])
+        self.assertEqual(values[values.index("--target-external-hostname") + 1], "shop.example.org")
+        self.assertEqual(values[values.index("--publish-address") + 1], "192.168.0.102")
+        result = self.install("--publish-address", "192.168.0.102")
+        self.assertNotIn("--target-external-hostname", json.loads(result.stdout.splitlines()[-1]))
+
     def test_invalid_arguments_never_start_installer(self):
-        for arguments in (("--unknown",), ("--publish-address",),
+        for arguments in (("--unknown",), ("--publish-address",), ("--target-external-hostname",),
+                          ("--publish-address", "192.168.0.102", "--target-external-hostname"),
                           ("--publish-address", "0.0.0.0"),
                           ("--publish-address", "::1"),
                           ("--publish-address", "192.168.0.102\nPublishPort=9999")):
@@ -84,3 +94,48 @@ class OfflineScriptTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         for name in names:
             self.assertEqual((output / name).read_text(), f"original {name}\n")
+
+
+class BuildBundleTests(unittest.TestCase):
+    """build-bundle.sh as it runs, with only podman faked: the bundle it writes and its checksums."""
+
+    def test_the_bundle_holds_the_target_files_and_bundle_json_under_its_checksums(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            fake = directory / "bin"
+            fake.mkdir()
+            (fake / "podman").write_text(
+                "#!/bin/sh\n"
+                "case \"$1 $2\" in\n"
+                "  'image inspect') echo '[{\"Labels\":{\"io.todo.proxy\":\"nginx\"}}]' ;;\n"
+                "  save*) while [ \"$#\" -gt 0 ]; do [ \"$1\" = --output ] && : > \"$2\"; shift; done ;;\n"
+                "esac\n")
+            (fake / "podman").chmod(0o755)
+            output = directory / "dist/todo-offline-test.tar.gz"
+            result = subprocess.run(
+                ["bash", str(ROOT / "deploy/offline/build-bundle.sh"), str(output)],
+                env={**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"},
+                capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            subprocess.run(["tar", "-xzf", str(output), "-C", str(directory)], check=True)
+            bundle = next(directory.glob("todo-offline-*/"))
+            check = subprocess.run(["sha256sum", "--quiet", "-c", "SHA256SUMS"], cwd=bundle,
+                                   capture_output=True, text=True, check=False)
+            self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+            summed = {line.split("  ", 1)[1] for line in (bundle / "SHA256SUMS").read_text().splitlines()}
+            metadata = json.loads((bundle / "bundle.json").read_text())
+            expected = {"./bundle.json", "./VERSION", "./" + metadata["network"]}
+            for key in ("manifests", "quadlets", "local_only_quadlets"):
+                expected |= {f"./{metadata[key]['directory']}/{name}" for name in metadata[key]["files"]}
+            self.assertLessEqual(expected, summed)
+            self.assertIn("./deploy/installer/app_installer/target_render.py", summed)
+            # The bundle's own installer reads its own metadata, as install.sh would.
+            loaded = subprocess.run(
+                [sys.executable, "-c", "import sys; from app_installer import target_render; "
+                 "files = target_render.load(sys.argv[1], {'TARGET_PUBLISH_ADDRESS': '192.0.2.10'}, {}); "
+                 "print(files.values['TARGET_EXTERNAL_HOSTNAME'], len(files.manifests), len(files.quadlets))",
+                 str(bundle)],
+                env={"PATH": os.environ["PATH"], "PYTHONPATH": str(bundle / "deploy/installer")},
+                capture_output=True, text=True, check=False)
+            self.assertEqual(loaded.returncode, 0, loaded.stderr)
+            self.assertEqual(loaded.stdout.split(), ["todo.test", "10", "7"])

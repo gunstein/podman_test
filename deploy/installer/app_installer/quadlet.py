@@ -1,16 +1,23 @@
-"""Render the Quadlet templates with the Jinja2 whitespace settings they were written for."""
+"""Write Quadlet units and their files atomically; render the unit templates (build and DR hosts).
+
+render() needs Jinja2 and imports it when it is called, so write() and
+systemctl() also serve an offline host without it, which installs units
+the build host rendered (target_render).
+"""
 import os
 import stat
 import tempfile
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
-
 from .commands import run
 
 
 def render(project_root, name, variables):
-    """Render deploy/quadlet/<name>.j2 and return the bytes; undefined variables are an error."""
+    """Render deploy/quadlet/<name>.j2 with the Jinja2 whitespace settings it was written for.
+
+    Returns the bytes; undefined variables are an error.
+    """
+    from jinja2 import Environment, FileSystemLoader, StrictUndefined
     environment = Environment(
         loader=FileSystemLoader(Path(project_root) / "deploy/quadlet"),
         undefined=StrictUndefined, trim_blocks=True, keep_trailing_newline=True,

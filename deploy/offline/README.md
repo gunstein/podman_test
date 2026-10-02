@@ -13,23 +13,24 @@ The target machine must already provide:
   `/etc/subgid`
 - Podman's Quadlet systemd generator
 - A working `systemctl --user` session
-- OS-managed Python 3.9+ and Jinja2 (for example `python3-jinja2`) to render
-  `.kube` units at install time; a single-host install needs nothing more,
-  since the bundle already carries pre-rendered application/database YAML
+- OS-managed Python 3.9+ (the standard library only): the bundle carries
+  every Kube YAML file and `.kube` unit already rendered, and the install only
+  fills in the target values (see [Target values](#target-values)); neither
+  Jinja2 nor PyYAML is needed
 - `/bin/sh`, `tar` and `sha256sum`
 - Free host ports 5432, 5433, 5434, 8080 and 8443 on a clean target (8000 is internal to the app pod)
 
 A target that will also run DR through the operations package (either host in
 the [two-VM walkthrough](../../docs/manual-recipes/03-DR-TWO-VM.md)) needs
-`python3-pyyaml` too: the replication commands parse the canonical PVC YAML
+`python3-jinja2` and `python3-pyyaml`: the DR tools render their database and
+application units on the host from `deploy/quadlet`, and the replication commands parse the canonical PVC YAML
 for standby bootstrap, promotion and rebuild. It also needs `openssl`, which
 issues the certificates that encrypt replication.
 [Prepare an Oracle Linux 9 VM](../../docs/manual-recipes/01-PREPARE-VM.md)
 installs both packages on every target so this does not need revisiting later.
 
 The Kube runtime requires the tested Podman 5.8.2 platform, systemd 255 and
-Python/Jinja2. DR operations use app-ops from the separate operations package. Rendering is
-not an offline target dependency. The
+Python. DR operations use app-ops from the separate operations package. The
 bundle must be built on a machine compatible with the target's CPU architecture.
 
 For a comfortable demo VM, provide at least 4 GiB memory and 10 GiB free disk.
@@ -44,8 +45,21 @@ From the project root:
 deploy/offline/build-bundle.sh
 ```
 
-The connected build machine renders the production
-values with Jinja2 before packaging; the isolated Oracle Linux target receives plain YAML.
+The connected build machine renders everything with Jinja2 before packaging
+(`app_installer.bundle`); the isolated target receives plain files:
+
+| In the bundle | What it is |
+|---|---|
+| `generated/target/manifests/` | Every Kube YAML file, with `${TARGET_EXTERNAL_HOSTNAME}` where the public hostname goes |
+| `generated/target/quadlet/` | Every `.kube` unit and `app-network.network`; the proxy unit also publishes HTTPS on `${TARGET_PUBLISH_ADDRESS}` |
+| `generated/target/quadlet/local-only/` | The proxy unit for a host that publishes only on 127.0.0.1 |
+| `bundle.json` | Format and version (`todo-offline-bundle`, 2), where each of the above is, the apps, the HTTPS port and the default target values |
+| `generated/kube-runtime/` | The Kube YAML with the build's hostname, which the DR tools install |
+
+The build checks that putting the default hostname into the target manifests
+gives exactly the normal render, so a placeholder only stands where the
+hostname stood. `VERSION` and `SHA256SUMS` cover every file, `bundle.json` and
+the target files included.
 
 This builds the backend, frontend, shared proxy and Keycloak images, pulls PostgreSQL, and
 creates both the archive and its external checksum:
@@ -74,7 +88,9 @@ sh ./preflight.sh
 sh ./install.sh
 ```
 
-For a separate lab client, use `sh ./install.sh --publish-address 192.168.0.102`.
+For a separate lab client, use `sh ./install.sh --publish-address 192.168.0.102`;
+add `--target-external-hostname NAME` for a public hostname other than the
+bundle's default (see below).
 The address must belong to the target VM. The default publishes HTTPS on
 localhost only. Use the same argument on every repeat installation; omitting
 it restores localhost-only publication. Only HTTPS is exposed externally;
@@ -88,8 +104,51 @@ directly with `./script.sh`. The RPM-managed shell reads them as data. The
 installer does not add the extracted bundle to the trust database. Its Python
 sources need the exact-file trust described below before installation.
 
-The preflight script does not change host configuration. It verifies that the
-host-managed Python and Jinja2 are present.
+The preflight script does not change host configuration. It checks Podman,
+rootless user namespaces, Quadlet, the user systemd manager and the ports.
+
+### Target values
+
+The bundle's files are complete except for the values only the target knows.
+`install.sh` fills in exactly these placeholders, with the Python standard
+library (`app_installer/target_render.py`), and nothing else: `$HOME`,
+`${DATABASE_PASSWORD}` and every other dollar expression stay as they are, and
+nothing is passed through a shell or expanded from the environment.
+
+| Placeholder | Value | Where it comes from, first match wins | Checked as |
+|---|---|---|---|
+| `${TARGET_EXTERNAL_HOSTNAME}` | The public hostname of the Todo app and of Keycloak: nginx `server_name`, the TLS certificate, the OIDC issuer, `KC_HOSTNAME` and the Keycloak client's redirect URL | `--target-external-hostname`, then the environment variable `TARGET_EXTERNAL_HOSTNAME`, then the bundle's default (`runtime.publicHostname` in the build's `values.yaml`, `todo.test`) | A DNS name: lowercase labels of letters, digits and inner hyphens |
+| `${TARGET_PUBLISH_ADDRESS}` | The host IPv4 address nginx publishes HTTPS on | `--publish-address` (default `127.0.0.1`, which selects the local-only proxy unit) | A host IPv4 address, not a wildcard, multicast or reserved one |
+
+The machine's own hostname or FQDN is never used as the public hostname: the
+name users reach a service by is a decision, not a property of the host. Notes
+keeps its registry hostname (`notes.test`). There is no `${TARGET_HOSTNAME}` or
+`${TARGET_FQDN}`: no file needs them, and an unknown placeholder stops the
+install.
+
+All values are resolved, checked and filled into every file in memory before
+anything on the host changes. A missing or invalid value, a placeholder the
+installer does not know, or a path in `bundle.json` that is absolute or leaves
+the bundle stops the install with nothing written and no service touched. The
+files are then installed through the same staging as before: each file is
+compared and replaced atomically with its usual permissions, and only the
+services whose files or images changed restart. Repeating an install with the
+same values changes nothing; a new public hostname rewrites the files that
+hold it and restarts the Todo and Notes databases and apps, Keycloak and the
+proxy.
+
+A target-value install is for a single host. The DR tools still install
+`generated/kube-runtime`, rendered with the bundle's default hostname, so set
+up DR only with that hostname.
+
+### Older bundles
+
+A bundle without `bundle.json` was built before the files were pre-rendered
+and needed Jinja2 on the target. This installer refuses it with
+`... has no bundle.json: it was built in an older format ...`, before anything
+changes, as it refuses a `bundle.json` of another format version. Build a new
+bundle with `deploy/offline/build-bundle.sh`; an older bundle can still be
+installed with the installer it was shipped with, which is inside it.
 
 The installer verifies every bundled file, runs the same preflight
 automatically, loads missing container images and invokes the shared Python
@@ -99,10 +158,11 @@ and keeps them on later runs. No secret is stored in the bundle.
 
 ### Oracle Linux 9 with fapolicyd
 
-Install OS-managed Python and Jinja2 before disconnecting the target:
+Install OS-managed Python before disconnecting the target (add
+`python3-jinja2 python3-pyyaml` on a host that will run DR):
 
 ```bash
-sudo dnf install -y python3 python3-jinja2
+sudo dnf install -y python3
 ```
 
 After verifying the external archive checksum from a trusted source and
@@ -147,9 +207,11 @@ its credentials is intended. Backup data is never removed by this command.
 
 ## Source and runtime contract
 
-The bundle contains seven OCI archives, ten YAML files for seven pods, and the portable Python
-installer with the canonical target Quadlet templates. Rendering happens only on the build
-host, from the shared `deploy/manifests/*.yaml.j2` templates. The source checkout's `deploy/runtime`
+The bundle contains seven OCI archives, the target files described above (ten YAML files and
+seven units for seven pods, plus the network), `bundle.json`, the same YAML rendered for DR,
+and the portable Python installer with the canonical Quadlet templates the DR tools use.
+Rendering happens only on the build host, from the shared `deploy/manifests/*.yaml.j2` and
+`deploy/quadlet/*.kube.j2` templates. The source checkout's `deploy/runtime`
 contains guides; package YAML is fresh Jinja2 output. Packaging tests compare it to independent rendering.
 
 The operations package contains complete DR/backup roles, task includes, the same Python

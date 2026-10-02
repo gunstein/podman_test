@@ -2,6 +2,13 @@
 
 As in the original shared roles, changed reports definition changes (not secret
 creation or removal of obsolete files). DR uses it to decide when to restart.
+
+A workload's files come from one of two places. By default, the Kube YAML
+from rendered_manifest_dir and units rendered here from deploy/quadlet with
+Jinja2 (build mode, development, and the DR tools). With target=, an offline
+bundle's files, rendered at build time and filled in with the target values
+(target_render.TargetFiles); then this host needs no Jinja2. Either way the
+same staging, comparison and permissions apply.
 """
 import ipaddress
 from pathlib import Path
@@ -10,15 +17,32 @@ from . import apps, quadlet, secrets, settings, stack
 from .commands import run
 
 
+def postgres_variables(database, publish_address=""):
+    """The unit template's values for one database: its replication port, and the LAN address if any."""
+    return {"postgres_publish_address": publish_address, "postgres_publish_port": database.replication_port}
+
+
+def application_variables(publish_address, service_port):
+    """The unit template's values for an app pod."""
+    return {"todo_publish_address": publish_address, "todo_service_port": service_port}
+
+
+def proxy_variables(publish_address, service_port, applications):
+    """The unit template's values for nginx: where it publishes HTTPS and the app services it needs."""
+    return {"todo_publish_address": publish_address, "todo_service_port": service_port,
+            "app_services": [app.service for app in applications]}
+
+
 def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir, *,
-             manifests, units, obsolete, capability, mapping, variables, values=None):
+             manifests, units, obsolete, capability, mapping, variables, values=None, target=None):
     """Write one workload's Kube YAML and Quadlet unit, and reload user systemd.
 
     Every file is read and rendered before the first write, so a missing
-    file stops the install with nothing changed. Kube secrets are created
-    from the raw Podman secrets; YAML is written 0600, units 0644. Returns
-    True if a definition changed. It never starts or stops a service: the
-    caller decides that.
+    file stops the install with nothing changed. With target, the files are
+    the offline bundle's, already filled in (see the module docstring). Kube
+    secrets are created from the raw Podman secrets; YAML is written 0600,
+    units 0644. Returns True if a definition changed. It never starts or
+    stops a service: the caller decides that.
     """
     root, directory, runtime, rendered = map(Path, (
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir))
@@ -30,11 +54,16 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
     # before any workload install runs; see install-workload's CLI dispatch for the
     # DR path, which calls it for the same reason.
     # Read and render everything before mutating the installation.
-    files = [(runtime / name, (rendered / name).read_bytes(), 0o600)
-             for name in manifests]
-    files += [(directory / "app-network.network", (root / "deploy/quadlet/app-network.network").read_bytes(),
-               0o644)]
-    files += [(runtime / name, quadlet.render(root, name, variables), 0o644) for name in units]
+    if target is None:
+        files = [(runtime / name, (rendered / name).read_bytes(), 0o600)
+                 for name in manifests]
+        files += [(directory / "app-network.network",
+                   (root / "deploy/quadlet/app-network.network").read_bytes(), 0o644)]
+        files += [(runtime / name, quadlet.render(root, name, variables), 0o644) for name in units]
+    else:
+        files = [(runtime / name, target.manifests[name], 0o600) for name in manifests]
+        files += [(directory / target.network_name, target.network, 0o644)]
+        files += [(runtime / name, target.quadlets[name], 0o644) for name in units]
     secrets.create_kube(mapping, values)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     runtime.mkdir(exist_ok=True, mode=0o700)
@@ -50,50 +79,52 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
 
 def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                      publish_address="", db_password=None, *,
-                     database: stack.Database = apps.SHARED_RESOURCE_OWNER.database):
+                     database: stack.Database = apps.SHARED_RESOURCE_OWNER.database, target=None):
     """Install one database's PostgreSQL workload.
 
     publish_address publishes the replication port on the LAN; only
-    databases in the DR group may do that. db_password supplies the owner
-    password directly instead of reading it from Podman.
+    databases in the DR group may do that, and never from an offline
+    bundle's units, which publish on 127.0.0.1 only. db_password supplies
+    the owner password directly instead of reading it from Podman.
     """
     if publish_address and database not in apps.REPLICATED_DATABASES:
         raise ValueError("Replication publication requires membership in the verified DR group.")
+    if publish_address and target is not None:
+        raise ValueError("An offline bundle's database units have no LAN publication; DR installs it.")
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         manifests=(database.manifest, database.config_manifest), units=(database.unit,),
         obsolete=(database.volume("data"), database.volume("backup")),
         capability="PostgreSQL", mapping=secrets.postgres_secret_mapping(database),
-        variables={"postgres_publish_address": publish_address,
-                  "postgres_publish_port": database.replication_port},
-        values={database.secret("db"): db_password} if db_password is not None else None,
+        variables=postgres_variables(database, publish_address),
+        values={database.secret("db"): db_password} if db_password is not None else None, target=target,
     )
 
 
 def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                         publish_address="127.0.0.1", service_port=settings.HTTPS_PORT, *,
-                        app: apps.App = apps.APPS[0]):
+                        app: apps.App = apps.APPS[0], target=None):
     """Install one app's pod (migration, backend and frontend)."""
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         manifests=(app.manifest, app.config_manifest), units=(app.unit,), obsolete=(),
         capability="application", mapping=secrets.application_secret_mapping(app),
-        variables={"todo_publish_address": publish_address, "todo_service_port": service_port},
+        variables=application_variables(publish_address, service_port), target=target,
     )
 
 
-def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir):
+def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir, *, target=None):
     """Install the shared Keycloak workload."""
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         manifests=("keycloak.yaml",), units=("keycloak.kube",), obsolete=(),
-        capability="identity", mapping=secrets.keycloak_secret_mapping(), variables={},
+        capability="identity", mapping=secrets.keycloak_secret_mapping(), variables={}, target=target,
     )
 
 
 def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                          publish_address="127.0.0.1", service_port=settings.HTTPS_PORT,
-                         applications=None):
+                         applications=None, *, target=None):
     """Install the shared nginx proxy, published on publish_address:service_port.
 
     It always also listens on 127.0.0.1, so a wildcard address such as
@@ -114,6 +145,5 @@ def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_m
         manifests=("shared-proxy.yaml", "config.yaml"), units=("shared-proxy.kube",),
         obsolete=(apps.SHARED_RESOURCE_OWNER.names.resource("nginx-data"),),
         capability="shared proxy", mapping={},
-        variables={"todo_publish_address": publish_address, "todo_service_port": service_port,
-                  "app_services": [app.service for app in applications]},
+        variables=proxy_variables(publish_address, service_port, applications), target=target,
     )

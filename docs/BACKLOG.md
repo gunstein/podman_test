@@ -31,6 +31,12 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
+0. Now: a full acceptance run for the pre-rendered offline install
+   (`app_installer.bundle` and `target_render`, `bundle.json`, no Jinja2 in
+   `install.sh`), which changes how every host is first installed. It also
+   carries two installer fixes found on the way: an app restarts when its
+   shared ConfigMap file changed, and `install-workload postgres` passes
+   `database=`.
 1. First, so the service does not stop and a failover does not lose weeks of
    data: M1 (scheduled checks that alert, so a stopped replication is seen)
    and M2 (scheduled backups and pruning, so the disk does not fill) together,
@@ -370,6 +376,14 @@ promoted primary.
   - *Not now.* Incremental base backups (`pg_basebackup --incremental`) add a
     chain that must be combined to restore; add them only if a full backup
     one day takes too long.
+- **D6. DR with a target hostname.** *[new]* An offline install can take a
+  public hostname other than the bundle's default
+  (`--target-external-hostname`), but the DR tools still install
+  `generated/kube-runtime`, rendered with the default: `bootstrap-standby`
+  rewrites the primary's database ConfigMaps, and `failover` deploys the
+  application tier, with the default hostname. Until DR reads the target
+  files too (with the hostname recorded on the host at install), DR is only
+  for the default hostname, as `deploy/offline/README.md` says.
 - **D3. Say that `deploy-promoted-application` runs on the promoted host.**
   *[docs]* It refuses unless that host is the machine running app-ops
   (`local: true`). `failover` runs there anyway, so document the limit as

@@ -74,3 +74,21 @@ class CLITests(unittest.TestCase):
             self.assertEqual(main(['install-workload', 'postgres', '--quadlet-dir', '/q']), 0)
             preflight.assert_called_once_with(Path('/q'))
             postgres.assert_called_once()
+
+
+class WorkloadSignatureTests(unittest.TestCase):
+    """install-workload calls the real workload functions with keywords they accept (autospec)."""
+
+    def test_each_workload_and_app_reaches_its_function(self):
+        from app_installer import apps
+        for arguments, function, keyword, expected in (
+                (['postgres', '--app', 'notes'], 'install_postgres', 'database', apps.APPS[1].database),
+                (['postgres', '--app', 'keycloak'], 'install_postgres', 'database', apps.KEYCLOAK_DATABASE),
+                (['postgres'], 'install_postgres', 'database', apps.SHARED_RESOURCE_OWNER.database),
+                (['application', '--app', 'notes'], 'install_application', 'app', apps.APPS[1])):
+            with self.subTest(arguments=arguments), \
+                    patch('app_installer.workloads.' + function, autospec=True, return_value=False) as run, \
+                    patch('app_installer.workloads.install_keycloak', autospec=True, return_value=False), \
+                    patch('app_installer.install.preflight'), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(['install-workload', *arguments]), 0)
+                self.assertEqual(run.call_args.kwargs[keyword], expected)

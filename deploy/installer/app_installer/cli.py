@@ -4,9 +4,13 @@ import json
 import sys
 from pathlib import Path
 
-from jinja2 import TemplateError
+from . import apps, install, kube_play, settings, target_render, uninstall, workloads
 
-from . import apps, install, kube_play, settings, uninstall, workloads
+try:  # Jinja2 renders on build and DR hosts; an offline host installs without it.
+    from jinja2 import TemplateError
+except ImportError:
+    class TemplateError(Exception):
+        """Stands in for jinja2.TemplateError where Jinja2 is not installed."""
 
 
 def paths(parser):
@@ -42,6 +46,8 @@ def main(argv=None):
     deploy.add_argument('--refresh-images', action='store_true')
     deploy.add_argument('--publish-address', default='127.0.0.1')
     deploy.add_argument('--service-port', type=int, default=settings.HTTPS_PORT)
+    deploy.add_argument('--target-external-hostname', default=None,
+                        help='public hostname for an offline bundle (see app_installer/target_render.py)')
     workload = subcommands.add_parser('install-workload')
     paths(workload)
     workload.add_argument('workload', choices=('postgres', 'application', 'keycloak', 'shared-proxy'))
@@ -74,9 +80,10 @@ def main(argv=None):
         elif args.command == 'services':
             print(json.dumps(apps.services(databases=not args.application_tier)))
         elif args.command == 'install':
-            changed = install.install(args.project_root, args.mode, args.deployment_mode, args.bundle_dir,
-                                      args.refresh_images, args.publish_address, args.service_port,
-                                      args.quadlet_dir, args.kube_runtime_dir)
+            changed = install.install(
+                args.project_root, args.mode, args.deployment_mode, args.bundle_dir, args.refresh_images,
+                args.publish_address, args.service_port, args.quadlet_dir, args.kube_runtime_dir,
+                target_values={target_render.EXTERNAL_HOSTNAME: args.target_external_hostname})
             print(json.dumps({'changed': changed}))
         elif args.command == 'uninstall':
             changed = uninstall.uninstall(args.remove_data, args.quadlet_dir)
@@ -107,7 +114,9 @@ def main(argv=None):
                 selected_app = apps.KEYCLOAK_DATABASE
             else:
                 selected_app = next(app for app in apps.APPS if app.name == args.app)
-            if args.workload in ('postgres', 'application'):
+            if args.workload == 'postgres':
+                kwargs['database'] = getattr(selected_app, 'database', selected_app)
+            elif args.workload == 'application':
                 kwargs['app'] = selected_app
             elif selected_app != apps.SHARED_RESOURCE_OWNER:
                 raise ValueError('--app selects a postgres or application workload only.')

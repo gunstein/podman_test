@@ -1,7 +1,7 @@
 """Single-host orchestration; shared workload functions also serve app-ops DR."""
 from pathlib import Path
 
-from . import apps, images, keycloak, quadlet, secrets, settings, workloads
+from . import apps, images, keycloak, quadlet, secrets, settings, target_render, workloads
 from .commands import exists, run
 
 LEGACY = tuple(app.names.resource(component) for app in apps.APPS
@@ -71,9 +71,66 @@ def setup_roles(app: apps.App = apps.APPS[0]):
         app.image('backend'), 'python', '-m', 'backend.setup_roles')
 
 
+def offline_files(applications):
+    """The Kube YAML files and units an offline install of these apps writes, as two sets of names."""
+    manifests = {'keycloak.yaml', apps.KEYCLOAK_DATABASE.manifest, apps.KEYCLOAK_DATABASE.config_manifest,
+                 'shared-proxy.yaml', apps.SHARED_RESOURCE_OWNER.config_manifest}
+    units = {apps.KEYCLOAK_DATABASE.unit, 'keycloak.kube', 'shared-proxy.kube'}
+    for app in applications:
+        manifests |= {app.database.manifest, app.config_manifest, app.manifest}
+        units |= {app.database.unit, app.unit}
+    return manifests, units
+
+
+def load_target(bundle_directory, applications, publish_address, service_port, target_values):
+    """Read and fill in the offline bundle's files, and check that they fit this install.
+
+    Runs before anything on the host changes: a missing or invalid target
+    value, an older bundle or a bundle for other apps or another port stops
+    the install here.
+    """
+    target = target_render.load(bundle_directory, {**(target_values or {}),
+                                                   target_render.PUBLISH_ADDRESS: publish_address})
+    if target.applications != tuple(app.name for app in applications):
+        raise ValueError(f'The bundle was built for {", ".join(target.applications)}; '
+                         'an offline install installs exactly those apps.')
+    if service_port != target.public_port:
+        raise ValueError(f'The bundle was built for HTTPS port {target.public_port}, not {service_port}.')
+    manifests, units = offline_files(applications)
+    missing = sorted((manifests - set(target.manifests)) | (units - set(target.quadlets)))
+    if missing:
+        raise ValueError('The bundle lacks ' + ', '.join(missing))
+    return target
+
+
+def public_hostname(project_root, mode, target):
+    """The hostname users reach the shared-resource app and Keycloak by.
+
+    From the offline bundle's target values, else from the environment's
+    values.yaml, which build and dev mode render with (render needs PyYAML,
+    which those modes have).
+    """
+    if target is not None:
+        return target.values[target_render.EXTERNAL_HOSTNAME]
+    from . import render
+    profile = 'local' if mode == 'dev' else 'prod'
+    return render.read_values(Path(project_root) / f'deploy/environments/{profile}/values.yaml')[0]
+
+
+def clients(applications, hostname):
+    """Each app's Keycloak client and the hostname it is served on; the shared-resource app on hostname."""
+    return [(app.keycloak_client, hostname if app is apps.SHARED_RESOURCE_OWNER else app.hostname)
+            for app in applications]
+
+
+def _contents(path):
+    """A file's bytes, or None if it does not exist."""
+    return path.read_bytes() if path.exists() else None
+
+
 def install(project_root, mode='server', deployment_mode='build', bundle_directory='',
             refresh_images=False, publish_address='127.0.0.1', service_port=settings.HTTPS_PORT,
-            quadlet_dir=None, kube_runtime_dir=None, applications=None):
+            quadlet_dir=None, kube_runtime_dir=None, applications=None, target_values=None):
     """Install or update the whole single-host stack. Safe to run again.
 
     Steps: check the host, render the Kube YAML (build mode) or use the
@@ -86,6 +143,11 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     is checked to run from the expected Kube file. mode='dev' runs the same
     YAML with podman kube play directly, without systemd.
 
+    An offline install takes the bundle's pre-rendered files and fills in the
+    target values (target_values, from the command line; target_render says
+    where else they may come from) before anything changes. It needs no
+    Jinja2 or PyYAML, and installs in server mode only.
+
     Returns True if anything changed.
     """
     applications = apps.APPS if applications is None else tuple(applications)
@@ -97,6 +159,13 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         deployment_mode == 'offline' and (not bundle_directory or refresh_images)
     ):
         raise ValueError('Offline deployment requires bundle_directory and forbids refresh_images.')
+    target = None
+    if deployment_mode == 'offline':
+        if mode != 'server':
+            raise ValueError('An offline bundle installs in server mode only.')
+        target = load_target(bundle_directory, applications, publish_address, service_port, target_values)
+    elif target_values and any(target_values.values()):
+        raise ValueError('Target values only apply to an offline bundle (--deployment-mode offline).')
     require_single_host('install')
     root = Path(project_root).resolve()
     directory = Path(quadlet_dir or settings.QUADLET_DIR).resolve()
@@ -129,8 +198,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         secrets.create_kube(secrets.keycloak_secret_mapping())
         changed = up(rendered, applications, settings.DEV_STATE_FILE, images_changed)
         configured = keycloak.configure(
-            secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
-            [(app.keycloak_client, app.hostname) for app in applications])
+            secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(applications, public_hostname(root, mode, target)))
         return changed or configured
     arguments = (root, directory, runtime, rendered)
     changed = False
@@ -139,27 +207,34 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     # per-app and only ever restart that app's own service. This keeps an unrelated app's
     # (or component's) update from taking down the whole stack.
     postgres_image_changed = shared_images['postgres']
+    # An app's ConfigMap file (OIDC issuer, log level) is shared with its database
+    # pod, whose install writes it first; install_application then finds it
+    # unchanged. So compare it with what was installed before this run.
+    configs_before = {app.name: _contents(runtime / app.config_manifest) for app in applications}
     restart = set()
     for app in applications:
-        postgres_changed = workloads.install_postgres(*arguments, database=app.database)
+        postgres_changed = workloads.install_postgres(*arguments, database=app.database, target=target)
         changed = postgres_changed or changed
         if postgres_changed or postgres_image_changed:
             restart.add(app.database.container)
         application_changed = workloads.install_application(
-            *arguments, publish_address, service_port, app=app)
+            *arguments, publish_address, service_port, app=app, target=target)
         changed = application_changed or changed
-        if application_changed or image_changes[app.name]['backend'] or image_changes[app.name]['frontend']:
+        config_changed = _contents(runtime / app.config_manifest) != configs_before[app.name]
+        if (application_changed or config_changed or image_changes[app.name]['backend']
+                or image_changes[app.name]['frontend']):
             restart.add(app.pod)
-    keycloak_database_changed = workloads.install_postgres(*arguments, database=apps.KEYCLOAK_DATABASE)
+    keycloak_database_changed = workloads.install_postgres(*arguments, database=apps.KEYCLOAK_DATABASE,
+                                                           target=target)
     changed = keycloak_database_changed or changed
     if keycloak_database_changed or postgres_image_changed:
         restart.add(apps.KEYCLOAK_DATABASE.container)
-    keycloak_changed = workloads.install_keycloak(*arguments)
+    keycloak_changed = workloads.install_keycloak(*arguments, target=target)
     changed = keycloak_changed or changed
     if keycloak_changed or shared_images['keycloak']:
         restart.add('keycloak')
     proxy_changed = workloads.install_shared_proxy(
-        *arguments, publish_address, service_port, applications=applications)
+        *arguments, publish_address, service_port, applications=applications, target=target)
     changed = proxy_changed or changed
     if proxy_changed or shared_images['proxy']:
         restart.add('shared-proxy')
@@ -181,8 +256,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         setup_roles(app)
     quadlet.systemctl('start', 'shared-proxy.service')
     configured = keycloak.configure(
-        secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
-        [(app.keycloak_client, app.hostname) for app in applications])
+        secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(applications, public_hostname(root, mode, target)))
     for service in selected_services:
         source = quadlet.systemctl('show', service + '.service', '--property=SourcePath',
                                   '--value').stdout.strip()

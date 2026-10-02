@@ -131,8 +131,8 @@ containers are replaced through the systemd lifecycle.
 ## 5. Build and deployment pipeline
 
 ```text
-Jinja2 manifest templates + values ──► rendered YAML ──┬──► offline bundle
-                                                      └──► operations package
+Jinja2 manifest + Quadlet templates + values ──► rendered files ──┬──► offline bundle
+   (target values stay ${TARGET_...})                               └──► operations package
 Containerfiles ──► OCI image archives ────► offline bundle only
 Deployment / recovery code and docs ──────► respective bundles
 
@@ -151,7 +151,13 @@ and quarantine tools, and runbooks; it contains no OCI image archives.
 YAML is rendered into a temporary build directory and packaged. Source checkout
 `deploy/runtime/` contains guides; shared `deploy/quadlet/` templates produce target-specific
 Quadlets. Tests compare packaged YAML with independent Jinja2 rendering.
-Rendering runs on the build host, not the Oracle Linux target. Images and rendered
+Rendering runs on the build host, not the Oracle Linux target. The offline
+bundle carries every Kube YAML file and `.kube` unit rendered, with
+`${TARGET_EXTERNAL_HOSTNAME}` and `${TARGET_PUBLISH_ADDRESS}` for the values only
+the target knows, and `bundle.json` naming where they are. The single-host
+install fills in those placeholders with the standard library alone
+(`target_render.py`) and stages the files as before; it needs no Jinja2 or
+PyYAML. The DR tools still render their units on the hosts. Images and rendered
 definitions are delivered offline; target execution does not fetch from a
 registry. Both acceptance artifacts must identify the same clean revision.
 Checksums establish integrity against the supplied digest, not publisher

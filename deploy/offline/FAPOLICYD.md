@@ -10,7 +10,7 @@ verified files that must be interpreted as code.
 
 ## Why the project uses two approaches
 
-The single-host installer uses OS-managed Python and Jinja2 plus project-owned
+The single-host installer uses OS-managed Python (standard library only) plus project-owned
 Python sources. Run extracted shell wrappers through the trusted system shell:
 
 ```bash

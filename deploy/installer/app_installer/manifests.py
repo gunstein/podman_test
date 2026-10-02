@@ -9,8 +9,6 @@ settings, and only truly static structure lives in the .j2 files themselves.
 import re
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
-
 # shared-proxy.yaml.j2 interpolates hostnames raw into the nginx.conf literal
 # block scalar (plain text, not a YAML value, so | tojson does not apply
 # there). Validate every hostname that reaches it - both the operator-supplied
@@ -32,7 +30,12 @@ def validate_hostname(hostname):
 
 
 def _environment(project_root):
-    """A Jinja2 environment for deploy/manifests; undefined variables are an error."""
+    """A Jinja2 environment for deploy/manifests; undefined variables are an error.
+
+    Jinja2 is imported here, not at the top, so validate_hostname and the
+    offline install (target_render) work on a host without it.
+    """
+    from jinja2 import Environment, FileSystemLoader, StrictUndefined
     return Environment(
         loader=FileSystemLoader(Path(project_root) / "deploy/manifests"),
         undefined=StrictUndefined, trim_blocks=True, keep_trailing_newline=True,
@@ -80,7 +83,12 @@ def render_shared_proxy(project_root, applications, identity_app, hostname, port
     values.yaml; the others on their registry hostname. Every hostname is
     checked before it is written into nginx.conf. The identity origin, where
     Keycloak serves every app's login and tokens, goes into the CSP.
+
+    For an offline bundle, hostname is the placeholder
+    ${TARGET_EXTERNAL_HOSTNAME}; the target host checks the value that
+    replaces it (target_render.check_hostname) before it is installed.
     """
+    target_hostname = "${TARGET_EXTERNAL_HOSTNAME}"
     context = [{
         "name": app.name,
         "hostname": hostname if app is identity_app else app.hostname,
@@ -88,6 +96,7 @@ def render_shared_proxy(project_root, applications, identity_app, hostname, port
         "backend": app.pod + ":8000",
     } for app in applications]
     for entry in context:
-        validate_hostname(entry["hostname"])
+        if entry["hostname"] != target_hostname:
+            validate_hostname(entry["hostname"])
     return _render(project_root, "shared-proxy.yaml.j2", applications=context, hostname=hostname,
                    identity_origin=f"https://{hostname}:{int(port)}", image=image)

@@ -18,10 +18,9 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 
-if ! python3 -c 'import jinja2' >/dev/null 2>&1; then
-    echo "ERROR: Python Jinja2 is required (install the OS python3-jinja2 package)." >&2
-    failed=1
-fi
+# The bundle's Kube YAML and units are rendered at build time; this install
+# needs only the Python standard library (no Jinja2 or PyYAML). The DR tools
+# still render on the hosts and check for Jinja2 themselves (app_ops/trust.py).
 
 if systemctl is-active --quiet fapolicyd 2>/dev/null; then
     echo "INFO: active fapolicyd: trust the verified installer Python files before running install.sh."

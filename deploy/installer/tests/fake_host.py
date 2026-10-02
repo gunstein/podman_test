@@ -14,6 +14,7 @@ the order is part of what the installer must get right. A test that needs one
 more answer subclasses FakeHost and overrides answer().
 """
 import subprocess
+from pathlib import Path
 from unittest import mock
 
 from app_installer import secrets
@@ -84,3 +85,18 @@ class FakeHost:
     def ran(self, *prefix):
         """The recorded commands that start with prefix."""
         return [argv for argv in self.calls if argv[:len(prefix)] == list(prefix)]
+
+
+class RenderingHost(FakeHost):
+    """A host where the build-mode render script writes the manifests an install reads."""
+
+    def answer(self, argv, input):
+        if argv[0].endswith('render-kube-runtime.sh'):  # script, values file, output directory[, apps]
+            target = Path(argv[2])
+            target.mkdir(parents=True)
+            for name in ('postgres', 'app', 'keycloak', 'shared-proxy', 'config',
+                         'notes-app', 'notes-postgres', 'notes-config',
+                         'keycloak-postgres', 'keycloak-config'):
+                (target / (name + '.yaml')).write_text('fixture: true\n')
+            return 0, ''
+        return super().answer(argv, input)

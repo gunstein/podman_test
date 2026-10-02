@@ -44,6 +44,41 @@ def read_values(values_file):
     return hostname, port, log_level
 
 
+def selection(application_names=()):
+    """The registered apps by name, all of them if none are named; unknown names are an error."""
+    selected = tuple(app for app in apps.APPS if not application_names or app.name in application_names)
+    if not selected or set(application_names) - {app.name for app in apps.APPS}:
+        raise ValueError('Unknown or empty application selection')
+    return selected
+
+
+def files(project_root, selected, hostname, port, log_level):
+    """Every Kube YAML file of the selected apps, Keycloak and the proxy: {file name: bytes}, checked.
+
+    hostname is the public hostname, or ${TARGET_EXTERNAL_HOSTNAME} for an
+    offline bundle (app_installer.bundle); the files are otherwise the same.
+    """
+    root = Path(project_root)
+    result = {}
+    for app in selected:
+        result[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
+        result[app.config_manifest] = (manifests.render_postgres_config(root, app.database) + b'---\n'
+                                       + manifests.render_app_config(root, app, hostname, port, log_level))
+        result[app.manifest] = manifests.render_app(root, app, app.image('backend'), app.image('frontend'))
+
+    result['keycloak.yaml'] = manifests.render_keycloak(
+        root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_KUBE_ADMIN_SECRET, hostname, port, apps.KEYCLOAK_IMAGE)
+    result[apps.KEYCLOAK_DATABASE.manifest] = manifests.render_postgres(
+        root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_DATABASE.image)
+    result[apps.KEYCLOAK_DATABASE.config_manifest] = manifests.render_postgres_config(root, apps.KEYCLOAK_DATABASE)
+    result['shared-proxy.yaml'] = manifests.render_shared_proxy(
+        root, selected, apps.SHARED_RESOURCE_OWNER, hostname, port, apps.PROXY_IMAGE)
+
+    for name, content in result.items():
+        _validate(name, content)
+    return result
+
+
 def render(project_root, values_file, output_directory, application_names=()):
     """Render every Kube YAML file for the selected apps into output_directory.
 
@@ -54,31 +89,9 @@ def render(project_root, values_file, output_directory, application_names=()):
     exactly this render: no file from an earlier render stays behind, and a
     failed render leaves the earlier output as it was.
     """
-    root, output = Path(project_root), Path(output_directory)
-    selected = [app for app in apps.APPS if not application_names or app.name in application_names]
-    if not selected or set(application_names) - {app.name for app in apps.APPS}:
-        raise ValueError('Unknown or empty application selection')
+    selected = selection(application_names)
     hostname, port, log_level = read_values(values_file)
-
-    files = {}
-    for app in selected:
-        files[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
-        files[app.config_manifest] = (manifests.render_postgres_config(root, app.database) + b'---\n'
-                                          + manifests.render_app_config(root, app, hostname, port, log_level))
-        files[app.manifest] = manifests.render_app(root, app, app.image('backend'), app.image('frontend'))
-
-    files['keycloak.yaml'] = manifests.render_keycloak(
-        root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_KUBE_ADMIN_SECRET, hostname, port, apps.KEYCLOAK_IMAGE)
-    files[apps.KEYCLOAK_DATABASE.manifest] = manifests.render_postgres(
-        root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_DATABASE.image)
-    files[apps.KEYCLOAK_DATABASE.config_manifest] = manifests.render_postgres_config(root, apps.KEYCLOAK_DATABASE)
-    files['shared-proxy.yaml'] = manifests.render_shared_proxy(
-        root, selected, apps.SHARED_RESOURCE_OWNER, hostname, port, apps.PROXY_IMAGE)
-
-    for name, content in files.items():
-        _validate(name, content)
-
-    _replace_directory(output, files)
+    _replace_directory(Path(output_directory), files(project_root, selected, hostname, port, log_level))
 
 
 def _replace_directory(output, files):

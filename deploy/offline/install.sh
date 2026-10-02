@@ -3,14 +3,24 @@ set -eu
 
 bundle_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 
+usage() {
+  echo "Usage: sh install.sh [--publish-address HOST_IPV4] [--target-external-hostname NAME]" >&2
+  exit 2
+}
+
+# The installer checks the public hostname (app_installer/target_render.py);
+# without the option it comes from TARGET_EXTERNAL_HOSTNAME or the bundle's default.
 publish_address=127.0.0.1
-if [ "$#" -ne 0 ]; then
-  if [ "$#" -ne 2 ] || [ "$1" != --publish-address ]; then
-    echo "Usage: sh install.sh [--publish-address HOST_IPV4]" >&2
-    exit 2
-  fi
-  publish_address=$2
-fi
+external_hostname=
+while [ "$#" -gt 0 ]; do
+  [ "$#" -ge 2 ] || usage
+  case "$1" in
+    --publish-address) publish_address=$2 ;;
+    --target-external-hostname) external_hostname=$2 ;;
+    *) usage ;;
+  esac
+  shift 2
+done
 
 publish_address=$(python3 - "$publish_address" <<'PY'
 import ipaddress
@@ -30,8 +40,12 @@ cd "$bundle_directory"
 sha256sum --check SHA256SUMS
 sh "$bundle_directory/preflight.sh"
 
+set -- --publish-address "$publish_address"
+if [ -n "$external_hostname" ]; then
+  set -- "$@" --target-external-hostname "$external_hostname"
+fi
+
 export PYTHONPATH="$bundle_directory/deploy/installer${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONDONTWRITEBYTECODE=1
 exec python3 -m app_installer install --mode server --deployment-mode offline \
-  --project-root "$bundle_directory" --bundle-dir "$bundle_directory" \
-  --publish-address "$publish_address"
+  --project-root "$bundle_directory" --bundle-dir "$bundle_directory" "$@"

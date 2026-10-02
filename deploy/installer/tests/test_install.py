@@ -1,5 +1,6 @@
 import io
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import offline_bundle  # noqa: E402
 from app_installer import (  # noqa: E402
     apps,
     install,
@@ -18,55 +20,48 @@ from app_installer import (  # noqa: E402
     settings,
     uninstall,
 )
-from fake_host import FakeHost  # noqa: E402
+from fake_host import FakeHost, RenderingHost  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def write_rendered_manifests(root, applications):
-    """The rendered manifests an offline install reads, as fixtures."""
-    rendered = root / 'generated/kube-runtime'
-    rendered.mkdir(parents=True)
-    filenames = [name for app in applications
-                 for name in (app.database.manifest, app.manifest, app.config_manifest)] + [
-        apps.KEYCLOAK_DATABASE.manifest, apps.KEYCLOAK_DATABASE.config_manifest,
-        'keycloak.yaml', 'shared-proxy.yaml']
-    for filename in filenames:
-        (rendered / filename).write_text('fixture: true\n')
-    return rendered
+def copy_project(root):
+    """The parts of the repository a build-mode install reads, copied into root."""
+    for part in ('deploy/environments', 'deploy/quadlet'):
+        shutil.copytree(ROOT / part, root / part)
+    return root
 
 
 class InstallTests(unittest.TestCase):
     def exercise_install(self, mode, repeat=False, source_override=None, applications=None):
+        """Install in server mode from a real offline bundle, or in dev mode by building; return the calls."""
         applications = (apps.SHARED_RESOURCE_OWNER,) if applications is None else applications
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             directory = root / 'quadlet'
             runtime = directory / 'todo-kube-runtime'
-            write_rendered_manifests(root, applications)
+            if mode == 'server':
+                offline_bundle.build(root, applications)
+                project, how, Host = ROOT, dict(deployment_mode='offline', bundle_directory=root), FakeHost
+            else:
+                project, how, Host = copy_project(root), dict(deployment_mode='build'), RenderingHost
 
-            with FakeHost(unit_directory=runtime, source=source_override) as host, \
+            with Host(unit_directory=runtime, source=source_override) as host, \
                     patch.object(keycloak, 'configure') as configure, \
                     patch.object(settings, 'DEV_STATE_FILE', root / 'app-installer-dev.json'):
                 calls = host.calls
-                install.install(ROOT, mode=mode, deployment_mode='offline',
-                                bundle_directory=root, quadlet_dir=directory,
-                                applications=applications)
+                install.install(project, mode=mode, quadlet_dir=directory, applications=applications, **how)
+                configure.assert_called_once_with('fixture-password', [
+                    (app.keycloak_client, app.hostname) for app in applications])
                 if mode == 'server':
-                    configure.assert_called_once_with('fixture-password', [
-                        (app.keycloak_client, app.hostname) for app in applications])
                     self.assertEqual(len(list(runtime.glob('*.kube'))), 2 * len(applications) + 3)
                     self.assertEqual(len(host.ran('systemctl', '--user', 'show')),
                                      2 * len(applications) + 3)
                 else:
                     self.assertFalse(directory.exists())
-                    configure.assert_called_once_with('fixture-password', [
-                        (app.keycloak_client, app.hostname) for app in applications])
                 if repeat:
                     calls.clear()
-                    install.install(ROOT, mode=mode, deployment_mode='offline',
-                                    bundle_directory=root, quadlet_dir=directory,
-                                    applications=applications)
+                    install.install(project, mode=mode, quadlet_dir=directory, applications=applications, **how)
                     self.assertFalse(host.ran('systemctl', '--user', 'stop'))
             bootstrap = [i for i, a in enumerate(calls) if a[-1] == 'backend.setup_roles']
             self.assertEqual(len(bootstrap), 2 * len(applications))
@@ -113,14 +108,15 @@ class InstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             directory = root / 'quadlet'
-            rendered = write_rendered_manifests(root, applications)
+            offline_bundle.build(root, applications)
 
             with FakeHost(unit_directory=directory / 'todo-kube-runtime') as host, \
                     patch.object(keycloak, 'configure'), \
                     patch.object(settings, 'DEV_STATE_FILE', root / 'app-installer-dev.json'):
                 install.install(ROOT, mode='server', deployment_mode='offline',
                                 bundle_directory=root, quadlet_dir=directory, applications=applications)
-                (rendered / apps.APPS[0].manifest).write_text('fixture: changed\n')
+                changed = root / 'generated/target/manifests' / apps.APPS[0].manifest
+                changed.write_text(changed.read_text() + '# changed\n')
                 host.calls.clear()
                 install.install(ROOT, mode='server', deployment_mode='offline',
                                 bundle_directory=root, quadlet_dir=directory, applications=applications)

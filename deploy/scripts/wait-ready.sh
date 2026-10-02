@@ -2,20 +2,24 @@
 # Wait until a host's workloads are really up, not only started, after a boot
 # or an install. A systemd unit is active as soon as its pod starts; the
 # containers, health checks and HTTP answers follow a few seconds later.
-# Usage: wait-ready.sh app|standby
+# Usage: wait-ready.sh app [HOSTNAME...] | standby
 #   app:     all seven services, their containers running and healthy, and
-#            /ready answering for todo.test and notes.test on 127.0.0.1:8080.
+#            /ready answering on 127.0.0.1:8080 for each app's public hostname:
+#            the ones given (app-ops passes the host's recorded hostnames),
+#            else todo.test and notes.test.
 #   standby: the three PostgreSQL services and containers only.
 # Prints what it still waits for every 10 seconds, READY when done, and exits 1
 # after WAIT_TIMEOUT seconds (default 300). It only reads; it changes nothing.
 # Runs on the host itself, also over SSH: ssh HOST 'bash -s' -- app < wait-ready.sh
 set -u
 databases="todo-postgres notes-postgres keycloak-postgres"
-case ${1:-} in
+mode=${1:-}
+case $mode in
   app)
     services="shared-proxy todo-app notes-app keycloak $databases"
     containers="nginx todo-backend todo-frontend notes-backend notes-frontend keycloak $databases"
-    hostnames="todo.test notes.test" ;;
+    shift
+    hostnames=${*:-todo.test notes.test} ;;
   standby)
     services=$databases containers=$databases hostnames="" ;;
   *)
@@ -56,4 +60,4 @@ while waiting=$(missing) && [ -n "$waiting" ]; do
   fi
   sleep 2
 done
-echo "READY: $1 on $(hostname) after ${SECONDS}s"
+echo "READY: $mode on $(hostname) after ${SECONDS}s"

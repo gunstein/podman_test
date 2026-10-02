@@ -8,8 +8,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[2] / 'installer')]
+from types import SimpleNamespace  # noqa: E402
+
+import dr_target  # noqa: E402
 from app_dr_host import cli, replication  # noqa: E402
 from app_installer import apps  # noqa: E402
+from app_installer.target_render import PUBLISH_ADDRESS  # noqa: E402
 
 
 class ReplicationTests(unittest.TestCase):
@@ -80,10 +84,10 @@ class ReplicationTests(unittest.TestCase):
         claim = {'apiVersion': 'v1', 'kind': 'PersistentVolumeClaim', 'metadata': {
             'name': app.volume('data'), 'annotations': {
                 'volume.podman.io/uid': '999', 'volume.podman.io/gid': '999'}}}
+        target = SimpleNamespace(manifests={app.manifest: yaml.safe_dump_all([
+            claim, {'kind': 'Pod', 'metadata': {'name': app.container}}]).encode()})
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / app.manifest).write_text(yaml.safe_dump_all([
-                claim, {'kind': 'Pod', 'metadata': {'name': app.container}}]))
             with patch.object(replication, 'run', return_value=subprocess.CompletedProcess([], 0, '1|1|0/10|', '')) as run, \
                     patch.object(replication, 'exists', side_effect=lambda kind, _: kind != 'volume'), \
                     patch.object(replication.workloads, 'install_postgres'), \
@@ -92,7 +96,7 @@ class ReplicationTests(unittest.TestCase):
                         'in_recovery': True, 'transaction_read_only': True}):
                 self.assertTrue(replication.bootstrap_standby(
                     app, '192.0.2.50', project_root=root, quadlet_dir=root,
-                    kube_runtime_dir=root / 'todo-kube-runtime', rendered_manifest_dir=root))
+                    kube_runtime_dir=root / 'todo-kube-runtime', target=target))
             commands = [c.args for c in run.call_args_list]
             creation = next(c for c in run.call_args_list if c.args[:3] == ('podman', 'kube', 'play'))
             self.assertEqual(yaml.safe_load(creation.kwargs['input']), claim)
@@ -115,7 +119,7 @@ class ReplicationTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'never overwrites'):
                 replication.bootstrap_standby(apps.APPS[0].database, '192.0.2.50', project_root='/tmp',
                                              quadlet_dir='/tmp', kube_runtime_dir='/tmp/todo-kube-runtime',
-                                             rendered_manifest_dir='/tmp')
+                                             target=None)
             run.assert_not_called()
 
     def test_authentication_failure_cannot_create_a_volume(self):
@@ -125,7 +129,7 @@ class ReplicationTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'authentication failed'):
                 replication.bootstrap_standby(apps.APPS[0].database, '192.0.2.50', project_root='/tmp',
                                              quadlet_dir='/tmp', kube_runtime_dir='/tmp/todo-kube-runtime',
-                                             rendered_manifest_dir='/tmp')
+                                             target=None)
             self.assertEqual(run.call_count, 1)
             self.assertIn('--command=IDENTIFY_SYSTEM;', run.call_args.args)
 
@@ -194,7 +198,7 @@ class ReplicationTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'Exact local hostname'):
                     replication.reseed_check(apps.APPS[0].database, '192.0.2.51', project_root='/tmp',
                         quadlet_dir='/tmp/q', kube_runtime_dir='/tmp/q/todo-kube-runtime',
-                        rendered_manifest_dir='/tmp', confirm_fenced=fenced, confirm_reseed=confirmed)
+                        target=None, confirm_fenced=fenced, confirm_reseed=confirmed)
             run.assert_not_called()
 
     def test_reseed_failure_cannot_delete_data_or_backup(self):
@@ -254,16 +258,6 @@ class ReplicationTests(unittest.TestCase):
                 quadlet_dir = Path(temp) / 'q'
                 kube_runtime_dir = quadlet_dir / 'todo-kube-runtime'
                 kube_runtime_dir.mkdir(parents=True)
-                (kube_runtime_dir / app.config_manifest).write_bytes(b'---\n')
-                (kube_runtime_dir / app.manifest).write_text(json.dumps({
-                    'kind': 'PersistentVolumeClaim',
-                    'metadata': {'name': app.volume('data')},
-                }))
-                quadlet_root = Path(temp) / 'source'
-                (quadlet_root / 'deploy/quadlet').mkdir(parents=True)
-                (quadlet_root / 'deploy/quadlet/app-network.network').write_bytes(b'')
-                (quadlet_root / 'deploy/quadlet' / (app.unit + '.j2')).write_text(
-                    '{{ postgres_publish_address }}:{{ postgres_publish_port }}')
 
                 def command(*argv, **kwargs):
                     self.assertNotIn('IDENTIFY_SYSTEM', ' '.join(str(a) for a in argv))
@@ -279,9 +273,9 @@ class ReplicationTests(unittest.TestCase):
                         patch.object(replication, 'exists', return_value=True), \
                         patch.object(replication, 'require_stopped_service'), \
                         patch.object(replication, 'authenticate') as auth:
-                    replication.reseed_check(app, '192.0.2.51', project_root=str(quadlet_root),
+                    replication.reseed_check(app, '192.0.2.51', project_root=str(dr_target.bundle()),
                         quadlet_dir=str(quadlet_dir), kube_runtime_dir=str(kube_runtime_dir),
-                        rendered_manifest_dir=str(kube_runtime_dir),
+                        target=dr_target.load('192.0.2.11'),
                         confirm_fenced=replication.socket.gethostname() + ' is fenced',
                         confirm_reseed=replication.socket.gethostname())
                     auth.assert_not_called()
@@ -305,7 +299,7 @@ class ReplicationTests(unittest.TestCase):
 class PublishPrimariesTests(unittest.TestCase):
     DATABASES = apps.REPLICATED_DATABASES
 
-    def publish(self, bootstrap, changed=(), access_changed=False, legacy=False, readonly=None):
+    def publish(self, bootstrap, changed=(), access_changed=False, legacy=False, readonly=None, **hostnames):
         steps = self.steps = []
 
         def run(*argv, input=None, allowed=(0,), timeout=None):
@@ -325,8 +319,8 @@ class PublishPrimariesTests(unittest.TestCase):
         def identity(name):
             return lambda app, *args: (steps.append((name, app.name) + args), access_changed)[1]
 
-        def install(project_root, quadlet_dir, runtime, rendered, publish_address, *, database):
-            steps.append(('install', database.name, publish_address))
+        def install(project_root, quadlet_dir, runtime, rendered, publish_address, *, database, target):
+            steps.append(('install', database.name, publish_address, target.values[PUBLISH_ADDRESS]))
             return database.name in changed
 
         with patch.object(replication, 'run', run), \
@@ -343,7 +337,7 @@ class PublishPrimariesTests(unittest.TestCase):
                              lambda path, *a, hostname=None, **k: steps.append(('wait', path, hostname))):
             result = replication.publish_primaries(
                 '192.0.2.10', bootstrap=bootstrap, project_root='/staged', quadlet_dir='/q',
-                kube_runtime_dir='/q/todo-kube-runtime', rendered_manifest_dir='/staged/generated/kube-runtime')
+                kube_runtime_dir='/q/todo-kube-runtime', target=dr_target.load('192.0.2.10', **hostnames))
         return result, steps
 
     def first(self, steps, predicate):
@@ -374,7 +368,7 @@ class PublishPrimariesTests(unittest.TestCase):
     def test_every_database_is_published_on_the_node_address(self):
         _result, steps = self.publish(True)
         self.assertEqual([s for s in steps if s[0] == 'install'],
-                         [('install', d.name, '192.0.2.10') for d in self.DATABASES])
+                         [('install', d.name, '192.0.2.10', '192.0.2.10') for d in self.DATABASES])
 
     def test_unchanged_group_is_neither_stopped_nor_restarted_but_verified(self):
         result, steps = self.publish(False)
@@ -386,6 +380,11 @@ class PublishPrimariesTests(unittest.TestCase):
         self.assertIn(('systemctl', 'start', 'shared-proxy.service'), steps)
         self.assertEqual([s for s in steps if s[0] == 'wait'],
                          [('wait', '/ready', app.hostname) for app in apps.APPS])
+
+    def test_readiness_asks_for_the_hosts_own_public_hostnames(self):
+        _result, steps = self.publish(False, TARGET_EXTERNAL_HOSTNAME='shop.example.org')
+        self.assertEqual([s for s in steps if s[0] == 'wait'],
+                         [('wait', '/ready', 'shop.example.org'), ('wait', '/ready', 'notes.test')])
 
     def test_changed_databases_restart_behind_one_application_tier_stop(self):
         changed = [d.name for d in self.DATABASES[1:]]
@@ -418,7 +417,7 @@ class PublishPrimariesTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 replication.publish_primaries('primary.example', bootstrap=True, project_root='/s',
                                               quadlet_dir='/q', kube_runtime_dir='/q/todo-kube-runtime',
-                                              rendered_manifest_dir='/r')
+                                              target=None)
             preflight.assert_not_called()
 
 
@@ -467,7 +466,7 @@ class ReseedGroupTests(unittest.TestCase):
                 try:
                     return replication.reseed_group(
                         '192.0.2.11', **{**self.CONFIRM, **confirmations}, project_root=directory,
-                        quadlet_dir=directory, kube_runtime_dir=str(runtime), rendered_manifest_dir=directory)
+                        quadlet_dir=directory, kube_runtime_dir=str(runtime), target=None)
                 finally:
                     self.remaining = sorted(p.name for p in runtime.iterdir())
                     self.tier = tier
@@ -517,7 +516,7 @@ class ReseedGroupTests(unittest.TestCase):
                 patch.object(replication.socket, 'gethostname', return_value='old-primary'), \
                 self.assertRaises(ValueError):
             replication.reseed_group('primary.example', **self.CONFIRM, project_root='/p', quadlet_dir='/q',
-                                     kube_runtime_dir='/q/todo-kube-runtime', rendered_manifest_dir='/r')
+                                     kube_runtime_dir='/q/todo-kube-runtime', target=None)
         run.assert_not_called()
 
     def test_missing_quarantine_stops_before_any_check(self):

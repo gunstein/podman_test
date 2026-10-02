@@ -96,19 +96,23 @@ def bootstrap(project_root, controller, primary, standby):
 
     The primary's databases are published on the LAN and get their
     replicator role first. The standby then gets a base backup of each
-    database, and the run ends when all of them stream.
+    database, with the primary's public hostnames in its files, and the run
+    ends when all of them stream.
     """
     preflight(project_root, controller, primary, standby)
-    primary_path = steps.stage_postgres_group(project_root, controller, primary)
+    primary_path = steps.stage_target_files(project_root, controller, primary)
     changed = steps.changed(steps.app_dr_host(primary, primary_path, 'publish-primaries', 'bootstrap',
                                                 '--node-address', primary.spec.address, *steps.group_paths(primary)))
+    # The standby serves the primary's public hostnames, so a failover keeps them.
+    hostnames = steps.target_values(primary, primary_path, steps.paths(primary)['target'])
     changed = sync_secrets(project_root, controller, primary, standby) or changed
-    standby_path = steps.stage_postgres_group(project_root, controller, standby)
+    standby_path = steps.stage_target_files(project_root, controller, standby)
     images = steps.paths(standby)['bundle'] + '/images/'
     for database in steps.GROUP:
         changed = steps.changed(steps.app_dr_host(
             standby, standby_path, 'replicate-workload', 'standby', '--app', database.name,
             '--primary-address', primary.spec.address, '--image-archive', images + database.image_archive,
+            '--node-address', standby.spec.address, '--target-values', hostnames,
             *steps.group_paths(standby), timeout=steps.COPY_STEP_TIMEOUT)) or changed
     streaming(primary, primary_path)
     return changed

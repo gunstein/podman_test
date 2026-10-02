@@ -10,8 +10,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[2] / 'installer')]
+import dr_target  # noqa: E402
 from app_dr_host import cli, promoted, transfer  # noqa: E402
-from app_installer import apps  # noqa: E402
+from app_installer import apps, target_render  # noqa: E402
 
 CERTIFICATE = '-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----'
 ISSUER = 'https://todo.test:8443/auth/realms/todo'
@@ -60,6 +61,11 @@ class PromotedHost:
             return {'issuer': self.issuers.pop(0) if len(self.issuers) > 1 else self.issuers[0]}
         return self.reads.get(hostname, [])
 
+    def configure(self, password, clients):
+        self.steps.append(('clients',))
+        self.clients = list(clients)
+        return False
+
     def patches(self, directory):
         return [
             patch.object(promoted, 'run', self.run),
@@ -75,15 +81,21 @@ class PromotedHost:
             patch.object(promoted.keycloak, 'wait',
                          lambda path, *a, hostname=None, **k: self.steps.append(('wait', path, hostname))),
             patch.object(promoted.keycloak, 'request', self.request),
-            patch.object(promoted.keycloak, 'configure', lambda *a: (self.steps.append(('clients',)), False)[1]),
+            patch.object(promoted.keycloak, 'configure', self.configure),
             patch.object(promoted.secrets, 'read', lambda name: 'admin-password'),
             patch.object(promoted.time, 'sleep', lambda seconds: None),
+            patch.object(target_render, 'record_path', return_value=self.record(directory)),
         ]
+
+    @staticmethod
+    def record(directory):
+        """Where this host keeps the public hostnames it recorded as a standby."""
+        return Path(directory) / 'config/todo/target-values.json'
 
 
 class PromotedDeployTests(unittest.TestCase):
     def deploy(self, host, directory, **overrides):
-        options = dict(project_root='/ops', quadlet_dir=Path(directory) / 'systemd', bundle_dir='/bundle',
+        options = dict(project_root=dr_target.bundle(), quadlet_dir=Path(directory) / 'systemd', bundle_dir='/bundle',
                        inventory_hostname='todo-standby', node_address='192.0.2.11',
                        journal=Path(directory) / 'promotion.json', config_dir=Path(directory), service_port=8443)
         options.update(overrides)
@@ -174,6 +186,26 @@ class PromotedDeployTests(unittest.TestCase):
             self.deploy(host, directory)
             self.assertIn(('clients',), host.steps)
 
+    def test_the_recorded_public_hostnames_are_the_ones_checked_and_registered(self):
+        with tempfile.TemporaryDirectory() as directory:
+            record = PromotedHost.record(directory)
+            record.parent.mkdir(parents=True)
+            record.write_text(json.dumps({'TARGET_EXTERNAL_HOSTNAME': 'shop.example.org',
+                                          'TARGET_NOTES_HOSTNAME': 'notes.example.org'}))
+            host = PromotedHost(issuers=['https://shop.example.org:8443/auth/realms/todo'])
+            self.deploy(host, directory)
+            self.assertIn(('request', apps.APPS[0].api_path(), 'shop.example.org'), host.steps)
+            self.assertIn(('request', apps.APPS[1].api_path(), 'notes.example.org'), host.steps)
+            self.assertEqual([hostname for _client, hostname in host.clients], ['shop.example.org', 'notes.example.org'])
+
+    def test_a_port_other_than_the_bundles_refuses_before_anything_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            host = PromotedHost()
+            with patch.object(promoted, 'require_identity'), \
+                    self.assertRaisesRegex(ValueError, 'built for HTTPS port 8443, not 9443'):
+                self.deploy(host, directory, service_port=9443)
+            self.assertFalse([s for s in host.steps if s[0] in ('promotion', 'images', 'install')])
+
     def test_cli_reports_one_json_result(self):
         with tempfile.TemporaryDirectory() as directory:
             host = PromotedHost()
@@ -183,7 +215,7 @@ class PromotedDeployTests(unittest.TestCase):
                     stack.enter_context(patcher)
                 stack.enter_context(redirect_stdout(output))
                 self.assertEqual(cli.main([
-                    'deploy-promoted', '--project-root', '/ops', '--quadlet-dir', directory,
+                    'deploy-promoted', '--project-root', str(dr_target.bundle()), '--quadlet-dir', directory,
                     '--bundle-dir', '/bundle', '--inventory-hostname', 'todo-standby',
                     '--node-address', '192.0.2.11', '--journal', directory + '/promotion.json',
                     '--config-dir', directory]), 0)

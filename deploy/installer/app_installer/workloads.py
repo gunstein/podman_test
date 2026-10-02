@@ -34,18 +34,19 @@ def proxy_variables(publish_address, service_port, applications):
 
 
 def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir, *,
-             manifests, units, obsolete, capability, mapping, variables, values=None, target=None):
+             manifests, units, obsolete, capability, mapping, variables, values=None, target=None,
+             replicated=False):
     """Write one workload's Kube YAML and Quadlet unit, and reload user systemd.
 
     Every file is read and rendered before the first write, so a missing
     file stops the install with nothing changed. With target, the files are
-    the offline bundle's, already filled in (see the module docstring). Kube
+    the bundle's, already filled in (see the module docstring); replicated
+    picks the database unit that also publishes replication. Kube
     secrets are created from the raw Podman secrets; YAML is written 0600,
     units 0644. Returns True if a definition changed. It never starts or
     stops a service: the caller decides that.
     """
-    root, directory, runtime, rendered = map(Path, (
-        project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir))
+    root, directory, runtime = map(Path, (project_root, quadlet_dir, kube_runtime_dir))
     if runtime != directory / settings.KUBE_RUNTIME or runtime.is_symlink():
         raise ValueError(f"kube_runtime_dir must be quadlet_dir/{settings.KUBE_RUNTIME}")
     if "--no-pod-prefix" not in run("podman", "kube", "play", "--help").stdout:
@@ -55,7 +56,7 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
     # DR path, which calls it for the same reason.
     # Read and render everything before mutating the installation.
     if target is None:
-        files = [(runtime / name, (rendered / name).read_bytes(), 0o600)
+        files = [(runtime / name, (Path(rendered_manifest_dir) / name).read_bytes(), 0o600)
                  for name in manifests]
         files += [(directory / "app-network.network",
                    (root / "deploy/quadlet/app-network.network").read_bytes(), 0o644)]
@@ -63,7 +64,8 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
     else:
         files = [(runtime / name, target.manifests[name], 0o600) for name in manifests]
         files += [(directory / target.network_name, target.network, 0o644)]
-        files += [(runtime / name, target.quadlets[name], 0o644) for name in units]
+        files += [(runtime / name, (target.replicated if replicated else target.quadlets)[name], 0o644)
+                  for name in units]
     secrets.create_kube(mapping, values)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     runtime.mkdir(exist_ok=True, mode=0o700)
@@ -83,14 +85,16 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
     """Install one database's PostgreSQL workload.
 
     publish_address publishes the replication port on the LAN; only
-    databases in the DR group may do that, and never from an offline
-    bundle's units, which publish on 127.0.0.1 only. db_password supplies
-    the owner password directly instead of reading it from Podman.
+    databases in the DR group may do that. With target, the bundle's
+    replicated unit publishes on the target's own publish address, so
+    publish_address must be that address. db_password supplies the owner
+    password directly instead of reading it from Podman.
     """
     if publish_address and database not in apps.REPLICATED_DATABASES:
         raise ValueError("Replication publication requires membership in the verified DR group.")
-    if publish_address and target is not None:
-        raise ValueError("An offline bundle's database units have no LAN publication; DR installs it.")
+    if publish_address and target is not None and publish_address != target.values["TARGET_PUBLISH_ADDRESS"]:
+        raise ValueError(f"The bundle's units publish on {target.values['TARGET_PUBLISH_ADDRESS']}, "
+                         f"not on {publish_address}.")
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         manifests=(database.manifest, database.config_manifest), units=(database.unit,),
@@ -98,6 +102,7 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
         capability="PostgreSQL", mapping=secrets.postgres_secret_mapping(database),
         variables=postgres_variables(database, publish_address),
         values={database.secret("db"): db_password} if db_password is not None else None, target=target,
+        replicated=bool(publish_address),
     )
 
 

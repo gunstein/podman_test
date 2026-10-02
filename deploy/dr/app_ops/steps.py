@@ -3,17 +3,13 @@ import json
 import time
 from pathlib import Path
 
-from app_installer import apps, settings
+from app_installer import apps, settings, target_render
 
 from . import trust
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 GROUP = apps.REPLICATED_DATABASES
-# The Quadlet templates app_dr_host needs on a host: the network, each
-# database's unit, and the serving tier's units for a promoted host.
-QUADLET_TEMPLATES = ('app-network.network', *(database.unit + '.j2' for database in GROUP),
-                     *(app.unit + '.j2' for app in apps.APPS), 'keycloak.kube.j2', 'shared-proxy.kube.j2')
 
 # A backstop for one app_dr_host step on a host. Each command inside it has
 # its own limit (settings.COMMAND_TIMEOUT and the longer ones), so this only
@@ -60,23 +56,39 @@ def put(host, path, content):
     host.run(['sh', '-c', 'umask 077 && mkdir -p "$(dirname "$1")" && cat > "$1"', 'put', path], input=content)
 
 
-def stage_postgres_group(project_root, controller, host, rendered=None):
-    """Installer, every database's Quadlet templates and canonical YAML; returns the PYTHONPATH."""
+def stage_target_files(project_root, controller, host):
+    """The installer and the package's rendered files (bundle.json, generated/target); returns the PYTHONPATH.
+
+    app_dr_host on the host fills in that host's values (target_render) and
+    installs them; nothing is rendered there.
+    """
     pythonpath = trust.stage_installer(project_root, controller, host)
-    target = paths(host)['target']
-    rendered = Path(rendered or Path(project_root) / 'generated/kube-runtime')
-    for name in sorted(QUADLET_TEMPLATES):
-        put(host, f'{target}/deploy/quadlet/{name}', (Path(project_root) / 'deploy/quadlet' / name).read_text())
-    for name in sorted(name for database in GROUP for name in (database.manifest, database.config_manifest)):
-        put(host, f'{target}/generated/kube-runtime/{name}', (rendered / name).read_text())
+    target, root = paths(host)['target'], Path(project_root)
+    for path in sorted([root / target_render.BUNDLE_METADATA, *(root / 'generated/target').rglob('*')]):
+        if path.is_file():
+            put(host, f'{target}/{path.relative_to(root)}', path.read_text())
     return pythonpath
 
 
 def group_paths(host):
-    """The directory options app_dr_host needs for the staged database group on host."""
+    """The directory options app_dr_host needs for the staged files on host."""
     p = paths(host)
-    return ['--project-root', p['target'], '--quadlet-dir', p['quadlet'], '--kube-runtime-dir', p['runtime'],
-            '--rendered-manifest-dir', p['target'] + '/generated/kube-runtime']
+    return ['--project-root', p['target'], '--quadlet-dir', p['quadlet'], '--kube-runtime-dir', p['runtime']]
+
+
+def target_values(host, pythonpath, project_root):
+    """The public hostnames host serves, {TARGET_...: hostname}, as JSON text: recorded, else the defaults.
+
+    app-ops passes them on (--target-values) to the host that becomes its
+    standby, so both serve the same names.
+    """
+    result = app_dr_host(host, pythonpath, 'target-values', '--project-root', str(project_root))
+    return json.dumps(json.loads(result.stdout)['values'], sort_keys=True)
+
+
+def hostnames(host, pythonpath, project_root):
+    """Each app's public hostname on host: {app name: hostname}."""
+    return target_render.hostnames(json.loads(target_values(host, pythonpath, project_root)))
 
 
 def retry(action, attempts, delay, sleep=time.sleep):

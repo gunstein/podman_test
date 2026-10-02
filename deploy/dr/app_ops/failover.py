@@ -62,14 +62,14 @@ def https(host, hostname, path, *curl_options):
                      path, *curl_options]).stdout
 
 
-def services(project_root, host):
+def services(project_root, host, hostnames):
     """Raise unless every service is ready and each app answers over HTTPS with the host's CA."""
     wait_ready = (Path(project_root) / 'deploy/scripts/wait-ready.sh').read_text()
-    waited = host.run(['bash', '-s', '--', 'app'], input=wait_ready, allowed=(0, 1))
+    waited = host.run(['bash', '-s', '--', 'app', *hostnames.values()], input=wait_ready, allowed=(0, 1))
     if waited.returncode:
         raise RuntimeError(waited.stdout.strip().splitlines()[-1] if waited.stdout.strip() else 'not ready')
     for app in apps.APPS:
-        https(host, app.hostname, '/ready')
+        https(host, hostnames[app.name], '/ready')
 
 
 def connect_sources(headers):
@@ -84,12 +84,12 @@ def connect_sources(headers):
     return []
 
 
-def login_page(host):
+def login_page(host, hostnames):
     """Raise unless each app's login can start: Keycloak accepts its redirect, and its CSP allows the token."""
-    identity = apps.SHARED_RESOURCE_OWNER.hostname
+    identity = hostnames[apps.SHARED_RESOURCE_OWNER.name]
     identity_origin = f'https://{identity}:{settings.HTTPS_PORT}'
     for app in apps.APPS:
-        origin = f'https://{app.hostname}:{settings.HTTPS_PORT}'
+        origin = f'https://{hostnames[app.name]}:{settings.HTTPS_PORT}'
         query = urlencode({'client_id': app.keycloak_client, 'redirect_uri': origin + '/', 'response_type': 'code',
                            'scope': 'openid', 'code_challenge': PKCE_CHALLENGE, 'code_challenge_method': 'S256'})
         try:
@@ -99,17 +99,17 @@ def login_page(host):
                                f'{app.keycloak_client} with redirect {origin}/: {error}') from error
         if 'id="username"' not in page:
             raise RuntimeError(f'{app.name}: Keycloak did not show its login form for {app.keycloak_client}')
-        sources = connect_sources(https(host, app.hostname, '/', '--head'))
+        sources = connect_sources(https(host, hostnames[app.name], '/', '--head'))
         if identity_origin not in sources and not (origin == identity_origin and "'self'" in sources):
             raise RuntimeError(f'{app.name}: Content-Security-Policy connect-src {" ".join(sources) or "(none)"} '
                                f'does not allow {identity_origin}, so the browser cannot fetch the login token')
 
 
-def users(host):
+def users(host, hostnames):
     """What the operator must do so users reach this host: the names, the address and the CA to trust."""
     fingerprint = host.run(['podman', 'exec', 'nginx', 'openssl', 'x509', '-in', '/var/lib/todo-tls/ca.crt',
                             '-noout', '-fingerprint', '-sha256']).stdout.strip().split('=', 1)[-1]
-    names = [app.hostname for app in apps.APPS]
+    names = [hostnames[app.name] for app in apps.APPS]
     return {'hostnames': names, 'address': host.spec.address, 'ca_sha256': fingerprint,
             'next': f'Point {" and ".join(names)} at {host.spec.address} (DNS or each client\'s hosts file), '
                     f'and have clients trust this host\'s CA, SHA-256 {fingerprint}. Then confirm that a '
@@ -126,13 +126,21 @@ def failover(project_root, controller, current, old_primary, confirm_fenced, con
                            f'--confirm-promotion {current.name}')
     recovery.require_identity(current)
     report = {}
+    # The public hostnames the deploy installed: the ones this host recorded as a standby.
+    hostnames = {}
+
+    def deploy():
+        changed = recovery.deploy_promoted(project_root, controller, current)
+        hostnames.update(steps.hostnames(current, steps.installed_pythonpath(current), project_root))
+        return changed
+
     for name, action in (
             ('promote', lambda: promote(current, confirm_fenced, confirm_promotion)),
-            ('deploy', lambda: recovery.deploy_promoted(project_root, controller, current)),
+            ('deploy', deploy),
             ('backup', lambda: recovery.configure_backup(project_root, controller, current)),
-            ('services', lambda: services(project_root, current)),
-            ('login-page', lambda: login_page(current)),
-            ('users', lambda: users(current))):
+            ('services', lambda: services(project_root, current, hostnames)),
+            ('login-page', lambda: login_page(current, hostnames)),
+            ('users', lambda: users(current, hostnames))):
         say(f'{name} ...')
         try:
             report[name] = action()

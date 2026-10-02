@@ -11,6 +11,7 @@ from app_installer import (
     quadlet,
     secrets,
     settings,
+    target_render,
     workloads,
 )
 from app_installer.commands import exists, run
@@ -36,23 +37,24 @@ def require_identity(inventory_hostname, node_address, service_port):
         raise RuntimeError('Check the recovery inventory: ' + '; '.join(problems) + '.')
 
 
-def install_workloads(project_root, quadlet_dir, rendered, node_address, service_port):
-    """Install every app, Keycloak and the proxy, published on this host's own address."""
+def install_workloads(project_root, quadlet_dir, target, node_address, service_port):
+    """Install every app, Keycloak and the proxy from the bundle's files, published on this host's own address."""
     install.preflight(quadlet_dir)
     runtime = quadlet_dir / settings.KUBE_RUNTIME
-    arguments = (project_root, quadlet_dir, runtime, rendered)
+    arguments = (project_root, quadlet_dir, runtime, None)
     changed = False
     for app in apps.APPS:
-        changed = workloads.install_application(*arguments, node_address, service_port, app=app) or changed
-    changed = workloads.install_keycloak(*arguments) or changed
-    return workloads.install_shared_proxy(*arguments, node_address, service_port) or changed
+        changed = workloads.install_application(*arguments, node_address, service_port, app=app,
+                                                target=target) or changed
+    changed = workloads.install_keycloak(*arguments, target=target) or changed
+    return workloads.install_shared_proxy(*arguments, node_address, service_port, target=target) or changed
 
 
-def require_application(app):
-    """Health, database readiness and a public read, all through the shared nginx virtual host."""
-    keycloak.wait('/health', 30, 1, 'ok', hostname=app.hostname)
-    keycloak.wait('/ready', 30, 1, 'ready', hostname=app.hostname)
-    if not isinstance(keycloak.request(app.api_path(), hostname=app.hostname), list):
+def require_application(app, hostname):
+    """Health, database readiness and a public read, all through the app's nginx virtual host."""
+    keycloak.wait('/health', 30, 1, 'ok', hostname=hostname)
+    keycloak.wait('/ready', 30, 1, 'ready', hostname=hostname)
+    if not isinstance(keycloak.request(app.api_path(), hostname=hostname), list):
         raise RuntimeError(f'{app.name}: public read {app.api_path()} did not return a list')
 
 
@@ -73,25 +75,35 @@ def require_issuer(issuer, attempts=90, delay=2):
 
 def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_address,
            journal, config_dir, service_port):
-    """Returns whether anything changed; each step refuses before the next can run."""
+    """Returns whether anything changed; each step refuses before the next can run.
+
+    The application files are the operations package's (project_root),
+    filled in with this host's address and the public hostnames it recorded
+    when it became a standby, so users reach the same names as before; the
+    images come from the offline bundle (bundle_dir).
+    """
     project_root, quadlet_dir, bundle_dir, config_dir = map(Path, (project_root, quadlet_dir, bundle_dir, config_dir))
     require_identity(inventory_hostname, node_address, service_port)
+    target = target_render.load_on_host(project_root, node_address)
+    if service_port != target.public_port:
+        raise ValueError(f'The bundle was built for HTTPS port {target.public_port}, not {service_port}.')
+    hostnames = target.hostnames
     replication.require_promoted_group(journal)
     missing = [name for name in transfer.replicated_names() if not exists('secret', name)]
     if missing:
         raise RuntimeError('Credentials required by the promoted group are missing: ' + ', '.join(missing))
     images_changed = images.prepare_offline_group(bundle_dir)
-    workloads_changed = install_workloads(project_root, quadlet_dir, bundle_dir / 'generated/kube-runtime',
-                                          node_address, service_port)
+    workloads_changed = install_workloads(project_root, quadlet_dir, target, node_address, service_port)
     if images_changed or workloads_changed:
         run('systemctl', '--user', 'stop', *apps.services(databases=False), allowed=(0, 5))
     for service in [app.service for app in apps.APPS] + ['keycloak.service', 'shared-proxy.service']:
         quadlet.systemctl('start', service)
     for app in apps.APPS:
-        require_application(app)
-    require_issuer(f'https://{apps.SHARED_RESOURCE_OWNER.hostname}:{service_port}/auth/realms/todo')
+        require_application(app, hostnames[app.name])
+    require_issuer(f'https://{hostnames[apps.SHARED_RESOURCE_OWNER.name]}:{service_port}/auth/realms/todo')
     clients_changed = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
-                                         [(app.keycloak_client, app.hostname) for app in apps.APPS])
+                                         install.clients(apps.APPS, hostnames))
+    target_render.write_record(target.values)
     certificate = run('podman', 'exec', 'nginx', 'cat', CA_CERTIFICATE).stdout.strip() + '\n'
     certificate_changed = quadlet.write(config_dir / 'todo-nginx-root.crt', certificate.encode(), 0o644)
     return images_changed or workloads_changed or clients_changed or certificate_changed

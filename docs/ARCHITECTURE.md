@@ -152,12 +152,15 @@ YAML is rendered into a temporary build directory and packaged. Source checkout
 `deploy/runtime/` contains guides; shared `deploy/quadlet/` templates produce target-specific
 Quadlets. Tests compare packaged YAML with independent Jinja2 rendering.
 Rendering runs on the build host, not the Oracle Linux target. The offline
-bundle carries every Kube YAML file and `.kube` unit rendered, with
-`${TARGET_EXTERNAL_HOSTNAME}` and `${TARGET_PUBLISH_ADDRESS}` for the values only
-the target knows, and `bundle.json` naming where they are. The single-host
-install fills in those placeholders with the standard library alone
-(`target_render.py`) and stages the files as before; it needs no Jinja2 or
-PyYAML. The DR tools still render their units on the hosts. Images and rendered
+bundle and the operations package carry every Kube YAML file and `.kube` unit
+rendered, with `${TARGET_EXTERNAL_HOSTNAME}`, `${TARGET_NOTES_HOSTNAME}` and
+`${TARGET_PUBLISH_ADDRESS}` for the values that vary between hosts, and
+`bundle.json` naming where they are. The single-host install and the DR tools
+fill in those placeholders with the standard library alone
+(`target_render.py`); neither renders, and neither needs Jinja2. The public
+hostnames are the same on primary and standby: each host records them
+(`~/.config/todo/target-values.json`) and app-ops copies the primary's to the
+standby. The address is each host's own. Images and rendered
 definitions are delivered offline; target execution does not fetch from a
 registry. Both acceptance artifacts must identify the same clean revision.
 Checksums establish integrity against the supplied digest, not publisher
@@ -262,7 +265,7 @@ volumes needs one. See the Podman [PVC documentation](https://docs.podman.io/en/
 and [shutdown semantics](https://docs.podman.io/en/latest/markdown/podman-kube-down.1.html).
 
 Standby bootstrap and approved reseed play only the data PVC extracted from the
-canonical rendered PostgreSQL YAML of each database before `pg_basebackup`;
+package's PostgreSQL YAML of each database before `pg_basebackup`;
 they do not start PostgreSQL against an empty directory. Bootstrap still refuses
 existing data; reseed still requires all fencing and confirmation gates before
 deleting only the three `<database>-postgres-data` volumes. The existing helper ownership/SELinux handoff is preserved.

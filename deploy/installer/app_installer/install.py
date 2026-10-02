@@ -90,7 +90,8 @@ def load_target(bundle_directory, applications, publish_address, service_port, t
     the install here.
     """
     target = target_render.load(bundle_directory, {**(target_values or {}),
-                                                   target_render.PUBLISH_ADDRESS: publish_address})
+                                                   target_render.PUBLISH_ADDRESS: publish_address},
+                                recorded=target_render.read_record())
     if target.applications != tuple(app.name for app in applications):
         raise ValueError(f'The bundle was built for {", ".join(target.applications)}; '
                          'an offline install installs exactly those apps.')
@@ -103,24 +104,24 @@ def load_target(bundle_directory, applications, publish_address, service_port, t
     return target
 
 
-def public_hostname(project_root, mode, target):
-    """The hostname users reach the shared-resource app and Keycloak by.
+def app_hostnames(project_root, mode, target, applications):
+    """Each app's public hostname: {app name: hostname}.
 
     From the offline bundle's target values, else from the environment's
-    values.yaml, which build and dev mode render with (render needs PyYAML,
-    which those modes have).
+    values.yaml and the app registry, which build and dev mode render with
+    (render needs PyYAML, which those modes have).
     """
     if target is not None:
-        return target.values[target_render.EXTERNAL_HOSTNAME]
+        return target.hostnames
     from . import render
     profile = 'local' if mode == 'dev' else 'prod'
-    return render.read_values(Path(project_root) / f'deploy/environments/{profile}/values.yaml')[0]
+    public = render.read_values(Path(project_root) / f'deploy/environments/{profile}/values.yaml')[0]
+    return render.hostnames(applications, public)
 
 
-def clients(applications, hostname):
-    """Each app's Keycloak client and the hostname it is served on; the shared-resource app on hostname."""
-    return [(app.keycloak_client, hostname if app is apps.SHARED_RESOURCE_OWNER else app.hostname)
-            for app in applications]
+def clients(applications, hostnames):
+    """Each app's Keycloak client and the hostname it is served on."""
+    return [(app.keycloak_client, hostnames[app.name]) for app in applications]
 
 
 def _contents(path):
@@ -145,8 +146,9 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
 
     An offline install takes the bundle's pre-rendered files and fills in the
     target values (target_values, from the command line; target_render says
-    where else they may come from) before anything changes. It needs no
-    Jinja2 or PyYAML, and installs in server mode only.
+    where else they may come from, the host's record among them) before
+    anything changes, and records the hostnames once the install succeeded.
+    It needs no Jinja2 or PyYAML, and installs in server mode only.
 
     Returns True if anything changed.
     """
@@ -174,8 +176,8 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         raise ValueError(f'kube_runtime_dir must be quadlet_dir/{settings.KUBE_RUNTIME}')
     preflight(directory)
     run('podman', '--version')
-    rendered = (Path(bundle_directory) / 'generated/kube-runtime' if deployment_mode == 'offline'
-                else root / 'generated' / ('dev' if mode == 'dev' else 'kube-runtime'))
+    # An offline install takes its files from the bundle (target); the others render here.
+    rendered = None if deployment_mode == 'offline' else root / 'generated' / ('dev' if mode == 'dev' else 'kube-runtime')
     if deployment_mode == 'build':
         profile = 'local' if mode == 'dev' else 'prod'
         selection = [','.join(app.name for app in applications)] if tuple(applications) != apps.APPS else []
@@ -198,7 +200,8 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         secrets.create_kube(secrets.keycloak_secret_mapping())
         changed = up(rendered, applications, settings.DEV_STATE_FILE, images_changed)
         configured = keycloak.configure(
-            secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(applications, public_hostname(root, mode, target)))
+            secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
+            clients(applications, app_hostnames(root, mode, target, applications)))
         return changed or configured
     arguments = (root, directory, runtime, rendered)
     changed = False
@@ -256,10 +259,14 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         setup_roles(app)
     quadlet.systemctl('start', 'shared-proxy.service')
     configured = keycloak.configure(
-        secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(applications, public_hostname(root, mode, target)))
+        secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
+        clients(applications, app_hostnames(root, mode, target, applications)))
     for service in selected_services:
         source = quadlet.systemctl('show', service + '.service', '--property=SourcePath',
                                   '--value').stdout.strip()
         if source != str(runtime / (service + '.kube')):
             raise RuntimeError(f'Unexpected SourcePath for {service}: {source}')
+    # The hostnames this host now serves, for the next install and the DR tools.
+    if target is not None:
+        target_render.write_record(target.values)
     return changed or images_changed or configured

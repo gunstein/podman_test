@@ -76,27 +76,25 @@ def render_keycloak(project_root, database, admin_secret, hostname, port, image)
                    hostname=hostname, port=port, image=image)
 
 
-def render_shared_proxy(project_root, applications, identity_app, hostname, port, image):
+def render_shared_proxy(project_root, applications, identity_app, hostnames, port, image):
     """The nginx pod that terminates TLS and routes each hostname to its app.
 
-    The app that owns shared resources is served on the public hostname from
-    values.yaml; the others on their registry hostname. Every hostname is
-    checked before it is written into nginx.conf. The identity origin, where
-    Keycloak serves every app's login and tokens, goes into the CSP.
-
-    For an offline bundle, hostname is the placeholder
-    ${TARGET_EXTERNAL_HOSTNAME}; the target host checks the value that
-    replaces it (target_render.check_hostname) before it is installed.
+    hostnames maps each app's name to its public hostname; the identity app's
+    is also where Keycloak serves every app's login and tokens, which goes
+    into the CSP. Every hostname is checked before it is written into
+    nginx.conf, except a ${TARGET_...} placeholder of an offline bundle: the
+    host checks the value that replaces it (target_render.check_hostname)
+    before anything is installed.
     """
-    target_hostname = "${TARGET_EXTERNAL_HOSTNAME}"
     context = [{
         "name": app.name,
-        "hostname": hostname if app is identity_app else app.hostname,
+        "hostname": hostnames[app.name],
         "frontend": app.pod + ":8080",
         "backend": app.pod + ":8000",
     } for app in applications]
     for entry in context:
-        if entry["hostname"] != target_hostname:
+        if not entry["hostname"].startswith("${TARGET_"):
             validate_hostname(entry["hostname"])
+    hostname = hostnames[identity_app.name]
     return _render(project_root, "shared-proxy.yaml.j2", applications=context, hostname=hostname,
                    identity_origin=f"https://{hostname}:{int(port)}", image=image)

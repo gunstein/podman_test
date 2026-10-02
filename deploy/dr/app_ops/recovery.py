@@ -16,7 +16,8 @@ def require_identity(host):
 def deploy_promoted(project_root, controller, current):
     """Start the apps, Keycloak and nginx on the promoted host, which must be this machine.
 
-    Uses the images and rendered YAML from the offline bundle on that host.
+    Uses the images from the offline bundle on that host and the operations
+    package's target files, filled in with its recorded public hostnames.
     """
     if not current.spec.local:
         raise RuntimeError('deploy-promoted-application runs on the promoted host itself: mark it local: true')
@@ -56,12 +57,16 @@ def preflight_rebuild(project_root, controller, current, rebuild, confirm_fenced
     if confirm_fenced != f'{rebuild.name} is fenced' or confirm_reseed != rebuild.name:
         raise RuntimeError('Rebuild host must remain infrastructure-fenced and both exact confirmations are '
                            'required before any destructive reseed.')
-    rebuild_path = steps.stage_postgres_group(project_root, controller, rebuild)
+    # The current primary's public hostnames, which the rebuilt standby will serve.
+    steps.stage_target_files(project_root, controller, current)
+    rebuild_path = steps.stage_target_files(project_root, controller, rebuild)
     app_dr_host(rebuild, rebuild_path, 'replicate-workload', 'quarantined', '--app', steps.GROUP[0].name)
+    hostnames = steps.target_values(current, current_path, steps.paths(current)['target'])
     for database in steps.GROUP:
         app_dr_host(rebuild, rebuild_path, 'replicate-workload', 'reseed-check', '--app', database.name,
                       '--primary-address', current.spec.address, '--confirm-fenced', confirm_fenced,
-                      '--confirm-reseed', confirm_reseed, *steps.group_paths(rebuild))
+                      '--confirm-reseed', confirm_reseed, '--node-address', rebuild.spec.address,
+                      '--target-values', hostnames, *steps.group_paths(rebuild))
     return rebuild_path
 
 
@@ -79,9 +84,11 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
     for host in (controller, rebuild_host):
         host.run(['true'], sudo=True)
     rebuild_path = preflight_rebuild(project_root, controller, current, rebuild_host, confirm_fenced, confirm_reseed)
-    current_path = steps.stage_postgres_group(project_root, controller, current)
+    current_path = steps.stage_target_files(project_root, controller, current)
     app_dr_host(current, current_path, 'publish-primaries', 'redundancy',
                   '--node-address', current.spec.address, *steps.group_paths(current))
+    # The rebuilt standby serves the current primary's public hostnames.
+    hostnames = steps.target_values(current, current_path, steps.paths(current)['target'])
     # The rebuild host needs the replication CA that publishing may just have
     # created (a pair set up before replication TLS); existing values must match.
     standby.sync_secrets(project_root, controller, current, rebuild_host)
@@ -90,6 +97,7 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
                       '--primary-address', current.spec.address)
     app_dr_host(rebuild_host, rebuild_path, 'reseed-group', '--primary-address', current.spec.address,
                   '--confirm-fenced', confirm_fenced, '--confirm-reseed', confirm_reseed,
+                  '--node-address', rebuild_host.spec.address, '--target-values', hostnames,
                   *steps.group_paths(rebuild_host), timeout=steps.COPY_STEP_TIMEOUT)
     standby.install_dr_tool(project_root, controller, rebuild_host, current.spec)
     standby.streaming(current, current_path, rebuilt=True)

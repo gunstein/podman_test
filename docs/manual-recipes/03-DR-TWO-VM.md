@@ -72,7 +72,7 @@ Both should show:
 ```bash
 getenforce
 podman --version
-python3 -c 'import jinja2, yaml; print("jinja2/pyyaml ok")'
+python3 -c 'import yaml; print("pyyaml ok")'
 loginctl show-user todo -p Linger
 ```
 

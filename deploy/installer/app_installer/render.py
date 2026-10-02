@@ -52,13 +52,21 @@ def selection(application_names=()):
     return selected
 
 
-def files(project_root, selected, hostname, port, log_level):
+def hostnames(selected, public_hostname):
+    """Each app's public hostname: the shared-resource app on public_hostname, the others from the registry."""
+    return {app.name: public_hostname if app is apps.SHARED_RESOURCE_OWNER else app.hostname for app in selected}
+
+
+def files(project_root, selected, hostnames, port, log_level):
     """Every Kube YAML file of the selected apps, Keycloak and the proxy: {file name: bytes}, checked.
 
-    hostname is the public hostname, or ${TARGET_EXTERNAL_HOSTNAME} for an
-    offline bundle (app_installer.bundle); the files are otherwise the same.
+    hostnames maps each app's name to its public hostname; for an offline
+    bundle (app_installer.bundle) each is a ${TARGET_...} placeholder, and
+    the files are otherwise the same. The shared-resource app's hostname is
+    also Keycloak's and the OIDC issuer's.
     """
     root = Path(project_root)
+    hostname = hostnames[apps.SHARED_RESOURCE_OWNER.name]
     result = {}
     for app in selected:
         result[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
@@ -72,7 +80,7 @@ def files(project_root, selected, hostname, port, log_level):
         root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_DATABASE.image)
     result[apps.KEYCLOAK_DATABASE.config_manifest] = manifests.render_postgres_config(root, apps.KEYCLOAK_DATABASE)
     result['shared-proxy.yaml'] = manifests.render_shared_proxy(
-        root, selected, apps.SHARED_RESOURCE_OWNER, hostname, port, apps.PROXY_IMAGE)
+        root, selected, apps.SHARED_RESOURCE_OWNER, hostnames, port, apps.PROXY_IMAGE)
 
     for name, content in result.items():
         _validate(name, content)
@@ -91,7 +99,8 @@ def render(project_root, values_file, output_directory, application_names=()):
     """
     selected = selection(application_names)
     hostname, port, log_level = read_values(values_file)
-    _replace_directory(Path(output_directory), files(project_root, selected, hostname, port, log_level))
+    _replace_directory(Path(output_directory),
+                       files(project_root, selected, hostnames(selected, hostname), port, log_level))
 
 
 def _replace_directory(output, files):

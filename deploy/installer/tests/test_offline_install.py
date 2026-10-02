@@ -25,6 +25,7 @@ from fake_host import FakeHost  # noqa: E402
 ROOT = TESTS.parents[2]
 HOSTNAME = 'shop.example.org'
 ADDRESS = '192.0.2.10'
+NOTES_HOSTNAME = 'TARGET_NOTES_HOSTNAME'
 
 
 def dollar_expressions(text):
@@ -48,25 +49,26 @@ class BundleContentTests(unittest.TestCase):
     def test_metadata_names_every_rendered_file(self):
         data = json.loads((self.bundle / 'bundle.json').read_text())
         self.assertEqual(data, self.metadata)
-        self.assertEqual((data['format'], data['format_version']), ('todo-offline-bundle', 2))
+        self.assertEqual((data['format'], data['format_version']), ('todo-offline-bundle', 3))
         self.assertEqual(data['applications'], ['todo', 'notes'])
-        self.assertEqual(data['defaults'], {EXTERNAL_HOSTNAME: 'todo.test'})
+        self.assertEqual(data['defaults'], {EXTERNAL_HOSTNAME: 'todo.test', 'TARGET_NOTES_HOSTNAME': 'notes.test'})
         manifests, units = install.offline_files(apps.APPS)
         self.assertEqual(set(data['manifests']['files']), manifests)
         self.assertEqual(set(data['quadlets']['files']), units)
         self.assertEqual(data['local_only_quadlets']['files'], ['shared-proxy.kube'])
-        for key in ('manifests', 'quadlets', 'local_only_quadlets'):
+        self.assertEqual(set(data['replicated_quadlets']['files']), {d.unit for d in apps.REPLICATED_DATABASES})
+        for key in ('manifests', 'quadlets', 'local_only_quadlets', 'replicated_quadlets'):
             for name in data[key]['files']:
                 self.assertTrue((self.bundle / data[key]['directory'] / name).is_file(), name)
         self.assertEqual((self.bundle / data['network']).read_bytes(),
                          (ROOT / 'deploy/quadlet/app-network.network').read_bytes())
 
-    def test_the_public_hostname_is_a_placeholder_wherever_it_is_used(self):
+    def test_every_public_hostname_is_a_placeholder_wherever_it_is_used(self):
         manifests = self.bundle / 'generated/target/manifests'
         proxy = (manifests / 'shared-proxy.yaml').read_text()
         for line in ('TODO_TLS_HOSTNAME: "${TARGET_EXTERNAL_HOSTNAME}"',
-                     'APP_TLS_HOSTNAMES: "${TARGET_EXTERNAL_HOSTNAME} notes.test"',
-                     'server_name ${TARGET_EXTERNAL_HOSTNAME};', 'server_name notes.test;',
+                     'APP_TLS_HOSTNAMES: "${TARGET_EXTERNAL_HOSTNAME} ${TARGET_NOTES_HOSTNAME}"',
+                     'server_name ${TARGET_EXTERNAL_HOSTNAME};', 'server_name ${TARGET_NOTES_HOSTNAME};',
                      "connect-src 'self' https://${TARGET_EXTERNAL_HOSTNAME}:8443;"):
             self.assertIn(line, proxy)
         for name in ('config.yaml', 'notes-config.yaml'):
@@ -74,19 +76,25 @@ class BundleContentTests(unittest.TestCase):
                           (manifests / name).read_text())
         self.assertIn('KC_HOSTNAME: "https://${TARGET_EXTERNAL_HOSTNAME}:8443/auth"',
                       (manifests / 'keycloak.yaml').read_text())
-        self.assertNotIn('todo.test', ''.join(path.read_text() for path in manifests.iterdir()))
+        everything = ''.join(path.read_text() for path in manifests.iterdir())
+        self.assertNotIn('todo.test', everything)
+        self.assertNotIn('notes.test', everything)
 
     def test_the_target_files_are_the_normal_render_with_the_values_in_place(self):
         values = ROOT / 'deploy/environments/prod/values.yaml'
         hostname, port, log_level = render.read_values(values)
         manifests = self.bundle / 'generated/target/manifests'
-        normal = render.files(ROOT, apps.APPS, hostname, port, log_level)
+        normal = render.files(ROOT, apps.APPS, render.hostnames(apps.APPS, hostname), port, log_level)
         self.assertEqual({name: (manifests / name).read_text().replace('${TARGET_EXTERNAL_HOSTNAME}', hostname)
-                          .encode() for name in normal}, normal)
+                          .replace('${TARGET_NOTES_HOSTNAME}', 'notes.test').encode() for name in normal}, normal)
         units = self.bundle / 'generated/target/quadlet'
         for database in apps.REPLICATED_DATABASES:
             self.assertEqual((units / database.unit).read_bytes(),
                              quadlet.render(ROOT, database.unit, workloads.postgres_variables(database)))
+        for database in apps.REPLICATED_DATABASES:
+            replicated = (units / 'replicated' / database.unit).read_text().replace('${TARGET_PUBLISH_ADDRESS}', ADDRESS)
+            self.assertEqual(replicated.encode(), quadlet.render(
+                ROOT, database.unit, workloads.postgres_variables(database, ADDRESS)))
         published = (units / 'shared-proxy.kube').read_text().replace('${TARGET_PUBLISH_ADDRESS}', ADDRESS)
         self.assertEqual(published.encode(), quadlet.render(
             ROOT, 'shared-proxy.kube', workloads.proxy_variables(ADDRESS, port, apps.APPS)))
@@ -107,11 +115,12 @@ class OfflineInstallTests(unittest.TestCase):
         self.runtime = self.quadlet / 'todo-kube-runtime'
         offline_bundle.build(self.bundle, apps.APPS)
 
-    def install(self, host, hostname=HOSTNAME, address=ADDRESS):
+    def install(self, host, hostname=HOSTNAME, address=ADDRESS, notes=None):
         with patch.object(keycloak, 'configure', return_value=False) as configure:
             changed = install.install(self.bundle, mode='server', deployment_mode='offline',
                                       bundle_directory=self.bundle, publish_address=address,
-                                      quadlet_dir=self.quadlet, target_values={EXTERNAL_HOSTNAME: hostname})
+                                      quadlet_dir=self.quadlet,
+                                      target_values={EXTERNAL_HOSTNAME: hostname, NOTES_HOSTNAME: notes})
         return changed, configure
 
     def installed(self):
@@ -202,6 +211,39 @@ class OfflineInstallTests(unittest.TestCase):
         configure.assert_called_once_with('fixture-password', [
             ('todo-frontend', 'www.example.org'), ('notes-frontend', 'notes.test')])
 
+    def test_each_app_gets_its_own_public_hostname(self):
+        with FakeHost(unit_directory=self.runtime) as host:
+            _changed, configure = self.install(host, notes='notes.example.org')
+        files = self.installed()
+        self.assertIn('server_name notes.example.org;', files['shared-proxy.yaml'])
+        self.assertIn(f'APP_TLS_HOSTNAMES: "{HOSTNAME} notes.example.org"', files['shared-proxy.yaml'])
+        configure.assert_called_once_with('fixture-password', [
+            ('todo-frontend', HOSTNAME), ('notes-frontend', 'notes.example.org')])
+
+    def test_the_host_records_its_hostnames_and_a_later_install_keeps_them(self):
+        with FakeHost(unit_directory=self.runtime) as host, patch.dict('os.environ', {}, clear=False) as environment:
+            for name in (EXTERNAL_HOSTNAME, NOTES_HOSTNAME):
+                environment.pop(name, None)
+            self.install(host, notes='notes.example.org')
+            self.assertEqual(json.loads(host.record.read_text()),
+                             {EXTERNAL_HOSTNAME: HOSTNAME, NOTES_HOSTNAME: 'notes.example.org'})
+            self.assertEqual(oct(host.record.stat().st_mode & 0o777), '0o644')
+            # An update without the options keeps the names instead of going back to the bundle's defaults.
+            host.calls.clear()
+            changed, configure = self.install(host, hostname=None)
+            self.assertFalse(changed)
+            self.assertIn(f'server_name {HOSTNAME};', self.installed()['shared-proxy.yaml'])
+            configure.assert_called_once_with('fixture-password', [
+                ('todo-frontend', HOSTNAME), ('notes-frontend', 'notes.example.org')])
+            # The record never holds the address: it is the host's own, given each time.
+            self.assertNotIn('TARGET_PUBLISH_ADDRESS', host.record.read_text())
+
+    def test_a_refused_install_records_nothing(self):
+        with FakeHost(unit_directory=self.runtime) as host:
+            with self.assertRaises(TargetError):
+                self.install(host, hostname='bad host')
+            self.assertFalse(host.record.exists())
+
     def test_an_offline_bundle_installs_in_server_mode_only_and_for_its_own_apps(self):
         with FakeHost(unit_directory=self.runtime) as host:
             with self.assertRaisesRegex(ValueError, 'server mode only'):
@@ -240,7 +282,8 @@ with FakeHost(unit_directory=__import__('pathlib').Path(quadlet) / 'todo-kube-ru
         patch.object(keycloak, 'configure', return_value=False):
     code = cli.main(['install', '--mode', 'server', '--deployment-mode', 'offline',
                      '--project-root', bundle, '--bundle-dir', bundle, '--publish-address', '192.0.2.10',
-                     '--quadlet-dir', quadlet, '--target-external-hostname', 'shop.example.org'])
+                     '--quadlet-dir', quadlet, '--target-external-hostname', 'shop.example.org',
+                     '--target-notes-hostname', 'notes.example.org'])
 loaded = sorted(name for name in sys.modules if name.split('.')[0] in ('jinja2', 'yaml'))
 print(json.dumps({'code': code, 'loaded': loaded, 'started': [a[3] for a in host.ran('systemctl', '--user', 'start')]}))
 '''
@@ -268,6 +311,7 @@ class WithoutJinjaTests(unittest.TestCase):
             manifests, units = install.offline_files(apps.APPS)
             self.assertEqual({path.name for path in runtime.iterdir()}, manifests | units)
             self.assertIn('server_name shop.example.org;', (runtime / 'shared-proxy.yaml').read_text())
+            self.assertIn('server_name notes.example.org;', (runtime / 'shared-proxy.yaml').read_text())
             self.assertIn('PublishPort=192.0.2.10:8443:8443', (runtime / 'shared-proxy.kube').read_text())
             self.assertFalse([path.name for path in runtime.iterdir() if '${TARGET_' in path.read_text()])
 

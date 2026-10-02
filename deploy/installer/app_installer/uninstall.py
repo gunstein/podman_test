@@ -2,7 +2,7 @@
 import shutil
 from pathlib import Path
 
-from . import apps, install, secrets, settings
+from . import apps, install, secrets, settings, target_render
 from .commands import exists, run
 from .quadlet import systemctl
 
@@ -91,6 +91,9 @@ def uninstall(remove_data=False, quadlet_dir=None):
         # it is only removed alongside them, not on a plain uninstall.
         for name in TLS_VOLUMES:
             changed = remove('volume', name) or changed
+        # The public hostnames go with the data they were installed for; a plain
+        # uninstall keeps them, so a reinstall serves the same names.
+        changed = unlink(target_render.record_path()) or changed
     for app in apps.APPS:
         for component in ('backend', 'frontend'):
             changed = remove('image', app.image(component)) or changed

@@ -70,11 +70,14 @@ class PVCStorageTests(unittest.TestCase):
         # deploy/dr/tests/test_replication.py.
         import sys
         sys.path.insert(0, str(ROOT / "deploy/dr"))
+        from types import SimpleNamespace
+
         from app_dr_host import replication
         from app_installer import apps
         canonical = next(d for d in yaml.safe_load_all((RUNTIME / "postgres.yaml").read_text())
                          if d["metadata"]["name"] == "todo-postgres-data")
-        self.assertEqual(yaml.safe_load(replication.data_claim(apps.SHARED_RESOURCE_OWNER.database, RUNTIME)), canonical)
+        target = SimpleNamespace(manifests={"postgres.yaml": (RUNTIME / "postgres.yaml").read_bytes()})
+        self.assertEqual(yaml.safe_load(replication.data_claim(apps.SHARED_RESOURCE_OWNER.database, target)), canonical)
 
     def test_uninstall_preserves_database_and_tls_data_by_default_and_never_removes_backup(self):
         from app_installer import uninstall

@@ -59,7 +59,9 @@ Both refuse a host with replication, promotion or backup state.
   including the controller. app-ops runs privileged steps as `sudo -n` and
   never reads, sends or stores a password. A host that asks for one fails
   with a message saying so.
-- Python 3 with PyYAML and Jinja2 on the controller, as the targets need.
+- Python 3 with PyYAML on the controller and the hosts. Nothing is rendered
+  there, so no Jinja2: the hosts install the package's pre-rendered target
+  files, filled in with their own address and the public hostnames.
 
 On a controller where fapolicyd is active, app-ops is itself project Python.
 Trust its files once before the first run, from the extracted operations
@@ -120,6 +122,13 @@ names it; running it again skips a completed promotion and never retries a
 failed one. Its result tells what users need: the hostnames, the address and
 the CA fingerprint.
 
+The public hostnames follow the primary. `standby` and `rebuild` read the
+hostnames the current primary recorded (`app_dr_host target-values`) and give
+them to the new standby, which records them too; `failover` deploys and checks
+the promoted host with the names it recorded. Each host fills in its own
+inventory address. See
+[Primary and standby](../offline/README.md#primary-and-standby).
+
 `sync-standby-secrets` and `preflight-standby-rebuild` can also be run on
 their own. Every command prints one JSON result: `changed`, or the status
 report. `deploy-promoted-application` must run on the promoted host itself,
@@ -128,7 +137,8 @@ marked `local: true`.
 ## Operations package
 
 Build one source-only package with app-ops, the installer module, the host
-tools and the rendered manifests:
+tools and the same pre-rendered target files and `bundle.json` as the offline
+bundle:
 
 ```bash
 deploy/scripts/build-operations-package.sh

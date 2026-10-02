@@ -46,8 +46,10 @@ def main(argv=None):
     deploy.add_argument('--refresh-images', action='store_true')
     deploy.add_argument('--publish-address', default='127.0.0.1')
     deploy.add_argument('--service-port', type=int, default=settings.HTTPS_PORT)
-    deploy.add_argument('--target-external-hostname', default=None,
-                        help='public hostname for an offline bundle (see app_installer/target_render.py)')
+    for app in apps.APPS:  # --target-external-hostname, --target-notes-hostname
+        option = target_render.hostname_target(app).removeprefix('TARGET_').lower().replace('_', '-')
+        deploy.add_argument(f'--target-{option}', dest=target_render.hostname_target(app), default=None,
+                            help=f'public hostname of {app.name} for an offline bundle (see target_render.py)')
     workload = subcommands.add_parser('install-workload')
     paths(workload)
     workload.add_argument('workload', choices=('postgres', 'application', 'keycloak', 'shared-proxy'))
@@ -83,7 +85,7 @@ def main(argv=None):
             changed = install.install(
                 args.project_root, args.mode, args.deployment_mode, args.bundle_dir, args.refresh_images,
                 args.publish_address, args.service_port, args.quadlet_dir, args.kube_runtime_dir,
-                target_values={target_render.EXTERNAL_HOSTNAME: args.target_external_hostname})
+                target_values={name: getattr(args, name) for name in target_render.HOSTNAMES})
             print(json.dumps({'changed': changed}))
         elif args.command == 'uninstall':
             changed = uninstall.uninstall(args.remove_data, args.quadlet_dir)

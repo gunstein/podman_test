@@ -10,10 +10,14 @@ subprocess.run; FakeHost replaces that one function while a test runs:
 It keeps the little a single host has to remember (secrets, images) and
 answers the questions the installer asks from that state, so a test only
 describes its scenario. Every command is recorded in host.calls, in order:
-the order is part of what the installer must get right. A test that needs one
-more answer subclasses FakeHost and overrides answer().
+the order is part of what the installer must get right. The host's record of
+its public hostnames (target_render.record_path) is host.record, in a
+temporary home. A test that needs one more answer subclasses FakeHost and
+overrides answer().
 """
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from unittest import mock
 
@@ -42,12 +46,20 @@ class FakeHost:
         self.calls = []
 
     def __enter__(self):
-        self._patcher = mock.patch('app_installer.commands.subprocess.run', side_effect=self._run)
-        self._patcher.start()
+        # The host's record of its public hostnames lives in a temporary
+        # directory, never in the home directory of whoever runs the tests.
+        self.home = Path(tempfile.mkdtemp())
+        self.record = self.home / '.config/todo/target-values.json'
+        self._patchers = [mock.patch('app_installer.commands.subprocess.run', side_effect=self._run),
+                          mock.patch('app_installer.target_render.record_path', return_value=self.record)]
+        for patcher in self._patchers:
+            patcher.start()
         return self
 
     def __exit__(self, *error):
-        self._patcher.stop()
+        for patcher in self._patchers:
+            patcher.stop()
+        shutil.rmtree(self.home, ignore_errors=True)
 
     def _run(self, argv, input=None, **_):
         argv = list(argv)

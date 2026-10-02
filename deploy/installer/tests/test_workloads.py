@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -67,6 +68,31 @@ class WorkloadsTests(unittest.TestCase):
                 manifest = ('keycloak.yaml' if function == workloads.install_keycloak else
                             'notes-config.yaml' if names[0].startswith('notes-') else 'config.yaml')
                 self.assertEqual((runtime / manifest).stat().st_mode & 0o777, 0o600)
+
+    def test_a_dr_primary_gets_the_bundles_replicated_unit_on_its_own_address(self):
+        import offline_bundle
+        from app_installer import target_render
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            offline_bundle.build(base / 'bundle', apps.APPS)
+            target = target_render.load(base / 'bundle', {target_render.PUBLISH_ADDRESS: '192.0.2.10'},
+                                        environment={}, recorded={})
+            runtime = base / 'quadlet/todo-kube-runtime'
+            (base / 'quadlet').mkdir()
+            database = apps.KEYCLOAK_DATABASE
+            with FakeHost():
+                self.assertTrue(workloads.install_postgres(base / 'bundle', base / 'quadlet', runtime, None,
+                                                           '192.0.2.10', database=database, target=target))
+                unit = (runtime / database.unit).read_text()
+                self.assertIn(f'PublishPort=192.0.2.10:{database.replication_port}:5432', unit)
+                # Without an address (a standby), the same database publishes only on loopback.
+                self.assertTrue(workloads.install_postgres(base / 'bundle', base / 'quadlet', runtime, None,
+                                                           database=database, target=target))
+                self.assertEqual(re.findall(r'^PublishPort=(.*)$', (runtime / database.unit).read_text(), re.M),
+                                 [f'127.0.0.1:{database.replication_port}:5432'])
+                with self.assertRaisesRegex(ValueError, 'publish on 192.0.2.10, not on 192.0.2.99'):
+                    workloads.install_postgres(base / 'bundle', base / 'quadlet', runtime, None,
+                                               '192.0.2.99', database=database, target=target)
 
     def test_invalid_runtime_directory_fails_before_commands(self):
         with patch('subprocess.run') as run:

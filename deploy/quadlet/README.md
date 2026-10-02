@@ -2,8 +2,8 @@
 
 This directory contains `app-network.network` and the six canonical `.kube.j2`
 templates. The bundle build renders them with Jinja2 into `generated/target/quadlet`,
-which an offline install fills in and installs without Jinja2; build mode and app-ops
-DR render the same files on the host. There are no role-local copies.
+which an offline install and the DR tools fill in and install without Jinja2; build
+mode renders the same files on the host. There are no role-local copies.
 Host-specific units live beside the rendered YAML in
 `~/.config/containers/systemd/todo-kube-runtime/`. See the [runtime guide](../runtime/README.md).
 

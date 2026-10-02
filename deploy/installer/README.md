@@ -1,12 +1,13 @@
 # Portable single-host installer
 
 Python 3.9+ is the only runtime dependency of an offline install; build and
-dev mode, and the DR tools, also need Jinja2 and PyYAML. Podman runs rootless;
+dev mode also need Jinja2 and PyYAML, and the DR tools need PyYAML. Podman runs rootless;
 server mode also needs a working user systemd manager. Rendering only runs in
 build mode through `deploy/scripts/render-kube-runtime.sh`, and for a bundle
 through `app_installer.bundle`. Both delegate workload selection to the App
 registry. An offline install never renders: it fills the target values into
-files the build rendered (`target_render.py`, standard library only).
+files the build rendered (`target_render.py`, standard library only), and so
+do the DR tools on a primary and a standby.
 
 `apps.APPS` registers Todo and Notes. Each App owns its derived image, secret,
 manifest, service and volume names. Single-host installs run seven pods; Keycloak,
@@ -39,11 +40,13 @@ without network access, in server mode only:
 ```bash
 python3 -m app_installer install --mode server --deployment-mode offline \
   --bundle-dir /path/to/todo-offline-m12 --publish-address 192.168.0.102 \
-  --target-external-hostname todo.example.org
+  --target-external-hostname todo.example.org --target-notes-hostname notes.example.org
 ```
 
-`--target-external-hostname` is optional; the supported target values, their
-sources and checks are in [the offline README](../offline/README.md#target-values).
+The hostname options are optional, one per app; the host records the names it
+installed with (`~/.config/todo/target-values.json`), so a later install keeps
+them. The supported target values, their sources and checks are in
+[the offline README](../offline/README.md#target-values).
 
 Use `--project-root` when templates live somewhere other than the source package
 root, including when using an editable/pip installation from another working
@@ -126,7 +129,8 @@ This does not replace Oracle Linux/fapolicyd or two-host DR acceptance.
 `replication.py` consumes canonical PVC YAML the same way, so PyYAML
 (`python3-pyyaml` or the platform's equivalent package) is now a base
 dependency everywhere build-mode rendering or DR runs; an offline target
-install, which never renders, does without it and without Jinja2. Jinja2 and
+install, which never renders, does without it and without Jinja2, and DR
+needs no Jinja2. Jinja2 and
 PyYAML are imported only where rendering happens (`manifests.py`, `quadlet.render`,
 `render.py`, `bundle.py`); `test_offline_install.py` runs the whole offline install in
 a Python process where neither can be imported. The replication

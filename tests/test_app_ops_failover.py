@@ -26,11 +26,15 @@ LOGIN_FORM = '<form id="kc-form-login"><input id="username" name="username"></fo
 class FailoverWorld(World):
     """The promoted host runs locally, so the fake answers its identity; record state and failures are set."""
 
-    def __init__(self, record=None, fail=None):
+    def __init__(self, record=None, fail=None, hostnames=None):
         super().__init__()
         self.record, self.fail = record, fail
+        # The public hostnames the promoted host recorded as a standby.
+        self.hostnames = hostnames or {"TARGET_EXTERNAL_HOSTNAME": "todo.test", "TARGET_NOTES_HOSTNAME": "notes.test"}
 
     def answer(self, host, command, stdin):
+        if command[0] == "env" and "target-values" in command:
+            return ("target-values",), json.dumps({"changed": False, "values": self.hostnames}), 0
         if command[0] == "hostname":
             return ("hostname",), "todo-standby\n", 0
         if command[0] == "ip":
@@ -89,6 +93,19 @@ class FailoverTests(unittest.TestCase):
         self.assertEqual(report["users"]["ca_sha256"], "AA:BB")
         self.assertIn("todo.test and notes.test at 192.0.2.11", report["users"]["next"])
         self.assertIn("checks the login page, not a login", report["users"]["next"])
+
+    def test_the_checks_use_the_public_hostnames_the_host_recorded(self):
+        world = FailoverWorld(hostnames={"TARGET_EXTERNAL_HOSTNAME": "shop.example.org",
+                                         "TARGET_NOTES_HOSTNAME": "notes.example.org"})
+        with unittest.mock.patch.object(failover, "connect_sources", return_value=["https://shop.example.org:8443"]):
+            report = self.run_failover(world)
+        order = [step[0] for step in world.steps()]
+        self.assertLess(order.index("deploy-promoted"), order.index("target-values"))
+        self.assertEqual([step[1] for step in world.steps() if step[0] == "https"],
+                         ["shop.example.org", "notes.example.org"])
+        wait_ready = next(command for _host, command in world.commands if command[:2] == ["bash", "-s"])
+        self.assertEqual(wait_ready[-3:], ["app", "shop.example.org", "notes.example.org"])
+        self.assertEqual(report["users"]["hostnames"], ["shop.example.org", "notes.example.org"])
 
     def test_a_rerun_after_a_complete_promotion_skips_it(self):
         world = FailoverWorld(record="complete")

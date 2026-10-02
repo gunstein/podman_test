@@ -14,6 +14,9 @@ from app_ops import cli, inventory, recovery, standby, steps  # noqa: E402
 from app_ops.transport import Host  # noqa: E402
 
 NAMES = [database.name for database in steps.GROUP]
+# The public hostnames each host recorded (app_dr_host target-values).
+RECORDED = {"todo-primary": {"TARGET_EXTERNAL_HOSTNAME": "shop.example.org", "TARGET_NOTES_HOSTNAME": "notes.test"},
+            "todo-standby": {"TARGET_EXTERNAL_HOSTNAME": "todo.test", "TARGET_NOTES_HOSTNAME": "notes.test"}}
 
 
 def setUpModule():
@@ -25,6 +28,9 @@ def setUpModule():
     (PROJECT / "deploy").symlink_to(ROOT / "deploy")
     (PROJECT / "generated").mkdir()
     (PROJECT / "generated/kube-runtime").symlink_to(RUNTIME)
+    # bundle.json and generated/target, as build-operations-package.sh adds them.
+    from app_installer import bundle
+    bundle.build(ROOT, ROOT / "deploy/environments/prod/values.yaml", PROJECT)
 
 
 def tearDownModule():
@@ -44,7 +50,7 @@ class World:
         self.blocked_path = blocked_path
         self.rule_in, self.zone, self.rule_zone = rule_in, zone, rule_zone
         self.writable_standby = writable_standby
-        self.log = []
+        self.log, self.commands = [], []
 
     def __call__(self, argv, input=None, capture_output=True, text=True, timeout=None):
         host = argv[-2].split("@")[1] if argv[0] == "ssh" else "controller"
@@ -54,6 +60,7 @@ class World:
         name = {"192.0.2.10": "todo-primary", "192.0.2.11": "todo-standby"}.get(host, host)
         step, out, rc = self.answer(name, command, input)
         self.log.append((name, step))
+        self.commands.append((name, command))
         return subprocess.CompletedProcess(argv, rc, out, "")
 
     def answer(self, host, command, stdin):
@@ -62,6 +69,8 @@ class World:
             step = tuple(sub[:2]) if sub[0] == "replicate-workload" else (sub[0],)
             if sub[0] == "node-facts":
                 return step, json.dumps({"host": host}), 0
+            if sub[0] == "target-values":
+                return step, json.dumps({"changed": False, "values": RECORDED[host]}), 0
             if sub[0] == "export-replication-secrets":
                 return step, "U0VDUkVU\n", 0
             if sub[0] == "import-replication-secrets":
@@ -102,6 +111,12 @@ class World:
     def steps(self, host=None):
         return [step for name, step in self.log if host in (None, name)]
 
+    def option(self, host, operation, name):
+        """The value of option name in every app_dr_host operation (a tuple) run on host."""
+        return [command[command.index(name) + 1] for where, command in self.commands
+                if where == host and "app_dr_host" in command
+                and tuple(command[command.index("app_dr_host") + 1:][:len(operation)]) == operation]
+
 
 class InitialTopologyTests(unittest.TestCase):
     def hosts(self, world):
@@ -123,6 +138,18 @@ class InitialTopologyTests(unittest.TestCase):
         self.assertEqual([step for step in order[-3:]], [("replicate-workload", "streaming", name) for name in NAMES])
         rule = next(step for step in order if step[0] == "firewall-rule")[1]
         self.assertIn('source address="192.0.2.11/32" destination address="192.0.2.10" port port="5432-5434"', rule)
+
+    def test_the_standby_gets_the_primarys_public_hostnames_and_its_own_address(self):
+        world = World()
+        standby.bootstrap(str(PROJECT), *self.hosts(world))
+        operation = ("replicate-workload", "standby")
+        self.assertEqual([json.loads(v) for v in world.option("todo-standby", operation, "--target-values")],
+                         [RECORDED["todo-primary"]] * len(NAMES))
+        self.assertEqual(world.option("todo-standby", operation, "--node-address"), ["192.0.2.11"] * len(NAMES))
+        # Both hosts get the package's rendered files, never Quadlet templates.
+        staged = [command[-1] for _host, command in world.commands if command[:2] == ["sh", "-c"]]
+        self.assertTrue(any(path.endswith("/bundle.json") for path in staged))
+        self.assertFalse([path for path in staged if path.endswith(".j2")])
 
     def test_secret_values_only_travel_on_stdin(self):
         world = World()
@@ -194,6 +221,13 @@ class RecoveryTests(unittest.TestCase):
         self.assertLess(first[("reseed-group",)], first[("app_dr.py",)])
         self.assertEqual(kinds[-3:], [("replicate-workload", "streaming")] * 3)
         self.assertIn(("reseed-group",), world.steps("todo-primary"))
+        # The rebuilt host serves the current primary's public hostnames, on its own address.
+        for operation in (("replicate-workload", "reseed-check"), ("reseed-group",)):
+            values = world.option("todo-primary", operation, "--target-values")
+            self.assertTrue(values)
+            self.assertEqual({json.dumps(json.loads(v), sort_keys=True) for v in values},
+                             {json.dumps(RECORDED["todo-standby"], sort_keys=True)})
+            self.assertEqual(set(world.option("todo-primary", operation, "--node-address")), {"192.0.2.10"})
 
     def test_a_blocked_replication_path_stops_the_rebuild_before_the_reseed(self):
         world = World(blocked_path=True)

@@ -1,5 +1,8 @@
 """The single-host installer and DR stay apart: DR may use the installer, never the other way."""
 import ast
+import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -34,6 +37,20 @@ class BoundaryTests(unittest.TestCase):
         dr_host = {path.name for path in (ROOT / "deploy/dr/app_dr_host").glob("*.py")}
         self.assertFalse({"replication.py", "replication_tls.py", "promoted.py"} & installer)
         self.assertLessEqual({"replication.py", "replication_tls.py", "promoted.py", "cli.py"}, dr_host)
+
+    def test_the_dr_tools_load_without_jinja2(self):
+        # They install the package's pre-rendered target files, so a DR host needs no Jinja2.
+        script = (
+            "import sys\n"
+            "class Blocked:\n"
+            "    def find_spec(self, name, path=None, target=None):\n"
+            "        if name.split('.')[0] in ('jinja2', 'markupsafe'):\n"
+            "            raise ImportError(name + ' is not installed on this host')\n"
+            "sys.meta_path.insert(0, Blocked())\n"
+            "import app_dr_host.cli, app_dr_host.promoted, app_dr_host.replication, app_ops.cli\n")
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, env={
+            **os.environ, "PYTHONPATH": f"{ROOT / 'deploy/installer'}:{ROOT / 'deploy/dr'}"})
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

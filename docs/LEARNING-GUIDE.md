@@ -15,9 +15,9 @@ For the authoritative system overview and design boundaries, read
 ```text
 deploy/manifests/*.yaml.j2 + apps.py/stack.py + values                build host only
         ↓ render
-generated/kube-runtime/*.yaml            reviewed, packaged workload definitions
-        ↓ referenced by
-Python installer renders deploy/quadlet/*.kube.j2 → *.kube     target-only, standard library + Jinja2
+generated/target/** + bundle.json       every YAML file and .kube unit, ${TARGET_*} left open
+        ↓ filled in on the host
+Python installer (target_render.py)      host address and public hostnames, standard library only
         ↓ generator
 systemd user services         ordering, restart, boot and stop
         ↓

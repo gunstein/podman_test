@@ -43,7 +43,6 @@ def stage_installer(project_root, controller, host):
     single-host installer) and app_dr_host (the DR building blocks, which
     import app_installer).
     """
-    host.run(['python3', '-c', 'import jinja2'])
     root = Path(project_root)
     packages = {name: sorted(path.glob('*.py')) for name, path in (
         ('app_installer', root / 'deploy/installer/app_installer'), ('app_dr_host', root / 'deploy/dr/app_dr_host'))}

@@ -4,6 +4,7 @@ Each test starts from a host where the guarded operation would go ahead, breaks
 exactly one condition, and checks that the operation refuses with a clear
 message and that no deleting or changing command ran.
 """
+import dataclasses
 import json
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[2] / 'installer')]
+import dr_target  # noqa: E402
 from app_dr_host import replication  # noqa: E402
 from app_installer import apps  # noqa: E402
 
@@ -33,21 +35,14 @@ class ReseedHost:
         self.quadlet = root / 'quadlet'
         self.runtime = self.quadlet / 'todo-kube-runtime'
         self.runtime.mkdir(parents=True)
-        (self.runtime / APP.config_manifest).write_bytes(b'---\n')
-        (self.runtime / APP.manifest).write_text(json.dumps({
-            'kind': 'PersistentVolumeClaim', 'metadata': {'name': APP.volume('data')}}))
-        self.source = root / 'source'
-        (self.source / 'deploy/quadlet').mkdir(parents=True)
-        (self.source / 'deploy/quadlet/app-network.network').write_bytes(b'')
-        (self.source / 'deploy/quadlet' / (APP.unit + '.j2')).write_text(
-            '{{ postgres_publish_address }}:{{ postgres_publish_port }}')
+        self.target = dr_target.load('192.0.2.11')
         self.rootless, self.running, self.pod_prefix = 'true', '', True
         self.missing = set()
         self.commands = []
 
     def paths(self):
-        return dict(project_root=str(self.source), quadlet_dir=str(self.quadlet),
-                    kube_runtime_dir=str(self.runtime), rendered_manifest_dir=str(self.runtime))
+        return dict(project_root=str(dr_target.bundle()), quadlet_dir=str(self.quadlet),
+                    kube_runtime_dir=str(self.runtime), target=self.target)
 
     def run(self, *argv, **kwargs):
         argv = tuple(str(arg) for arg in argv)
@@ -149,9 +144,19 @@ class ReseedCheckTests(unittest.TestCase):
         self.host.pod_prefix = False
         self.assert_refused('--no-pod-prefix')
 
-    def test_the_rendered_data_claim_must_exist(self):
-        (self.host.runtime / APP.manifest).write_text(json.dumps({'kind': 'ConfigMap'}))
+    def test_the_bundles_data_claim_must_exist(self):
+        self.host.target = dataclasses.replace(self.host.target, manifests={
+            **self.host.target.manifests, APP.manifest: json.dumps({'kind': 'ConfigMap'}).encode()})
         self.assert_refused('exactly one canonical data PVC', ValueError)
+
+    def test_the_bundle_must_hold_the_config_and_the_unit(self):
+        for field, name in (('manifests', APP.config_manifest), ('quadlets', APP.unit)):
+            with self.subTest(name=name):
+                files = {key: value for key, value in getattr(dr_target.load('192.0.2.11'), field).items()
+                         if key != name}
+                self.host.target = dataclasses.replace(dr_target.load('192.0.2.11'), **{field: files})
+                self.host.commands = []
+                self.assert_refused(f'the bundle lacks {name}; data was not removed')
 
     def test_the_kube_runtime_directory_must_be_the_real_one(self):
         self.host.runtime.rename(self.host.quadlet / 'elsewhere')

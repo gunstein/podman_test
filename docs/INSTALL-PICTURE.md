@@ -137,7 +137,7 @@ needs access to the source code, the container images and the other build
 dependencies, over the internet, from internal mirrors or from local storage.
 
 **Prerequisite:** the production host must already be prepared with the host
-tools it needs, among them Podman, systemd and Python with Jinja2.
+tools it needs, among them Podman, systemd and Python (with PyYAML on a DR host).
 
 ## More detail
 

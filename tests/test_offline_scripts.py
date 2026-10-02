@@ -63,8 +63,17 @@ class OfflineScriptTests(unittest.TestCase):
         result = self.install("--publish-address", "192.168.0.102")
         self.assertNotIn("--target-external-hostname", json.loads(result.stdout.splitlines()[-1]))
 
+    def test_each_apps_hostname_option_is_passed_on(self):
+        result = self.install("--target-notes-hostname", "notes.example.org",
+                              "--target-external-hostname", "shop.example.org")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = json.loads(result.stdout.splitlines()[-1])
+        self.assertEqual(values[values.index("--target-notes-hostname") + 1], "notes.example.org")
+        self.assertEqual(values[values.index("--target-external-hostname") + 1], "shop.example.org")
+
     def test_invalid_arguments_never_start_installer(self):
         for arguments in (("--unknown",), ("--publish-address",), ("--target-external-hostname",),
+                          ("--target-notes-hostname",),
                           ("--publish-address", "192.168.0.102", "--target-external-hostname"),
                           ("--publish-address", "0.0.0.0"),
                           ("--publish-address", "::1"),

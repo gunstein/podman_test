@@ -22,12 +22,13 @@ The target machine must already provide:
 
 A target that will also run DR through the operations package (either host in
 the [two-VM walkthrough](../../docs/manual-recipes/03-DR-TWO-VM.md)) needs
-`python3-jinja2` and `python3-pyyaml`: the DR tools render their database and
-application units on the host from `deploy/quadlet`, and the replication commands parse the canonical PVC YAML
-for standby bootstrap, promotion and rebuild. It also needs `openssl`, which
-issues the certificates that encrypt replication.
-[Prepare an Oracle Linux 9 VM](../../docs/manual-recipes/01-PREPARE-VM.md)
-installs both packages on every target so this does not need revisiting later.
+`python3-pyyaml`: the replication commands parse the canonical PVC YAML for
+standby bootstrap and rebuild. The DR tools render nothing on the host: they
+install the operations package's pre-rendered files, filled in the same way
+(see [Primary and standby](#primary-and-standby)), so they need no Jinja2. A DR
+host also needs `openssl`, which issues the certificates that encrypt
+replication. [Prepare an Oracle Linux 9 VM](../../docs/manual-recipes/01-PREPARE-VM.md)
+installs these packages on every target so this does not need revisiting later.
 
 The Kube runtime requires the tested Podman 5.8.2 platform, systemd 255 and
 Python. DR operations use app-ops from the separate operations package. The
@@ -50,14 +51,15 @@ The connected build machine renders everything with Jinja2 before packaging
 
 | In the bundle | What it is |
 |---|---|
-| `generated/target/manifests/` | Every Kube YAML file, with `${TARGET_EXTERNAL_HOSTNAME}` where the public hostname goes |
+| `generated/target/manifests/` | Every Kube YAML file, with `${TARGET_EXTERNAL_HOSTNAME}` and `${TARGET_NOTES_HOSTNAME}` where each app's public hostname goes |
 | `generated/target/quadlet/` | Every `.kube` unit and `app-network.network`; the proxy unit also publishes HTTPS on `${TARGET_PUBLISH_ADDRESS}` |
 | `generated/target/quadlet/local-only/` | The proxy unit for a host that publishes only on 127.0.0.1 |
-| `bundle.json` | Format and version (`todo-offline-bundle`, 2), where each of the above is, the apps, the HTTPS port and the default target values |
-| `generated/kube-runtime/` | The Kube YAML with the build's hostname, which the DR tools install |
+| `generated/target/quadlet/replicated/` | The database units of a DR primary, which also publish replication on `${TARGET_PUBLISH_ADDRESS}` |
+| `bundle.json` | Format and version (`todo-offline-bundle`, 3), where each of the above is, the apps, the HTTPS port and the default target values |
+| `generated/kube-runtime/` | The Kube YAML with the build's hostnames, for reading and comparison; nothing installs it |
 
-The build checks that putting the default hostname into the target manifests
-gives exactly the normal render, so a placeholder only stands where the
+The build checks that putting the default hostnames into the target manifests
+gives exactly the normal render, so a placeholder only stands where a
 hostname stood. `VERSION` and `SHA256SUMS` cover every file, `bundle.json` and
 the target files included.
 
@@ -89,8 +91,8 @@ sh ./install.sh
 ```
 
 For a separate lab client, use `sh ./install.sh --publish-address 192.168.0.102`;
-add `--target-external-hostname NAME` for a public hostname other than the
-bundle's default (see below).
+add `--target-external-hostname NAME` and `--target-notes-hostname NAME` for
+public hostnames other than the bundle's defaults (see below).
 The address must belong to the target VM. The default publishes HTTPS on
 localhost only. Use the same argument on every repeat installation; omitting
 it restores localhost-only publication. Only HTTPS is exposed externally;
@@ -117,14 +119,22 @@ nothing is passed through a shell or expanded from the environment.
 
 | Placeholder | Value | Where it comes from, first match wins | Checked as |
 |---|---|---|---|
-| `${TARGET_EXTERNAL_HOSTNAME}` | The public hostname of the Todo app and of Keycloak: nginx `server_name`, the TLS certificate, the OIDC issuer, `KC_HOSTNAME` and the Keycloak client's redirect URL | `--target-external-hostname`, then the environment variable `TARGET_EXTERNAL_HOSTNAME`, then the bundle's default (`runtime.publicHostname` in the build's `values.yaml`, `todo.test`) | A DNS name: lowercase labels of letters, digits and inner hyphens |
-| `${TARGET_PUBLISH_ADDRESS}` | The host IPv4 address nginx publishes HTTPS on | `--publish-address` (default `127.0.0.1`, which selects the local-only proxy unit) | A host IPv4 address, not a wildcard, multicast or reserved one |
+| `${TARGET_EXTERNAL_HOSTNAME}` | The public hostname of the Todo app and of Keycloak: nginx `server_name`, the TLS certificate, the OIDC issuer, `KC_HOSTNAME` and the Keycloak client's redirect URL | `--target-external-hostname`, then the environment variable `TARGET_EXTERNAL_HOSTNAME`, then the host's record, then the bundle's default (`runtime.publicHostname` in the build's `values.yaml`, `todo.test`) | A DNS name: lowercase labels of letters, digits and inner hyphens |
+| `${TARGET_NOTES_HOSTNAME}` | The public hostname of the Notes app: its nginx `server_name`, the TLS certificate and its Keycloak client's redirect URL | `--target-notes-hostname`, then `TARGET_NOTES_HOSTNAME`, then the host's record, then the bundle's default (the app registry's `notes.test`) | As above |
+| `${TARGET_PUBLISH_ADDRESS}` | The host IPv4 address nginx publishes HTTPS on (and, on a DR primary, PostgreSQL replication) | `--publish-address` (default `127.0.0.1`, which selects the local-only proxy unit); never the environment, a record or a default | A host IPv4 address, not a wildcard, multicast or reserved one |
 
-The machine's own hostname or FQDN is never used as the public hostname: the
-name users reach a service by is a decision, not a property of the host. Notes
-keeps its registry hostname (`notes.test`). There is no `${TARGET_HOSTNAME}` or
-`${TARGET_FQDN}`: no file needs them, and an unknown placeholder stops the
-install.
+Every app other than Todo gets its own `${TARGET_<APP>_HOSTNAME}` and
+`--target-<app>-hostname`, from the app registry (`apps.py`). The machine's own
+hostname or FQDN is never used as a public hostname: the name users reach a
+service by is a decision, not a property of the host. There is no
+`${TARGET_HOSTNAME}` or `${TARGET_FQDN}`: no file needs them, and an unknown
+placeholder stops the install.
+
+The host's record is `~/.config/todo/target-values.json`. A successful install
+writes the public hostnames it used there (never the address, which belongs to
+the host and is given each time). A later install or update without the
+options therefore keeps the names instead of going back to the bundle's
+defaults. `uninstall --remove-data` removes the record.
 
 All values are resolved, checked and filled into every file in memory before
 anything on the host changes. A missing or invalid value, a placeholder the
@@ -137,19 +147,32 @@ same values changes nothing; a new public hostname rewrites the files that
 hold it and restarts the Todo and Notes databases and apps, Keycloak and the
 proxy.
 
-A target-value install is for a single host. The DR tools still install
-`generated/kube-runtime`, rendered with the bundle's default hostname, and
-their checks (`failover`, the promoted host's deploy, `wait-ready.sh`) expect
-the app registry's hostnames (`todo.test`, `notes.test`), so set up DR only
-with the default hostname. Backlog D6 brings the target values to primary and
-standby.
+### Primary and standby
+
+The DR tools install the same files from the operations package, filled in by
+the same `target_render` on each host. The public hostnames are the same on
+both hosts; the address is each host's own (its inventory address):
+
+- The primary is installed with `install.sh` as above and records its
+  hostnames. Publishing its databases for replication installs the replicated
+  database units with its own address and keeps its recorded hostnames.
+- When app-ops sets up a standby (`standby` and `rebuild`), it reads the
+  primary's hostnames (`app_dr_host target-values`) and passes them to the
+  standby (`--target-values`), which installs its database units with them and
+  its own address and records them.
+- After a failover, the promoted host's deploy installs the apps, Keycloak and
+  nginx with its recorded hostnames and its own address, and every check
+  (`wait-ready.sh`, the public reads, the issuer, the login page) and the
+  report's next step use those names. Users keep the names they had; only the
+  address they resolve to changes.
 
 ### Older bundles
 
 A bundle without `bundle.json` was built before the files were pre-rendered
 and needed Jinja2 on the target. This installer refuses it with
 `... has no bundle.json: it was built in an older format ...`, before anything
-changes, as it refuses a `bundle.json` of another format version. Build a new
+changes, as it refuses a `bundle.json` of another format version (this
+installer reads version 3). Build a new
 bundle with `deploy/offline/build-bundle.sh`; an older bundle can still be
 installed with the installer it was shipped with, which is inside it.
 
@@ -162,7 +185,7 @@ and keeps them on later runs. No secret is stored in the bundle.
 ### Oracle Linux 9 with fapolicyd
 
 Install OS-managed Python before disconnecting the target (add
-`python3-jinja2 python3-pyyaml` on a host that will run DR):
+`python3-pyyaml openssl` on a host that will run DR):
 
 ```bash
 sudo dnf install -y python3
@@ -211,14 +234,16 @@ its credentials is intended. Backup data is never removed by this command.
 ## Source and runtime contract
 
 The bundle contains seven OCI archives, the target files described above (ten YAML files and
-seven units for seven pods, plus the network), `bundle.json`, the same YAML rendered for DR,
-and the portable Python installer with the canonical Quadlet templates the DR tools use.
+seven units for seven pods, plus the network, and the replicated database units), `bundle.json`,
+the same YAML rendered with the default hostnames for reading, and the portable Python installer
+with the canonical Quadlet templates.
 Rendering happens only on the build host, from the shared `deploy/manifests/*.yaml.j2` and
 `deploy/quadlet/*.kube.j2` templates. The source checkout's `deploy/runtime`
 contains guides; package YAML is fresh Jinja2 output. Packaging tests compare it to independent rendering.
 
-The operations package contains complete DR/backup roles, task includes, the same Python
-installer, runtime manifests and shared resource Quadlets; it contains no OCI archives. Both packages record the full Git SHA
+The operations package contains app-ops, the DR host tools, the same Python
+installer and the same target files and `bundle.json` as the bundle, which the DR tools
+install; it contains no OCI archives. Both packages record the full Git SHA
 and clean/dirty state in `VERSION`, checksum every file in `SHA256SUMS`, and
 supply an external archive checksum. Verify the archive before extraction and
 run `sha256sum -c SHA256SUMS` inside each extracted package.

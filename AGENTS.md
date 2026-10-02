@@ -10,8 +10,9 @@ Current architecture and workflow:
 - Jinja2 (deploy/manifests/*.yaml.j2, deploy/quadlet/*.kube.j2) renders workloads
   at build time; offline bundles carry the rendered YAML and .kube units with
   ${TARGET_*} placeholders and bundle.json, and the installer fills those in with
-  the standard library (target_render.py). An offline target needs only Python,
-  never Helm, Jinja2 or PyYAML; build mode and the DR tools still render on hosts.
+  the standard library (target_render.py), on a single host and on DR primary
+  and standby alike. An offline target needs only Python, never Helm or Jinja2
+  (DR hosts also need PyYAML); only build mode renders on a host.
 - todo-app and notes-app each group migration init, FastAPI and HTTP-only frontend.
   Each app has its own PostgreSQL pod. Shared nginx, Keycloak and Keycloak's
   own keycloak-postgres pod bring the single-host topology to seven pods on

@@ -266,12 +266,15 @@ def configure_primary(database, node_address):
 
 
 
-def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kube_runtime_dir,
-                      rendered_manifest_dir):
+def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kube_runtime_dir, target):
     """LAN-publish every primary, restarting the app tier at most once; bootstrap also creates the replicator.
 
     Both forms create the replication CA if this host has none, and give
     every primary a TLS certificate for node_address before its hostssl line.
+    target holds the bundle's files filled in for this host
+    (target_render.load_on_host): each database gets its replicated unit,
+    which publishes on node_address, and the readiness checks use the
+    host's public hostnames.
     """
     node_address = address(node_address)
     install.preflight(quadlet_dir)
@@ -286,8 +289,8 @@ def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kub
             changed = replication_tls.install_server_tls(database, node_address)
             changed = refresh_hba(database) or changed
         access_changed = changed or access_changed
-        if workloads.install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-                                      node_address, database=database):
+        if workloads.install_postgres(project_root, quadlet_dir, kube_runtime_dir, None,
+                                      node_address, database=database, target=target):
             restart.append(database)
     if restart:
         run('systemctl', '--user', 'stop', *apps.services(databases=False), allowed=(0, 5))
@@ -298,12 +301,12 @@ def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kub
         run('podman', 'wait', '--condition=healthy', database.container,
             timeout=settings.HEALTH_TIMEOUT)
     quadlet.systemctl('start', 'shared-proxy.service')
-    for app in apps.APPS:
-        keycloak.wait('/ready', 30, 1, 'ready', hostname=app.hostname)
+    for hostname in target.hostnames.values():
+        keycloak.wait('/ready', 30, 1, 'ready', hostname=hostname)
     return {'changed': access_changed or bool(restart), 'restarted': [database.name for database in restart]}
 
-def data_claim(database, rendered_manifest_dir):
-    """Return the rendered PersistentVolumeClaim for the database's data volume, as YAML.
+def data_claim(database, target):
+    """Return the bundle's PersistentVolumeClaim for the database's data volume, as YAML.
 
     podman kube play creates the empty volume from this before
     pg_basebackup fills it, so the volume is exactly the one the workload
@@ -311,8 +314,7 @@ def data_claim(database, rendered_manifest_dir):
     """
     # YAML parsing is a DR-only dependency; never reconstruct the PVC in Python.
     import yaml
-    path = Path(rendered_manifest_dir) / database.manifest
-    claims = [document for document in yaml.safe_load_all(path.read_text())
+    claims = [document for document in yaml.safe_load_all(target.manifests[database.manifest].decode())
               if isinstance(document, dict) and document.get('kind') == 'PersistentVolumeClaim'
               and document.get('metadata', {}).get('name') == database.volume('data')]
     if len(claims) != 1:
@@ -345,7 +347,7 @@ printf "primary_slot_name = '%s'\\n" "$4" >> "$auto"
 
 
 def bootstrap_standby(database, primary_address, *, project_root, quadlet_dir,
-                      kube_runtime_dir, rendered_manifest_dir, image_archive=None, slot=None):
+                      kube_runtime_dir, target, image_archive=None, slot=None):
     """Create a new read-only standby from a base backup of the primary.
 
     Refuses if the data volume already exists: bootstrap never overwrites
@@ -355,12 +357,13 @@ def bootstrap_standby(database, primary_address, *, project_root, quadlet_dir,
     the primary. It then writes the recovery settings (again with TLS and
     verify-full), a passfile from the replication secret and a copy of the
     CA certificate, installs the
-    database unit, starts it, and checks that it came up as a standby.
+    database unit from the bundle's files (target, filled in for this host),
+    starts it, and checks that it came up as a standby.
     """
     primary_address = address(primary_address)
     slot = identifier(slot or database.replication_slot())
     role = identifier(database.role('replicator'))
-    claim = data_claim(database, rendered_manifest_dir)
+    claim = data_claim(database, target)
     if Path(kube_runtime_dir) != Path(quadlet_dir) / settings.KUBE_RUNTIME:
         raise ValueError(f'kube_runtime_dir must be quadlet_dir/{settings.KUBE_RUNTIME}')
     if exists('volume', database.volume('data')):
@@ -393,8 +396,8 @@ def bootstrap_standby(database, primary_address, *, project_root, quadlet_dir,
         '--secret', ca, '--entrypoint', '/bin/sh', database.image, '-s', '--',
         primary_address, str(database.replication_port), role, slot,
         database.replication_passfile(), database.secret('replicator'), ca, input=WRITE_RECOVERY_CONF_SCRIPT)
-    workloads.install_postgres(project_root, quadlet_dir, kube_runtime_dir,
-                               rendered_manifest_dir, database=database)
+    workloads.install_postgres(project_root, quadlet_dir, kube_runtime_dir, None,
+                               database=database, target=target)
     quadlet.systemctl('start', database.service)
     run('podman', 'wait', '--condition=healthy', database.container,
         timeout=settings.HEALTH_TIMEOUT)
@@ -546,7 +549,7 @@ def require_reseed_confirmations(confirm_fenced, confirm_reseed):
 
 
 def reseed_check(database, primary_address, *, project_root, quadlet_dir, kube_runtime_dir,
-                 rendered_manifest_dir, confirm_fenced, confirm_reseed):
+                 target, confirm_fenced, confirm_reseed):
     """Local-only checks; never contacts the primary.
 
     A rebuild's read-only preflight runs this before the primary has
@@ -573,12 +576,13 @@ def reseed_check(database, primary_address, *, project_root, quadlet_dir, kube_r
         raise RuntimeError('Destructive reseed refuses a legacy PostgreSQL container Quadlet')
     if '--no-pod-prefix' not in run('podman', 'kube', 'play', '--help').stdout:
         raise RuntimeError('Destructive reseed requires Podman --no-pod-prefix')
-    # Validate every file before erasing anything, including the canonical PVC.
-    data_claim(database, rendered_manifest_dir)
-    (Path(rendered_manifest_dir) / database.config_manifest).read_bytes()
-    (Path(project_root) / 'deploy/quadlet/app-network.network').read_bytes()
-    quadlet.render(project_root, database.unit, {
-        'postgres_publish_address': '', 'postgres_publish_port': database.replication_port})
+    # Every file the reseed installs must be in the bundle before anything is erased,
+    # the canonical PVC included; target_render.load already filled them all in.
+    data_claim(database, target)
+    missing = [name for name, files in ((database.config_manifest, target.manifests),
+                                        (database.unit, target.quadlets)) if name not in files]
+    if missing:
+        raise RuntimeError(f'{database.name}: the bundle lacks {", ".join(missing)}; data was not removed')
     return False
 
 

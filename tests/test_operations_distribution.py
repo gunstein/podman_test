@@ -105,6 +105,18 @@ class OperationsDistributionTests(unittest.TestCase):
                 "docs/ARCHITECTURE.md",
             ):
                 self.assertIn(path, names)
+            # The DR tools install the same rendered target files as the offline bundle.
+            self.assertIn("bundle.json", names)
+            self.assertIn("generated/target/manifests/postgres.yaml", names)
+            self.assertIn("generated/target/quadlet/replicated/todo-postgres.kube", names)
+            with tarfile.open(archive) as package:
+                package.extractall(directory, filter="data")
+            sys.path.insert(0, str(ROOT / "deploy/installer"))
+            from app_installer import target_render
+            target = target_render.load(Path(directory) / "todo-operations",
+                                        {target_render.PUBLISH_ADDRESS: "192.0.2.10"}, environment={}, recorded={})
+            self.assertEqual(target.hostnames, {"todo": "todo.test", "notes": "notes.test"})
+            self.assertIn(b"192.0.2.10:5432:5432", target.replicated["todo-postgres.kube"])
             for retired in (
                 "deploy/scripts/manual_dr_commands.py",
                 "deploy/scripts/lab_dr_acceptance.py",

@@ -16,10 +16,11 @@ mkdir -p "$bundle_directory/images" "$bundle_directory/docs" \
   "$bundle_directory/deploy/runtime" \
   "$bundle_directory/deploy/quadlet" "$bundle_directory/deploy/offline"
 mkdir -p "$(dirname "$output")"
-# generated/kube-runtime: the Kube YAML with values.yaml's hostname, which the DR
-# tools install. generated/target and bundle.json: every Kube YAML file and
-# Quadlet unit rendered here, with ${TARGET_...} placeholders for the values only
-# the target host knows; install.sh fills them in without Jinja2 or PyYAML.
+# generated/target and bundle.json: every Kube YAML file and Quadlet unit
+# rendered here, with ${TARGET_...} placeholders for the values only the target
+# host knows; install.sh and the DR tools fill them in without Jinja2.
+# generated/kube-runtime: the same Kube YAML with values.yaml's hostname, for
+# reading and comparison; nothing installs it.
 "$project_root/deploy/scripts/render-kube-runtime.sh" "$project_root/deploy/environments/prod/values.yaml" "$bundle_directory/generated/kube-runtime"
 PYTHONPATH="$project_root/deploy/installer${PYTHONPATH:+:$PYTHONPATH}" \
   python3 -m app_installer.bundle "$project_root" "$project_root/deploy/environments/prod/values.yaml" \

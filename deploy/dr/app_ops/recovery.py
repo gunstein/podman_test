@@ -31,9 +31,10 @@ def deploy_promoted(project_root, controller, current):
 
 
 def configure_backup(project_root, controller, current):
-    """Install app_backup.py on the current primary and turn on WAL archiving.
+    """Install app_backup.py on the current primary, turn on WAL archiving and the nightly backup.
 
     Refuses unless the promotion record shows the whole group was promoted.
+    todo-backup.timer then runs `app_backup.py nightly` every night (M2).
     """
     pythonpath = trust.stage_installer(project_root, controller, current)
     journal = steps.promotion_record(current)
@@ -44,7 +45,8 @@ def configure_backup(project_root, controller, current):
         settings.TOOLS_BIN)
     result = current.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', str(settings.TOOLS_BIN / 'app_backup.py'),
                           'configure', '--journal', journal], timeout=steps.STEP_TIMEOUT)
-    return steps.changed(result) or changed
+    changed = steps.changed(result) or changed
+    return steps.install_timer(project_root, current, 'todo-backup') or changed
 
 
 def preflight_rebuild(project_root, controller, current, rebuild, confirm_fenced, confirm_reseed):
@@ -99,7 +101,7 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
                   '--confirm-fenced', confirm_fenced, '--confirm-reseed', confirm_reseed,
                   '--node-address', rebuild_host.spec.address, '--target-values', hostnames,
                   *steps.group_paths(rebuild_host), timeout=steps.COPY_STEP_TIMEOUT)
-    standby.install_dr_tool(project_root, controller, rebuild_host, current.spec)
+    standby.install_dr_tool(project_root, controller, rebuild_host, current.spec, rebuild_host.name)
     standby.streaming(current, current_path, rebuilt=True)
     return True
 

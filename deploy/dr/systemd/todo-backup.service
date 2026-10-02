@@ -1,0 +1,14 @@
+# The nightly backup (backlog M2): a verified base backup of every database,
+# then pruning that keeps the backups of the last 7 days and only the WAL
+# they need. On a standby it does nothing: the primary takes the backups.
+# A failure fails the unit, so it shows in `systemctl --user --failed`:
+#   journalctl --user -u todo-backup.service
+# app-ops configure-backup installs it with todo-backup.timer.
+[Unit]
+Description=Todo nightly base backup and pruning
+
+[Service]
+Type=oneshot
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/todo/bin/app_backup.py nightly --keep-days 7
+TimeoutStartSec=3h

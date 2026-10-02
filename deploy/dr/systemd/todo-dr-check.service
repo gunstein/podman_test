@@ -1,0 +1,13 @@
+# The scheduled DR check (backlog M1): replication, WAL archiving and disk
+# space for this host's role. A problem fails the unit, so it shows in
+# `systemctl --user --failed` and in the journal:
+#   journalctl --user -u todo-dr-check.service
+# app-ops install-dr-tool installs it on both hosts with todo-dr-check.timer.
+[Unit]
+Description=Todo DR check: replication, WAL archiving and disk space
+
+[Service]
+Type=oneshot
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/todo/bin/app_dr.py check
+TimeoutStartSec=10min

@@ -131,14 +131,25 @@ def replication_status(project_root, controller, primary, standby):
     return False
 
 
-def install_dr_tool(project_root, controller, standby, primary_spec):
-    """Install app_dr.py on the standby with exact-file trust, then write its DR settings."""
-    trust.stage_installer(project_root, controller, standby)
-    changed = trust.install_trusted(project_root, controller, standby,
+def install_dr_tool(project_root, controller, host, primary_spec, standby_name):
+    """Install app_dr.py on host with exact-file trust, write its DR settings and turn on its check timer.
+
+    Both hosts get the same tool and settings: the standby promotes with it,
+    and on either host todo-dr-check.timer runs `app_dr.py check` (M1).
+    """
+    trust.stage_installer(project_root, controller, host)
+    changed = trust.install_trusted(project_root, controller, host,
                                     [(f'{project_root}/deploy/dr/scripts/app_dr.py', settings.TOOLS_BIN / 'app_dr.py',
                                       '0644')], settings.TOOLS_BIN)
-    result = standby.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', str(settings.TOOLS_BIN / 'app_dr.py'), '--config',
-                          steps.paths(standby)['config'] + '/todo-dr.json', 'configure',
-                          '--primary-name', primary_spec.name, '--primary-address', primary_spec.address,
-                          '--standby-name', standby.name, '--rpo-target-seconds', str(settings.RPO_TARGET_SECONDS)])
-    return steps.changed(result) or changed
+    result = host.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', str(settings.TOOLS_BIN / 'app_dr.py'), '--config',
+                       steps.paths(host)['config'] + '/todo-dr.json', 'configure',
+                       '--primary-name', primary_spec.name, '--primary-address', primary_spec.address,
+                       '--standby-name', standby_name, '--rpo-target-seconds', str(settings.RPO_TARGET_SECONDS)])
+    changed = steps.changed(result) or changed
+    return steps.install_timer(project_root, host, 'todo-dr-check') or changed
+
+
+def install_dr_tools(project_root, controller, primary, standby):
+    """install_dr_tool on the standby and on the primary; True if either changed."""
+    changed = install_dr_tool(project_root, controller, standby, primary.spec, standby.name)
+    return install_dr_tool(project_root, controller, primary, primary.spec, standby.name) or changed

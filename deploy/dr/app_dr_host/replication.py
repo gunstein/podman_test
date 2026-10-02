@@ -449,6 +449,41 @@ def archive_health(database):
                      'historical_failures', 'archive_health'), fields))
 
 
+def standby_streams(database):
+    """On a primary: raise unless a standby streams over TLS and every physical slot is active and keeps its WAL.
+
+    Unlike streaming_status it accepts any slot name, so it holds after
+    bootstrap and after a rebuild alike. Returns how many standbys stream.
+    """
+    streaming = sql(database, "SELECT count(*) FROM pg_stat_replication JOIN pg_stat_ssl USING (pid) "
+                    "WHERE state = 'streaming' AND ssl;")
+    if streaming in ('', '0'):
+        raise RuntimeError(f'{database.name}: no standby streams from this primary over TLS')
+    slots = sql(database, "SELECT slot_name, active, wal_status, COALESCE(invalidation_reason, '') "
+                "FROM pg_replication_slots WHERE slot_type = 'physical' ORDER BY slot_name;")
+    for row in slots.splitlines():
+        name, active, wal_status, reason = row.split('|')
+        if active != 't' or wal_status not in ('reserved', 'extended') or reason:
+            raise RuntimeError(f'{database.name}: replication slot {name} is inactive, losing WAL or invalidated')
+    return int(streaming)
+
+
+def receiving(database):
+    """On a standby: raise unless its WAL receiver streams from the primary."""
+    state = sql(database, "SELECT COALESCE((SELECT status FROM pg_stat_wal_receiver), '');")
+    if state != 'streaming':
+        raise RuntimeError(f'{database.name}: the standby does not receive WAL from the primary '
+                           f'({state or "no WAL receiver"})')
+
+
+def archiving(database):
+    """On a primary: False if WAL archiving is off; True if it is on and healthy; else raise."""
+    if sql(database, "SELECT current_setting('archive_mode');") != 'on':
+        return False
+    archive_health(database)
+    return True
+
+
 def cluster_status(role):
     """Read-only group report after rebuild; every database is checked before any failure is raised."""
     report, problems = {}, []

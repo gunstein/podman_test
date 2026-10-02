@@ -330,8 +330,11 @@ whose creation was lost in the last seconds.
 
 Initially one host serves both applications and a second streams each
 PostgreSQL database's WAL asynchronously. Physical slots retain needed WAL within a configured bound;
-lag and invalidated slots require monitoring. Async replication cannot guarantee
-that unsent commits survive abrupt loss.
+lag and invalidated slots require monitoring: `todo-dr-check.timer` runs
+`app_dr.py check` on both hosts every 15 minutes, and a nightly
+`todo-backup.timer` takes and prunes the base backups on the current primary
+([scheduled check and nightly backup](../deploy/dr/README.md#scheduled-check-and-nightly-backup)).
+Async replication cannot guarantee that unsent commits survive abrupt loss.
 
 ```text
 verify infrastructure fencing

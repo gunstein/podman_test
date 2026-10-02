@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Todo backup every night
+
+[Timer]
+OnCalendar=*-*-* 02:30
+RandomizedDelaySec=30min
+# A host that was off at night takes the missed backup when it starts.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

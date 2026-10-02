@@ -317,6 +317,105 @@ class GroupPromotionTests(unittest.TestCase):
         self.assertEqual(self.commands, [])
 
 
+class CheckHost:
+    """Answers the check's SQL per database from a small description of each one."""
+
+    def __init__(self, test, **databases):
+        healthy = dict(role="primary", streams="1", slots="todo_standby|t|reserved|", archive="on",
+                       archiver="f|off|on|000000010000000000000003|0|healthy", receiver="streaming")
+        self.databases = {f"{name}-postgres": {**healthy, **changes} for name, changes in databases.items()}
+        route_commands(test, self)
+
+    def __call__(self, arguments, timeout=None):
+        database, statement = self.databases[container(arguments)], arguments[-1]
+        if database.get("down"):
+            return completed(stderr="Error: no container with name or ID", returncode=125)
+        if "pg_is_in_recovery(), current_setting('transaction_read_only'), COALESCE(pg_last" in statement:
+            return completed("f|off|0/30|0/30" if database["role"] == "primary" else "t|on|0/30|0/30")
+        if "FROM pg_stat_replication" in statement:
+            return completed(database["streams"])
+        if "FROM pg_replication_slots" in statement:
+            return completed(database["slots"])
+        if "pg_stat_wal_receiver" in statement:
+            return completed(database["receiver"])
+        if statement == "SELECT current_setting('archive_mode');":
+            return completed(database["archive"])
+        if "FROM pg_stat_archiver" in statement:
+            return completed(database["archiver"])
+        raise AssertionError(statement)
+
+
+class CheckTests(unittest.TestCase):
+    """app_dr.py check (M1): one run names every problem for the host's role."""
+
+    DISK = (100 * 2**30, 50 * 2**30, 50 * 2**30)
+
+    def check(self, disk=DISK, **databases):
+        CheckHost(self, **{name: databases.get(name, {}) for name in ("todo", "notes", "keycloak")})
+        return app_dr.check(disk=disk)
+
+    def test_a_healthy_primary_and_a_healthy_standby_pass(self):
+        lines, problems = self.check()
+        self.assertEqual(problems, [])
+        self.assertIn("todo: primary, 1 standby streaming over TLS, WAL archive healthy", lines)
+        self.assertIn("Disk: 50% free (51200 MiB)", lines)
+        standby = {"role": "standby"}
+        lines, problems = self.check(todo=standby, notes=standby, keycloak=standby)
+        self.assertEqual(problems, [])
+        self.assertIn("keycloak: standby, receiving WAL from the primary", lines)
+
+    def test_archiving_off_is_reported_not_failed(self):
+        lines, problems = self.check(todo={"archive": "off"})
+        self.assertEqual(problems, [])
+        self.assertIn("todo: primary, 1 standby streaming over TLS, WAL archiving off", lines)
+
+    def test_each_problem_is_found_and_every_database_is_checked(self):
+        cases = (
+            ({"streams": "0"}, "todo: no standby streams from this primary over TLS"),
+            ({"slots": "todo_standby|f|reserved|"}, "todo: replication slot todo_standby is inactive"),
+            ({"slots": "todo_standby|t|lost|wal_removed"}, "losing WAL or invalidated"),
+            ({"archiver": "f|off|on|000000010000000000000003|2|failed"}, "WAL archiving has not recovered"),
+            ({"down": True}, "todo: "),
+        )
+        for changes, message in cases:
+            with self.subTest(message=message):
+                _lines, problems = self.check(todo=changes, keycloak={"streams": "0"})
+                self.assertEqual(len(problems), 2, problems)
+                self.assertIn(message, problems[0])
+                self.assertIn("keycloak: no standby streams", problems[1])
+
+    def test_a_standby_that_receives_nothing_fails(self):
+        standby = {"role": "standby"}
+        _lines, problems = self.check(todo={"role": "standby", "receiver": "waiting"}, notes=standby,
+                                      keycloak={"role": "standby", "receiver": ""})
+        self.assertEqual(problems, [
+            "todo: the standby does not receive WAL from the primary (waiting)",
+            "keycloak: the standby does not receive WAL from the primary (no WAL receiver)"])
+
+    def test_a_split_group_fails(self):
+        _lines, problems = self.check(notes={"role": "standby"})
+        self.assertEqual(problems, ["the group is split: todo primary, notes standby, keycloak primary"])
+
+    def test_a_nearly_full_disk_fails(self):
+        _lines, problems = self.check(disk=(100 * 2**30, 95 * 2**30, 5 * 2**30))
+        self.assertEqual(problems, ["only 5% of the disk is free (5120 MiB); the check wants 10%"])
+
+    def test_the_command_prints_what_is_fine_and_exits_1_on_a_problem(self):
+        CheckHost(self, todo={"streams": "0"}, notes={}, keycloak={})
+        with mock.patch.object(app_dr.shutil, "disk_usage", return_value=self.DISK), \
+                mock.patch("sys.stdout") as stdout, mock.patch("sys.stderr") as stderr:
+            self.assertEqual(app_dr.main(["check"]), 1)
+        printed = "".join(call.args[0] for call in stdout.write.call_args_list)
+        errors = "".join(call.args[0] for call in stderr.write.call_args_list)
+        self.assertIn("notes: primary", printed)
+        self.assertIn("ERROR: todo: no standby streams", errors)
+
+    def test_the_check_needs_no_dr_settings(self):
+        CheckHost(self, todo={}, notes={}, keycloak={})
+        with mock.patch.object(app_dr.shutil, "disk_usage", return_value=self.DISK), mock.patch("sys.stdout"):
+            self.assertEqual(app_dr.main(["--config", "/nonexistent/todo-dr.json", "check"]), 0)
+
+
 class ConfigureTests(unittest.TestCase):
     def configure(self, config, *extra):
         return app_dr.main(['--config', str(config), 'configure', '--primary-name', 'todo-primary',

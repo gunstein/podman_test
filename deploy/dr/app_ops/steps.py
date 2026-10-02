@@ -56,6 +56,35 @@ def put(host, path, content):
     host.run(['sh', '-c', 'umask 077 && mkdir -p "$(dirname "$1")" && cat > "$1"', 'put', path], input=content)
 
 
+# Replace a file with stdin only if it differs; print whether it changed.
+UPDATE_FILE = """umask 077 && mkdir -p "$(dirname "$1")" && new=$(mktemp "$1.XXXXXX") && cat > "$new"
+if cmp -s "$new" "$1"; then rm -f "$new"; echo unchanged; else chmod 0644 "$new" && mv "$new" "$1"; echo changed; fi"""
+
+
+def install_timer(project_root, host, name):
+    """Install deploy/dr/systemd/<name>.service and .timer as user units on host, and turn the timer on.
+
+    Returns whether anything changed. The units run a tool app-ops installed
+    in settings.TOOLS_BIN; a failed run leaves the service failed, which is
+    the alert (`systemctl --user --failed`, the journal).
+    """
+    directory = f'{host.spec.home}/.config/systemd/user'
+    changed = False
+    for unit in (f'{name}.service', f'{name}.timer'):
+        content = (Path(project_root) / 'deploy/dr/systemd' / unit).read_text()
+        result = host.run(['sh', '-c', UPDATE_FILE, 'unit', f'{directory}/{unit}'], input=content)
+        changed = result.stdout.strip() == 'changed' or changed
+    if changed:
+        host.run(['systemctl', '--user', 'daemon-reload'])
+    timer = f'{name}.timer'
+    enabled = host.run(['systemctl', '--user', 'is-enabled', timer], allowed=(0, 1)).stdout.strip() == 'enabled'
+    active = host.run(['systemctl', '--user', 'is-active', timer], allowed=(0, 3, 4)).stdout.strip() == 'active'
+    if not (enabled and active):
+        host.run(['systemctl', '--user', 'enable', '--now', timer])
+        changed = True
+    return changed
+
+
 def stage_target_files(project_root, controller, host):
     """The installer and the package's rendered files (bundle.json, generated/target); returns the PYTHONPATH.
 

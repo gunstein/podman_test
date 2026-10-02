@@ -319,6 +319,49 @@ class FullRunTests(ToolTest):
         self.assertEqual(self.record()[-1]["values"]["free"], "15360 MiB")
         self.assertEqual(self.tool("--step", "10-8", "check", "disk", "192.168.0.108", rules=sizes(1024))[0], 1)
 
+    def test_monitor_needs_the_timer_and_the_expected_outcome(self):
+        timer = ("is-enabled todo-dr-check.timer", (0, "enabled\nactive\n"))
+        passed = ("systemctl --user start todo-dr-check.service",
+                  (0, "exit=0\ntodo: primary, 1 standby streaming over TLS, WAL archiving off\nDisk: 40% free (9000 MiB)\n"))
+        failed = ("systemctl --user start todo-dr-check.service",
+                  (0, "exit=1\nDisk: 40% free (9000 MiB)\nERROR: todo: no standby streams from this primary over TLS\n"))
+        self.assertEqual(self.tool("--step", "05-7a", "check", "monitor", "192.168.0.102", "ok",
+                                   rules=[timer, passed])[0], 0)
+        self.assertEqual(self.tool("--step", "06-15", "check", "monitor", "192.168.0.108", "alert",
+                                   rules=[timer, failed])[0], 0)
+        self.assertEqual(self.record()[-1]["values"]["problems"],
+                         ["todo: no standby streams from this primary over TLS"])
+        for rules in ([timer, failed], [("is-enabled", (1, "disabled\ninactive\n")), passed],
+                      [timer, ("systemctl --user start", (0, "exit=0\n"))]):
+            with self.subTest(rules=rules[-1][1]):
+                self.assertEqual(self.tool("--step", "05-7a", "check", "monitor", "192.168.0.102", "ok",
+                                           rules=rules)[0], 1)
+        self.assertEqual(self.tool("--step", "06-15", "check", "monitor", "192.168.0.108", "alert",
+                                   rules=[timer, passed])[0], 1)
+
+    def test_a_failed_dr_check_is_not_a_failed_service(self):
+        ready = ("wait-ready", (0, "READY: x\n"))
+        line = "todo-dr-check.service loaded failed failed Todo DR check\n"
+        self.assertEqual(self.tool("--step", "07-5", "check", "services", "192.168.0.108", "app",
+                                   rules=[ready, ("--failed", (0, line))])[0], 0)
+        self.assertEqual(self.record()[-1]["values"], {"dr_check": "failed (see check monitor)"})
+        backup = "todo-backup.service loaded failed failed Todo nightly base backup\n"
+        self.assertEqual(self.tool("--step", "07-5", "check", "services", "192.168.0.108", "app",
+                                   rules=[ready, ("--failed", (0, line + backup))])[0], 1)
+
+    def test_the_nightly_backup_backs_up_every_database(self):
+        timer = ("is-enabled todo-backup.timer", (0, "enabled\nactive\n"))
+        journal = "".join(f"{d}: verified base backup base-20261002T200000Z; deleted 0 older than 7 days\n"
+                          for d in ("todo", "notes", "keycloak"))
+        code, fake = self.tool("--step", "08-16", "do", "backup-nightly", "192.168.0.108",
+                               rules=[timer, ("start todo-backup.service", (0, "exit=0\n" + journal))])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.record()[-1]["values"]["notes"], "base-20261002T200000Z")
+        self.assertIn("journalctl _SYSTEMD_USER_UNIT=todo-backup.service", fake.calls[-1])
+        self.assertEqual(self.tool("--step", "08-16", "do", "backup-nightly", "192.168.0.108", "--operator-approved",
+                                   "retry in the test",
+                                   rules=[timer, ("start todo-backup.service", (0, "exit=1\n"))])[0], 1)
+
     def test_replication_rule_is_added_and_removed_permanently(self):
         rule = acceptance.replication_rule("192.168.0.108", "192.168.0.102")
         added = [("--list-rich-rules", (0, rule + "\n"))]

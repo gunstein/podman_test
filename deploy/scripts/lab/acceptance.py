@@ -54,6 +54,7 @@ Commands:
   check write-probe HOST                 the guide's rolled-back Todo and Notes inserts
   check replication-tls HOST             every standby connection streams over TLS
   check disk HOST                        backup and WAL sizes, at least 2 GiB free
+  check monitor HOST ok|alert            the DR check timer is on; one run passes or names a problem
   do    firewall-replication SOURCE HOST add|remove   5432-5434 from SOURCE to HOST
   do    proxmox-firewall VMID on|off     VM firewall switch, then a 20 s wait
   do    replication-exception VMID on|off   the todo-quarantine-replication rule, then 20 s
@@ -68,6 +69,7 @@ Commands:
   do    power VMID start|shutdown        start waits for the Guest Agent
   do    onboot VMID 0|1                  the start-at-boot flag, read back
   do    pin-ssh FROM TO                  key-based SSH FROM to TO, host key verified
+  do    backup-nightly HOST              the nightly backup timer is on; one run backs up every database
 """
 import argparse
 import datetime
@@ -197,6 +199,7 @@ EXPECT = matching(r'open|blocked')
 LINK = matching(r'up|down')
 POWER = matching(r'start|shutdown')
 BIT = matching(r'[01]')
+OUTCOME = matching(r'ok|alert')
 
 
 def source_address(text):
@@ -237,6 +240,11 @@ cat /etc/machine-id
 # Podman runs each container health check as a transient unit named
 # <container id>-<random>.service; one failed run leaves it "failed" until the next.
 HEALTH_CHECK_UNIT = re.compile(r'[0-9a-f]{64}-[0-9a-f]+\.(service|timer)')
+# The scheduled DR check (M1). Its failed state means DR needs attention, as
+# after a failover until the rebuild, not that a service is down; check
+# monitor tests it on its own.
+DR_CHECK = 'todo-dr-check'
+BACKUP = 'todo-backup'
 
 
 def check_services(step, host, mode):
@@ -253,9 +261,12 @@ def check_services(step, host, mode):
     health_checks = [unit for unit in units if HEALTH_CHECK_UNIT.fullmatch(unit)]
     if health_checks:
         step.values['failed_health_check_runs'] = len(health_checks)
-    step.expect(failed.returncode == 0 and len(units) == len(health_checks),
+    if f'{DR_CHECK}.service' in units:
+        step.values['dr_check'] = 'failed (see check monitor)'
+    others = [unit for unit in units if unit not in health_checks and unit != f'{DR_CHECK}.service']
+    step.expect(failed.returncode == 0 and not others,
                 'no failed user units' + (f' (ignored {len(health_checks)} failed Podman health-check run)'
-                                          if health_checks else ''))
+                                          if health_checks else '') + (f': {", ".join(others)}' if others else ''))
     if mode == 'app':
         nginx = step.ssh(host, 'podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf')
         step.expect(nginx.returncode == 0, 'nginx configuration is valid')
@@ -445,6 +456,48 @@ echo "wal {database} $(podman exec {database}-postgres du -sk /var/lib/postgresq
     step.values.update({name: f'{kib // 1024} MiB' for name, kib in sizes.items()})
     step.expect(len(sizes) == 2 * len(DATABASES) + 1, 'every size was read')
     step.expect(sizes.get('free', 0) >= MIN_FREE_KIB, f'at least {MIN_FREE_KIB // 1024 // 1024} GiB free')
+
+
+def timer_on(step, host, name):
+    """name.timer is enabled (it starts at boot) and active (it is scheduled now)."""
+    timer = step.ssh(host, f'systemctl --user is-enabled {name}.timer; systemctl --user is-active {name}.timer')
+    step.expect(timer.stdout.split() == ['enabled', 'active'], f'{name}.timer is enabled and active')
+
+
+def start_unit(step, host, name, marker, timeout):
+    """Start name.service once, as its timer would, and return (exit code, its journal lines from this run).
+
+    The journal is read until marker shows up (up to 10 s), because journald
+    may still be writing the last lines when systemctl returns.
+    """
+    script = f"""start=$(date +%s)
+systemctl --user start {name}.service
+echo "exit=$?"
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    out=$(journalctl _SYSTEMD_USER_UNIT={name}.service --since "@$start" -o cat --no-pager 2>/dev/null)
+    case "$out" in *{shlex.quote(marker)}*) break ;; esac
+    sleep 1
+done
+printf '%s\\n' "$out"
+"""
+    result = step.ssh(host, script, timeout=timeout)
+    match = re.search(r'^exit=(\d+)$', result.stdout, re.M)
+    lines = result.stdout[match.end():].strip().splitlines() if match else []
+    return (int(match.group(1)) if match else -1), lines
+
+
+def check_monitor(step, host, expected):
+    """The scheduled DR check (M1): its timer is on, and one run now passes (ok) or fails naming why (alert)."""
+    timer_on(step, host, DR_CHECK)
+    code, lines = start_unit(step, host, DR_CHECK, 'Disk:' if expected == 'ok' else 'ERROR:', 300)
+    problems = [line.removeprefix('ERROR: ') for line in lines if line.startswith('ERROR: ')]
+    step.values['problems'] = problems
+    if expected == 'ok':
+        step.expect(code == 0 and not problems, f'{DR_CHECK}.service passed')
+        step.expect(any(line.startswith('Disk:') for line in lines), 'its report is in the journal')
+    else:
+        step.expect(code != 0, f'{DR_CHECK}.service failed, as it must')
+        step.expect(bool(problems), 'the journal names the problem')
 
 
 # --- do (changes state) -------------------------------------------------------------
@@ -661,6 +714,17 @@ def check_stopped(step, host):
     step.expect(found.get('containers') == ['0'], 'no running containers')
 
 
+def do_backup_nightly(step, host):
+    """The nightly backup (M2): its timer is on, and one run backs up and prunes every database."""
+    timer_on(step, host, BACKUP)
+    code, lines = start_unit(step, host, BACKUP, 'keycloak: verified base backup', 2400)
+    backups = {database: match.group(1) for database in DATABASES for line in lines
+               if (match := re.match(rf'{database}: verified base backup (base-\S+?);', line))}
+    step.values.update(backups)
+    step.expect(code == 0, f'{BACKUP}.service passed')
+    step.expect(sorted(backups) == sorted(DATABASES), 'a verified base backup of every database, pruned after')
+
+
 def do_link(step, vmid, updown, host):
     """Every network link of the VM up or down, read back; up then waits for SSH from here."""
     value = '1' if updown == 'down' else '0'
@@ -776,6 +840,8 @@ COMMANDS = {
     ('check', 'write-probe'): (check_write_probe, (host_address,), False),
     ('check', 'replication-tls'): (check_replication_tls, (host_address,), False),
     ('check', 'disk'): (check_disk, (host_address,), False),
+    ('check', 'monitor'): (check_monitor, (host_address, OUTCOME), False),
+    ('do', 'backup-nightly'): (do_backup_nightly, (host_address,), False),
     ('do', 'firewall-replication'): (do_firewall_replication, (host_address, host_address, CHANGE), True),
     ('do', 'proxmox-firewall'): (do_proxmox_firewall, (VMID, SWITCH), False),
     ('do', 'replication-exception'): (do_replication_exception, (VMID, SWITCH), False),

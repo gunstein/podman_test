@@ -1,11 +1,13 @@
 """Local DR checks and guarded promotion of the complete application group.
 
-Installed as /opt/todo/bin/app_dr.py on the standby host and run there:
+Installed as /opt/todo/bin/app_dr.py on both DR hosts and run there:
 
   app_dr.py configure ...   write the DR settings (done by install-dr-tool)
   app_dr.py status          show each database's role, lag and primary reachability
-  app_dr.py preflight ...   read-only: may the group be promoted now?
-  app_dr.py promote ...     preflight, then promote every database
+  app_dr.py check           read-only: is replication, archiving and disk space
+                            fine for this host's role? (todo-dr-check.timer)
+  app_dr.py preflight ...   read-only: may the group be promoted now? (standby)
+  app_dr.py promote ...     preflight, then promote every database (standby)
 
 Promotion is all or nothing in intent, but cannot be undone. Every step is
 written to a promotion record first, and a failed or partial promotion is
@@ -16,6 +18,7 @@ import argparse
 import fcntl
 import json
 import os
+import shutil
 import socket
 import sys
 import tempfile
@@ -39,6 +42,9 @@ DEFAULT_JOURNAL = DEFAULT_CONFIG.with_name(settings.PROMOTION_RECORD)
 # Status and promotion commands answer within seconds. Two minutes is
 # generous, and keeps a hung command from stalling a failover.
 TIMEOUT = 120
+# The check fails when less than this share of the disk under the home
+# directory (Podman's volumes, so the databases, their WAL and backups) is free.
+MIN_FREE_FRACTION = 0.10
 
 
 class DrError(RuntimeError):
@@ -306,12 +312,52 @@ class StandbyGroup:
                 raise
 
 
+def check(databases=apps.REPLICATED_DATABASES, disk=None):
+    """The scheduled check (M1): what is fine, and what is wrong, for this host's role.
+
+    Returns (lines, problems). Each database's role is read live, so the same
+    check fits the primary and the standby, and still fits after a failover
+    or a rebuild. A primary needs a standby streaming over TLS, slots that
+    keep their WAL, and healthy WAL archiving if archiving is on; a standby
+    must receive WAL. The group must be all primary or all standby, and the
+    disk must have MIN_FREE_FRACTION free. Every database is checked before
+    anything is reported, so one run names every problem. disk replaces
+    shutil.disk_usage(home) in tests.
+    """
+    lines, problems, roles = [], [], {}
+    for database in databases:
+        try:
+            state = replication.status(database, query=StandbyGroup._query)
+            if state['in_recovery']:
+                replication.receiving(database)
+                roles[database.name] = 'standby'
+                lines.append(f'{database.name}: standby, receiving WAL from the primary')
+            else:
+                streams = replication.standby_streams(database)
+                archive = 'WAL archive healthy' if replication.archiving(database) else 'WAL archiving off'
+                roles[database.name] = 'primary'
+                lines.append(f'{database.name}: primary, {streams} standby streaming over TLS, {archive}')
+        except RuntimeError as error:  # replication's own checks and a failed command (CommandError)
+            problems.append(str(error))
+    if len(set(roles.values())) > 1:
+        problems.append('the group is split: ' + ', '.join(f'{name} {role}' for name, role in roles.items()))
+    total, _used, free = disk or shutil.disk_usage(Path.home())
+    percent = round(100 * free / total)
+    if free < MIN_FREE_FRACTION * total:
+        problems.append(f'only {percent}% of the disk is free ({free // 2**20} MiB); '
+                        f'the check wants {MIN_FREE_FRACTION:.0%}')
+    else:
+        lines.append(f'Disk: {percent}% free ({free // 2**20} MiB)')
+    return lines, problems
+
+
 def parser():
     """Command-line arguments; see the module docstring."""
     result = argparse.ArgumentParser(description='Inspect and safely promote the complete local database group.')
     result.add_argument('--config', type=Path, default=DEFAULT_CONFIG)
     commands = result.add_subparsers(dest='command', required=True)
     commands.add_parser('status')
+    commands.add_parser('check', help='Read-only check of replication, archiving and disk space (M1)')
     configure = commands.add_parser('configure', help='Write the private DR configuration for the complete group')
     configure.add_argument('--primary-name', required=True)
     configure.add_argument('--primary-address', required=True)
@@ -333,6 +379,12 @@ def main(arguments: Optional[Sequence[str]] = None):
             print(json.dumps({'changed': write_config(args.config, args.primary_name, args.primary_address,
                                                       args.standby_name, args.rpo_target_seconds)}))
             return 0
+        if args.command == 'check':
+            lines, problems = check()
+            print('\n'.join(lines))
+            for problem in problems:
+                print(f'ERROR: {problem}', file=sys.stderr)
+            return 1 if problems else 0
         tool = StandbyGroup(load_config(args.config), journal_path=args.config.with_name(settings.PROMOTION_RECORD))
         if args.command == 'status':
             print('\n'.join(tool.status_lines()))

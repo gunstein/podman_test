@@ -652,6 +652,17 @@ standby restart the receive LSN can be *behind* the replay LSN, because
 PostgreSQL restarts the walreceiver at the start of the current WAL segment;
 `app_dr.py status` then reports 0 bytes with a note. That is expected.
 
+`install-dr-tool` also turns on the scheduled DR check on both hosts:
+`todo-dr-check.timer` runs `app_dr.py check` every 15 minutes, and a problem
+leaves `todo-dr-check.service` failed, with the reason in the journal. Start
+it once on each host and require that it passes:
+
+```bash
+systemctl --user list-timers todo-dr-check.timer   # enabled, with its next run
+systemctl --user start todo-dr-check.service
+journalctl _SYSTEMD_USER_UNIT=todo-dr-check.service -o cat --no-pager | tail -n 5
+```
+
 Prepare and rehearse [Proxmox quarantine](PROXMOX-QUARANTINE.md) now, while
 initial primary is still the authorized writable node. Verify restored normal
 operation and streaming before proceeding to fencing.
@@ -722,6 +733,11 @@ podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_S
 
 Pass when every database reports `f|off`, the rolled-back writes succeed and all
 markers remain. Keep old primary fenced.
+
+The DR check must now fail on the promoted host: no standby streams from it
+until the rebuild. Start `todo-dr-check.service` once and require that it
+fails with `no standby streams from this primary over TLS` in the journal.
+`check services` does not count this failed check as a failed service.
 
 ## 7. Application failover
 
@@ -833,6 +849,12 @@ Rerun `configure-backup` and require `{"changed": false}`. Reboot current primar
 application readiness, writable database, backup persistence, zero archive
 failures and bounded WAL use.
 
+`failover` turned on the nightly backup (`todo-backup.timer`, `app_backup.py
+nightly --keep-days 7`): a verified base backup of every database, then
+deletion of backups older than 7 days and of the WAL only they needed. Start
+`todo-backup.service` once and require that it passes with a verified base
+backup of todo, notes and keycloak in the journal.
+
 ## 9. Rebuild old primary as standby
 
 - **Where:** Proxmox node Shell for isolated boot/quarantine; current primary runs app-ops.
@@ -891,7 +913,8 @@ from `.102`, ports 5432-5434 on `.108` now connect.
 
 Run `python3 -m app_ops --inventory recovery.yaml cluster-status`; it reports every registered
 database. Create an authenticated Todo through `todo.test` and an authenticated
-Note through `notes.test`, and verify both directly on rebuilt standby.
+Note through `notes.test`, and verify both directly on rebuilt standby. The DR
+check passes again on both hosts.
 
 ## 10. Final reboot sequence
 
@@ -910,7 +933,7 @@ Note through `notes.test`, and verify both directly on rebuilt standby.
    every database, persistent backups, unchanged TLS CA and readiness of both apps.
 6. Run `cluster-status` again.
 7. Verify trusted HTTPS for both hostnames, stable issuer and all markers from the client.
-8. Record backup/WAL size and free disk.
+8. Record backup/WAL size and free disk; the DR check passes on both hosts.
 
 Pass only when final status reports writable primary, healthy archiving,
 `streaming|async`, active usable slot, zero measured lag, read-only recovery

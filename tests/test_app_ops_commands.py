@@ -307,7 +307,7 @@ class CliDispatchTests(unittest.TestCase):
             ("sync-standby-secrets", standby, "sync_secrets", self.INITIAL, controller + both),
             ("bootstrap-standby", standby, "bootstrap", self.INITIAL, controller + both),
             ("replication-status", standby, "replication_status", self.INITIAL, controller + both),
-            ("install-dr-tool", standby, "install_dr_tool", self.INITIAL, controller + ["todo-standby"]),
+            ("install-dr-tool", standby, "install_dr_tools", self.INITIAL, controller + both),
             ("install-quarantine-tool", cli.quarantine, "install", self.INITIAL, controller + ["todo-primary"]),
             ("deploy-promoted-application", recovery, "deploy_promoted", self.RECOVERY,
              controller + ["todo-standby"]),
@@ -324,10 +324,13 @@ class CliDispatchTests(unittest.TestCase):
                 self.assertEqual(called.call_count, 1)
                 self.assertEqual(self.names(called.call_args), hosts)
 
-    def test_install_dr_tool_passes_the_primary_identity(self):
+    def test_install_dr_tool_installs_the_same_settings_and_check_on_both_hosts(self):
         with unittest.mock.patch.object(standby, "install_dr_tool", return_value=False) as called:
             self.main(self.INITIAL, "install-dr-tool")
-        self.assertEqual(called.call_args.args[-1].address, "192.0.2.10")
+        self.assertEqual([call.args[2].name for call in called.call_args_list], ["todo-standby", "todo-primary"])
+        for call in called.call_args_list:
+            self.assertEqual(call.args[3].address, "192.0.2.10")
+            self.assertEqual(call.args[4], "todo-standby")
 
     def test_quarantine_options_are_passed_through(self):
         with unittest.mock.patch.object(cli.quarantine, "install", return_value=False) as called:

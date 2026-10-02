@@ -46,12 +46,15 @@ cp "$project_root/deploy/installer/app_installer/"*.py \
   "$package_directory/deploy/installer/app_installer/"
 # DR: app-ops on the controller, app_dr_host and the tools on the hosts, and their docs.
 mkdir -p "$package_directory/deploy/dr/app_ops" "$package_directory/deploy/dr/app_dr_host" \
-  "$package_directory/deploy/dr/scripts"
+  "$package_directory/deploy/dr/scripts" "$package_directory/deploy/dr/systemd"
 cp "$project_root/deploy/dr/"*.md "$package_directory/deploy/dr/"
 cp "$project_root/deploy/dr/app_ops/"*.py "$package_directory/deploy/dr/app_ops/"
 cp "$project_root/deploy/dr/app_dr_host/"*.py "$package_directory/deploy/dr/app_dr_host/"
 cp "$project_root/deploy/dr/scripts/app_dr.py" "$project_root/deploy/dr/scripts/app_backup.py" \
   "$project_root/deploy/dr/scripts/app-quarantine.sh" "$package_directory/deploy/dr/scripts/"
+# The scheduled check (M1) and nightly backup (M2) that app-ops installs as user units.
+cp "$project_root/deploy/dr/systemd/"*.service "$project_root/deploy/dr/systemd/"*.timer \
+  "$package_directory/deploy/dr/systemd/"
 
 source_revision=unknown
 source_state=unknown

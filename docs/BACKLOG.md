@@ -33,8 +33,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 1. First, so the service does not stop and a failover does not lose weeks of
    data: M1 (scheduled checks that alert, so a stopped replication is seen)
-   and M2 (scheduled backups and pruning, so the disk does not fill) together,
-   both systemd timers; then T3 (fencing without the Oslo hypervisor, a
+   and M2 (scheduled backups and pruning, so the disk does not fill), both
+   done in code and waiting for their acceptance run; then T3 (fencing without the Oslo hypervisor, a
    procedure), M4 (a WAL archive that survives a power loss) and G2
    (Trondheim is ready, run from M1's timer). When to start is the owner's
    call.
@@ -250,21 +250,24 @@ is rebuilt. What is missing is anything that tells the operator.
   to any point, at the cost of M2's pruning and M4) or keeps only the
   nightly backups (restore to last night). Reuse `app_backup.py` where it
   fits rather than a second implementation.
-- **M1. Scheduled checks that alert.** *[new]* Today an operator only learns
-  that replication stopped, a slot was invalidated, WAL archiving fails or a
-  disk fills up by running `app_dr.py status`, `app_backup.py status` or
-  `cluster-status` by hand; ARCHITECTURE.md says lag and invalidated slots
-  need monitoring. Add a systemd timer that runs these checks regularly, so a
-  failed check becomes a failed unit in the journal, with an optional
-  `OnFailure=` mail. No new dependency.
-- **M2. Scheduled backups and pruning.** *[new]* Backups are taken only when
-  someone runs `app_backup.py create`, and the archive copies every WAL file
-  into the backup volume while nothing removes old base backups or WAL, so the
-  disk slowly fills. Add a systemd timer on both hosts, whatever their role
-  (D2): a full base backup every night, and pruning that keeps the base
-  backups of the last 7 days and only the WAL they need. Standard tools only:
-  delete the old `base-*` directories, then `pg_archivecleanup` (shipped with
-  PostgreSQL) removes the WAL older than the oldest kept backup.
+- **M1. Scheduled checks that alert.** *[new]* Done in code; waiting for its
+  acceptance run. `todo-dr-check.timer` runs `app_dr.py check` every 15
+  minutes on both DR hosts (installed by `install-dr-tool` and on the
+  rebuilt standby by `rebuild-standby`): replication over TLS, slots,
+  archive health, a split group and free disk, judged by each database's
+  live role. A problem fails the unit; that is the alert, in the journal and
+  `systemctl --user --failed`. Acceptance checks it passes on both hosts,
+  fails on the promoted host before the rebuild, and passes again after.
+  Later, if wanted: an `OnFailure=` mail, which needs a mail relay.
+- **M2. Scheduled backups and pruning.** *[new]* Done in code for the
+  primary; waiting for its acceptance run. `todo-backup.timer`, installed by
+  `configure-backup` (so by `failover`), runs `app_backup.py nightly
+  --keep-days 7` at 02:30: a verified base backup of every database, then the
+  backups older than 7 days (never the latest) and the WAL older than the
+  oldest kept backup (`pg_archivecleanup`). On a standby it does nothing.
+  Still open: backups on the standby too (D2), and archiving on a primary
+  that was never promoted, which today has neither archive nor backups
+  (`configure-backup` requires a promotion record; B1 and D2).
 - **M3. Regular restore tests.** *[optional]* A backup that was never restored
   is not proven. Run the existing disposable PITR restore on a schedule (for
   example weekly) and compare it with a known point, or document a manual

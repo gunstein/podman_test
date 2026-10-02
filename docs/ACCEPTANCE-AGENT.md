@@ -469,7 +469,10 @@ its pod starts; containers, health checks and HTTP answers follow seconds
 later. `$A check services` and `$A do reboot` wait for that with
 `deploy/scripts/wait-ready.sh` (`app` on a host with the application,
 `standby` on a database-only standby), up to 5 minutes. Do not write your own
-wait loops around `systemctl` or `podman`.
+wait loops around `systemctl` or `podman`. A failed `todo-dr-check.service`
+(the scheduled DR check) does not fail `check services`: it fails on purpose
+while DR is degraded, as after the failover until the rebuild, and
+`$A check monitor` tests it on its own.
 
 ### C6. Secrets handling (the only allowed patterns)
 
@@ -737,6 +740,8 @@ ops 05-4-install-quarantine-tool 192.168.0.102 '--inventory initial.yaml install
 ops 05-5-install-quarantine-tool-again 192.168.0.102 '--inventory initial.yaml install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint'  # → {"changed": false}
 $A --step 05-6 check quarantine-ready 107 todo-primary
 $A --step 05-7 do quarantine-profile 107 192.168.0.100 192.168.0.108
+$A --step 05-7a check monitor 192.168.0.102 ok     # install-dr-tool turned the DR check timer on on both hosts
+$A --step 05-7b check monitor 192.168.0.108 ok
 ```
 
 The rehearsal. VM 107 is still the writable primary, so this brief outage is
@@ -797,6 +802,7 @@ vm 06-11-status 192.168.0.108 'python3 /opt/todo/bin/app_dr.py status'
 $A --step 06-12 check roles 192.168.0.108 primary
 $A --step 06-13 check write-probe 192.168.0.108
 $A --step 06-14 check markers 192.168.0.108
+$A --step 06-15 check monitor 192.168.0.108 alert   # no standby streams until the rebuild: the check must say so
 ```
 
 `failover` takes several minutes, so it runs in the background like
@@ -858,6 +864,7 @@ ops 08-12-configure-backup-again 192.168.0.108 '--inventory recovery.yaml config
 $A --step 08-13 do reboot 108 192.168.0.108 app
 $A --step 08-14 check roles 192.168.0.108 archiving
 vm 08-15-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'   # zero failed archive attempts
+$A --step 08-16 do backup-nightly 192.168.0.108   # one run of the nightly backup that failover turned on
 ```
 
 #### C9.10 Phase 9 — Rebuild VM 107 as standby (pre-approved reseed)
@@ -896,6 +903,8 @@ $A --step 09-11e check roles 192.168.0.102 standby
 $A --step 09-11f check replication-tls 192.168.0.108
 $A --step 09-11g do markers phase9
 $A --step 09-11h check markers 192.168.0.102
+$A --step 09-11i check monitor 192.168.0.108 ok     # the rebuilt standby streams again
+$A --step 09-11j check monitor 192.168.0.102 ok
 $A --step 09-12a do proxmox-firewall 107 off
 $A --step 09-12b do onboot 107 "$(recorded_onboot)"   # the value 01-3 read from the clean snapshot
 ```
@@ -914,6 +923,8 @@ ops 10-6-cluster-status 192.168.0.108 '--inventory recovery.yaml cluster-status'
 $A --step 10-7a check headers
 $A --step 10-7b check markers 192.168.0.108
 $A --step 10-7c check markers 192.168.0.102
+$A --step 10-7d check monitor 192.168.0.108 ok     # both timers came back after the reboots
+$A --step 10-7e check monitor 192.168.0.102 ok
 $A --step 10-8 check disk 192.168.0.108
 $A --step 11-1 check browser
 $A --step 11-2 check services 192.168.0.108 app

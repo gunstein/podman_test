@@ -49,7 +49,7 @@ def dispatch(args, controller, hosts):
                     'bootstrap-standby': standby.bootstrap, 'replication-status': standby.replication_status}
         return function[args.command](root, controller, hosts['primary'], hosts['standby'])
     if args.command == 'install-dr-tool':
-        return standby.install_dr_tool(root, controller, hosts['standby'], hosts['primary'].spec)
+        return standby.install_dr_tools(root, controller, hosts['primary'], hosts['standby'])
     current, rebuild = hosts['current_primary'], hosts['rebuild_standby']
     if args.command == 'failover':
         return failover.failover(root, controller, current, rebuild, args.confirm_primary_fenced,

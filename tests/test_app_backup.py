@@ -172,6 +172,133 @@ class DatabaseBackupTests(unittest.TestCase):
             self.tool(timeout_runner).database_state()
 
 
+class BackupVolume(FakeRunner):
+    """A host whose backup volume holds the given base backups; records what the pruning deletes."""
+
+    def __init__(self, names, latest, labels=None, **kwargs):
+        super().__init__(**kwargs)
+        self.names, self.latest = list(names), latest
+        self.labels = labels if labels is not None else {
+            name: f"START WAL LOCATION: 0/{index + 2}000028 (file 0000000100000000000000{index + 2:02X})\n"
+                  "CHECKPOINT LOCATION: 0/2000060\n" for index, name in enumerate(self.names)}
+        self.pruned = None
+
+    def __call__(self, arguments, timeout=None):
+        command = list(arguments)
+        if "-ec" in command:
+            script, arguments_after = command[command.index("-ec") + 1], command[command.index("-ec") + 3:]
+            if script.startswith("cat /backup/LATEST"):
+                self.commands.append(command)
+                return completed("\n".join([self.latest, *self.names, "lost+found"]) + "\n")
+            if "backup_label" in script:
+                self.commands.append(command)
+                return completed(self.labels.get(arguments_after[0], ""))
+            if script == app_backup.PRUNE_SCRIPT:
+                self.commands.append(command)
+                self.pruned = arguments_after
+                return completed()
+        return super().__call__(arguments, timeout)
+
+
+NOW = datetime(2026, 10, 9, 3, 0, tzinfo=timezone.utc)
+WEEK = ["base-20261001T023000Z", "base-20261002T023000Z", "base-20261003T023000Z", "base-20261008T023000Z",
+        "base-20261009T030000Z"]
+
+
+class PruneTests(unittest.TestCase):
+    """nightly and prune (M2): backups of the last N days, and only the WAL they need."""
+
+    def prune(self, runner, days=7):
+        tool = backup(self, runner, clock=lambda: NOW)
+        return tool.prune(days)
+
+    def test_expired_keeps_the_last_days_and_always_the_latest(self):
+        self.assertEqual(app_backup.expired(WEEK, WEEK[-1], "base-20261002T030000Z"),
+                         ["base-20261001T023000Z", "base-20261002T023000Z"])
+        self.assertEqual(app_backup.expired(WEEK[:2], WEEK[1], "base-20261009T000000Z"), [WEEK[0]])
+
+    def test_old_backups_go_first_then_the_wal_before_the_oldest_kept_backup(self):
+        runner = BackupVolume(WEEK, WEEK[-1])
+        self.assertEqual(self.prune(runner), ["base-20261001T023000Z", "base-20261002T023000Z"])
+        # base-20261003 is the oldest kept; its label names WAL file ...04.
+        self.assertEqual(runner.pruned, ["000000010000000000000004", *WEEK[:2]])
+        label = next(command for command in runner.commands if "backup_label" in command[-3])
+        self.assertEqual(label[-1], "base-20261003T023000Z")
+        deletion = next(command for command in runner.commands if app_backup.PRUNE_SCRIPT in command)
+        self.assertIn("todo-postgres-backup:/backup:z", deletion)
+        reads = [command for command in runner.commands if "-ec" in command and command is not deletion]
+        self.assertTrue(all("todo-postgres-backup:/backup:ro,z" in command for command in reads))
+
+    def test_nothing_expired_still_cleans_the_wal_older_than_every_backup(self):
+        runner = BackupVolume(WEEK[3:], WEEK[-1])
+        self.assertEqual(self.prune(runner), [])
+        self.assertEqual(runner.pruned, ["000000010000000000000002"])
+
+    def test_the_latest_backup_survives_however_old_it_is(self):
+        runner = BackupVolume(WEEK[:2], WEEK[1])
+        self.assertEqual(self.prune(runner), [WEEK[0]])
+        self.assertEqual(runner.pruned[1:], [WEEK[0]])
+
+    def test_a_missing_latest_or_unreadable_label_deletes_nothing(self):
+        for runner, message in ((BackupVolume(WEEK[:-1], WEEK[-1]), "latest verified backup"),
+                                (BackupVolume(WEEK, "garbage"), "latest verified backup"),
+                                (BackupVolume(WEEK, WEEK[-1], labels={}), "no readable START WAL LOCATION")):
+            with self.subTest(message=message), self.assertRaisesRegex(app_backup.BackupError, message):
+                self.prune(runner)
+            self.assertIsNone(runner.pruned)
+
+    def test_the_prune_script_deletes_only_the_named_backups_then_runs_pg_archivecleanup(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in WEEK:
+                (root / "backup/base" / name).mkdir(parents=True)
+            tools = root / "bin"
+            tools.mkdir()
+            (tools / "pg_archivecleanup").write_text(f'#!/bin/sh\necho "$@" > {root}/cleanup\n')
+            (tools / "pg_archivecleanup").chmod(0o755)
+            script = app_backup.PRUNE_SCRIPT.replace("/backup", str(root / "backup"))
+            result = subprocess.run(["sh", "-ec", script, "prune", "000000010000000000000004", *WEEK[:2]],
+                                    capture_output=True, text=True,
+                                    env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}"})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(sorted(path.name for path in (root / "backup/base").iterdir()), WEEK[2:])
+            self.assertEqual((root / "cleanup").read_text().split(),
+                             [str(root / "backup/wal"), "000000010000000000000004"])
+
+    def test_nightly_backs_up_then_prunes_each_database_and_skips_a_standby(self):
+        databases = [database for database in app_backup.apps.REPLICATED_DATABASES]
+        runner = BackupVolume(WEEK, WEEK[-1])
+        route_commands(self, runner)
+        tools = [app_backup.DatabaseBackup(database=database, clock=lambda: NOW) for database in databases]
+        lines = app_backup.nightly(tools, 7)
+        self.assertEqual(len(lines), len(databases))
+        self.assertTrue(lines[0].startswith("todo: verified base backup base-20261009T030000Z; deleted 2 older"))
+        order = [("basebackup" if "pg_basebackup" in command else "prune" if app_backup.PRUNE_SCRIPT in command
+                  else None) for command in runner.commands]
+        self.assertEqual([step for step in order if step], ["basebackup", "prune"] * len(databases))
+        standby = BackupVolume(WEEK, WEEK[-1], recovery="t|on")
+        route_commands(self, standby)
+        tools = [app_backup.DatabaseBackup(database=database, clock=lambda: NOW) for database in databases]
+        self.assertEqual(app_backup.nightly(tools, 7), ["standby: nothing to back up; the primary takes the backups"])
+        self.assertFalse([command for command in standby.commands if "pg_basebackup" in command])
+
+    def test_nightly_without_archiving_backs_up_nothing(self):
+        runner = BackupVolume(WEEK, WEEK[-1], archive_status="off||||0|0")
+        route_commands(self, runner)
+        tools = [app_backup.DatabaseBackup(database=database) for database in app_backup.apps.REPLICATED_DATABASES]
+        with self.assertRaisesRegex(app_backup.BackupError, "todo: archive_mode is not on"):
+            app_backup.nightly(tools, 7)
+        self.assertFalse([command for command in runner.commands if "pg_basebackup" in command])
+
+    def test_the_command_covers_the_group_and_keeps_at_least_a_day(self):
+        for arguments in (["--app", "todo", "nightly", "--keep-days", "7"], ["nightly", "--keep-days", "0"]):
+            with self.subTest(arguments=arguments), mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                self.assertEqual(app_backup.main(arguments), 1)
+            self.assertIn("complete database group", stderr.getvalue())
+
+
 class CommandLineTests(unittest.TestCase):
     def test_a_failed_command_is_printed_as_an_error_not_a_traceback(self):
         route_commands(self, lambda arguments, timeout: completed(stderr="connection refused", returncode=2))

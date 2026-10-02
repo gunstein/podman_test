@@ -4,6 +4,9 @@ Installed as /opt/todo/bin/app_backup.py on the current primary and run there:
 
   app_backup.py configure              turn on WAL archiving for every database
   app_backup.py status | create        archive status, or a verified base backup
+  app_backup.py nightly --keep-days N  create, then delete backups older than N
+                                       days and the WAL only they needed
+                                       (todo-backup.timer; nothing on a standby)
   app_backup.py mark --name N          a named restore point, archived at once
   app_backup.py --app A restore ...    point-in-time restore into a throwaway
                                        container with no network
@@ -20,7 +23,7 @@ import json
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -56,6 +59,25 @@ if $changed; then echo changed; else echo unchanged; fi
 BACKUP_NAME = re.compile(r"base-[0-9]{8}T[0-9]{6}Z")
 RESTORE_POINT = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,62}")
 WAL_SEGMENT = re.compile(r"[0-9A-F]{24}")
+# The line of a base backup's backup_label that names the first WAL file it needs.
+START_WAL = re.compile(r"^START WAL LOCATION: \S+ \(file ([0-9A-F]{24})\)$", re.M)
+# Delete the expired base backups ($2...), then every archived WAL file
+# older than $1, the first WAL file of the oldest backup kept.
+PRUNE_SCRIPT = """
+wal=$1
+shift
+for name do rm -rf -- "/backup/base/$name"; done
+pg_archivecleanup /backup/wal "$wal"
+"""
+
+
+def expired(names: Sequence[str], latest: str, cutoff: str) -> list[str]:
+    """The base backups to delete: older than cutoff (a backup name), never the latest verified one.
+
+    Names sort by time (base-YYYYMMDDTHHMMSSZ), so comparing them compares
+    when they were taken.
+    """
+    return [name for name in sorted(names) if name < cutoff and name != latest]
 
 
 class BackupError(RuntimeError):
@@ -216,6 +238,49 @@ class DatabaseBackup:
             "Latest backup marker update",
         )
         return name
+
+    def _backup_shell(self, script: str, *arguments: str, description: str, writable: bool = False) -> str:
+        """Run a /bin/sh script in a throwaway container with only the backup volume, at /backup."""
+        return self._run(
+            [
+                "podman", "run", "--rm",
+                "--user", "postgres",
+                "--security-opt", "no-new-privileges",
+                "--cap-drop", "all",
+                "--volume", f"{self.backup_volume}:/backup:{'z' if writable else 'ro,z'}",
+                "--entrypoint", "/bin/sh",
+                self.image,
+                "-ec", script,
+                self.database.names.resource("backup"), *arguments,
+            ],
+            description,
+        )
+
+    def prune(self, keep_days: int) -> list[str]:
+        """Delete the base backups older than keep_days, then the WAL only they needed; return their names.
+
+        The latest verified backup (LATEST) is never deleted, however old it
+        is. pg_archivecleanup, which ships with PostgreSQL, then deletes every
+        archived WAL file older than the first one the oldest kept backup
+        needs, so every kept backup can still be restored to any point after
+        it. Everything is read and checked before the first deletion.
+        """
+        latest, *names = self._backup_shell("cat /backup/LATEST; ls /backup/base",
+                                            description="Base backup listing").split()
+        names = [name for name in names if BACKUP_NAME.fullmatch(name)]
+        if latest not in names:
+            raise BackupError(f"The latest verified backup {latest!r} is missing; nothing was deleted")
+        cutoff = (self.clock() - timedelta(days=keep_days)).strftime("base-%Y%m%dT%H%M%SZ")
+        old = expired(names, latest, cutoff)
+        oldest = [name for name in names if name not in old][0]
+        label = self._backup_shell('cat "/backup/base/$1/backup_label"', oldest,
+                                   description=f"{oldest} backup label read")
+        start = START_WAL.search(label)
+        if not start:
+            raise BackupError(f"{oldest} has no readable START WAL LOCATION; nothing was deleted")
+        self._backup_shell(PRUNE_SCRIPT, start.group(1), *old, description="Expired backup and WAL deletion",
+                           writable=True)
+        return old
 
     def _archive_settings(self) -> str:
         """The current archive_mode, archive_command and archive_timeout, '|'-separated."""
@@ -530,6 +595,33 @@ def configure(tools: Sequence[DatabaseBackup], journal: Path) -> dict:
             "restarted": [tool.database.name for tool in restart], "verified": verified}
 
 
+def require_backups_possible(tools: Sequence[DatabaseBackup]) -> None:
+    """Raise unless every database is a writable primary that archives its WAL; checked before the first backup."""
+    for tool in tools:
+        tool.require_writable_primary()
+        if tool.archive_status().split('|', 1)[0] != 'on':
+            raise BackupError(f'{tool.database.name}: archive_mode is not on')
+
+
+def nightly(tools: Sequence[DatabaseBackup], keep_days: int) -> list[str]:
+    """The nightly backup (M2): a verified base backup of every database, then pruning; returns what it did.
+
+    On a standby group it does nothing: only the primary takes backups
+    today. A group that is neither, or a primary that does not archive,
+    fails before the first backup.
+    """
+    if all(tool.database_state()[0] for tool in tools):
+        return ['standby: nothing to back up; the primary takes the backups']
+    require_backups_possible(tools)
+    lines = []
+    for tool in tools:
+        name = tool.create_backup()
+        deleted = tool.prune(keep_days)
+        lines.append(f"{tool.database.name}: verified base backup {name}; deleted {len(deleted)} older than "
+                     f"{keep_days} days" + (f": {', '.join(deleted)}" if deleted else ''))
+    return lines
+
+
 def parser() -> argparse.ArgumentParser:
     """Command-line arguments; see the module docstring."""
     result = argparse.ArgumentParser(
@@ -540,6 +632,8 @@ def parser() -> argparse.ArgumentParser:
     commands = result.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="Show live database and WAL archive status")
     commands.add_parser("create", help="Create and verify a physical base backup")
+    scheduled = commands.add_parser("nightly", help="Create a backup, then delete backups older than --keep-days")
+    scheduled.add_argument("--keep-days", type=int, required=True)
     mark = commands.add_parser("mark", help="Create and archive a named restore point")
     mark.add_argument("--name", required=True)
     restore = commands.add_parser(
@@ -574,12 +668,14 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
         if args.command == 'configure':
             print(json.dumps(configure(tools, args.journal)))
             return 0
+        if args.command == 'nightly':
+            if args.app is not None or args.keep_days < 1:
+                raise BackupError('nightly covers the complete database group and keeps at least one day')
+            print("\n".join(nightly(tools, args.keep_days)))
+            return 0
         # Validate the whole requested group before the first backup/restore-point write.
         if args.command in ('create', 'mark'):
-            for tool in tools:
-                tool.require_writable_primary()
-                if tool.archive_status().split('|', 1)[0] != 'on':
-                    raise BackupError(f'{tool.database.name}: archive_mode is not on')
+            require_backups_possible(tools)
         for tool in tools:
             prefix = tool.database.name + ': '
             if args.command == 'status':

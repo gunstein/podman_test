@@ -134,6 +134,24 @@ their own. Every command prints one JSON result: `changed`, or the status
 report. `deploy-promoted-application` must run on the promoted host itself,
 marked `local: true`.
 
+## Scheduled check and nightly backup
+
+Two user timers do the routine work, so nobody has to remember it. A failed
+run leaves its service failed: that is the alert, seen with
+`systemctl --user --failed` and in the journal (`journalctl --user -u NAME`).
+
+| Timer | Installed by | Runs | What it does |
+|---|---|---|---|
+| `todo-dr-check.timer` | `install-dr-tool` on both hosts, `rebuild-standby` on the rebuilt one | every 15 minutes | `app_dr.py check`: each database's role, read live. A primary needs a standby streaming over TLS, slots that keep their WAL and, if archiving is on, a healthy archive; a standby must receive WAL. The group must not be split, and the disk under the home directory must be at least 10 % free. |
+| `todo-backup.timer` | `configure-backup` (so `failover`) on the current primary | every night at 02:30 (+ up to 30 min), and at boot if a night was missed | `app_backup.py nightly --keep-days 7`: a verified base backup of every database, then deletion of the backups older than 7 days (never the latest) and of the archived WAL older than the oldest kept backup (`pg_archivecleanup`). On a standby it does nothing. |
+
+The units are in `deploy/dr/systemd` and go to `~/.config/systemd/user` on the
+host; the tools they run are the trusted ones in `/opt/todo/bin`. After a
+failover the check fails on the promoted host until `rebuild-standby` gives it
+a standby again, which is what it should report. WAL archiving, and so the
+nightly backup, starts with `configure-backup` after a failover; a primary
+that was never promoted has neither yet (backlog B1 and D2).
+
 ## Operations package
 
 Build one source-only package with app-ops, the installer module, the host

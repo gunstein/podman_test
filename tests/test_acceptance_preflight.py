@@ -166,3 +166,26 @@ class AcceptancePreflightTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BuildPythonTests(unittest.TestCase):
+    """The python3 the build scripts run must render: run 28 stopped in phase 2 without it."""
+
+    def check(self, answer):
+        report = acceptance_preflight.Report()
+        with patch.object(acceptance_preflight, "run", return_value=answer) as run, \
+                patch.object(acceptance_preflight.shutil, "which", return_value="/venv/bin/python3"), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            acceptance_preflight.check_build_python(report)
+        self.assertEqual(run.call_args.args[0][0], "python3")
+        return report, output.getvalue()
+
+    def test_the_build_python_with_jinja2_and_pyyaml_passes_and_is_named(self):
+        report, output = self.check((0, "/usr/bin/python3", ""))
+        self.assertFalse(report.failed)
+        self.assertIn("/usr/bin/python3", output)
+
+    def test_a_build_python_without_pyyaml_fails_and_says_which_one(self):
+        report, output = self.check((1, "", "ModuleNotFoundError: No module named 'yaml'"))
+        self.assertTrue(report.failed)
+        self.assertIn("/venv/bin/python3: ModuleNotFoundError: No module named 'yaml'", output)

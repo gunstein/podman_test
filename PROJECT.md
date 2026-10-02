@@ -33,6 +33,9 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `aa18b3a` run 28: stopped in phase 2, before any install: the build
+  step found a Python without PyYAML in the agent's environment on the
+  client; no product defect ([record](docs/history/ACCEPTANCE-aa18b3a.md)).
 - `196c2c7` run 27: CLEAN PASS ([record](docs/history/ACCEPTANCE-196c2c7.md)),
   accepting R5, S2, S3, S5 and the rest since `24b32ee`, the first run with
   every step through `acceptance.py step`.

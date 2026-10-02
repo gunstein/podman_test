@@ -53,6 +53,19 @@ def run(argv, timeout=20):
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
+def check_build_python(report):
+    """The python3 the build scripts find on PATH renders with Jinja2 and checks with PyYAML.
+
+    build-bundle.sh and build-operations-package.sh run plain python3, so this
+    asks that one, not the Python this check runs in: run 28 stopped in phase 2
+    because python3 in the agent's environment was another Python without PyYAML.
+    """
+    code, executable, error = run(['python3', '-c', 'import sys, jinja2, yaml; print(sys.executable)'])
+    report.check(code == 0, 'Build python3 has Jinja2 and PyYAML',
+                 executable if code == 0 else f'{shutil.which("python3")}: {(error.splitlines() or [""])[-1]}; '
+                 'deactivate any virtualenv, or install python3-jinja2 and python3-yaml')
+
+
 def check_local(report, args):
     """The client/build host: clean checkout at the kickoff revision, and the tools the run needs."""
     print('== Client/build host')
@@ -71,6 +84,7 @@ def check_local(report, args):
     for tool in ('python3', 'podman', 'ssh', 'scp', 'ssh-keygen', 'openssl', 'certutil', 'curl', 'tar', 'sha256sum'):
         report.check(shutil.which(tool) is not None, f'Tool {tool}')
     report.check(sys.version_info >= (3, 9), 'Python 3.9 or newer', sys.version.split()[0])
+    check_build_python(report)
     code, _, error = run([sys.executable, '-c', 'import venv, ensurepip'])
     report.check(code == 0, 'Python venv and ensurepip', error)
     code, rootless, _ = run(['podman', 'info', '--format', '{{.Host.Security.Rootless}}'])

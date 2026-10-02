@@ -135,9 +135,15 @@ name `clean-agent`; if you choose another name, put it in the kickoff message.
 
 The agent runs on the client/build host (the ThinkPad). It needs: the Git
 checkout of this repository, rootless Podman (image builds), Python 3 with
-`venv`, `openssl`, `certutil` (`libnss3-tools`), OpenSSH with keys already
+`venv`, Jinja2 and PyYAML (`python3-jinja2`, `python3-yaml`: the builds render
+every file here, so the VMs need neither for the install), `openssl`, `certutil`
+(`libnss3-tools`), OpenSSH with keys already
 trusted by both VMs (`ssh gunstein@<ip> hostname` works without a password),
 and internet access for the Playwright Chromium download.
+The readiness check asks the `python3` the build scripts find on `PATH`, not
+only the one it runs in: run 28 stopped in phase 2 because the agent's shell
+found another Python without PyYAML. Run the agent in a shell without an
+activated virtualenv.
 
 Decide whether the agent may use `sudo` on the client for `/etc/hosts` and CA
 trust (`CLIENT_SUDO`). If not, the agent will ask you to run exactly one

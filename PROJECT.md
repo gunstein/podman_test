@@ -10,29 +10,36 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `196c2c7` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-196c2c7.md)),
+**Current verdict: CLEAN PASS** on `e6e9dd9` for the seven-pod, three-database
+topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-e6e9dd9.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 104 steps PASS
 on one clean revision and compared them with the agent guide: every step and
 log it names, nothing else. Every step ran through `acceptance.py step`, which
 runs the guide's line as written and only after the step before it passed,
-and each product log records its exact command. Install, standby bootstrap,
+and each product log records its exact command. The offline install now
+installs files rendered on the build host and fills in the target values
+with the Python standard library alone (`target_render`, `bundle.json`); the
+targets need neither Jinja2 nor PyYAML for it. Install, standby bootstrap,
 quarantine rehearsal, fencing, the one `failover` command (group promotion,
 application tier, backup, services and the login page), backup and isolated
 PITR, rebuild of the old primary and sequential reboots all passed as written.
 CI also runs the Todo API as `todo_app` and the whole stack with the browser
 tests on Podman 5.7. The single-host installer (`deploy/installer`) and DR
-(`deploy/dr`) are separate in the tree, and the code clean-up since `24b32ee`
-is accepted: the naming model (R5), paths and constants in one place (S2), one
-way to run commands and SQL (S3), clearer DR class names (S5), the shared
-PostgreSQL image and DNS-name hostnames.
+(`deploy/dr`) are separate in the tree; the code clean-up since `24b32ee` (R5,
+S2, S3, S5) was accepted in run 27.
 Final topology: VM 108 primary with application and backup, VM 107
 database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `e6e9dd9` run 30: CLEAN PASS ([record](docs/history/ACCEPTANCE-e6e9dd9.md)),
+  accepting the pre-rendered offline install, the first run with the build
+  host on Ubuntu 26.04 and Python 3.14.
+- `daf5b0c` run 29: stopped in the readiness check, before phase 1: the
+  Proxmox root CA failed Python 3.13's strict verification; fixed in
+  `e6e9dd9` (same record).
 - `aa18b3a` run 28: stopped in phase 2, before any install: the build
   step found a Python without PyYAML in the agent's environment on the
   client; no product defect ([record](docs/history/ACCEPTANCE-aa18b3a.md)).

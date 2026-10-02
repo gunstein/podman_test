@@ -1,7 +1,7 @@
 # Backlog
 
 Agreed work that is not done yet. The baseline to compare against is the
-CLEAN PASS on `196c2c7` ([record](history/ACCEPTANCE-196c2c7.md)). Do not
+CLEAN PASS on `e6e9dd9` ([record](history/ACCEPTANCE-e6e9dd9.md)). Do not
 change checked code while an acceptance run is in progress: the run would then
 test a different revision from the one in its kickoff message. Remove an item
 when its change has passed acceptance; the acceptance records and Git keep
@@ -31,12 +31,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-0. Now: a full acceptance run for the pre-rendered offline install
-   (`app_installer.bundle` and `target_render`, `bundle.json`, no Jinja2 in
-   `install.sh`), which changes how every host is first installed. It also
-   carries two installer fixes found on the way: an app restarts when its
-   shared ConfigMap file changed, and `install-workload postgres` passes
-   `database=`.
+0. Now: D6 (target values on primary and standby), then its acceptance
+   run with the guide unchanged.
 1. First, so the service does not stop and a failover does not lose weeks of
    data: M1 (scheduled checks that alert, so a stopped replication is seen)
    and M2 (scheduled backups and pruning, so the disk does not fill) together,
@@ -414,8 +410,8 @@ promoted primary.
     check is what it is today, so the guide runs as it is. A hostname other
     than the default is then covered by unit tests only, until acceptance
     gets an extra step for it (to decide when D6 is done).
-  - *Order.* After the acceptance run for the pre-rendered offline install
-    (Order 0), so that run tests one change.
+  - *Order.* Next (Order 0); the pre-rendered offline install it builds on
+    passed in run 30.
 - **D3. Say that `deploy-promoted-application` runs on the promoted host.**
   *[docs]* It refuses unless that host is the machine running app-ops
   (`local: true`). `failover` runs there anyway, so document the limit as

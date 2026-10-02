@@ -138,8 +138,11 @@ hold it and restarts the Todo and Notes databases and apps, Keycloak and the
 proxy.
 
 A target-value install is for a single host. The DR tools still install
-`generated/kube-runtime`, rendered with the bundle's default hostname, so set
-up DR only with that hostname.
+`generated/kube-runtime`, rendered with the bundle's default hostname, and
+their checks (`failover`, the promoted host's deploy, `wait-ready.sh`) expect
+the app registry's hostnames (`todo.test`, `notes.test`), so set up DR only
+with the default hostname. Backlog D6 brings the target values to primary and
+standby.
 
 ### Older bundles
 

@@ -376,14 +376,46 @@ promoted primary.
   - *Not now.* Incremental base backups (`pg_basebackup --incremental`) add a
     chain that must be combined to restore; add them only if a full backup
     one day takes too long.
-- **D6. DR with a target hostname.** *[new]* An offline install can take a
-  public hostname other than the bundle's default
-  (`--target-external-hostname`), but the DR tools still install
-  `generated/kube-runtime`, rendered with the default: `bootstrap-standby`
-  rewrites the primary's database ConfigMaps, and `failover` deploys the
-  application tier, with the default hostname. Until DR reads the target
-  files too (with the hostname recorded on the host at install), DR is only
-  for the default hostname, as `deploy/offline/README.md` says.
+- **D6. Target values on primary and standby.** *[new]* The goal (agreed
+  2026-10-02): what differs between installations lives in the rendered
+  Kube YAML (and a `.kube` unit where Podman needs it) as a `${TARGET_*}`
+  placeholder, filled in when a host is installed, whether by `install.sh`
+  or by DR, on the primary or the standby. Today only `install.sh` does it
+  (`target_render`); DR still installs `generated/kube-runtime`, rendered
+  with the build's hostname, and its checks take the hostnames from the app
+  registry, where `todo.test` and `notes.test` are written in:
+  `promoted.require_issuer`, the Keycloak clients and health checks in
+  `promoted.py`, the HTTPS and CSP checks and the `users` output in
+  `app_ops/failover.py`, and `hostnames="todo.test notes.test"` in
+  `deploy/scripts/wait-ready.sh`. Changing the hostname breaks DR today,
+  even with a bundle built for it.
+  - *Two kinds of value.* The public hostnames are the service's names and
+    must be the same on primary and standby (failover moves them by DNS);
+    the host's own address (`TARGET_PUBLISH_ADDRESS`, the replication
+    address) differs per host.
+  - *Every app's hostname.* `TARGET_EXTERNAL_HOSTNAME` covers Todo and
+    Keycloak only; Notes keeps `notes.test` from the registry. Give each app
+    its own target hostname, with today's names as the bundle defaults.
+  - *Stored on the host.* The install records the values it used (for
+    example under `~/.config/todo`), and every later step reads them from
+    there: `bootstrap-standby` copies the primary's hostnames to the standby,
+    as it copies the secrets, so they cannot differ; the standby's address is
+    its own. `failover` and `rebuild-standby` use the stored values, so
+    nobody types a hostname during an incident. Uninstall removes the record.
+  - *DR installs the target files.* The DR tools fill in the stored values
+    with `target_render` instead of installing `generated/kube-runtime` and
+    rendering units on the host, so DR needs neither Jinja2 nor PyYAML for
+    the workload files (PyYAML for the PVC claims is a separate question).
+  - *One source for the checks.* `require_issuer`, the Keycloak clients, the
+    failover checks and `wait-ready.sh` take the hostnames from the stored
+    values, not from the registry or the script.
+  - *Acceptance unchanged.* No app-ops command, flag or inventory line in
+    the acceptance guide changes; with the default values every file and
+    check is what it is today, so the guide runs as it is. A hostname other
+    than the default is then covered by unit tests only, until acceptance
+    gets an extra step for it (to decide when D6 is done).
+  - *Order.* After the acceptance run for the pre-rendered offline install
+    (Order 0), so that run tests one change.
 - **D3. Say that `deploy-promoted-application` runs on the promoted host.**
   *[docs]* It refuses unless that host is the machine running app-ops
   (`local: true`). `failover` runs there anyway, so document the limit as

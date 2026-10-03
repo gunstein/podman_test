@@ -34,7 +34,7 @@ from typing import Callable, Optional, Sequence
 # deploy/dr/README.md ("Where DR finds the installer") has the whole rule.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from app_dr_host import replication  # noqa: E402
-from app_installer import apps, keycloak, settings, stack  # noqa: E402
+from app_installer import apps, keycloak, settings, stack, target_render  # noqa: E402
 from app_installer import backup as backups  # noqa: E402
 from app_installer.commands import CommandError, run  # noqa: E402
 
@@ -513,8 +513,11 @@ def configure(tools: Sequence[DatabaseBackup], journal: Path) -> dict:
             tool.require_configured_archive()
         tools[0]._run(["systemctl", "--user", "start", "shared-proxy.service"],
                       "Application tier start", timeout=settings.COMMAND_TIMEOUT)
+        # Each app through nginx on the public hostname this host serves (its
+        # record), else the default the bundle was built with.
+        served = target_render.hostnames(target_render.read_record())
         for app in apps.APPS:
-            keycloak.wait("/ready", 30, 1, "ready", hostname=app.hostname)
+            keycloak.wait("/ready", 30, 1, "ready", hostname=served.get(app.name, app.hostname))
         keycloak.wait("/auth/realms/todo/.well-known/openid-configuration", 90, 2)
         verified = {}
         for tool, _access, directories, changed, _needed in prepared:

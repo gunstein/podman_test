@@ -102,25 +102,11 @@ never restart services themselves.
 Callers control safe stop/start ordering. Secret creation and obsolete `.volume`
 file cleanup do not affect the definition-change flag used by DR.
 
-```bash
-python3 -m app_installer install-workload postgres \
-  --project-root /path/to/package \
-  --quadlet-dir "$HOME/.config/containers/systemd" \
-  --kube-runtime-dir "$HOME/.config/containers/systemd/todo-kube-runtime" \
-  --rendered-manifest-dir /path/to/rendered \
-  --postgres-publish-address 192.168.0.102
-```
-
-The workload CLI is a building block for manual work in build mode; it emits
-one JSON result on stdout and diagnostics on stderr. The DR commands built on
-these workloads (replication, reseed, promoted deploy) live in `app_dr_host`
-under [deploy/dr](../dr/README.md) and call the functions directly; this
-package imports nothing from there.
-Use `--app notes` or `--app keycloak` (postgres only) for another database or
-application; `--app todo` is the default, and its application call also
-installs the shared Keycloak. LAN replication publication
-(`--postgres-publish-address`) is accepted only for the DR group's databases.
-Application/proxy calls also accept `--publish-address` and `--service-port`.
+`install.install` and the DR building blocks in `app_dr_host` (replication,
+reseed, promoted deploy, under [deploy/dr](../dr/README.md)) call these
+functions directly; there is no command line for a single workload, and this
+package imports nothing from `app_dr_host`. LAN replication publication is
+accepted only for the DR group's databases.
 Runtime directories must be exactly `quadlet-dir/todo-kube-runtime`; no new
 `.volume` units are installed. Canonical Jinja templates stay outside the Python
 package, under the supplied project's `deploy/quadlet` directory.

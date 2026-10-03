@@ -53,7 +53,7 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
     if "--no-pod-prefix" not in run("podman", "kube", "play", "--help").stdout:
         raise RuntimeError(f"The {capability} Kube runtime requires Podman --no-pod-prefix.")
     # install.preflight() has already refused a host with legacy per-container
-    # Quadlets (install.install and the install-workload command call it first).
+    # Quadlets (install.install and the DR tools call it first).
     # Read and render everything before mutating the installation.
     if target is None:
         files = [(runtime / name, (Path(rendered_manifest_dir) / name).read_bytes(), 0o600)

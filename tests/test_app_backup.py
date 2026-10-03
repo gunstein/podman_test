@@ -580,7 +580,7 @@ class FakeHost:
 class ConfigureArchiveTests(unittest.TestCase):
     DATABASES = app_backup.apps.REPLICATED_DATABASES
 
-    def configure(self, host, promoted=True, access_changed=False):
+    def configure(self, host, promoted=True, access_changed=False, recorded=None):
         tools = [backup(self, host, database=app, **fake_time(),
                                         clock=lambda: datetime(2026, 9, 25, 12, 0, 0, 123456, tzinfo=timezone.utc))
                  for app in self.DATABASES]
@@ -591,6 +591,7 @@ class ConfigureArchiveTests(unittest.TestCase):
         with mock.patch.object(app_backup.replication, 'require_promoted_group', journal), \
                 mock.patch.object(app_backup.replication, 'refresh_hba',
                                   side_effect=lambda app: (self.hba.append((len(host.commands), app.name)), access_changed)[1]), \
+                mock.patch.object(app_backup.target_render, 'read_record', return_value=recorded or {}), \
                 mock.patch.object(app_backup.keycloak, 'wait',
                                   side_effect=lambda path, *a, **k: self.waits.append((path, k.get('hostname')))):
             return app_backup.configure(tools, Path('/journal.json'))
@@ -688,6 +689,12 @@ class ConfigureArchiveTests(unittest.TestCase):
         self.assertLess(start, host.index(lambda c: any('pg_create_restore_point' in part for part in c)))
         self.assertEqual(self.waits[:len(app_backup.apps.APPS)],
                          [('/ready', app.hostname) for app in app_backup.apps.APPS])
+
+    def test_readiness_uses_the_hostnames_this_host_serves(self):
+        host = FakeHost()
+        self.configure(host, recorded={'TARGET_EXTERNAL_HOSTNAME': 'todo.example.org',
+                                       'TARGET_NOTES_HOSTNAME': 'notes.example.org'})
+        self.assertEqual(self.waits[:2], [('/ready', 'todo.example.org'), ('/ready', 'notes.example.org')])
 
     def test_configured_group_is_left_running_and_unverified(self):
         host = FakeHost(configured={d.container for d in self.DATABASES},

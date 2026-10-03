@@ -162,11 +162,13 @@ jobs:
           set -euo pipefail
           PYTHONPATH=deploy/dr python - <<'PY'
           from app_ops import failover, inventory
+          from app_ops.steps import apps
           from app_ops.transport import Host
 
           host = Host(inventory.HostSpec(name="ci", role="current_primary", address="127.0.0.1",
                                          user="runner", home="/home/runner", local=True))
-          failover.login_page(host)
+          # The build-mode install serves the registry's hostnames.
+          failover.login_page(host, {app.name: app.hostname for app in apps.APPS})
           # A redirect Keycloak does not know must be refused, or the check proves nothing.
           query = failover.urlencode({"client_id": "todo-frontend", "redirect_uri": "https://evil.test/",
                                       "response_type": "code", "scope": "openid",

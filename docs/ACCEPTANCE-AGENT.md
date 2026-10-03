@@ -692,7 +692,7 @@ markers, written before the backup, remain:
 ```bash
 $A --step 03-12a do backup-nightly 192.168.0.102
 vm 03-12b-after-backup 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('written after the nightly backup', false);\""
-vm 03-12c-restore 192.168.0.102 'cd ~/todo-offline-m12 && PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore todo-primary'   # → todo, notes, keycloak restored; {"changed": true}
+vm 03-12c-restore 192.168.0.102 'cd ~/todo-offline-m12 && PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore todo-primary'   # → {"changed": true}; after one "restored" line each for todo, notes and keycloak
 vm 03-12d-restored 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"SELECT 1 / (CASE WHEN count(*) = 0 THEN 1 ELSE 0 END) AS row_gone FROM todos WHERE title = 'written after the nightly backup';\""   # division by zero if the row survived
 $A --step 03-12e check services 192.168.0.102 app
 $A --step 03-12f check markers 192.168.0.102

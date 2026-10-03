@@ -39,6 +39,9 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `3488a24` run 33: stopped in phase 3 at `03-12c` by a guide defect: the
+  restore succeeded, but the step's expectation comment named text the
+  command never prints ([record](docs/history/ACCEPTANCE-3488a24.md)).
 - `89b369e` run 32: CLEAN PASS ([record](docs/history/ACCEPTANCE-89b369e.md)),
   accepting M1 (the scheduled DR check) and M2 (the nightly backup with
   pruning). CI had been red since `13cef4a` from a stale call in the

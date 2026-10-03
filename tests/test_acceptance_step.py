@@ -8,6 +8,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -194,6 +195,20 @@ def natural(name):
 
 class AgentGuideStepTests(unittest.TestCase):
     """The real guide: every step runs in the order its names give, each name once."""
+
+    def test_every_expectation_is_json_or_one_word(self):
+        """product_state() compares what follows '→' up to ';' with the output: JSON fields, or one whole line.
+
+        Run 33 stopped at 03-12c because its comment began with a description
+        ("todo, notes, keycloak restored") that the command never prints as a line.
+        """
+        text = (ROOT / acceptance.AGENT_GUIDE).read_text()
+        for line in text.splitlines():
+            expected = re.search(r'#\s*→\s*([^;]+)', line)
+            if expected and acceptance.STEP_LINE.match(line):
+                value = expected.group(1).strip()
+                with self.subTest(line=line[:60]):
+                    self.assertTrue(value.startswith('{') or re.fullmatch(r'\S+', value), value)
 
     def test_the_guide_steps_are_in_order_and_unique(self):
         steps = acceptance.guide_lines((ROOT / acceptance.AGENT_GUIDE).read_text())

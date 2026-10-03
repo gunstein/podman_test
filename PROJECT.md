@@ -10,11 +10,11 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `89b369e` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-89b369e.md)),
+**Current verdict: CLEAN PASS** on `b9a9180` for the seven-pod, three-database
+topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-b9a9180.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
-`deploy/scripts/lab/acceptance.py`. Its `report full` found all 112 steps PASS
+`deploy/scripts/lab/acceptance.py`. Its `report full` found all 115 steps PASS
 on one clean revision and compared them with the agent guide: every step and
 log it names, nothing else. Every step ran through `acceptance.py step`, which
 runs the guide's line as written and only after the step before it passed,
@@ -26,7 +26,9 @@ copies the primary's public hostnames to the standby, and failover and
 rebuild use the recorded names. No target renders, so none needs Jinja2.
 A scheduled check on both hosts (`todo-dr-check.timer`) reports replication,
 archive and disk problems as a failed unit, and a nightly timer on the
-primary takes and prunes the base backups (`todo-backup.timer`). Install, standby bootstrap,
+primary takes and prunes the base backups (`todo-backup.timer`); every
+single-host install gets the same nightly backup and can restore the latest
+one, and the WAL archive survives a power loss. Install, standby bootstrap,
 quarantine rehearsal, fencing, the one `failover` command (group promotion,
 application tier, backup, services and the login page), backup and isolated
 PITR, rebuild of the old primary and sequential reboots all passed as written.
@@ -39,6 +41,13 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `b9a9180` run 35: CLEAN PASS ([record](docs/history/ACCEPTANCE-b9a9180.md)),
+  accepting B1 (single-host backups and restore), M4 (the durable WAL
+  archive), Q5 and Q6 (pyright and ruff's bugbear rules) and the readiness
+  guard.
+- `06c91d7` run 34: every phase passed, but not clean: the readiness check
+  ran in the terminal, not into its log; `b9a9180` makes the first step
+  refuse without it (same record).
 - `3488a24` run 33: stopped in phase 3 at `03-12c` by a guide defect: the
   restore succeeded, but the step's expectation comment named text the
   command never prints ([record](docs/history/ACCEPTANCE-3488a24.md)).

@@ -686,7 +686,7 @@ $A --step 03-11 check ca 192.168.0.102
 $A --step 03-12 check markers 192.168.0.102
 ```
 
-The single host's nightly backup (B1): `install.sh` turned on
+The single host's nightly backup: `install.sh` turned on
 `todo-backup.timer`. Run it once, write one Todo row after it, restore the
 three databases from that backup, and check that the row is gone while the
 markers, written before the backup, remain:

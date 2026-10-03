@@ -32,8 +32,7 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 ## Order
 
 1. First, so a failover does not lose weeks of data: T3 (fencing without the
-   Oslo hypervisor, a procedure), M4 (a WAL archive that survives a power
-   loss; done in code, waiting for its acceptance run) and G2 (Trondheim is ready, checked by the DR check timer). When to
+   Oslo hypervisor, a procedure) and G2 (Trondheim is ready, checked by the DR check timer). When to
    start is the owner's call.
 2. The rest of failover to Trondheim within 30 minutes (see the goal below):
    G3 (time it in the drill; with T4 kept as it is, the time includes the
@@ -46,7 +45,7 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 5. The rest.
 
 For a single host without DR (`install.sh` only), what matters, in order:
-B1 (backups; done in code), the nginx part of U2 (the certificate
+the nginx part of U2 (the certificate
 expires after 397 days without a restart), and Q3 (security updates, which `install.sh` can roll out). Then U3
 and L4. F0, S4, E3, E8 and O2 do not change how a single host runs.
 
@@ -234,33 +233,14 @@ down too long invalidates its slot, `cluster-status` reports it, and the standby
 is rebuilt. On both DR hosts `todo-dr-check.timer` reports that, failed WAL
 archiving and a filling disk as a failed unit every 15 minutes, and
 `todo-backup.timer` takes and prunes the primary's base backups every night
-(accepted in run 32; deploy/dr/README.md).
+(accepted in run 32; deploy/dr/README.md). A single host gets the same nightly
+backup from `install.sh` and restores to last night, and the WAL archive
+survives a power loss (both accepted in run 35).
 
-- **B1. Backups on a single host.** *[new]* Done in code; waiting for its
-  acceptance run. Every server install turns on `todo-backup.timer`, which
-  runs `app_installer backup nightly --keep-days 7` from the bundle: a
-  verified base backup of every installed database (`pg_basebackup` inside
-  its container, over the local socket), pruning that keeps 7 days and never
-  the latest, and a failure when less than 10 % of the disk is free. No WAL
-  archive on a single host (decided 2026-10-03): it restores to last night,
-  with `app_installer backup restore --confirm-restore <hostname>`. DR's
-  `app_backup.py` takes its backups with the same code and replaces the
-  timer's service on `configure-backup`; a primary that was never promoted
-  keeps the installer's nightly backups until then. Acceptance phase 3 runs
-  one backup on `.102`, writes a row, restores, and checks that the row is
-  gone and the markers remain.
 - **M3. Regular restore tests.** *[optional]* A backup that was never restored
   is not proven. Run the existing disposable PITR restore on a schedule (for
   example weekly) and compare it with a known point, or document a manual
   monthly restore test instead.
-- **M4. A durable WAL archive.** *[new]* Done in code; waiting for its
-  acceptance run. `ARCHIVE_COMMAND` copies each WAL file to a temporary name,
-  syncs it, renames it into place and syncs the directory, so a power loss
-  leaves no file (archived again) or a whole one, never a hole; an archived
-  file is still accepted only if identical. `configure` applies a changed
-  command with a reload and verifies it with an archived restore point; only
-  turning `archive_mode` on restarts. Hosts set up before M4 get the new
-  command the next time `configure-backup` runs, without a restart.
 
 ## Logging
 
@@ -369,7 +349,7 @@ promoted primary.
   (`local: true`). `failover` runs there anyway, so document the limit as
   deliberate in `deploy/dr/README.md` and remove the item.
 - **D5. pgBackRest only if the needs grow.** *[optional]* `app_backup.py` uses
-  PostgreSQL's standard methods, and D2 and M4 need only standard tools
+  PostgreSQL's standard methods, and D2 needs only standard tools
   too. pgBackRest (or Barman, WAL-G) adds parallel and incremental backups,
   compression, an encrypted repository and faster restores, which matter for
   large databases, but breaks principle 2. Consider it only if the databases
@@ -481,20 +461,6 @@ full-stack job and acceptance cover that.
   and Actions, so each update arrives as a pull request that CI tests.
 - **Q4. Secret scanning.** *[optional]* GitHub secret scanning, or a
   gitleaks/trufflehog run, on top of the pattern search already done.
-- **Q5. A type checker in CI.** *[config]* Done in code; remove after the
-  next acceptance run, which runs the touched code. CI's script-quality job
-  runs pyright 1.1.414 in *basic* mode (`pyrightconfig.json`) over the
-  installer, DR and `deploy/scripts`; the 32 messages it found were cleared
-  with small honest fixes (wider `timeout` hints, `keycloak.request()`
-  returning `{}` for its bodiless 201/204, an explicit `dict` where pyright
-  guessed from the first entry, a named error for an inventory host without a
-  role), no `# type: ignore`. The failover login-page check moved from the
-  workflow YAML into `deploy/scripts/dev/check_failover_login_page.py`, so
-  the checkers read it.
-- **Q6. Ruff's bugbear rules.** *[optional]* Done in code; remove with Q5.
-  `ruff.toml` selects `B` too; the 14 findings (lambdas in loops that use the
-  loop variable, all called in the same iteration, and one unused loop
-  variable) were rewritten, not silenced with `noqa`.
 
 ## Security hardening
 

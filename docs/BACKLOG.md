@@ -500,6 +500,33 @@ full-stack job and acceptance cover that.
   and Actions, so each update arrives as a pull request that CI tests.
 - **Q4. Secret scanning.** *[optional]* GitHub secret scanning, or a
   gitleaks/trufflehog run, on top of the pattern search already done.
+- **Q5. A type checker in CI.** *[config]* Ruff reads one file at a time and
+  knows no types, so it cannot see a call with the wrong arguments in another
+  module. The tests miss it too where they replace the function with a mock
+  that accepts anything: `install-workload postgres` passed `app=` instead of
+  `database=` during D6 until an `autospec` test caught it. Run pyright in
+  *basic* mode over `deploy/installer`, `deploy/dr` (with `scripts`) and
+  `deploy/scripts`; a CI-only tool, so principle 2 holds. A trial run
+  (pyright 1.1.414, 2026-10-03) found 29 messages and no real bug: narrow
+  hints (a `timeout` hinted `int` but given a float), `keycloak.request()`
+  returning `None` only for PUT/POST, a result dict whose value types pyright
+  guesses from its first entry, and `**replication.status(...)` into a
+  dataclass. Clear them with honest fixes (wider hints, an explicit `dict`
+  type), not `# type: ignore`. Also move the Python snippets in
+  `.github/workflows/clean-install.yml` into a `.py` file the tools read: the
+  CI failure on `13cef4a`-`984c0b6` was a call with the old `login_page()`
+  signature inside the workflow YAML, which no checker sees. Not strict
+  mode: it would need hints everywhere and make the code harder to read.
+- **Q6. Ruff's bugbear rules.** *[optional]* Ruff checks `E4`, `E7`, `E9`,
+  `F` (pyflakes) and `I` today. Adding `B` (bugbear) finds common bug
+  patterns, such as a lambda in a loop that uses the loop variable after the
+  loop moved on. A trial run found 14 messages and no real bug: 13 are such
+  lambdas, all called in the same iteration (12 of them in tests), plus one
+  unused loop variable. Rewrite those few lines rather than adding `noqa`.
+  The other rule sets tried give more noise than value here: `S` flags every
+  `subprocess` call and `assert` in tests, `PL` the deliberate imports inside
+  functions (the lazy Jinja2 imports an offline host needs) and long
+  argument lists.
 
 ## Security hardening
 

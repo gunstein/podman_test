@@ -1,7 +1,7 @@
 # Backlog
 
 Agreed work that is not done yet. The baseline to compare against is the
-CLEAN PASS on `13cef4a` ([record](history/ACCEPTANCE-13cef4a.md)). Do not
+CLEAN PASS on `89b369e` ([record](history/ACCEPTANCE-89b369e.md)). Do not
 change checked code while an acceptance run is in progress: the run would then
 test a different revision from the one in its kickoff message. Remove an item
 when its change has passed acceptance; the acceptance records and Git keep
@@ -31,13 +31,10 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-1. First, so the service does not stop and a failover does not lose weeks of
-   data: M1 (scheduled checks that alert, so a stopped replication is seen)
-   and M2 (scheduled backups and pruning, so the disk does not fill), both
-   done in code and waiting for their acceptance run; then T3 (fencing without the Oslo hypervisor, a
-   procedure), M4 (a WAL archive that survives a power loss) and G2
-   (Trondheim is ready, run from M1's timer). When to start is the owner's
-   call.
+1. First, so a failover does not lose weeks of data: T3 (fencing without the
+   Oslo hypervisor, a procedure), M4 (a WAL archive that survives a power
+   loss) and G2 (Trondheim is ready, checked by the DR check timer). When to
+   start is the owner's call.
 2. The rest of failover to Trondheim within 30 minutes (see the goal below):
    G3 (time it in the drill; with T4 kept as it is, the time includes the
    client trust step), O1 (incident runbooks), G4 (the disaster drill in the
@@ -50,8 +47,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 For a single host without DR (`install.sh` only), what matters, in order:
 B1 (backups; today there are none), the nginx part of U2 (the certificate
-expires after 397 days without a restart), M1 for disk space and failed
-units, and Q3 (security updates, which `install.sh` can roll out). Then U3
+expires after 397 days without a restart), a scheduled check for disk space
+and failed units like the DR check (part of B1), and Q3 (security updates, which `install.sh` can roll out). Then U3
 and L4. F0, S4, E3, E8 and O2 do not change how a single host runs.
 
 The real setup has two machines and no third, on separate hardware at separate
@@ -76,7 +73,7 @@ such as a small cloud VM. Without one, the safe design is one human decision
 rest (accepted in runs 18-22).
 
 - **G2. Trondheim is ready to take over.** *[new]* Part of the scheduled
-  checks (M1): the same bundle and operations package revision as Oslo, every
+  check (`app_dr.py check`, `todo-dr-check.timer`): the same bundle and operations package revision as Oslo, every
   DR secret and the shared CA (T4) synchronised, the recovery inventory in
   place, and enough disk. A missing piece found during a fire is found too late.
 - **G3. Time the failover in the drill.** *[new]* Acceptance measures the time
@@ -218,8 +215,8 @@ rest (accepted in runs 18-22).
     standby then refuses it (`verify-full`) and replication stops, which only
     `replication-status` or `cluster-status` would show. The CA lasts 10 years.
 
-  Check the expiry of both certificates, and of the replication CA, in M1's
-  scheduled checks, with a warning well before the end (for example 60 days).
+  Check the expiry of both certificates, and of the replication CA, in the
+  scheduled DR check (`app_dr.py check`), with a warning well before the end (for example 60 days).
   Add renewal that needs no full service restart: for replication, an app-ops
   command that runs `replication_tls.install_server_tls` on the current
   primary, which already reissues a certificate with less than 30 days left
@@ -235,7 +232,10 @@ rest (accepted in runs 18-22).
 
 WAL on the primary is bounded (`max_slot_wal_keep_size=1GB`): a standby that is
 down too long invalidates its slot, `cluster-status` reports it, and the standby
-is rebuilt. What is missing is anything that tells the operator.
+is rebuilt. On both DR hosts `todo-dr-check.timer` reports that, failed WAL
+archiving and a filling disk as a failed unit every 15 minutes, and
+`todo-backup.timer` takes and prunes the primary's base backups every night
+(accepted in run 32; deploy/dr/README.md).
 
 - **B1. Backups on a single host.** *[new]* A host installed with
   `install.sh` alone has no backup at all: `app_backup.py` and WAL archiving
@@ -245,29 +245,16 @@ is rebuilt. What is missing is anything that tells the operator.
   backup (ARCHITECTURE.md): a lost disk, a mistaken delete or a failed update
   loses the data. Give a single host its own backups without making it a DR
   host, so `install.sh` keeps working: a nightly full base backup of each
-  database with pruning, from the same kind of systemd timer as M2, and a
-  documented restore. Decide whether a single host also archives WAL (PITR
-  to any point, at the cost of M2's pruning and M4) or keeps only the
+  database with pruning, from the same kind of systemd timer as the DR
+  nightly backup (`todo-backup.timer`, `app_backup.py nightly`), a scheduled
+  check for disk space and failed units, and a documented restore. Decide
+  whether a single host also archives WAL (PITR to any point, with the same
+  pruning, and M4) or keeps only the
   nightly backups (restore to last night). Reuse `app_backup.py` where it
-  fits rather than a second implementation.
-- **M1. Scheduled checks that alert.** *[new]* Done in code; waiting for its
-  acceptance run. `todo-dr-check.timer` runs `app_dr.py check` every 15
-  minutes on both DR hosts (installed by `install-dr-tool` and on the
-  rebuilt standby by `rebuild-standby`): replication over TLS, slots,
-  archive health, a split group and free disk, judged by each database's
-  live role. A problem fails the unit; that is the alert, in the journal and
-  `systemctl --user --failed`. Acceptance checks it passes on both hosts,
-  fails on the promoted host before the rebuild, and passes again after.
-  Later, if wanted: an `OnFailure=` mail, which needs a mail relay.
-- **M2. Scheduled backups and pruning.** *[new]* Done in code for the
-  primary; waiting for its acceptance run. `todo-backup.timer`, installed by
-  `configure-backup` (so by `failover`), runs `app_backup.py nightly
-  --keep-days 7` at 02:30: a verified base backup of every database, then the
-  backups older than 7 days (never the latest) and the WAL older than the
-  oldest kept backup (`pg_archivecleanup`). On a standby it does nothing.
-  Still open: backups on the standby too (D2), and archiving on a primary
-  that was never promoted, which today has neither archive nor backups
-  (`configure-backup` requires a promotion record; B1 and D2).
+  fits rather than a second implementation. The same gap exists on a DR
+  primary that was never promoted: `configure-backup` requires a promotion
+  record, so that primary has neither WAL archive nor nightly backups until
+  a failover; give it both here or in D2.
 - **M3. Regular restore tests.** *[optional]* A backup that was never restored
   is not proven. Run the existing disposable PITR restore on a schedule (for
   example weekly) and compare it with a known point, or document a manual
@@ -360,11 +347,13 @@ promoted primary.
     standby runs with `archive_mode = always` and archives the WAL it receives
     through replication, so its archive is as fresh as the primary's.
   - *A full base backup every night on both hosts* (`pg_basebackup` works
-    against a standby), kept for 7 days with the WAL it needs (M2).
+    against a standby), kept for 7 days with the WAL it needs, as
+    `app_backup.py nightly` already does on the primary.
   - *No copy job and nothing to reverse.* After a failover, both hosts go on
     as before in their new roles.
   - *Known limits.* If replication stops (for example an invalidated slot), the
-    standby's archive has a gap until the rebuild, which M1 must report. After
+    standby's archive has a gap until the rebuild, which the DR check
+    reports (the standby no longer receives WAL). After
     a rebuild, that host's history starts again from its first new base
     backup; the other host still has its own.
   - *Code.* `app_backup.py` assumes the primary today; let it configure
@@ -388,7 +377,7 @@ promoted primary.
   (`local: true`). `failover` runs there anyway, so document the limit as
   deliberate in `deploy/dr/README.md` and remove the item.
 - **D5. pgBackRest only if the needs grow.** *[optional]* `app_backup.py` uses
-  PostgreSQL's standard methods, and D2, M2 and M4 need only standard tools
+  PostgreSQL's standard methods, and D2 and M4 need only standard tools
   too. pgBackRest (or Barman, WAL-G) adds parallel and incremental backups,
   compression, an encrypted repository and faster restores, which matter for
   large databases, but breaks principle 2. Consider it only if the databases

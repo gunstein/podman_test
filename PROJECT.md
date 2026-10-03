@@ -10,11 +10,11 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `13cef4a` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-13cef4a.md)),
+**Current verdict: CLEAN PASS** on `89b369e` for the seven-pod, three-database
+topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-89b369e.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
-`deploy/scripts/lab/acceptance.py`. Its `report full` found all 104 steps PASS
+`deploy/scripts/lab/acceptance.py`. Its `report full` found all 112 steps PASS
 on one clean revision and compared them with the agent guide: every step and
 log it names, nothing else. Every step ran through `acceptance.py step`, which
 runs the guide's line as written and only after the step before it passed,
@@ -24,7 +24,9 @@ with the Python standard library alone (`target_render`, `bundle.json`), on
 the single host and, since D6, on the DR primary and standby too: app-ops
 copies the primary's public hostnames to the standby, and failover and
 rebuild use the recorded names. No target renders, so none needs Jinja2.
-Install, standby bootstrap,
+A scheduled check on both hosts (`todo-dr-check.timer`) reports replication,
+archive and disk problems as a failed unit, and a nightly timer on the
+primary takes and prunes the base backups (`todo-backup.timer`). Install, standby bootstrap,
 quarantine rehearsal, fencing, the one `failover` command (group promotion,
 application tier, backup, services and the login page), backup and isolated
 PITR, rebuild of the old primary and sequential reboots all passed as written.
@@ -37,6 +39,10 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `89b369e` run 32: CLEAN PASS ([record](docs/history/ACCEPTANCE-89b369e.md)),
+  accepting M1 (the scheduled DR check) and M2 (the nightly backup with
+  pruning). CI had been red since `13cef4a` from a stale call in the
+  workflow; fixed in `89b369e` (same record).
 - `13cef4a` run 31: CLEAN PASS ([record](docs/history/ACCEPTANCE-13cef4a.md)),
   accepting D6 (target values on primary and standby) with the guide
   unchanged.

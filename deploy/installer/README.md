@@ -95,9 +95,10 @@ operator's view.
 
 `workloads.install_postgres`, `install_application`, `install_keycloak` and
 `install_shared_proxy`
-accept project, Quadlet, runtime and rendered-manifest directories. They return
-whether manifests, network or unit definitions changed. They always reload user
-systemd, matching the former roles; they never restart services themselves.
+accept project, Quadlet, runtime and rendered-manifest directories, or an
+offline bundle's filled-in files (`target=`). They return whether manifests,
+network or unit definitions changed. They always reload user systemd; they
+never restart services themselves.
 Callers control safe stop/start ordering. Secret creation and obsolete `.volume`
 file cleanup do not affect the definition-change flag used by DR.
 
@@ -110,14 +111,15 @@ python3 -m app_installer install-workload postgres \
   --postgres-publish-address 192.168.0.102
 ```
 
-The workload CLI emits one JSON result on stdout and diagnostics on stderr.
-The DR commands built on these workloads (replication, reseed, promoted
-deploy) live in `app_dr_host` under [deploy/dr](../dr/README.md); this
+The workload CLI is a building block for manual work in build mode; it emits
+one JSON result on stdout and diagnostics on stderr. The DR commands built on
+these workloads (replication, reseed, promoted deploy) live in `app_dr_host`
+under [deploy/dr](../dr/README.md) and call the functions directly; this
 package imports nothing from there.
-Use `--app notes` for an independent Notes postgres/application definition;
-`--app todo` is the default used by DR. The Todo application CLI also installs
-shared Keycloak for existing DR callers. Notes LAN replication publication is
-refused until the separate DR phase is implemented.
+Use `--app notes` or `--app keycloak` (postgres only) for another database or
+application; `--app todo` is the default, and its application call also
+installs the shared Keycloak. LAN replication publication
+(`--postgres-publish-address`) is accepted only for the DR group's databases.
 Application/proxy calls also accept `--publish-address` and `--service-port`.
 Runtime directories must be exactly `quadlet-dir/todo-kube-runtime`; no new
 `.volume` units are installed. Canonical Jinja templates stay outside the Python

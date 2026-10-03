@@ -207,9 +207,8 @@ class InstallTests(unittest.TestCase):
 
     def test_down_reads_a_state_file_that_lists_paths(self):
         # State files written before the YAML was recorded list paths instead.
-        # An offline install plays from the bundle's own generated/kube-runtime,
-        # not the source tree's generated/dev; down must still find those exact
-        # pods rather than silently matching nothing in the wrong directory.
+        # down must still use those exact paths, not the directory it is given,
+        # rather than silently matching nothing in the wrong directory.
         with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run:
             root = Path(temp)
             recorded = root / 'elsewhere' / 'shared-proxy.yaml'

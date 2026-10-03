@@ -29,7 +29,7 @@ def node_facts(inventory_hostname, role, address):
         problems.append('/etc/machine-id does not hold a 32-character machine ID')
     if problems:
         raise RuntimeError('Host identity does not match the initial-topology inventory: '
-                           + '; '.join(problems) + '. Check hostname, todo_node_address and '
+                           + '; '.join(problems) + '. Check the hostname, the inventory address and '
                            '/etc/machine-id before continuing.')
     return facts
 

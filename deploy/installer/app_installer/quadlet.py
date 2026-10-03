@@ -1,8 +1,8 @@
-"""Write Quadlet units and their files atomically; render the unit templates (build and DR hosts).
+"""Write Quadlet units and their files atomically; render the unit templates (build host only).
 
 render() needs Jinja2 and imports it when it is called, so write() and
-systemctl() also serve an offline host without it, which installs units
-the build host rendered (target_render).
+systemctl() also serve an offline host and the DR hosts without it: they
+install units the build host rendered (target_render).
 """
 import os
 import stat

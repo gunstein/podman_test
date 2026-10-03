@@ -1,9 +1,9 @@
 """Fixed values and paths the installer and the DR tools share, in one place.
 
-Everything else here (container, secret, unit and volume names) is a naming
-rule derived from the App/Database registry in apps.py, not a setting: it
-must stay a fixed contract other tools (app-ops, the DR/backup CLIs, the
-quarantine helper) also derive independently, so it belongs there, not here.
+Container, secret, unit and volume names are not here: each follows a
+naming rule from the App/Database registry (apps.py, stack.py). They are a
+fixed contract that other tools (app-ops, the DR/backup CLIs, the
+quarantine helper) rely on, so they belong with the rules, not here.
 """
 from pathlib import Path
 
@@ -12,7 +12,7 @@ from pathlib import Path
 # guides that name the bundle must follow (tests/test_fixed_layout.py).
 IMAGE_TAG = "m12"
 
-# Upstream PostgreSQL version, pinned like every other image tag above.
+# Upstream PostgreSQL version, pinned like every other image the stack runs.
 POSTGRES_VERSION = "17.11"
 POSTGRES_IMAGE = f"docker.io/library/postgres:{POSTGRES_VERSION}"
 

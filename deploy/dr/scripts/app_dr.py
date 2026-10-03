@@ -1,4 +1,4 @@
-"""Local DR checks and guarded promotion of the complete application group.
+"""Local DR checks and guarded promotion of the complete database group.
 
 Installed as /opt/todo/bin/app_dr.py on both DR hosts and run there:
 
@@ -122,7 +122,12 @@ def load_config(path: Path) -> Config:
 
 def write_config(path: Path, primary_name: str, primary_address: str, standby_name: str,
                  rpo_target_seconds: int) -> bool:
-    """Private config for the complete group; a literal address keeps the fencing reachability check honest."""
+    """Write the private (0600) DR settings for the complete group; True if they changed.
+
+    primary_address must be a literal IPv4 address, so the preflight's
+    "primary still answers" check always tests that machine, never whatever a
+    name happens to resolve to.
+    """
     try:
         primary_address = replication.address(primary_address)
     except ValueError as error:
@@ -314,7 +319,7 @@ class StandbyGroup:
 
 
 def check(databases=apps.REPLICATED_DATABASES, disk=None):
-    """The scheduled check (M1): what is fine, and what is wrong, for this host's role.
+    """The scheduled check (todo-dr-check.timer): what is fine, and what is wrong, for this host's role.
 
     Returns (lines, problems). Each database's role is read live, so the same
     check fits the primary and the standby, and still fits after a failover
@@ -358,7 +363,7 @@ def parser():
     result.add_argument('--config', type=Path, default=DEFAULT_CONFIG)
     commands = result.add_subparsers(dest='command', required=True)
     commands.add_parser('status')
-    commands.add_parser('check', help='Read-only check of replication, archiving and disk space (M1)')
+    commands.add_parser('check', help='Read-only check of replication, archiving and disk space')
     configure = commands.add_parser('configure', help='Write the private DR configuration for the complete group')
     configure.add_argument('--primary-name', required=True)
     configure.add_argument('--primary-address', required=True)

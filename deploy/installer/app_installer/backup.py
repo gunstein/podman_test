@@ -1,4 +1,4 @@
-"""Nightly base backups of every installed database, and restoring the latest one (backlog B1).
+"""Nightly base backups of every installed database, and restoring the latest one.
 
 A single host installed with install.sh gets them without becoming a DR
 host: install() writes todo-backup.timer, which runs
@@ -211,7 +211,7 @@ def restore(confirm_restore, quadlet_dir=None):
 
 def service_unit(installer_directory):
     """todo-backup.service for a single host: the installer in installer_directory runs the nightly backup."""
-    return f"""# The nightly backup of a single host (backlog B1): a verified base backup
+    return f"""# The nightly backup of a single host: a verified base backup
 # of every database, keeping the last 7 days. A failure fails the unit:
 #   journalctl --user -u {UNIT}.service
 # install.sh writes it; app-ops configure-backup replaces it on a DR primary.

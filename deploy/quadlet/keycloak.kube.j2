@@ -1,3 +1,5 @@
+{# No [Install] section: Keycloak starts because the app units require it,
+   so a database-only standby, which has no app units, never starts it. #}
 [Unit]
 Description=Todo Keycloak Podman Kube workload
 Requires=keycloak-postgres.service

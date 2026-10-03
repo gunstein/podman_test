@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Browser end-to-end tests (Playwright) against a running stack: creates the
+# test user in Keycloak, then logs in to Todo and Notes.
 set -euo pipefail
 
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)

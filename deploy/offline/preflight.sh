@@ -1,4 +1,7 @@
 #!/bin/sh
+# Read-only host checks before an offline install (install.sh runs it):
+# commands, rootless Podman, Quadlet, user namespaces, the user systemd
+# manager, free ports, disk and memory. Changes nothing.
 set -eu
 
 failed=0
@@ -19,8 +22,7 @@ if [ "$failed" -ne 0 ]; then
 fi
 
 # The bundle's Kube YAML and units are rendered at build time; this install
-# needs only the Python standard library (no Jinja2 or PyYAML). The DR tools
-# still render on the hosts and check for Jinja2 themselves (app_ops/trust.py).
+# needs only the Python standard library (no Jinja2 or PyYAML).
 
 if systemctl is-active --quiet fapolicyd 2>/dev/null; then
     echo "INFO: active fapolicyd: trust the verified installer Python files before running install.sh."

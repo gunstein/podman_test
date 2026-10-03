@@ -265,7 +265,6 @@ def configure_primary(database, node_address):
     return changed
 
 
-
 def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kube_runtime_dir, target):
     """LAN-publish every primary, restarting the app tier at most once; bootstrap also creates the replicator.
 
@@ -304,6 +303,7 @@ def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kub
     for hostname in target.hostnames.values():
         keycloak.wait('/ready', 30, 1, 'ready', hostname=hostname)
     return {'changed': access_changed or bool(restart), 'restarted': [database.name for database in restart]}
+
 
 def data_claim(database, target):
     """Return the bundle's PersistentVolumeClaim for the database's data volume, as YAML.
@@ -356,9 +356,9 @@ def bootstrap_standby(database, primary_address, *, project_root, quadlet_dir,
     against the replication CA, which also creates the replication slot on
     the primary. It then writes the recovery settings (again with TLS and
     verify-full), a passfile from the replication secret and a copy of the
-    CA certificate, installs the
-    database unit from the bundle's files (target, filled in for this host),
-    starts it, and checks that it came up as a standby.
+    CA certificate, installs the database unit from the bundle's files
+    (target, filled in for this host), starts it, and checks that it came up
+    as a standby.
     """
     primary_address = address(primary_address)
     slot = identifier(slot or database.replication_slot())
@@ -408,7 +408,7 @@ def bootstrap_standby(database, primary_address, *, project_root, quadlet_dir,
 
 
 def promote(database, *, query=None, command=None):
-    """Low-level promotion; only call after fencing and all-app preflight gates."""
+    """Promote one standby and return its new status; only after fencing and the group preflight (app_dr.py promote)."""
     require_standby(database, query)
     command = command or run
     command('podman', 'exec', database.container, 'pg_ctl', '-D', DATA, 'promote', '-w', '-t', '60')
@@ -416,7 +416,11 @@ def promote(database, *, query=None, command=None):
 
 
 def streaming_status(database, *, rebuilt=False):
-    """Verify an independent sender and its usable physical slot."""
+    """On a primary: raise unless the standby on this slot streams asynchronously over TLS and the slot keeps its WAL.
+
+    The slot is the bootstrap one, or the rebuild one with rebuilt=True.
+    Returns the connection row and the slot row.
+    """
     require_primary(database)
     slot = identifier(database.replication_slot(rebuilt))
     fields = sql(database, "SELECT application_name, client_addr, state, sync_state, "
@@ -506,7 +510,12 @@ def cluster_status(role):
 
 
 def require_promoted_group(journal_path):
-    """Never expose an incomplete group, including a failed final verification."""
+    """Raise unless the promotion record confirms the whole group and every database is an active, healthy primary.
+
+    The steps that open a promoted host to users (deploy-promoted,
+    configure-backup) call this first, so a failed or partial promotion is
+    never exposed.
+    """
     names = [database.name for database in apps.REPLICATED_DATABASES]
     try:
         decision = json.loads(Path(journal_path).read_text())
@@ -643,7 +652,11 @@ def remove_exited_containers_using(volume):
 
 
 def reseed_standby(database, primary_address, *, confirm_fenced, confirm_reseed, **paths):
-    """One explicitly confirmed replacement, after the caller's all-app gates."""
+    """Delete this database's data volume and bootstrap it again as a standby of the primary.
+
+    Only reseed_group calls it, after the checks of the whole group passed;
+    it repeats this database's checks and the replication login first.
+    """
     reseed_check(database, primary_address, confirm_fenced=confirm_fenced,
                  confirm_reseed=confirm_reseed, **paths)
     # Authenticate against the primary's now-published LAN endpoint as the

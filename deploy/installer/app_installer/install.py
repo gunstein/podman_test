@@ -26,7 +26,7 @@ def preflight(quadlet_dir):
     setup: that needs a person to review it, not an automatic migration.
     """
     if '--no-pod-prefix' not in run('podman', 'kube', 'play', '--help').stdout:
-        raise RuntimeError('The final runtime requires the tested Podman --no-pod-prefix option.')
+        raise RuntimeError('This installer requires the Podman kube play --no-pod-prefix option.')
     if any((Path(quadlet_dir) / (name + '.container')).exists() for name in LEGACY):
         raise RuntimeError(
             'Unsupported per-container Quadlets are installed. Stop and review the host '
@@ -141,8 +141,9 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     started in dependency order. Roles are set up once the database is
     healthy, and again after the app starts, so the tables its migrations
     created get their grants. Finally Keycloak is configured and every unit
-    is checked to run from the expected Kube file. mode='dev' runs the same
-    YAML with podman kube play directly, without systemd.
+    is checked to run from the expected Kube file, and the nightly backup timer
+    is turned on. mode='dev' renders with the local values and runs the YAML
+    with podman kube play directly, without systemd.
 
     An offline install takes the bundle's pre-rendered files and fills in the
     target values (target_values, from the command line; target_render says
@@ -269,6 +270,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     # The hostnames this host now serves, for the next install and the DR tools.
     if target is not None:
         target_render.write_record(target.values)
-    # Every server install backs itself up every night (backlog B1).
+    # Every server install backs itself up every night, so a single host can at
+    # least go back to last night (backup.py).
     backups_changed = backup.install_timer(Path(__file__).resolve().parents[1])
     return changed or images_changed or configured or backups_changed

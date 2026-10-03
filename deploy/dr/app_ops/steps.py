@@ -33,7 +33,7 @@ def promotion_record(host):
 
 
 def installed_pythonpath(host):
-    """The registry an earlier step installed; read-only callers never stage."""
+    """The PYTHONPATH of the packages an earlier step staged on host; read-only commands use it and never stage."""
     if trust.fapolicyd_active(host):
         return str(trust.LIBRARY)
     return paths(host)['target'] + '/deploy/installer'

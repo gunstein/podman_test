@@ -245,8 +245,8 @@ class DatabaseBackup:
         """Returns (replication access changed, backup directories changed, settings changed, restart needed).
 
         Only turning archive_mode on needs a restart. A new archive_command or
-        archive_timeout takes effect on a reload, so changing the command on a
-        host that already archives (as the durable copy did) restarts nothing.
+        archive_timeout takes effect on a reload, so updating the command on a
+        host that already archives restarts nothing.
         """
         access = replication.refresh_hba(self.database)
         directories = self._run(
@@ -539,10 +539,10 @@ def require_backups_possible(tools: Sequence[DatabaseBackup]) -> None:
 
 
 def nightly(tools: Sequence[DatabaseBackup], keep_days: int) -> list[str]:
-    """The nightly backup (M2): a verified base backup of every database, then pruning; returns what it did.
+    """The nightly backup (todo-backup.timer): a verified base backup of every database, then pruning.
 
-    On a standby group it does nothing: only the primary takes backups
-    today. A group that is neither, or a primary that does not archive,
+    Returns what it did. On a standby group it does nothing: the primary
+    takes the backups (backups on the standby are backlog D2). A group that is neither, or a primary that does not archive,
     fails before the first backup.
     """
     if all(tool.database_state()[0] for tool in tools):

@@ -116,8 +116,8 @@ def configure(admin_password, clients=None):
     changed = secure_realm(token)
     template = None
     for client_id, hostname in identities:
-        # The shared-resource-owner app follows the environment's canonical issuer
-        # (localhost in the original local profile); other apps use their registry hostnames.
+        # The shared-resource owner's client uses the issuer's own origin; the
+        # other apps use their own public hostnames on the issuer's port.
         client_origin = (origin if client_id == apps.SHARED_RESOURCE_OWNER.keycloak_client
                          else f'https://{hostname}' + (f':{parsed.port}' if parsed.port else ''))
         matches = request('/auth/admin/realms/todo/clients?' + urlencode({'clientId': client_id}),

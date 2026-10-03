@@ -75,10 +75,12 @@ APPS = (
     App(name="notes", hostname="notes.test", keycloak_client="notes-frontend", replication_port=5433),
 )
 
-# Keycloak now has its own dedicated database (KEYCLOAK_DATABASE below), not
-# this app's. The name still backs every resource shared across the whole
-# stack instead of being owned by any one app: the proxy image, the shared
-# config.yaml, the nginx-data TLS volume and the default Keycloak client trust.
+# The app whose name the resources shared by the whole stack carry: the proxy
+# image, the shared config.yaml and the nginx-data TLS volume. Its public
+# hostname is also Keycloak's and the OIDC issuer's (TARGET_EXTERNAL_HOSTNAME),
+# and its Keycloak client, from the realm import, is the template the other
+# apps' clients are copied from (keycloak.configure).
+# Keycloak's own database is KEYCLOAK_DATABASE below, not this app's.
 SHARED_RESOURCE_OWNER = APPS[0]
 NETWORK = "app-network"
 # Keycloak itself is the identity server, not a per-app/per-database resource,

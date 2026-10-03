@@ -1,4 +1,9 @@
 #!/bin/sh
+# Entry point of the nginx container. In the persistent TLS volume it creates
+# the demo CA (10 years) and one leaf certificate for every public hostname
+# (397 days), and renews either when it is missing, expires within 30 days or
+# no longer fits; it writes Podman's DNS server as nginx's resolver; then it
+# runs nginx.
 set -efu
 
 tls_directory=/var/lib/todo-tls

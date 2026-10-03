@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Build the offline bundle on a connected build machine: render every target
+# file, build or pull and save every image, add the installer and the docs,
+# and checksum it all. Writes dist/todo-offline-<tag>.tar.gz and its .sha256.
 set -euo pipefail
 
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)

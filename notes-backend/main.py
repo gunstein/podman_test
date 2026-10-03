@@ -186,6 +186,8 @@ def delete_note(note_id: int, _user: Annotated[dict, Depends(require_user)]):
     return Response(status_code=204)
 
 
+# Local development without containers: serve notes-frontend from here too.
+# The image sets SERVE_FRONTEND=false; there the frontend container serves it.
 if os.getenv("SERVE_FRONTEND", "true").lower() == "true":
     frontend = Path(__file__).resolve().parent.parent / "notes-frontend"
     app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")

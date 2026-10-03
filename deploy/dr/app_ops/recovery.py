@@ -34,7 +34,8 @@ def configure_backup(project_root, controller, current):
     """Install app_backup.py on the current primary, turn on WAL archiving and the nightly backup.
 
     Refuses unless the promotion record shows the whole group was promoted.
-    todo-backup.timer then runs `app_backup.py nightly` every night (M2).
+    todo-backup.timer then runs `app_backup.py nightly` every night; on a host
+    installed with install.sh it replaces the installer's service of the same timer.
     """
     pythonpath = trust.stage_installer(project_root, controller, current)
     journal = steps.promotion_record(current)
@@ -79,7 +80,8 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
     publish the current primary's databases for the rebuilt standby, copy
     missing DR secrets (the replication CA) to the rebuild host, require
     a connection from the rebuild host to every replication port, reseed
-    every database on the rebuild host, install app_dr.py there, and wait
+    every database on the rebuild host, install app_dr.py and its check
+    timer there, and wait
     until all of them stream. A failure stops the run where it is and is
     never retried automatically.
     """

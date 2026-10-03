@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
+# Give app-ops on this controller passwordless SSH to one DR host: create the
+# control key if missing, pin the host's key, then copy the key with ssh-copy-id.
 set -euo pipefail
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
   echo "Usage: $0 user@target-host [expected-ed25519-fingerprint]" >&2
   echo "Installs this host's app-ops control key on the target, as documented" >&2
-  echo "in deploy/dr/STANDBY-ARCHITECTURE.md. Never accepts an unknown host key" >&2
-  echo "without an independently verified fingerprint (SHA256:...)." >&2
+  echo "in deploy/dr/STANDBY-ARCHITECTURE.md. With a fingerprint (SHA256:...)," >&2
+  echo "an unknown host key is pinned only if it matches; without one, ssh asks" >&2
+  echo "you to accept the host key yourself." >&2
   exit 1
 fi
 

@@ -5,7 +5,8 @@ It chains the existing steps and stops at the first failure, naming the step:
   1. promote     app_dr.py promote (its own preflight first), unless the
                  promotion record already says the whole group was promoted
   2. deploy      the application tier (deploy-promoted-application)
-  3. backup      WAL archiving and app_backup.py (configure-backup)
+  3. backup      WAL archiving, app_backup.py and its nightly timer
+                 (configure-backup)
   4. services    every service ready, and each app answers over HTTPS on the
                  host's address, verified with its CA
   5. login-page  for each app, Keycloak shows its login form for the app's

@@ -135,7 +135,7 @@ def install_dr_tool(project_root, controller, host, primary_spec, standby_name):
     """Install app_dr.py on host with exact-file trust, write its DR settings and turn on its check timer.
 
     Both hosts get the same tool and settings: the standby promotes with it,
-    and on either host todo-dr-check.timer runs `app_dr.py check` (M1).
+    and on either host todo-dr-check.timer runs `app_dr.py check` every 15 minutes.
     """
     trust.stage_installer(project_root, controller, host)
     changed = trust.install_trusted(project_root, controller, host,

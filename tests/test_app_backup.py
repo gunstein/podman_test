@@ -209,7 +209,7 @@ WEEK = ["base-20261001T023000Z", "base-20261002T023000Z", "base-20261003T023000Z
 
 
 class PruneTests(unittest.TestCase):
-    """nightly and prune (M2) on a DR primary: backups of the last N days, and only the WAL they need."""
+    """nightly and prune on a DR primary: backups of the last N days, and only the WAL they need."""
 
     def prune(self, runner, days=7):
         tool = backup(self, runner, clock=lambda: NOW)

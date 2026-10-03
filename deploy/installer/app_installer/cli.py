@@ -52,10 +52,12 @@ def backup_command(args):
 def main(argv=None):
     """Parse one subcommand, run it, and return the exit code.
 
-    install, uninstall and down serve a single host; install-workload,
-    configure-clients and the registry commands are also used by the DR tools,
-    whose own commands live in app_dr_host (deploy/dr). Each prints one JSON
-    result on stdout. Errors print one "app-installer: ..." line on stderr and
+    install, uninstall, down and backup serve a single host.
+    install-workload, configure-clients, replication-apps and services are
+    building blocks for a person (deploy/installer/README.md); the DR tools
+    import the same functions instead, and their own commands live in
+    app_dr_host (deploy/dr). Each prints one JSON result on stdout (backup
+    prints lines for the journal). Errors print one "app-installer: ..." line on stderr and
     return 1.
     """
     parser = argparse.ArgumentParser(description='Rootless Podman Todo installer')

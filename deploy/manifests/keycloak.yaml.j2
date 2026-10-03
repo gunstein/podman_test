@@ -25,6 +25,8 @@ spec:
         - configMapRef:
             name: keycloak-config
             optional: false
+{# KCRAW_ variables reach Keycloak as they are, without its ${...} expansion,
+   so a password containing $ stays intact. #}
       env:
         - name: KCRAW_DB_PASSWORD
           valueFrom:
@@ -56,6 +58,7 @@ spec:
           memory: "1Gi"
       securityContext:
         runAsUser: 1000
+{# The Keycloak image's files belong to group 0. #}
         runAsGroup: 0
         allowPrivilegeEscalation: false
         capabilities:

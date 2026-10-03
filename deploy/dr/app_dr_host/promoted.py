@@ -75,7 +75,15 @@ def require_issuer(issuer, attempts=90, delay=2):
 
 def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_address,
            journal, config_dir, service_port):
-    """Returns whether anything changed; each step refuses before the next can run.
+    """Start the application tier on this promoted host; return whether anything changed.
+
+    In order, each step refusing before the next can run: check the host's
+    identity and the bundle's port, require the promoted group record and
+    every credential it needs, load missing images, install the apps,
+    Keycloak and nginx (stopping the tier first if anything changed), start
+    them, wait for each app and the expected issuer, correct the Keycloak
+    clients, record the hostnames, and save the nginx CA certificate as
+    config_dir/todo-nginx-root.crt for the operator to hand to clients.
 
     The application files are the operations package's (project_root),
     filled in with this host's address and the public hostnames it recorded

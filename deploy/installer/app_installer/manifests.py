@@ -1,8 +1,8 @@
-"""Direct Jinja2 rendering of Kube manifests, replacing Helm as a template engine.
+"""Direct Jinja2 rendering of Kube manifests, on the build host only.
 
 Kubernetes YAML here is only a manifest format for podman kube play/Quadlet;
-there is never a real cluster, so a template engine is all "helm template"
-ever provided. Ownership stays split the same way as the Quadlet templates:
+there is never a real cluster, so a template engine is all that is needed
+and Helm is not used. Ownership is split the same way as for the Quadlet templates:
 stack.py/apps.py own topology and naming, values.yaml owns per-environment
 settings, and only truly static structure lives in the .j2 files themselves.
 """

@@ -10,7 +10,10 @@ metadata:
     io.podman.annotations.pids-limit/{{ app.names.resource("backend") }}: "128"
     io.podman.annotations.pids-limit/{{ app.names.resource("frontend") }}: "128"
 spec:
+{# systemd restarts the unit, never Podman a single container. #}
   restartPolicy: Never
+{# Migrations run as the migrator role before the backend starts; a failed
+   migration stops the pod from starting. #}
   initContainers:
     - name: {{ app.names.resource("migrate") | tojson }}
       image: {{ backend_image | tojson }}

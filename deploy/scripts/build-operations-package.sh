@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Build the operations package: app-ops, the DR host tools, the installer and
+# the same rendered target files as the offline bundle, plus the docs; no
+# image archives. Writes dist/todo-operations.tar.gz and its .sha256.
 set -euo pipefail
 
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -52,7 +55,7 @@ cp "$project_root/deploy/dr/app_ops/"*.py "$package_directory/deploy/dr/app_ops/
 cp "$project_root/deploy/dr/app_dr_host/"*.py "$package_directory/deploy/dr/app_dr_host/"
 cp "$project_root/deploy/dr/scripts/app_dr.py" "$project_root/deploy/dr/scripts/app_backup.py" \
   "$project_root/deploy/dr/scripts/app-quarantine.sh" "$package_directory/deploy/dr/scripts/"
-# The scheduled check (M1) and nightly backup (M2) that app-ops installs as user units.
+# The scheduled DR check and the nightly backup that app-ops installs as user units.
 cp "$project_root/deploy/dr/systemd/"*.service "$project_root/deploy/dr/systemd/"*.timer \
   "$package_directory/deploy/dr/systemd/"
 

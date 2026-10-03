@@ -157,7 +157,7 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertEqual(oct((self.runtime / 'shared-proxy.yaml').stat().st_mode & 0o777), '0o600')
         self.assertEqual(oct((self.runtime / 'shared-proxy.kube').stat().st_mode & 0o777), '0o644')
         self.assertTrue((self.quadlet / 'app-network.network').is_file())
-        # Every server install backs itself up every night (B1).
+        # Every server install backs itself up every night.
         self.assertIn(f'Environment=PYTHONPATH={TESTS.parent}\n', service)
         self.assertIn(['systemctl', '--user', 'enable', '--now', 'todo-backup.timer'], host.calls)
 

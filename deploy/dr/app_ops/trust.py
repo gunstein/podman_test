@@ -20,7 +20,12 @@ def fapolicyd_active(host):
 
 
 def install_trusted(project_root, controller, host, files, directory):
-    """files: [(source, dest, mode)]. Controller source trust, stdin install, then target trust."""
+    """Install files, [(source, dest, mode)], on host with exact-file fapolicyd trust; True if anything changed.
+
+    First the controller trusts its own source copies, then each file goes to
+    host over stdin (trust-files.sh install), and last host trusts the
+    installed copies by exact path, size and SHA-256.
+    """
     if not fapolicyd_active(host):
         raise RuntimeError(f'{host.name}: fapolicyd is not active')
     text = script(project_root)

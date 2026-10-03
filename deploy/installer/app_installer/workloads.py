@@ -1,14 +1,15 @@
 """Install shared workload definitions; callers own safe stop/start ordering.
 
-As in the original shared roles, changed reports definition changes (not secret
-creation or removal of obsolete files). DR uses it to decide when to restart.
+Each install function returns whether a definition changed (not secret
+creation or removal of obsolete files); callers use it to decide what to
+restart.
 
-A workload's files come from one of two places. By default, the Kube YAML
+A workload's files come from one of two places. In build mode, the Kube YAML
 from rendered_manifest_dir and units rendered here from deploy/quadlet with
-Jinja2 (build mode, development, and the DR tools). With target=, an offline
-bundle's files, rendered at build time and filled in with the target values
-(target_render.TargetFiles); then this host needs no Jinja2. Either way the
-same staging, comparison and permissions apply.
+Jinja2. With target=, an offline bundle's files, rendered at build time and
+filled in with the target values (target_render.TargetFiles); then this host
+needs no Jinja2. The offline install and the DR tools always pass target.
+Either way the same staging, comparison and permissions apply.
 """
 import ipaddress
 from pathlib import Path
@@ -51,9 +52,8 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         raise ValueError(f"kube_runtime_dir must be quadlet_dir/{settings.KUBE_RUNTIME}")
     if "--no-pod-prefix" not in run("podman", "kube", "play", "--help").stdout:
         raise RuntimeError(f"The {capability} Kube runtime requires Podman --no-pod-prefix.")
-    # install.preflight() already refuses a legacy per-container Quadlet host-wide,
-    # before any workload install runs; see install-workload's CLI dispatch for the
-    # DR path, which calls it for the same reason.
+    # install.preflight() has already refused a host with legacy per-container
+    # Quadlets (install.install and the install-workload command call it first).
     # Read and render everything before mutating the installation.
     if target is None:
         files = [(runtime / name, (Path(rendered_manifest_dir) / name).read_bytes(), 0o600)

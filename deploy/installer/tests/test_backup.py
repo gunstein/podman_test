@@ -1,4 +1,4 @@
-"""backup.py (B1): nightly base backups of a single host, pruning, the timer and restoring the latest backup."""
+"""backup.py: nightly base backups of a single host, pruning, the timer and restoring the latest backup."""
 import os
 import subprocess
 import sys

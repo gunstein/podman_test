@@ -4,6 +4,7 @@ kind: PersistentVolumeClaim
 metadata:
   name: {{ database.volume("data") | tojson }}
   annotations:
+{# 999 is the postgres user in the official image, which owns the data. #}
     volume.podman.io/uid: "999"
     volume.podman.io/gid: "999"
 ---
@@ -36,6 +37,8 @@ spec:
         - -D
         - /var/lib/postgresql/data
         - -c
+{# A replication slot keeps WAL for its standby; cap it, so a standby that is
+   gone for long invalidates its slot instead of filling the disk. #}
         - "max_slot_wal_keep_size=1GB"
       ports:
         - name: postgres
@@ -50,6 +53,7 @@ spec:
       volumeMounts:
         - name: postgres-data
           mountPath: /var/lib/postgresql/data
+{# Base backups and, on a DR primary, the WAL archive (app_installer.backup, app_backup.py). #}
         - name: postgres-backup
           mountPath: /var/lib/postgresql/backup
         - name: postgres-secret

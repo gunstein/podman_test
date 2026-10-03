@@ -106,10 +106,9 @@ def down(rendered_manifest_dir, applications=None, state_file=None):
     """Tear down a dev install; True if anything was actually playing.
 
     Prefers the exact manifests `up` recorded it played, so a caller that
-    passes a different `rendered_manifest_dir` than the one used to install
-    (offline installs use the bundle's own `generated/kube-runtime`, not the
-    source tree's `generated/dev`), or a later render that no longer has the
-    file, still removes the right pods instead of silently matching nothing.
+    passes a different `rendered_manifest_dir` than the one used to install,
+    or a later render that no longer has the file, still removes the right
+    pods instead of silently matching nothing.
     """
     directory = Path(rendered_manifest_dir)
     state_file = Path(state_file or settings.DEV_STATE_FILE)

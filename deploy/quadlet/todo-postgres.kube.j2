@@ -1,3 +1,6 @@
+{# One PostgreSQL pod. The loopback port is for the host's own tools; the
+   LAN port exists only in the bundle's replicated variant (postgres_publish_address
+   set), on a DR primary that a standby streams from. #}
 [Unit]
 Description=Todo PostgreSQL Podman Kube workload
 
@@ -15,6 +18,8 @@ LogDriver=journald
 SetWorkingDirectory=yaml
 
 [Service]
+{# Kube YAML cannot ask Podman to act on a failed health check: kill the
+   container then, so the unit fails and Restart= starts it again. #}
 ExecStartPost=/usr/bin/podman update --health-on-failure=kill todo-postgres
 Restart=on-failure
 RestartSec=5s

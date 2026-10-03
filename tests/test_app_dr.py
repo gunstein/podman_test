@@ -346,7 +346,7 @@ class CheckHost:
 
 
 class CheckTests(unittest.TestCase):
-    """app_dr.py check (M1): one run names every problem for the host's role."""
+    """app_dr.py check: one run names every problem for the host's role."""
 
     DISK = (100 * 2**30, 50 * 2**30, 50 * 2**30)
 

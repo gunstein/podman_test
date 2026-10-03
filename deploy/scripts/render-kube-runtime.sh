@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Render the Kube YAML with Jinja2 (build host or build mode only).
+# Usage: render-kube-runtime.sh [VALUES_FILE] [OUTPUT_DIRECTORY] [APP,APP...]
 set -euo pipefail
 
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)

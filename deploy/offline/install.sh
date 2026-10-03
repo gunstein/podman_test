@@ -1,4 +1,6 @@
 #!/bin/sh
+# Install an extracted offline bundle on this host: check the checksums and
+# the host (preflight.sh), then run the installer in offline server mode.
 set -eu
 
 bundle_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)

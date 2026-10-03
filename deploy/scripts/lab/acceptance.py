@@ -200,14 +200,14 @@ LINK = matching(r'up|down')
 POWER = matching(r'start|shutdown')
 BIT = matching(r'[01]')
 OUTCOME = matching(r'ok|alert')
+SNAPSHOT = matching(r'[A-Za-z0-9_-]+')
+MODE = matching(r'app|standby')
+PHASE = matching(r'phase[0-9]+')
 
 
 def source_address(text):
     """Where a connection starts: the client itself, or a VM by its IPv4 address."""
     return text if text == 'client' else host_address(text)
-SNAPSHOT = matching(r'[A-Za-z0-9_-]+')
-MODE = matching(r'app|standby')
-PHASE = matching(r'phase[0-9]+')
 
 
 # --- checks (read only) -------------------------------------------------------------
@@ -215,7 +215,7 @@ PHASE = matching(r'phase[0-9]+')
 def check_clean_host(step, host):
     """Phase 1: security services on, SELinux enforcing, rootless Podman, no Todo state.
 
-    Target prerequisites such as python3-jinja2 are preflight.sh's job in phase 3.
+    The install's own prerequisites are preflight.sh's job in phase 3.
     """
     result = step.ssh(host, """
 getenforce
@@ -240,7 +240,7 @@ cat /etc/machine-id
 # Podman runs each container health check as a transient unit named
 # <container id>-<random>.service; one failed run leaves it "failed" until the next.
 HEALTH_CHECK_UNIT = re.compile(r'[0-9a-f]{64}-[0-9a-f]+\.(service|timer)')
-# The scheduled DR check (M1). Its failed state means DR needs attention, as
+# The scheduled DR check (todo-dr-check.timer). Its failed state means DR needs attention, as
 # after a failover until the rebuild, not that a service is down; check
 # monitor tests it on its own.
 DR_CHECK = 'todo-dr-check'
@@ -278,6 +278,7 @@ def check_services(step, host, mode):
 
 
 def fingerprint(text):
+    """The SHA-256 fingerprint in openssl x509 -fingerprint output, or '' if there is none."""
     match = re.search(r'Fingerprint=([0-9A-F:]{95})', text)
     return match.group(1) if match else ''
 
@@ -338,6 +339,7 @@ def check_headers(step):
 
 
 def password_environment(**extra):
+    """The environment for an e2e script: ours, the testuser password from its runtime file, and extra."""
     path = Path(os.environ.get('XDG_RUNTIME_DIR', '/run/user/%d' % os.getuid())) / 'todo-acceptance/e2e-password'
     if not path.is_file():
         raise Refused(f'the testuser password file {path} is missing (docs/ACCEPTANCE-AGENT.md C6)')
@@ -487,7 +489,7 @@ printf '%s\\n' "$out"
 
 
 def check_monitor(step, host, expected):
-    """The scheduled DR check (M1): its timer is on, and one run now passes (ok) or fails naming why (alert)."""
+    """The scheduled DR check: its timer is on, and one run now passes (ok) or fails naming why (alert)."""
     timer_on(step, host, DR_CHECK)
     code, lines = start_unit(step, host, DR_CHECK, 'Disk:' if expected == 'ok' else 'ERROR:', 300)
     problems = [line.removeprefix('ERROR: ') for line in lines if line.startswith('ERROR: ')]
@@ -503,10 +505,12 @@ def check_monitor(step, host, expected):
 # --- do (changes state) -------------------------------------------------------------
 
 def pve(step, *arguments):
+    """Run pve_lab.py (the Proxmox API through the lab token) with arguments, logged in step."""
     return step.run([sys.executable, ROOT / 'deploy/scripts/lab/pve_lab.py', *arguments], timeout=900)
 
 
 def boot_id(step, host):
+    """The host's kernel boot ID, which changes at every boot; '' if SSH does not answer."""
     result = step.ssh(host, 'cat /proc/sys/kernel/random/boot_id', timeout=20)
     return result.stdout.strip() if result.returncode == 0 else ''
 
@@ -678,6 +682,7 @@ def check_connect(step, source, target, port, expected):
 
 
 def quarantine_helper(step, vmid, action, name):
+    """Run app-quarantine.sh ACTION through the Guest Agent; return the result and the agent's JSON."""
     result = pve(step, 'exec', vmid, '--', '/opt/todo/bin/app-quarantine.sh', action, name, step.user)
     return result, parsed(result, {})
 
@@ -715,7 +720,7 @@ def check_stopped(step, host):
 
 
 def do_backup_nightly(step, host):
-    """The nightly backup (M2): its timer is on, and one run backs up and prunes every database."""
+    """The nightly backup: its timer is on, and one run backs up and prunes every database."""
     timer_on(step, host, BACKUP)
     code, lines = start_unit(step, host, BACKUP, 'keycloak: verified base backup', 2400)
     backups = {database: match.group(1) for database in DATABASES for line in lines
@@ -1172,6 +1177,7 @@ def run_step(run_directory, run_id, name):
 
 
 def main(argv=None):
+    """Run one step, check, do or report; return the exit status from the module docstring."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--run', required=True, help='run ID, the run folder name')
     parser.add_argument('--step', help='phase and step from the guide, for example 03-9 (not for report)')

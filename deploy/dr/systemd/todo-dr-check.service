@@ -1,4 +1,4 @@
-# The scheduled DR check (backlog M1): replication, WAL archiving and disk
+# The scheduled DR check: replication, WAL archiving and disk
 # space for this host's role. A problem fails the unit, so it shows in
 # `systemctl --user --failed` and in the journal:
 #   journalctl --user -u todo-dr-check.service

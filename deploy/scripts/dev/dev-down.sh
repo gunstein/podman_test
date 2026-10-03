@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Take down what dev-up.sh started; volumes and secrets stay.
 set -euo pipefail
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 export PYTHONPATH="$project_root/deploy/installer${PYTHONPATH:+:$PYTHONPATH}"

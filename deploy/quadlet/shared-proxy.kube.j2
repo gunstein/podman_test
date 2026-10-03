@@ -8,6 +8,9 @@ Yaml=shared-proxy.yaml
 ConfigMap=config.yaml
 Network=app-network.network
 PodmanArgs=--no-pod-prefix
+{# Always on loopback: plain HTTP 8080 for the host's own readiness checks and
+   Keycloak administration, HTTPS 8443 for local use. The host address is
+   added unless it is loopback itself (the bundle's local-only variant). #}
 PublishPort=127.0.0.1:8080:8080
 PublishPort=127.0.0.1:8443:8443
 {% if todo_publish_address != '127.0.0.1' %}

@@ -44,7 +44,7 @@ def enable_guest_exec(host):
     changed = wanted != current
     if changed:
         backup = f'{GA_POLICY}.{time.strftime("%Y-%m-%d@%H:%M:%S")}~'
-        # cat > keeps the file's inode, owner, mode and SELinux label, as lineinfile did.
+        # cat > rewrites the file in place, so it keeps its inode, owner, mode and SELinux label.
         host.run(['sh', '-c', 'cp -p "$1" "$2" && cat > "$1"', 'policy', GA_POLICY, backup],
                  sudo=True, input=wanted)
         host.run(['systemctl', 'restart', 'qemu-guest-agent'], sudo=True)

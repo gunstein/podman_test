@@ -1,3 +1,5 @@
+{# The app pod: migration init container, backend and frontend. It needs its
+   own database and Keycloak; systemd starts those first. #}
 [Unit]
 Description=Notes frontend and backend Podman Kube workload
 Requires=notes-postgres.service keycloak.service

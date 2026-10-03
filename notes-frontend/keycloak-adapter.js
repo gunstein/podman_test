@@ -15,6 +15,9 @@ export default {
       realm: "todo",
       clientId: "notes-frontend",
     });
+    // check-sso: learn whether the user is already logged in, without
+    // sending them to the login page. The session-status iframe is off; the
+    // token refresh in getAccessToken notices an ended session instead.
     return client.init({
       onLoad: "check-sso",
       pkceMethod: "S256",
@@ -32,6 +35,7 @@ export default {
   },
   async getAccessToken() {
     if (!client.authenticated) return null;
+    // Refresh the token first if it expires within 30 seconds.
     await client.updateToken(30);
     return client.token;
   },

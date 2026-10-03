@@ -44,14 +44,18 @@ class FakeHost:
         self.unit_directory = unit_directory
         self.source = source
         self.calls = []
+        self.timers = set()  # user timers that are enabled and running
 
     def __enter__(self):
         # The host's record of its public hostnames lives in a temporary
         # directory, never in the home directory of whoever runs the tests.
         self.home = Path(tempfile.mkdtemp())
         self.record = self.home / '.config/todo/target-values.json'
+        # The nightly backup timer's units (backup.install_timer) go here too.
+        self.units = self.home / '.config/systemd/user'
         self._patchers = [mock.patch('app_installer.commands.subprocess.run', side_effect=self._run),
-                          mock.patch('app_installer.target_render.record_path', return_value=self.record)]
+                          mock.patch('app_installer.target_render.record_path', return_value=self.record),
+                          mock.patch('app_installer.settings.SYSTEMD_USER_DIR', self.units)]
         for patcher in self._patchers:
             patcher.start()
         return self
@@ -89,6 +93,14 @@ class FakeHost:
             self.images.add(argv[argv.index('--tag') + 1])
         if argv[:2] == ['podman', 'pull'] and self.images is not None:
             self.images.add(argv[-1])
+        if argv[:3] == ['systemctl', '--user', 'is-enabled']:
+            return (0, 'enabled') if argv[3] in self.timers else (1, 'disabled')
+        if argv[:3] == ['systemctl', '--user', 'is-active'] and argv[3].endswith('.timer'):
+            return (0, 'active') if argv[3] in self.timers else (3, 'inactive')
+        if argv[:4] == ['systemctl', '--user', 'enable', '--now']:
+            self.timers.add(argv[4])
+        if argv[:4] == ['systemctl', '--user', 'disable', '--now']:
+            self.timers.discard(argv[4])
         if argv[:3] == ['systemctl', '--user', 'show']:
             unit = self.source or str(self.unit_directory / argv[3].replace('.service', '.kube'))
             return 0, unit + '\n'

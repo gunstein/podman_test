@@ -221,6 +221,36 @@ checksums. For real distribution, sign the archive or manifest separately with
 an organizational GPG or Sigstore/cosign identity and verify that signature on
 the target before running `install.sh`.
 
+### Nightly backups
+
+Every install turns on `todo-backup.timer`: each night at 02:30 (or at the
+next start, if the host was off) it takes a verified base backup of every
+database into its backup volume and deletes those older than 7 days, never
+the latest. A failed backup, or less than 10 % free disk, leaves
+`todo-backup.service` failed; see `systemctl --user --failed` and
+`journalctl --user -u todo-backup.service`. Run one now, or list them:
+
+```bash
+systemctl --user start todo-backup.service
+podman exec todo-postgres ls /var/lib/postgresql/backup/base
+```
+
+The timer runs the installer from this bundle's directory (its trusted files
+under fapolicyd), so keep the bundle in place, or install again from the new
+one after replacing it. To put every database back to its latest backup,
+which loses everything written since then, run from the bundle root:
+
+```bash
+PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore "$(hostname)"
+```
+
+It checks every backup first, then stops the stack, replaces each data volume
+with its backup and starts everything again. A single host has no WAL archive,
+so it restores to the last night, not to a point in between; DR adds that. The
+backups are on the same VM: copy the backup volumes elsewhere if losing the
+VM must not lose the data. `install.sh` refuses to restore on a DR host, which
+has its own tools.
+
 Uninstall this offline bundle while preserving database data. The installer
 refuses replication, promotion and backup hosts:
 
@@ -229,7 +259,8 @@ PYTHONPATH=deploy/installer python3 -m app_installer uninstall
 ```
 
 Use `--remove-data` only when permanently deleting the single-host database and
-its credentials is intended. Backup data is never removed by this command.
+its credentials is intended. Uninstall turns the nightly backup timer off;
+backup data is never removed by this command.
 
 ## Source and runtime contract
 

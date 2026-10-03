@@ -143,14 +143,21 @@ run leaves its service failed: that is the alert, seen with
 | Timer | Installed by | Runs | What it does |
 |---|---|---|---|
 | `todo-dr-check.timer` | `install-dr-tool` on both hosts, `rebuild-standby` on the rebuilt one | every 15 minutes | `app_dr.py check`: each database's role, read live. A primary needs a standby streaming over TLS, slots that keep their WAL and, if archiving is on, a healthy archive; a standby must receive WAL. The group must not be split, and the disk under the home directory must be at least 10 % free. |
-| `todo-backup.timer` | `configure-backup` (so `failover`) on the current primary | every night at 02:30 (+ up to 30 min), and at boot if a night was missed | `app_backup.py nightly --keep-days 7`: a verified base backup of every database, then deletion of the backups older than 7 days (never the latest) and of the archived WAL older than the oldest kept backup (`pg_archivecleanup`). On a standby it does nothing. |
+| `todo-backup.timer` | `install.sh` on every server install; `configure-backup` (so `failover`) replaces its service on the current primary | every night at 02:30 (+ up to 30 min), and at boot if a night was missed | `app_backup.py nightly --keep-days 7`: a verified base backup of every database, then deletion of the backups older than 7 days (never the latest) and of the archived WAL older than the oldest kept backup (`pg_archivecleanup`). On a standby it does nothing. |
 
 The units are in `deploy/dr/systemd` and go to `~/.config/systemd/user` on the
-host; the tools they run are the trusted ones in `/opt/todo/bin`. After a
+host. A host installed with `install.sh` already has `todo-backup.timer` from
+the installer (`app_installer backup nightly`: base backups only, no WAL
+archive); the timer has the same schedule and name, so `configure-backup`
+only swaps its service for `app_backup.py nightly`, which adds the WAL
+archive. A primary that was never promoted keeps the installer's nightly
+backups, and a standby's skip: the primary takes the backups. The DR units run
+the trusted tools in `/opt/todo/bin`. After a
 failover the check fails on the promoted host until `rebuild-standby` gives it
 a standby again, which is what it should report. WAL archiving, and so the
-nightly backup, starts with `configure-backup` after a failover; a primary
-that was never promoted has neither yet (backlog B1 and D2).
+nightly backup with the WAL archive, starts with `configure-backup` after a
+failover; until then a primary has the installer's nightly base backups
+without PITR (backlog D2).
 
 ## Operations package
 

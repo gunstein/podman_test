@@ -2,7 +2,7 @@
 import shutil
 from pathlib import Path
 
-from . import apps, install, secrets, settings, target_render
+from . import apps, backup, install, secrets, settings, target_render
 from .commands import exists, run
 from .quadlet import systemctl
 
@@ -53,15 +53,18 @@ def uninstall(remove_data=False, quadlet_dir=None):
     """Remove a single-host install: units, pods, containers, network and app images.
 
     Refuses on a host with replication, promotion or backup state: that is
-    a DR node and needs a person to decide. Database volumes, TLS volumes and
-    secrets are kept unless remove_data is True, so reinstalling keeps the
+    a DR node and needs a person to decide. The nightly backup timer goes;
+    database volumes, TLS volumes and secrets are kept unless remove_data is
+    True, and backup volumes always, so reinstalling keeps the
     data and passwords. Returns True if anything was removed.
     """
     directory = Path(quadlet_dir or settings.QUADLET_DIR)
     install.require_single_host('uninstall')
     stopped = run('systemctl', '--user', 'stop', *(name + '.service' for name in SERVICES),
                   allowed=(0, 5)).returncode == 0
-    changed = any([unlink(directory / name) for name in QUADLET_FILES]) or stopped
+    # The nightly backup timer goes; the backups themselves stay in their volumes.
+    changed = backup.remove_timer() or stopped
+    changed = any([unlink(directory / name) for name in QUADLET_FILES]) or changed
     runtime = directory / settings.KUBE_RUNTIME
     if runtime.is_symlink():
         runtime.unlink()

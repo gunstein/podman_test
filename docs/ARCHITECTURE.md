@@ -284,8 +284,16 @@ templates, rendered YAML, Git or transcripts. Sensitive transfer tasks use SSH
 and suppress value-bearing output with no_log.
 
 Filesystem ownership, rootless UID mapping and SELinux labels are independent.
-A named volume is persistent storage, not a backup policy. Recovery assumes
-a surviving database node and required credentials.
+A named volume is persistent storage, not a backup policy. Every server
+install therefore backs itself up: `install.sh` turns on `todo-backup.timer`,
+which takes a verified base backup of each database every night inside its
+own container (`pg_basebackup` over the local socket, `pg_verifybackup`) into
+its backup volume and keeps 7 days; `app_installer backup restore` puts the
+latest one back. A DR primary adds the WAL archive and PITR on top
+(`app_backup.py`, which uses the same backup code). The backups are on the same
+VM, so they protect against mistakes and bad data, not against losing it.
+Recovery from a lost VM assumes a surviving database node and required
+credentials.
 
 ## 9. Security boundaries
 

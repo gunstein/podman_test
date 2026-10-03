@@ -46,9 +46,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 5. The rest.
 
 For a single host without DR (`install.sh` only), what matters, in order:
-B1 (backups; today there are none), the nginx part of U2 (the certificate
-expires after 397 days without a restart), a scheduled check for disk space
-and failed units like the DR check (part of B1), and Q3 (security updates, which `install.sh` can roll out). Then U3
+B1 (backups; done in code), the nginx part of U2 (the certificate
+expires after 397 days without a restart), and Q3 (security updates, which `install.sh` can roll out). Then U3
 and L4. F0, S4, E3, E8 and O2 do not change how a single host runs.
 
 The real setup has two machines and no third, on separate hardware at separate
@@ -237,24 +236,19 @@ archiving and a filling disk as a failed unit every 15 minutes, and
 `todo-backup.timer` takes and prunes the primary's base backups every night
 (accepted in run 32; deploy/dr/README.md).
 
-- **B1. Backups on a single host.** *[new]* A host installed with
-  `install.sh` alone has no backup at all: `app_backup.py` and WAL archiving
-  come only with DR (`app-ops install-dr-tool` and `configure-backup`), and
-  the installer treats `/opt/todo/bin/app_backup.py` as a sign of a DR host
-  and then refuses to install or update. A named volume is storage, not a
-  backup (ARCHITECTURE.md): a lost disk, a mistaken delete or a failed update
-  loses the data. Give a single host its own backups without making it a DR
-  host, so `install.sh` keeps working: a nightly full base backup of each
-  database with pruning, from the same kind of systemd timer as the DR
-  nightly backup (`todo-backup.timer`, `app_backup.py nightly`), a scheduled
-  check for disk space and failed units, and a documented restore. Decide
-  whether a single host also archives WAL (PITR to any point, with the same
-  pruning, and M4) or keeps only the
-  nightly backups (restore to last night). Reuse `app_backup.py` where it
-  fits rather than a second implementation. The same gap exists on a DR
-  primary that was never promoted: `configure-backup` requires a promotion
-  record, so that primary has neither WAL archive nor nightly backups until
-  a failover; give it both here or in D2.
+- **B1. Backups on a single host.** *[new]* Done in code; waiting for its
+  acceptance run. Every server install turns on `todo-backup.timer`, which
+  runs `app_installer backup nightly --keep-days 7` from the bundle: a
+  verified base backup of every installed database (`pg_basebackup` inside
+  its container, over the local socket), pruning that keeps 7 days and never
+  the latest, and a failure when less than 10 % of the disk is free. No WAL
+  archive on a single host (decided 2026-10-03): it restores to last night,
+  with `app_installer backup restore --confirm-restore <hostname>`. DR's
+  `app_backup.py` takes its backups with the same code and replaces the
+  timer's service on `configure-backup`; a primary that was never promoted
+  keeps the installer's nightly backups until then. Acceptance phase 3 runs
+  one backup on `.102`, writes a row, restores, and checks that the row is
+  gone and the markers remain.
 - **M3. Regular restore tests.** *[optional]* A backup that was never restored
   is not proven. Run the existing disposable PITR restore on a schedule (for
   example weekly) and compare it with a known point, or document a manual

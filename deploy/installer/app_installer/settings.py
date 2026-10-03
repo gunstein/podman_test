@@ -24,6 +24,8 @@ HTTPS_PORT = 8443
 
 # Default Quadlet directory for a single-host install; DR passes its own.
 QUADLET_DIR = Path.home() / ".config/containers/systemd"
+# User units that are not Quadlets, such as the nightly backup timer.
+SYSTEMD_USER_DIR = Path.home() / ".config/systemd/user"
 
 # The directory next to the Quadlet units that holds the rendered Kube YAML
 # the .kube units point at: QUADLET_DIR / KUBE_RUNTIME.

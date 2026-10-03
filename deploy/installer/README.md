@@ -78,6 +78,18 @@ TLS state, and refuses hosts with replication secrets or DR/backup markers.
 `--remove-data` explicitly removes database data and its credentials, never the
 backup volume.
 
+## Nightly backups
+
+A server install turns on `todo-backup.timer`, which runs
+`python3 -m app_installer backup nightly --keep-days 7` from this installer's
+directory every night: a verified base backup of every installed database,
+taken inside its container into its backup volume, then deletion of those
+older than 7 days (`backup.py`). `backup create` takes one now, and
+`backup restore --confirm-restore <hostname>` puts every database back to its
+latest backup (single host only). Uninstall turns the timer off and keeps the
+backups. The [offline README](../offline/README.md#nightly-backups) has the
+operator's view.
+
 ## Shared workload API
 
 `workloads.install_postgres`, `install_application`, `install_keycloak` and

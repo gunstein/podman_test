@@ -23,7 +23,7 @@ import json
 import re
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -35,6 +35,7 @@ from typing import Callable, Optional, Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from app_dr_host import replication  # noqa: E402
 from app_installer import apps, keycloak, settings, stack  # noqa: E402
+from app_installer import backup as backups  # noqa: E402
 from app_installer.commands import CommandError, run  # noqa: E402
 
 DATA_DIRECTORY = "/var/lib/postgresql/data"
@@ -65,28 +66,11 @@ mkdir -p /backup/base /backup/wal
 chmod 0700 /backup /backup/base /backup/wal
 if $changed; then echo changed; else echo unchanged; fi
 """
-BACKUP_NAME = re.compile(r"base-[0-9]{8}T[0-9]{6}Z")
+BACKUP_NAME = backups.BACKUP_NAME
 RESTORE_POINT = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,62}")
 WAL_SEGMENT = re.compile(r"[0-9A-F]{24}")
 # The line of a base backup's backup_label that names the first WAL file it needs.
 START_WAL = re.compile(r"^START WAL LOCATION: \S+ \(file ([0-9A-F]{24})\)$", re.M)
-# Delete the expired base backups ($2...), then every archived WAL file
-# older than $1, the first WAL file of the oldest backup kept.
-PRUNE_SCRIPT = """
-wal=$1
-shift
-for name do rm -rf -- "/backup/base/$name"; done
-pg_archivecleanup /backup/wal "$wal"
-"""
-
-
-def expired(names: Sequence[str], latest: str, cutoff: str) -> list[str]:
-    """The base backups to delete: older than cutoff (a backup name), never the latest verified one.
-
-    Names sort by time (base-YYYYMMDDTHHMMSSZ), so comparing them compares
-    when they were taken.
-    """
-    return [name for name in sorted(names) if name < cutoff and name != latest]
 
 
 class BackupError(RuntimeError):
@@ -181,114 +165,39 @@ class DatabaseBackup:
         ]
 
     def create_backup(self) -> str:
-        """Take a physical base backup, verify it, mark it as latest, and return its name.
+        """Take a verified base backup of a primary that archives its WAL, and return its name.
 
-        pg_basebackup logs in as the replicator over app-network and writes
-        base-<UTC time> into the backup volume. pg_verifybackup then checks
-        every file against the backup manifest before the backup counts.
+        The backup itself is the single host's (app_installer.backup.create):
+        pg_basebackup inside the database container, pg_verifybackup, then
+        LATEST.
         """
         self.require_writable_primary()
         if self.archive_status().split("|", 1)[0] != "on":
             raise BackupError("archive_mode is not on")
-
-        name = self.clock().strftime("base-%Y%m%dT%H%M%SZ")
-        self._run(
-            [
-                "podman", "run", "--rm",
-                "--network", apps.NETWORK,
-                "--user", "postgres",
-                "--security-opt", "no-new-privileges",
-                "--cap-drop", "all",
-                "--pids-limit", "128",
-                "--volume", f"{self.backup_volume}:/backup:z",
-                "--secret",
-                self.database.secret("replicator") + ",type=env,target=PGPASSWORD",
-                self.image,
-                "pg_basebackup",
-                "--host=" + self.database.container,
-                "--port=5432",
-                "--username=" + self.database.role("replicator"),
-                f"--pgdata=/backup/base/{name}",
-                "--format=plain",
-                "--wal-method=stream",
-                "--checkpoint=fast",
-                "--manifest-checksums=SHA256",
-                "--progress",
-            ],
-            "Physical base backup",
-            timeout=settings.DATA_COPY_TIMEOUT,
-        )
-        self._run(
-            [
-                "podman", "run", "--rm",
-                "--user", "postgres",
-                "--security-opt", "no-new-privileges",
-                "--cap-drop", "all",
-                "--volume", f"{self.backup_volume}:/backup:z",
-                "--entrypoint", "pg_verifybackup",
-                self.image,
-                f"/backup/base/{name}",
-            ],
-            "Base backup verification",
-            timeout=settings.DATA_COPY_TIMEOUT,
-        )
-        self._run(
-            [
-                "podman", "run", "--rm",
-                "--user", "postgres",
-                "--security-opt", "no-new-privileges",
-                "--cap-drop", "all",
-                "--volume", f"{self.backup_volume}:/backup:z",
-                "--entrypoint", "/bin/sh",
-                self.image,
-                "-ec", 'printf "%s\\n" "$1" > /backup/LATEST',
-                self.database.names.resource("backup"), name,
-            ],
-            "Latest backup marker update",
-        )
-        return name
-
-    def _backup_shell(self, script: str, *arguments: str, description: str, writable: bool = False) -> str:
-        """Run a /bin/sh script in a throwaway container with only the backup volume, at /backup."""
-        return self._run(
-            [
-                "podman", "run", "--rm",
-                "--user", "postgres",
-                "--security-opt", "no-new-privileges",
-                "--cap-drop", "all",
-                "--volume", f"{self.backup_volume}:/backup:{'z' if writable else 'ro,z'}",
-                "--entrypoint", "/bin/sh",
-                self.image,
-                "-ec", script,
-                self.database.names.resource("backup"), *arguments,
-            ],
-            description,
-        )
+        return backups.create(self.database, self.clock)
 
     def prune(self, keep_days: int) -> list[str]:
         """Delete the base backups older than keep_days, then the WAL only they needed; return their names.
 
-        The latest verified backup (LATEST) is never deleted, however old it
-        is. pg_archivecleanup, which ships with PostgreSQL, then deletes every
-        archived WAL file older than the first one the oldest kept backup
-        needs, so every kept backup can still be restored to any point after
-        it. Everything is read and checked before the first deletion.
+        The backups go as on a single host (app_installer.backup): never the
+        latest. pg_archivecleanup, which ships with PostgreSQL, then deletes
+        every archived WAL file older than the first one the oldest kept
+        backup needs, so every kept backup can still be restored to any point
+        after it. Everything is read and checked before the first deletion.
         """
-        latest, *names = self._backup_shell("cat /backup/LATEST; ls /backup/base",
-                                            description="Base backup listing").split()
-        names = [name for name in names if BACKUP_NAME.fullmatch(name)]
+        latest, names = backups.listing(self.database)
         if latest not in names:
             raise BackupError(f"The latest verified backup {latest!r} is missing; nothing was deleted")
-        cutoff = (self.clock() - timedelta(days=keep_days)).strftime("base-%Y%m%dT%H%M%SZ")
-        old = expired(names, latest, cutoff)
+        old = backups.expired(names, latest, backups.cutoff(keep_days, self.clock))
         oldest = [name for name in names if name not in old][0]
-        label = self._backup_shell('cat "/backup/base/$1/backup_label"', oldest,
-                                   description=f"{oldest} backup label read")
+        label = backups.in_container(self.database, "cat", f"{backups.BASE}/{oldest}/backup_label",
+                                     description=f"{oldest} backup label read")
         start = START_WAL.search(label)
         if not start:
             raise BackupError(f"{oldest} has no readable START WAL LOCATION; nothing was deleted")
-        self._backup_shell(PRUNE_SCRIPT, start.group(1), *old, description="Expired backup and WAL deletion",
-                           writable=True)
+        backups.delete(self.database, old)
+        backups.in_container(self.database, "pg_archivecleanup", WAL_ARCHIVE, start.group(1),
+                             description=f"{self.database.name}: archived WAL cleanup")
         return old
 
     def _archive_settings(self) -> str:

@@ -354,6 +354,15 @@ class InstallTests(unittest.TestCase):
 
 
 class UninstallTests(unittest.TestCase):
+    def setUp(self):
+        # Uninstall removes the nightly backup timer's units; never the real ones.
+        units = tempfile.TemporaryDirectory()
+        self.addCleanup(units.cleanup)
+        self.units = Path(units.name)
+        patcher = patch.object(settings, 'SYSTEMD_USER_DIR', self.units)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_refuses_dr_secret_before_any_mutation(self):
         with patch('app_installer.install.exists', return_value=True), \
                 patch('app_installer.uninstall.run') as run:
@@ -384,6 +393,20 @@ class UninstallTests(unittest.TestCase):
                 # database volumes and only goes away with --remove-data.
                 self.assertEqual(['podman', 'volume', 'rm', 'todo-nginx-data'] in calls, remove_data)
                 self.assertEqual(['podman', 'volume', 'rm', 'todo-caddy-data'] in calls, remove_data)
+
+    def test_uninstall_turns_the_nightly_backup_off_and_keeps_the_backups(self):
+        for name in ('todo-backup.service', 'todo-backup.timer'):
+            (self.units / name).write_text('[Unit]\n')
+        with tempfile.TemporaryDirectory() as temp, \
+                patch('app_installer.install.exists', return_value=False), \
+                patch('app_installer.uninstall.exists', return_value=False), \
+                patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run, \
+                patch.object(settings, 'DEV_STATE_FILE', Path(temp) / 'dev.json'):
+            self.assertTrue(uninstall.uninstall(quadlet_dir=Path(temp)))
+        self.assertEqual(list(self.units.iterdir()), [])
+        calls = [c.args[0] for c in run.call_args_list]
+        self.assertIn(['systemctl', '--user', 'disable', '--now', 'todo-backup.timer'], calls)
+        self.assertFalse([c for c in calls if c[:3] == ['podman', 'volume', 'rm'] and c[-1].endswith('-backup')])
 
     def test_noop_uninstall_on_an_untouched_host_reports_no_change(self):
         def command(argv, **kwargs):

@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import apps, install, kube_play, settings, target_render, uninstall, workloads
+from . import apps, backup, install, kube_play, settings, target_render, uninstall, workloads
 
 try:  # Jinja2 renders on a build host; an offline host installs without it.
     from jinja2 import TemplateError
@@ -25,6 +25,28 @@ def _details(database):
     return {'name': database.name, 'container': database.container,
             'service': database.service, 'replication_port': database.replication_port,
             'standby_slot': database.replication_slot(), 'rebuilt_slot': database.replication_slot(rebuilt=True)}
+
+
+def backup_command(args):
+    """backup create | nightly | restore; text for the journal, problems as ERROR lines, exit 1 on any."""
+    if args.backup_command == 'create':
+        for database in backup.installed_databases():
+            print(f'{database.name}: verified base backup {backup.create(database)}')
+        return 0
+    if args.backup_command == 'nightly':
+        if args.keep_days < 1:
+            raise ValueError('--keep-days must keep at least one day')
+        lines, problems = backup.nightly(args.keep_days)
+        print('\n'.join(lines))
+        for problem in problems:
+            print(f'ERROR: {problem}', file=sys.stderr)
+        return 1 if problems else 0
+    install.require_single_host('backup restore')
+    restored = backup.restore(args.confirm_restore)
+    for name, chosen in restored.items():
+        print(f'{name}: restored {chosen}')
+    print(json.dumps({'changed': True}))
+    return 0
 
 
 def main(argv=None):
@@ -67,6 +89,13 @@ def main(argv=None):
     remove = subcommands.add_parser('uninstall')
     remove.add_argument('--remove-data', action='store_true')
     remove.add_argument('--quadlet-dir', type=Path)
+    backups = subcommands.add_parser('backup', help='nightly base backups of this host (todo-backup.timer)')
+    backup_commands = backups.add_subparsers(dest='backup_command', required=True)
+    backup_commands.add_parser('create', help='a verified base backup of every installed database')
+    nightly = backup_commands.add_parser('nightly', help='create, then delete backups older than --keep-days')
+    nightly.add_argument('--keep-days', type=int, required=True)
+    restore = backup_commands.add_parser('restore', help='put every database back to its latest backup')
+    restore.add_argument('--confirm-restore', required=True, help="exactly this host's name")
     down = subcommands.add_parser('down')
     down.add_argument('--rendered-manifest-dir', type=Path,
                       default=Path(__file__).resolve().parents[3] / 'generated/dev')
@@ -96,6 +125,8 @@ def main(argv=None):
                       'Keycloak secrets were preserved. Use --remove-data to delete them permanently.',
                       file=sys.stderr)
             print(json.dumps({'changed': changed}))
+        elif args.command == 'backup':
+            return backup_command(args)
         elif args.command == 'down':
             if not kube_play.down(args.rendered_manifest_dir):
                 print('No installed development manifests were found under '

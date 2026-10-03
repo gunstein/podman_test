@@ -133,6 +133,7 @@ class OfflineInstallTests(unittest.TestCase):
         app.write_text(app.read_text() + '# cd $HOME; psql "password=${DATABASE_PASSWORD}" $$ ${target_lower}\n')
         with FakeHost(unit_directory=self.runtime) as host:
             changed, configure = self.install(host)
+            service = (host.units / 'todo-backup.service').read_text()
         self.assertTrue(changed)
         files = self.installed()
         self.assertFalse([name for name, text in files.items() if '${TARGET_' in text])
@@ -156,6 +157,9 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertEqual(oct((self.runtime / 'shared-proxy.yaml').stat().st_mode & 0o777), '0o600')
         self.assertEqual(oct((self.runtime / 'shared-proxy.kube').stat().st_mode & 0o777), '0o644')
         self.assertTrue((self.quadlet / 'app-network.network').is_file())
+        # Every server install backs itself up every night (B1).
+        self.assertIn(f'Environment=PYTHONPATH={TESTS.parent}\n', service)
+        self.assertIn(['systemctl', '--user', 'enable', '--now', 'todo-backup.timer'], host.calls)
 
     def test_a_host_published_only_on_loopback_gets_the_local_only_proxy_unit(self):
         with FakeHost(unit_directory=self.runtime) as host:

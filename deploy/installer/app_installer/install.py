@@ -1,7 +1,7 @@
 """Single-host orchestration; shared workload functions also serve app-ops DR."""
 from pathlib import Path
 
-from . import apps, images, keycloak, quadlet, secrets, settings, target_render, workloads
+from . import apps, backup, images, keycloak, quadlet, secrets, settings, target_render, workloads
 from .commands import exists, run
 
 LEGACY = tuple(app.names.resource(component) for app in apps.APPS
@@ -269,4 +269,6 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     # The hostnames this host now serves, for the next install and the DR tools.
     if target is not None:
         target_render.write_record(target.values)
-    return changed or images_changed or configured
+    # Every server install backs itself up every night (backlog B1).
+    backups_changed = backup.install_timer(Path(__file__).resolve().parents[1])
+    return changed or images_changed or configured or backups_changed

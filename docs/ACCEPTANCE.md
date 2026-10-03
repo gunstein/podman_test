@@ -296,7 +296,7 @@ Stop if an extracted package and its archive identify different revisions.
 
 - **Where:** Initial primary via SSH; client/build host for trust and browser tests; Proxmox node Shell for reboot.
 - **Preconditions:** Phase 2 passed; initial primary identity confirmed; client source IP known.
-- **PASS:** Healthy app/identity/database, trusted HTTPS and real authenticated browser flow; marker/CA survive reboot; repeat preserves definitions, credentials and running containers.
+- **PASS:** Healthy app/identity/database, trusted HTTPS and real authenticated browser flow; marker/CA survive reboot; the nightly backup and a restore from it work; repeat preserves definitions, credentials and running containers.
 - **Evidence:** Installer results, browser results with no skips or TLS bypass, Todo ID/title, CA fingerprint and boot IDs.
 - **STOP if:** Skipped login test, TLS error, missing marker, failed services or non-idempotent repeat.
 
@@ -456,7 +456,17 @@ marker in each app through the UI and record both IDs/titles for replication and
 reboot checks.
 
 Reboot the VM. Repeat the seven-service and nginx configuration checks above;
-verify both markers and unchanged TLS CA fingerprint in `todo-nginx-data`, then rerun
+verify both markers and unchanged TLS CA fingerprint in `todo-nginx-data`.
+
+The install turned on the nightly backup (`todo-backup.timer`). Start
+`todo-backup.service` once and require a verified base backup of todo, notes
+and keycloak in its journal. Then write one Todo row, restore the three
+databases from that backup with
+`PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore todo-primary`
+from the bundle root, and require that the row is gone, every service is
+ready again and both markers remain (they were written before the backup).
+
+Then rerun
 `sh ./install.sh --publish-address 192.168.0.102`. Pass when the second
 deployment preserves the rendered definitions, secret IDs, container IDs and CA.
 Record their before/after values; the Python CLI prints one JSON result.

@@ -191,6 +191,10 @@ Pre-approvals (durable for this run only; every STOP rule still applies):
   [x] Fence VM 107 and promote the standby database group
   [x] Destructive reseed of VM 107's three databases after verified backup/PITR
   [x] Cleanup of the disposable PITR restore containers/volumes
+  [x] One nightly backup run on VM 107 (03-12a) and the restore of VM 107's
+      three databases from it (03-12c), which discards the row written after it
+  [x] One nightly backup run on VM 108 (08-16), which also deletes archived
+      WAL older than the oldest kept base backup
   [x] Store the generated testuser password in a 0600 tmpfs file for this run
 Not approved: anything else destructive, any source change, commit or push,
 and any change on the client outside the run folder (do not stop, start or
@@ -296,8 +300,8 @@ echo "Wrote $dir/pve.env"
    other than `status`, `firewall-cmd` changes, Proxmox power, NIC and firewall
    changes, SQL writes, marker creation and every rehearsal sub-step. It is
    worst for one-shot commands such as `failover`, `rebuild-standby`,
-   snapshot rollback, volume deletion, `app_backup.py restore --replace` and
-   `cleanup-restore`. Inspect state instead (C8). A read-only check is not
+   snapshot rollback, volume deletion, `app_backup.py restore --replace`,
+   `cleanup-restore` and `app_installer backup restore`. Inspect state instead (C8). A read-only check is not
    covered: C8 says when it may be repeated.
 4. **Never** disable or weaken SELinux, fapolicyd, firewalld, SSH host-key
    checking or TLS verification. Never use `curl -k`, `--insecure`,
@@ -678,6 +682,20 @@ $A --step 03-9 check markers 192.168.0.102
 $A --step 03-10 do reboot 107 192.168.0.102 app
 $A --step 03-11 check ca 192.168.0.102
 $A --step 03-12 check markers 192.168.0.102
+```
+
+The single host's nightly backup (B1): `install.sh` turned on
+`todo-backup.timer`. Run it once, write one Todo row after it, restore the
+three databases from that backup, and check that the row is gone while the
+markers, written before the backup, remain:
+
+```bash
+$A --step 03-12a do backup-nightly 192.168.0.102
+vm 03-12b-after-backup 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('written after the nightly backup', false);\""
+vm 03-12c-restore 192.168.0.102 'cd ~/todo-offline-m12 && PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore todo-primary'   # → todo, notes, keycloak restored; {"changed": true}
+vm 03-12d-restored 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"SELECT 1 / (CASE WHEN count(*) = 0 THEN 1 ELSE 0 END) AS row_gone FROM todos WHERE title = 'written after the nightly backup';\""   # division by zero if the row survived
+$A --step 03-12e check services 192.168.0.102 app
+$A --step 03-12f check markers 192.168.0.102
 vm 03-13-install-again 192.168.0.102 'cd ~/todo-offline-m12 && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": false}
 $A --step 03-14 check services 192.168.0.102 app
 ```

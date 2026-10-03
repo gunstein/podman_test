@@ -97,7 +97,7 @@ fapolicyd diagnostics and trust-entry cleanup.
 | `--app NAME` (before the command) | Selects one database; `status`, `create` and `mark` default to all three, restore commands require it |
 | `status` | Reports live role and archive diagnostics |
 | `configure [--journal PATH]` | Always the complete group; checks every database before any change, enables archiving, restarts the application tier at most once and verifies an archived restore point for each changed database. Prints one JSON result |
-| `create` | Requires writable database and archive mode; streams a base backup and verifies its SHA-256 manifest with `pg_verifybackup` |
+| `create` | Requires writable database and archive mode; runs `pg_basebackup` inside the database container over its local socket (the installer's `app_installer.backup.create`, the same as a single host's nightly backup) and verifies its SHA-256 manifest with `pg_verifybackup` before `LATEST` names it |
 | `nightly --keep-days N` | Always the complete group; does nothing on a standby. Otherwise `create` for every database, then deletes base backups older than N days (never the latest) and, with `pg_archivecleanup`, the archived WAL older than the oldest kept backup. Run by `todo-backup.timer` |
 | `mark --name NAME` | Creates a named restore point, switches WAL and waits for the exact segment in the archive |
 | `restore --backup NAME --target POINT` | Copies into fixed disposable resources and pauses recovery at the target; database networking is disabled and backup is mounted read-only |

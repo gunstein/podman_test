@@ -2,6 +2,7 @@
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import yaml
@@ -80,9 +81,10 @@ class PVCStorageTests(unittest.TestCase):
         self.assertEqual(yaml.safe_load(replication.data_claim(apps.SHARED_RESOURCE_OWNER.database, target)), canonical)
 
     def test_uninstall_preserves_database_and_tls_data_by_default_and_never_removes_backup(self):
-        from app_installer import uninstall
+        from app_installer import settings, uninstall
         for remove_data in (False, True):
             with tempfile.TemporaryDirectory() as directory, \
+                    patch.object(settings, "SYSTEMD_USER_DIR", Path(directory) / "units"), \
                     patch("app_installer.install.exists", return_value=False), \
                     patch("app_installer.uninstall.exists",
                           side_effect=lambda kind, name: not name.endswith("-replicator-password")), \

@@ -33,7 +33,7 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 1. First, so a failover does not lose weeks of data: T3 (fencing without the
    Oslo hypervisor, a procedure), M4 (a WAL archive that survives a power
-   loss) and G2 (Trondheim is ready, checked by the DR check timer). When to
+   loss; done in code, waiting for its acceptance run) and G2 (Trondheim is ready, checked by the DR check timer). When to
    start is the owner's call.
 2. The rest of failover to Trondheim within 30 minutes (see the goal below):
    G3 (time it in the drill; with T4 kept as it is, the time includes the
@@ -259,16 +259,14 @@ archiving and a filling disk as a failed unit every 15 minutes, and
   is not proven. Run the existing disposable PITR restore on a schedule (for
   example weekly) and compare it with a known point, or document a manual
   monthly restore test instead.
-- **M4. A durable WAL archive.** *[new]* `ARCHIVE_COMMAND` in `app_backup.py`
-  copies each WAL file with `cp`, which does not fsync. PostgreSQL treats the
-  file as archived as soon as the command returns and may then recycle the
-  original; a power loss right after can lose the copy, which leaves a hole in
-  the archive, and PITR past a hole is impossible. Copy to a temporary name,
-  `sync` that file, then `mv` it into place, keeping the existing checksum
-  check for a file that already exists. The command must stay byte-identical
-  on running hosts, or every run restarts them: roll the new command out
-  deliberately on both hosts, and let acceptance check the archive after a
-  reboot as today.
+- **M4. A durable WAL archive.** *[new]* Done in code; waiting for its
+  acceptance run. `ARCHIVE_COMMAND` copies each WAL file to a temporary name,
+  syncs it, renames it into place and syncs the directory, so a power loss
+  leaves no file (archived again) or a whole one, never a hole; an archived
+  file is still accepted only if identical. `configure` applies a changed
+  command with a reload and verifies it with an archived restore point; only
+  turning `archive_mode` on restarts. Hosts set up before M4 get the new
+  command the next time `configure-backup` runs, without a restart.
 
 ## Logging
 

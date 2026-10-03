@@ -39,10 +39,19 @@ from app_installer.commands import CommandError, run  # noqa: E402
 
 DATA_DIRECTORY = "/var/lib/postgresql/data"
 BACKUP_DIRECTORY = "/var/lib/postgresql/backup"
-# Must stay byte-identical to what running hosts already have, or every run restarts them.
+WAL_ARCHIVE = f"{BACKUP_DIRECTORY}/wal"
+# PostgreSQL runs this with /bin/sh for each finished WAL file (%p, archived
+# as %f) and may delete the original once it exits 0, so the copy must be on
+# disk by then: copy to a temporary name, sync it, rename it into place and
+# sync the directory, so a power loss leaves either no file or a whole one.
+# A file already archived is accepted only if it is identical, never
+# overwritten. psql returns settings separated by "|", so the command must
+# not contain that character. configure() applies a changed command with a
+# reload, not a restart.
 ARCHIVE_COMMAND = (
-    f"test ! -f {BACKUP_DIRECTORY}/wal/%f && cp %p {BACKUP_DIRECTORY}/wal/%f || "
-    f'test "$(sha256sum < %p)" = "$(sha256sum < {BACKUP_DIRECTORY}/wal/%f)"'
+    f'if test -f {WAL_ARCHIVE}/%f; then test "$(sha256sum < %p)" = "$(sha256sum < {WAL_ARCHIVE}/%f)"; '
+    f"else cp %p {WAL_ARCHIVE}/%f.tmp && sync {WAL_ARCHIVE}/%f.tmp && mv {WAL_ARCHIVE}/%f.tmp {WAL_ARCHIVE}/%f "
+    f"&& sync {WAL_ARCHIVE}; fi"
 )
 # One hour caps time-driven growth near 384 MiB/day; mark and configure force a switch.
 ARCHIVE_TIMEOUT = "1h"
@@ -323,8 +332,13 @@ class DatabaseBackup:
         if not source.endswith(f"/{settings.KUBE_RUNTIME}/{self.database.unit}"):
             raise BackupError("Backup configuration refuses to replace a non-Kube PostgreSQL runtime")
 
-    def prepare_archive(self) -> tuple[bool, bool, bool]:
-        """Returns (replication access changed, backup directories changed, restart needed)."""
+    def prepare_archive(self) -> tuple[bool, bool, bool, bool]:
+        """Returns (replication access changed, backup directories changed, settings changed, restart needed).
+
+        Only turning archive_mode on needs a restart. A new archive_command or
+        archive_timeout takes effect on a reload, so changing the command on a
+        host that already archives (as the durable copy did) restarts nothing.
+        """
         access = replication.refresh_hba(self.database)
         directories = self._run(
             [
@@ -335,23 +349,34 @@ class DatabaseBackup:
             ],
             "Private base-backup and WAL directory initialization",
         )
-        if self._archive_settings() == f"on|{ARCHIVE_COMMAND}|{ARCHIVE_TIMEOUT}":
-            return access, directories == "changed", False
+        current = self._archive_settings()
+        if current == f"on|{ARCHIVE_COMMAND}|{ARCHIVE_TIMEOUT}":
+            return access, directories == "changed", False, False
         self._sql(
             "ALTER SYSTEM SET archive_mode = 'on';\n"
             f"ALTER SYSTEM SET archive_command = '{ARCHIVE_COMMAND}';\n"
             f"ALTER SYSTEM SET archive_timeout = '{ARCHIVE_TIMEOUT}';",
             "Continuous WAL archiving configuration",
         )
-        return access, directories == "changed", True
+        restart = current.split("|", 1)[0] != "on"
+        if not restart:
+            self._sql("SELECT pg_reload_conf();", "PostgreSQL configuration reload")
+        return access, directories == "changed", True, restart
 
     def require_configured_archive(self) -> None:
-        """After a restart: wait until healthy, then raise unless the archive settings held."""
+        """After a restart or reload: wait until healthy, then raise unless the archive settings hold.
+
+        A reload is applied a moment after pg_reload_conf() returns, so the
+        settings are read again for up to 30 seconds.
+        """
         self._run(["podman", "wait", "--condition=healthy", self.database.container],
                   "PostgreSQL health wait", timeout=settings.HEALTH_TIMEOUT)
         self.require_writable_primary()
-        if self._archive_settings() != f"on|{ARCHIVE_COMMAND}|{ARCHIVE_TIMEOUT}":
-            raise BackupError("PostgreSQL did not keep the configured archive settings after restart")
+        deadline = self.monotonic() + 30
+        while self._archive_settings() != f"on|{ARCHIVE_COMMAND}|{ARCHIVE_TIMEOUT}":
+            if self.monotonic() >= deadline:
+                raise BackupError("PostgreSQL did not keep the configured archive settings")
+            self.sleeper(1)
 
     def create_restore_point(self, name: str) -> str:
         """Create a named restore point, wait until its WAL is archived, and return its LSN.
@@ -554,17 +579,18 @@ class DatabaseBackup:
 def configure(tools: Sequence[DatabaseBackup], journal: Path) -> dict:
     """Turn on WAL archiving for the complete group, restarting the app tier at most once.
 
-    Every database is checked before the first change. Databases whose
-    settings changed are restarted together, with the application tier
-    stopped meanwhile. Each changed database then archives a restore point,
-    which proves archiving works end to end.
+    Every database is checked before the first change. Databases that did
+    not archive yet are restarted together, with the application tier
+    stopped meanwhile; a database that only gets a new archive command is
+    reloaded. Each changed database then archives a restore point, which
+    proves archiving works end to end with the command now in place.
     """
     try:
         replication.require_promoted_group(journal)
         for tool in tools:
             tool.require_archive_prerequisites()
         prepared = [(tool, *tool.prepare_archive()) for tool in tools]
-        restart = [tool for tool, _access, _directories, needed in prepared if needed]
+        restart = [tool for tool, _access, _directories, _changed, needed in prepared if needed]
         if restart:
             for service in apps.services(databases=False):
                 # Exit 5 means the unit is not loaded, which is as good as stopped.
@@ -582,8 +608,8 @@ def configure(tools: Sequence[DatabaseBackup], journal: Path) -> dict:
             keycloak.wait("/ready", 30, 1, "ready", hostname=app.hostname)
         keycloak.wait("/auth/realms/todo/.well-known/openid-configuration", 90, 2)
         verified = {}
-        for tool, _access, directories, needed in prepared:
-            if directories or needed:
+        for tool, _access, directories, changed, _needed in prepared:
+            if directories or changed:
                 point = f"{tool.database.role('archive_check')}_{tool.clock():%Y%m%d%H%M%S%f}"
                 tool.create_restore_point(point)
                 verified[tool.database.name] = point

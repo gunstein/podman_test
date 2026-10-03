@@ -536,9 +536,11 @@ class ApplicationBackupTests(unittest.TestCase):
 class FakeHost:
     """One promoted host running every registered database, for the configure command."""
 
-    def __init__(self, configured=(), directories_ready=(), mounts=None, source=None, active=True):
+    def __init__(self, configured=(), directories_ready=(), mounts=None, source=None, active=True, previous=None):
         self.databases = {d.container: d for d in app_backup.apps.REPLICATED_DATABASES}
         self.configured = set(configured)
+        # Containers that already archive, with an older archive command.
+        self.previous = previous or {}
         self.directories_ready = set(directories_ready)
         self.mounts = mounts or {}
         self.source = source or {}
@@ -580,6 +582,8 @@ class FakeHost:
             if "current_setting('archive_command')" in sql:
                 if container in self.configured:
                     return completed(f"on|{app_backup.ARCHIVE_COMMAND}|{app_backup.ARCHIVE_TIMEOUT}\n")
+                if container in self.previous:
+                    return completed(f"on|{self.previous[container]}|{app_backup.ARCHIVE_TIMEOUT}\n")
                 return completed("off|(disabled)|0\n")
             if "pg_is_in_recovery" in sql:
                 return completed("f|off\n")
@@ -614,11 +618,76 @@ class ConfigureArchiveTests(unittest.TestCase):
                                   side_effect=lambda path, *a, **k: self.waits.append((path, k.get('hostname')))):
             return app_backup.configure(tools, Path('/journal.json'))
 
-    def test_archive_settings_stay_byte_identical_to_deployed_hosts(self):
-        self.assertEqual(app_backup.ARCHIVE_COMMAND,
-                         'test ! -f /var/lib/postgresql/backup/wal/%f && cp %p /var/lib/postgresql/backup/wal/%f || '
-                         'test "$(sha256sum < %p)" = "$(sha256sum < /var/lib/postgresql/backup/wal/%f)"')
+    def archive(self, archive, wal_name, content, env=None):
+        """Run ARCHIVE_COMMAND with /bin/sh as PostgreSQL does, with the archive at archive; return its exit code."""
+        source = archive.parent / "pg_wal" / wal_name
+        source.parent.mkdir(exist_ok=True)
+        source.write_bytes(content)
+        command = (app_backup.ARCHIVE_COMMAND.replace(app_backup.WAL_ARCHIVE, str(archive))
+                   .replace("%p", str(source)).replace("%f", wal_name))
+        return subprocess.run(["/bin/sh", "-c", command], capture_output=True, env=env).returncode
+
+    def test_the_archive_command_copies_durably_and_never_overwrites(self):
+        import tempfile
+        self.assertNotIn("|", app_backup.ARCHIVE_COMMAND)  # psql separates the settings with "|"
         self.assertEqual(app_backup.ARCHIVE_TIMEOUT, '1h')
+        wal = "000000010000000000000003"
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "wal"
+            archive.mkdir()
+            self.assertEqual(self.archive(archive, wal, b"segment"), 0)
+            self.assertEqual((archive / wal).read_bytes(), b"segment")
+            self.assertEqual([path.name for path in archive.iterdir()], [wal])  # no temporary file left
+            # PostgreSQL may archive the same file again after a crash: identical is fine,
+            # different must fail and leave the archived copy alone.
+            self.assertEqual(self.archive(archive, wal, b"segment"), 0)
+            self.assertNotEqual(self.archive(archive, wal, b"other"), 0)
+            self.assertEqual((archive / wal).read_bytes(), b"segment")
+            # A copy that cannot be synced never shows up under the real name, so
+            # PostgreSQL keeps its original and archives it again later.
+            failing = Path(directory) / "bin"
+            failing.mkdir()
+            (failing / "sync").write_text("#!/bin/sh\nexit 1\n")
+            (failing / "sync").chmod(0o755)
+            import os
+            env = {**os.environ, "PATH": f"{failing}:{os.environ['PATH']}"}
+            self.assertNotEqual(self.archive(archive, "000000010000000000000004", b"next", env), 0)
+            self.assertFalse((archive / "000000010000000000000004").exists())
+
+    def test_the_check_after_a_reload_waits_for_the_new_settings(self):
+        class SlowReload(FakeHost):
+            """Shows the old command for two more reads after the reload, as a busy server can."""
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.stale = 2
+
+            def __call__(self, arguments, timeout=None):
+                sql = arguments[-1] if arguments else ""
+                if "current_setting('archive_command')" in sql and self.configured and self.stale:
+                    self.stale -= 1
+                    return completed("on|old|1h\n")
+                return super().__call__(arguments, timeout)
+
+        host = SlowReload(previous={self.DATABASES[0].container: "old"},
+                          configured={d.container for d in self.DATABASES[1:]},
+                          directories_ready={d.volume('backup') for d in self.DATABASES})
+        self.assertEqual(self.configure(host)['restarted'], [])
+
+    def test_a_host_with_the_old_archive_command_is_reloaded_not_restarted(self):
+        old = ('test ! -f /var/lib/postgresql/backup/wal/%f && cp %p /var/lib/postgresql/backup/wal/%f || '
+               'test "$(sha256sum < %p)" = "$(sha256sum < /var/lib/postgresql/backup/wal/%f)"')
+        host = FakeHost(previous={d.container: old for d in self.DATABASES},
+                        directories_ready={d.volume('backup') for d in self.DATABASES})
+        result = self.configure(host)
+        self.assertEqual(result['changed'], True)
+        self.assertEqual(result['restarted'], [])
+        self.assertEqual(sorted(result['verified']), sorted(d.name for d in self.DATABASES))
+        for verb in ("stop", "restart"):
+            self.assertEqual(host.matching(lambda c, verb=verb: c[:3] == ["systemctl", "--user", verb]), [])
+        reloads = host.matching(lambda c: any('pg_reload_conf' in part for part in c))
+        self.assertEqual(len(reloads), len(self.DATABASES))
+        self.assertLess(host.commands.index(reloads[-1]),
+                        host.index(lambda c: any('pg_create_restore_point' in part for part in c)))
 
     def test_fresh_group_is_gated_first_then_restarted_behind_one_application_tier_stop(self):
         host = FakeHost()

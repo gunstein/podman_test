@@ -57,12 +57,20 @@ It installs `app_backup.py` and runs its `configure` command, which
 covers the complete group. Before it changes anything, it requires a completed
 group promotion and, for every database, an active Kube-native PostgreSQL
 service reporting `f|off`, the replication credential and the PVC backup volume
-mounted read-write at the archive path. It then enables `archive_mode=on` and a
-non-overwriting `archive_command` where they differ. If any database needs a
-restart, it stops the application tier once, restarts only the changed
-databases, rechecks every database and restores the application tier. Each
-changed database is verified by a named restore point whose forced WAL segment
-must reach the archive.
+mounted read-write at the archive path. It then enables `archive_mode=on` and
+the `archive_command` where they differ. If a database did not archive yet, it
+stops the application tier once, restarts only those databases, rechecks every
+database and restores the application tier; a database that only gets a new
+`archive_command` is reloaded, not restarted. Each changed database is
+verified by a named restore point whose forced WAL segment must reach the
+archive.
+
+The `archive_command` never overwrites an archived WAL file (an identical one
+is accepted, a different one fails) and makes each copy durable before
+PostgreSQL may delete the original: it copies to a temporary name, syncs the
+file, renames it into place and syncs the directory. A power loss therefore
+leaves either no file, which PostgreSQL archives again, or a whole one, never
+a hole in the archive that would stop PITR.
 
 The demo defaults to `archive_timeout=1h`. PostgreSQL archives complete 16 MiB
 segments even when a forced early segment switch contains little useful WAL, so
@@ -71,10 +79,12 @@ about 384 MiB per day. The `mark` and `configure` commands still
 force an explicit WAL switch, so drills do not need an aggressive timeout.
 
 The archive remains intentionally non-circular: PostgreSQL must never silently
-discard WAL that belongs to the retained recovery window. After creating and
-verifying a replacement base backup, an operator must explicitly expire older
-base backups and WAL, or copy them to off-host storage. Monitoring free space is
-still required.
+discard WAL that belongs to the retained recovery window. The nightly backup
+(`todo-backup.timer`, `app_backup.py nightly --keep-days 7`) creates and
+verifies a new base backup, and only then deletes the backups older than 7
+days and the WAL older than the oldest kept backup; the scheduled DR check
+watches free space and archive health ([README](README.md#scheduled-check-and-nightly-backup)).
+Copying backups off the host is still the operator's (backlog D2).
 
 It verifies the exact installed trust entry before it returns. See
 [../offline/FAPOLICYD.md](../offline/FAPOLICYD.md) for separate SELinux and
@@ -88,6 +98,7 @@ fapolicyd diagnostics and trust-entry cleanup.
 | `status` | Reports live role and archive diagnostics |
 | `configure [--journal PATH]` | Always the complete group; checks every database before any change, enables archiving, restarts the application tier at most once and verifies an archived restore point for each changed database. Prints one JSON result |
 | `create` | Requires writable database and archive mode; streams a base backup and verifies its SHA-256 manifest with `pg_verifybackup` |
+| `nightly --keep-days N` | Always the complete group; does nothing on a standby. Otherwise `create` for every database, then deletes base backups older than N days (never the latest) and, with `pg_archivecleanup`, the archived WAL older than the oldest kept backup. Run by `todo-backup.timer` |
 | `mark --name NAME` | Creates a named restore point, switches WAL and waits for the exact segment in the archive |
 | `restore --backup NAME --target POINT` | Copies into fixed disposable resources and pauses recovery at the target; database networking is disabled and backup is mounted read-only |
 | `restore-status` | Reports recovery, pause and read-only state |

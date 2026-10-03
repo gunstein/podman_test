@@ -15,9 +15,9 @@ canonical runtime files and their lifecycle contracts.
 ```text
 app-network
   shared-proxy (nginx, one SAN certificate)
-    ├── todo-app  ── todo-postgres (Todo + Keycloak schema)
+    ├── todo-app  ── todo-postgres (Todo only)
     ├── notes-app ── notes-postgres (Notes only)
-    └── keycloak (shared todo realm)
+    └── keycloak (shared todo realm) ── keycloak-postgres (Keycloak only)
 ```
 
 | Pod | User service | Long-running containers |
@@ -26,6 +26,7 @@ app-network
 | `notes-app` | `notes-app.service` | `notes-backend`, `notes-frontend` |
 | `notes-postgres` | `notes-postgres.service` | `notes-postgres` |
 | `keycloak` | `keycloak.service` | `keycloak` |
+| `keycloak-postgres` | `keycloak-postgres.service` | `keycloak-postgres` |
 | `todo-postgres` | `todo-postgres.service` | `todo-postgres` |
 | `shared-proxy` | `shared-proxy.service` | `nginx` |
 
@@ -39,7 +40,7 @@ deploy/manifests/app-config.yaml.j2     shared app backend ConfigMap
 deploy/manifests/keycloak.yaml.j2       shared identity Pod and ConfigMap
 deploy/manifests/shared-proxy.yaml.j2   independent proxy and ConfigMaps
 deploy/environments/{local,prod}/values.yaml  non-secret environment overrides
-deploy/quadlet/*.kube.j2               six shared systemd workload templates
+deploy/quadlet/*.kube.j2               seven systemd workload templates
 deploy/quadlet/app-network.network           shared rootless network
 ```
 
@@ -51,13 +52,16 @@ writes `app.yaml`, `keycloak.yaml`, `postgres.yaml`, `config.yaml` and
 `generated/dev/`; both output directories are ignored by Git. This directory
 contains documentation only.
 
-Packages contain freshly rendered YAML under `generated/kube-runtime/` and the
-same six source Quadlet templates under `deploy/quadlet/`. The Python installer renders the
-target-specific `.kube` files and installs them beside the workload YAML under
-`~/.config/containers/systemd/todo-kube-runtime/`. Targets do not render Kube YAML at all.
-CI compares actual package contents against fresh rendering.
+The offline bundle and the operations package carry every Kube YAML file and
+`.kube` unit already rendered under `generated/target/`, with `${TARGET_*}`
+placeholders for the public hostnames and the host's address, and
+`bundle.json` naming them. The installer and the DR tools fill those values in
+with the standard library (`target_render.py`) and install the files under
+`~/.config/containers/systemd/todo-kube-runtime/`; targets render nothing.
+Build mode renders the same files on the host. CI compares the packages with
+fresh rendering; see [offline delivery](../offline/README.md#target-values).
 
-All six `.kube` units use `--no-pod-prefix`, so the grouped containers keep
+All seven `.kube` units use `--no-pod-prefix`, so the grouped containers keep
 the stable names `todo-backend` and `todo-frontend` while one
 `todo-app.service` owns their shared lifecycle. The separate `shared-proxy.service` owns container `nginx`, terminates TLS using
 `todo-nginx-data`, and routes to `todo-app:8080` (frontend), `todo-app:8000`
@@ -74,21 +78,19 @@ init container is removed after it completes. The migrations are
 idempotent, but database role bootstrap and grants remain separate operational
 steps.
 
-The workloads expect seven externally provisioned Kube-compatible Podman
-secrets:
+The workloads expect eight Kube-compatible Podman secrets, which the
+installer builds from eight raw ones (`secrets.py`):
 
-- `todo-kube-backend-secret`, containing `database-password`;
-- `todo-kube-migrator-secret`, containing the separate migrator
-  `database-password`;
-- `todo-kube-keycloak-secret`, containing `database-password` and
-  `bootstrap-admin-password`;
-- `todo-kube-postgres-secret`, containing `database-password`;
-- `notes-kube-backend-secret`, `notes-kube-migrator-secret` and
-  `notes-kube-postgres-secret`, each containing its own `database-password`.
+- per app, `<app>-kube-postgres-secret`, `<app>-kube-migrator-secret` and
+  `<app>-kube-backend-secret`, each with its own `database-password` (for
+  Todo and Notes);
+- `keycloak-kube-postgres-secret`, the password of Keycloak's own database;
+- `keycloak-kube-admin-secret`, Keycloak's `bootstrap-admin-password`.
 
-Raw credentials are separate for both apps. Shared identity retains the
-`todo-keycloak-*` secret names and Todo database schema; it is not a second
-identity installation. Notes uses `notes_migrator` and `notes_app` DB roles.
+Raw credentials are separate for each app and for Keycloak. Each app has its
+own owner, migrator and runtime database roles (`todo_migrator`, `todo_app`,
+`notes_migrator`, `notes_app`); Keycloak keeps its tables in its own
+`keycloak-postgres`.
 
 Secret values are never stored in manifest templates or rendered YAML. The shared
 Python installer constructs these Kube-compatible objects in memory from
@@ -99,7 +101,9 @@ the host-local raw Podman secrets.
 The core relationship is proxy, app, identity, database, network, persistence and
 external secrets. Replication, WAL archiving, backup, PITR, promotion and
 standby rebuild are a separate operational layer built around that core. It
-acts on one group of three databases: Todo, Notes and Keycloak.
+acts on one group of three databases: Todo, Notes and Keycloak. Every server
+install also takes nightly base backups of them into their backup claims
+([nightly backups](../offline/README.md#nightly-backups)).
 
 Each PostgreSQL workload deliberately carries two resilience details which are
 not required for a basic PostgreSQL Kube workload: the
@@ -126,9 +130,9 @@ The historical per-container migration and rollback tools were retired after
 acceptance of 688a0f6. They remain recoverable from Git history; normal recovery
 uses the active DR runbooks, not runtime-format migration.
 
-Direct development provisions the seven Kube-compatible Podman secrets from
-host-local raw secrets. Install Python 3.9+ and Jinja2 first. Render
-and start the six workloads with:
+Direct development provisions the eight Kube-compatible Podman secrets from
+host-local raw secrets. Install Python 3.9+, Jinja2 and PyYAML first. Render
+and start the seven workloads with:
 
 ```bash
 deploy/scripts/dev/dev-up.sh

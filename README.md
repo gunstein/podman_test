@@ -78,7 +78,9 @@ The deployed baseline requires:
 - Oracle Linux 9 or a compatible Linux host
 - rootless Podman with Quadlet support
 - user systemd and lingering for boot-before-login operation
-- Python 3.9+ with Jinja2 and PyYAML (the Oracle Linux 9 system packages)
+- Python 3.9+ (the Oracle Linux 9 system package); a target installed from the
+  offline bundle needs only the standard library, a DR host also PyYAML, and the
+  build host Jinja2 and PyYAML
 - Bash, `tar` and `sha256sum`
 - configured `/etc/subuid` and `/etc/subgid` ranges
 
@@ -123,6 +125,7 @@ Inspect the running system:
 systemctl --user is-active \
   todo-postgres.service \
   notes-postgres.service \
+  keycloak-postgres.service \
   notes-app.service \
   keycloak.service \
   todo-app.service \
@@ -167,10 +170,18 @@ revision plus clean/dirty build state. SHA-256 provides authenticity only when
 the checksum itself came through a trusted channel. See
 [deploy/offline/README.md](deploy/offline/README.md).
 
+Every server install backs itself up: `todo-backup.timer` takes a verified base
+backup of each database every night and keeps 7 days, and
+`python3 -m app_installer backup restore` puts the latest one back
+([nightly backups](deploy/offline/README.md#nightly-backups)).
+
 ## Two-node operations
 
-These runbooks protect Todo and its shared Keycloak schema. Notes replication,
-backup, promotion and rebuild are a separate follow-up phase.
+These runbooks protect the Todo, Notes and Keycloak databases as one group:
+replication over TLS, fencing, group promotion, application failover, backup
+with point-in-time recovery, and rebuilding the old primary as the new standby.
+On both hosts a scheduled check reports a stopped replication, failing WAL
+archiving or a filling disk as a failed unit.
 
 Build one source-only operations package:
 
@@ -207,10 +218,12 @@ This is a reference demo, not a production deployment baseline.
   synchronization, runtime delivery, rotation and the single-node-loss boundary.
 - [docs/TLS.md](docs/TLS.md) separates the local OpenSSL demo CA from a
   production PKI with pre-provisioned trust and per-node private keys.
-- PostgreSQL replication is SCRAM-authenticated and firewalled but is not
-  TLS-enforced on the trusted lab LAN.
-- The backup volume demonstrates PITR but remains on the same VM; production
-  requires off-host copies, retention, encryption, monitoring and restore tests.
+- PostgreSQL replication is SCRAM-authenticated, firewalled and encrypted with
+  TLS (`verify-full` against a replication CA on the hosts).
+- Nightly backups with 7 days' retention, a WAL archive with PITR on a DR
+  primary, and a scheduled check that reports failures as failed units are in
+  place, but the backups stay on the same VM; production also needs off-host
+  copies, encryption and regular restore tests.
 - Simultaneous loss of both database nodes is outside scope. At least one node
   must survive with the required Podman secrets.
 
@@ -240,8 +253,9 @@ creates or updates `testuser` without storing either password:
 deploy/scripts/dev/run-e2e.sh
 ```
 
-CI runs backend tests, Python and shell lint, nginx runtime smoke tests, and
-the DR tool and safety regressions on Python 3.9 (the Oracle Linux 9 system
+CI runs backend tests, Python and shell lint, a pyright type check, nginx
+runtime smoke tests, the whole stack with the browser tests, and the DR tool
+and safety regressions on Python 3.9 (the Oracle Linux 9 system
 version) and 3.12. Rootless
 systemd, SELinux, `fapolicyd`, Keycloak and destructive DR are verified by the
 manual lab acceptance test.
@@ -265,12 +279,14 @@ manual lab acceptance test.
 
 ## API
 
+Each app's backend answers through its own hostname (`todo.test`, `notes.test`):
+
 - `GET /health`
 - `GET /ready`
-- `GET /api/todos`
-- `POST /api/todos` - authenticated
-- `PUT /api/todos/{id}` - authenticated
-- `DELETE /api/todos/{id}` - authenticated
+- `GET /api/todos`, `GET /api/notes`
+- `POST /api/todos`, `POST /api/notes` - authenticated
+- `PUT /api/todos/{id}`, `PUT /api/notes/{id}` - authenticated
+- `DELETE /api/todos/{id}`, `DELETE /api/notes/{id}` - authenticated
 
 ## License
 

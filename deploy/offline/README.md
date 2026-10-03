@@ -270,7 +270,7 @@ the same YAML rendered with the default hostnames for reading, and the portable 
 with the canonical Quadlet templates.
 Rendering happens only on the build host, from the shared `deploy/manifests/*.yaml.j2` and
 `deploy/quadlet/*.kube.j2` templates. The source checkout's `deploy/runtime`
-contains guides; package YAML is fresh Jinja2 output. Packaging tests compare it to independent rendering.
+contains guides; package YAML is rendered fresh from the templates at build time. Packaging tests compare it to independent rendering.
 
 The operations package contains app-ops, the DR host tools, the same Python
 installer and the same target files and `bundle.json` as the bundle, which the DR tools

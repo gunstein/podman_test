@@ -88,8 +88,10 @@ framework or additional orchestration. PostgreSQL
 and Keycloak have independent lifecycles so app changes do not implicitly
 replace database or identity state. A rebuilt standby runs only PostgreSQL.
 
-The canonical definitions are under `generated/kube-runtime/`, rendered from
-the Jinja2 templates in `deploy/manifests/*.yaml.j2`. Each of the seven pods has
+The definitions are rendered from the Jinja2 templates in
+`deploy/manifests/*.yaml.j2` and `deploy/quadlet/*.kube.j2`: on the build host
+into the packages' `generated/target/`, or by build mode into
+`generated/kube-runtime/`. Each of the seven pods has
 one `.kube` unit and generated user service:
 `shared-proxy.service`, `todo-app.service`, `notes-app.service`,
 `keycloak.service`, `todo-postgres.service`, `notes-postgres.service`,
@@ -110,6 +112,7 @@ This is a tested baseline, not a claim about the capability's minimum version.
 | Kube YAML | Pod contents, init ordering, runtime settings and secret references | Infrastructure fencing or host policy |
 | .kube Quadlet | Binding a workload to user systemd, published ports and dependencies | Database failover decisions |
 | systemd | Service ordering, restart, shutdown and boot behavior | PostgreSQL replication correctness |
+| systemd user timers | The nightly backup (`todo-backup.timer`) and, on DR hosts, the DR check every 15 minutes (`todo-dr-check.timer`); a failure leaves a failed unit | Paging anyone: the failed unit and the journal are the alert |
 | Python installer | Single-host dev/server lifecycle and shared workload installation | DR decisions or remote transport |
 | app-ops | Multi-host DR over plain SSH: transport, security integration and assertions | A separate workload installer |
 | Python tools | Guarded DR, backup and resumable operator stages | A second configuration-management system |
@@ -174,9 +177,11 @@ using one environment values file, then renders Keycloak and shared-proxy once.
 Adding an App entry activates the already-shared template set with no new
 files. Its shared workload functions install files
 and reload systemd; callers retain responsibility for safe stop/start ordering.
-app-ops stages controller-side templates/manifests on the target, calls
-`install-workload`, and reports its change result. Hardened DR targets get the
-Python sources as root-owned copies with exact-file trust.
+app-ops stages the operations package's `bundle.json` and `generated/target`
+files on each host, where `app_dr_host` fills in that host's values and
+installs them with the same workload functions, and reports the change
+result. Hardened DR targets get the Python sources as root-owned copies with
+exact-file trust.
 
 Development uses the same manifest templates with development values and direct
 `podman kube play/down`. Production uses user systemd. These are different
@@ -208,9 +213,10 @@ The network resource is declared in `app-network.network`; its runtime name is
 uses Podman DNS, not host IPs. The production workload supplies the shared
 proxy ConfigMap with DNS upstreams for frontend, backend and Keycloak.
 
-Internal service HTTP and trusted-LAN replication are not universally
-TLS-enforced. The external HTTPS boundary must not be mistaken for encryption
-of every internal flow.
+Replication between the hosts runs over TLS (`hostssl`, `verify-full`
+against a replication CA on the hosts). Internal service HTTP on
+`app-network` is not encrypted: the external HTTPS boundary must not be
+mistaken for encryption of every internal flow.
 
 ## 7. Identity architecture
 
@@ -273,15 +279,16 @@ Backup configuration requires the existing backup volume mounted read-write at
 `/var/lib/postgresql/backup` in active PostgreSQL; helpers still mount it at
 `/backup`. Runtime roles remove obsolete volume Quadlet files from earlier Kube
 installs without deleting named volumes. Uninstall retains tolerant cleanup of
-old definitions: normal uninstall preserves database and backup volumes but
-removes TLS state; `remove_data=true` additionally removes database data.
-The single-host uninstaller continues to refuse DR/backup hosts.
+old definitions: normal uninstall preserves the database, backup and TLS
+volumes and turns off the nightly backup timer; `remove_data=true` also
+removes database data, TLS state, secrets and the recorded hostnames, never
+backups. The single-host uninstaller continues to refuse DR/backup hosts.
 
 The bootstrap/admin, migrator, application, Keycloak and replication
 identities have different jobs. The Python installer constructs Kube-compatible secret
 objects from existing secrets in memory. Secret values do not belong in manifest
-templates, rendered YAML, Git or transcripts. Sensitive transfer tasks use SSH
-and suppress value-bearing output with no_log.
+templates, rendered YAML, Git or transcripts. app-ops moves the replication
+secrets between hosts over SSH on stdin only, never as an argument or in a log.
 
 Filesystem ownership, rootless UID mapping and SELinux labels are independent.
 A named volume is persistent storage, not a backup policy. Every server
@@ -374,8 +381,10 @@ automatic DR step. Machine names stay fixed while roles change.
 
 Base backup plus archived WAL supports a named-point restore into a fixed,
 disposable, network-disabled test database. Live data is never a PITR test
-target. Verified test cleanup removes only disposable resources. Backup
-retention, off-host copying, encryption and alerts remain production work.
+target. Verified test cleanup removes only disposable resources. Retention (7
+days of nightly backups and the WAL they need) and failed-unit alerts are in
+place; off-host copies, encryption and alerts that reach a person remain
+production work.
 
 ## 11. Verification status and production limits
 

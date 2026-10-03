@@ -24,9 +24,9 @@ git switch feature/podman-kube
 
 The build renders the Kubernetes manifests with Jinja2 on the laptop before
 packaging; this needs Python and the `jinja2`/`PyYAML` packages there. The
-target VM's own installer also renders `.kube` units at install time and
-needs the same two packages — [Prepare an Oracle Linux 9 VM](01-PREPARE-VM.md)
-already installs them:
+bundle carries the rendered YAML and `.kube` units; the target VM's installer
+only fills in the host's address and public hostnames with the Python
+standard library, so the VM needs no Jinja2:
 
 ```bash
 deploy/offline/build-bundle.sh
@@ -120,6 +120,13 @@ curl --fail http://127.0.0.1:8080/ready
 ```
 
 All seven services should be active, and the readiness check should succeed.
+
+The install also turns on the nightly backup timer, which takes a verified
+base backup of every database at 02:30 and keeps 7 days:
+
+```bash
+systemctl --user list-timers todo-backup.timer
+```
 
 ## 6. Open Todo from the laptop
 

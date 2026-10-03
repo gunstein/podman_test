@@ -51,8 +51,9 @@ guest unless stated otherwise.
 | `keycloak.service` | Keycloak | Identity has its own startup and health lifecycle |
 | `todo-app.service`, `notes-app.service` | Migration init container, backend, nginx frontend | Migration gates startup; backend and frontend share app lifecycle |
 
-Read `generated/kube-runtime/app.yaml`, `keycloak.yaml`, `postgres.yaml` and their
-`.kube` units; Notes and Keycloak's database use the same templates with
+Read `app.yaml`, `keycloak.yaml`, `postgres.yaml` and their `.kube` units in
+the installed `~/.config/containers/systemd/todo-kube-runtime/` (or a
+temporary render as above); Notes and Keycloak's database use the same templates with
 `notes-` and `keycloak-` prefixed files. A seventh unit, `shared-proxy.service`,
 owns container `nginx` and TLS volume `todo-nginx-data`. It routes over DNS to
 `todo-app:8080`/`notes-app:8080` (frontends), `todo-app:8000`/`notes-app:8000`
@@ -188,6 +189,18 @@ Async replication cannot guarantee receipt of commits never sent to standby.
 Backup/PITR requires a verified base backup and continuous archived WAL.
 The disposable restore has no network and never targets the live volume.
 On-VM backup does not protect against loss of that VM or its host.
+
+Every server install also gets a nightly verified base backup of each
+database from `todo-backup.timer`, with 7 days kept; a single host can restore
+the latest one (`app_installer backup restore --confirm-restore <this host>`), which loses
+everything written since that night because it has no WAL archive. On the DR
+pair, `todo-dr-check.timer` runs `app_dr.py check` every 15 minutes and turns a
+stopped replication, a failing archive or a filling disk into a failed unit.
+
+```bash
+systemctl --user list-timers 'todo-*'
+journalctl --user -u todo-backup.service -u todo-dr-check.service -n 20
+```
 
 For observation on the configured standby / promoted primary respectively:
 

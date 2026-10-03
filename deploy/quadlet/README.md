@@ -1,6 +1,6 @@
 # Shared Quadlet resources and historical reference
 
-This directory contains `app-network.network` and the six canonical `.kube.j2`
+This directory contains `app-network.network` and the seven canonical `.kube.j2`
 templates. The bundle build renders them with Jinja2 into `generated/target/quadlet`,
 which an offline install and the DR tools fill in and install without Jinja2; build
 mode renders the same files on the host. There are no role-local copies.

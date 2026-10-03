@@ -15,7 +15,8 @@ its own `keycloak-postgres` database and the proxy run once. Both apps share the
 `todo` realm but have independent clients and PostgreSQL instances.
 `apps.REPLICATED_DATABASES` (todo, notes, keycloak) is the DR group.
 
-From a checkout or extracted package with OS-managed Jinja2:
+Build mode renders on the host, so it needs OS-managed Jinja2 and PyYAML.
+From a checkout or extracted package:
 
 ```bash
 export PYTHONDONTWRITEBYTECODE=1

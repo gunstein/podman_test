@@ -11,9 +11,9 @@ rebuilds the Todo, Notes and Keycloak databases as one group.
 | `manifests/` | Jinja2 workload templates, one per workload type, shared by every app |
 | `environments/local/values.yaml`, `environments/prod/values.yaml` | Non-secret workload overrides, shared by every workload |
 | `quadlet/` | One source for the network and seven systemd workload templates |
-| `installer/` | Single-host Python installer and shared workload functions |
-| `ops/` | app-ops: guarded DR/backup operations over plain SSH, and their documentation |
-| `scripts/` | Rendering, direct development and operational tools |
+| `installer/` | Single-host Python installer, shared workload functions and nightly backups |
+| `dr/` | app-ops (controller) and app_dr_host (each host): guarded DR/backup operations over plain SSH, the DR and backup tools, their timers (`dr/systemd`) and documentation |
+| `scripts/` | Rendering, direct development, the acceptance lab (`scripts/lab`) and shared tools |
 | `offline/` | OCI bundle builder, installer and offline requirements |
 | `runtime/` | Runtime documentation, not generated manifests |
 
@@ -37,9 +37,12 @@ Workload settings that vary by environment belong in `environments/*/values.yaml
 host and operational settings belong in the app-ops inventory. Settings that never
 vary stay directly in the `.yaml.j2` template. Secrets stay
 outside YAML and Git. Jinja2 renders both the Kube YAML in `manifests/*.yaml.j2`
-and the `.kube.j2` host-integration files; installation only copies the
-already-rendered Kube YAML, without templating it a second time.
-The package needs Python 3.9+ and Jinja2. See [installer usage](installer/README.md).
+and the `.kube.j2` host-integration files on the build host; the packages
+carry them rendered, with `${TARGET_*}` placeholders for the values that vary
+between hosts, which the installer fills in with the standard library alone.
+Building needs Python 3.9+, Jinja2 and PyYAML; an offline target needs only
+Python. See [installer usage](installer/README.md) and
+[offline delivery](offline/README.md#target-values).
 DR uses app-ops for remote transport, replication, backup and rebuild, calling
 the same Python workload functions on each target. Shared infrastructure uses
 `app-network` and `keycloak` consistently, including DR. No old-name runtime is
@@ -47,11 +50,12 @@ maintained.
 
 Rendering defaults to `generated/kube-runtime/` for production and
 `generated/dev/` for development. These ignored build outputs are separate from
-source templates. Rendering produces eight YAML files: Todo app/postgres/config,
-Notes notes-app/notes-postgres/notes-config, keycloak and shared-proxy. Both delivery packages contain rendered YAML and the shared
-Quadlet templates. Only the offline bundle contains OCI image archives. Rebuild
-and distribute both packages together after this layout change: older bundles
-with YAML under `kube/runtime/` do not match these tools.
+source templates. Rendering produces ten YAML files: Todo app/postgres/config,
+Notes notes-app/notes-postgres/notes-config, keycloak, keycloak-postgres,
+keycloak-config and shared-proxy. Both delivery packages carry `bundle.json`
+and the rendered target files (`generated/target`); only the offline bundle
+contains OCI image archives. Build and distribute both packages from the same
+revision: the installer refuses a bundle of another format version.
 
 For DR, write a small YAML inventory with the real host names, roles and
 addresses; see [the app-ops inventory](dr/README.md#inventory).

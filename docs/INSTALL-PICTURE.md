@@ -41,8 +41,9 @@ left and PROD on the right.
                      |                                      |
                      v                                      v
    +----------------------------------+   +----------------------------------+
-   | 2. YAML                          |   | 2. YAML                          |
-   |    render now, local values      |   |    use the bundle's, as built    |
+   | 2. YAML                          |   | 2. YAML + .kube units            |
+   |    render now, local values      |   |    the bundle's, as built; fill  |
+   |                                  |   |    in this host's ${TARGET_*}    |
    +-----------------+----------------+   +-----------------+----------------+
                      |                                      |
                      +------------------+-------------------+
@@ -103,7 +104,9 @@ left and PROD on the right.
                      v                                      v
    +----------------------------------+   +----------------------------------+
    | 9. dev-down.sh knows what to     |   | 9. verify each service runs from |
-   |    stop (saved at start)         |   |    its expected .kube file       |
+   |    stop (saved at start)         |   |    its expected .kube file;      |
+   |                                  |   |    record the hostnames; turn on |
+   |                                  |   |    the nightly backup timer      |
    +-----------------+----------------+   +-----------------+----------------+
                      |                                      |
                      +------------------+-------------------+
@@ -125,12 +128,13 @@ the install again with nothing changed changes nothing.
 | | Development | Production |
 |---|---|---|
 | Start with | `dev-up.sh` | `build-bundle.sh`, then `install.sh` on the host |
-| YAML | Rendered on the machine, `local` values | Rendered on the build machine, `prod` values |
+| YAML | Rendered on the machine, `local` values | Rendered on the build machine, `prod` values; the host's address and public hostnames filled in at install |
 | Images | Built and pulled on the machine | Loaded from the offline bundle |
 | Checks first | Podman only | Checksums, `preflight.sh` and Podman |
 | Pods run by | `podman kube play` directly | Quadlet `.kube` units under user systemd |
 | On a change | Everything is taken down and started again | Only the changed services restart |
 | After a reboot | Nothing starts | systemd starts every pod |
+| Backups | None | A verified base backup of every database each night, 7 days kept |
 
 The build machine does not have to be a particular server or CI system. It
 needs access to the source code, the container images and the other build

@@ -1100,6 +1100,23 @@ def tool_state(entries, name):
     return 'passed' if last['result'] == 'PASS' else f'{last["result"]} ({last["log"]})'
 
 
+def readiness_state(run_directory):
+    """'passed', or why the C1a readiness check is not on record: its last attempt in logs/00-readiness.log.
+
+    Run 21 and run 34 ran the check in the terminal but not into that log,
+    so the run had no record of it and was not clean; the first step now
+    refuses until the log shows a passing attempt.
+    """
+    log = run_directory / 'logs' / '00-readiness.log'
+    if not log.exists():
+        return 'has not run into logs/00-readiness.log'
+    attempt = log.read_text(errors='replace').split('# start ')[-1].splitlines()
+    exits = [line for line in attempt if line.startswith('exit=')]
+    if exits[-1:] != ['exit=0'] or 'READY for the agent run.' not in attempt:
+        return 'did not end with READY for the agent run. and exit=0 in logs/00-readiness.log'
+    return 'passed'
+
+
 def run_step(run_directory, run_id, name):
     """Run the guide line named name if it is the next step and the one before passed; 0 if it passed."""
     steps = guide_lines((ROOT / AGENT_GUIDE).read_text())
@@ -1124,6 +1141,9 @@ def run_step(run_directory, run_id, name):
         following = names[states.index('not run')]
         if name != following:
             raise Refused(f'the next step is {following}, not {name}')
+        if index == 0 and readiness_state(run_directory) != 'passed':
+            raise Refused(f'the readiness check (C1a) {readiness_state(run_directory)}: run it as C1a '
+                          'writes it, before the first step')
         if index and states[index - 1] != 'passed':
             previous = names[index - 1]
             if states[index - 1] == 'running':

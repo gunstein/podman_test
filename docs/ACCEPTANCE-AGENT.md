@@ -230,8 +230,10 @@ Before phase 1, and before anything that changes a VM:
    tree is a STOP.
 2. Set `RUN` as in C9.1 and run the read-only readiness check exactly like
    this, with the kickoff values. It appends every attempt, with its time and
-   exit status, to `logs/00-readiness.log`; the report needs that log (run 21
-   ran the check but not into the log, and was not clean):
+   exit status, to `logs/00-readiness.log`; the report needs that log, and
+   `$A step` refuses the first step of phase 1 until its last attempt ends
+   with `READY for the agent run.` and `exit=0` (runs 21 and 34 ran the check
+   in the terminal only, and were not clean):
 
    ```bash
    { echo "# start $(date --iso-8601=seconds)"; python3 deploy/scripts/lab/acceptance_preflight.py --snapshot clean-agent --revision "$(git rev-parse HEAD)" --primary 192.168.0.102 --standby 192.168.0.108 --primary-vmid 107 --standby-vmid 108 --user gunstein --client-ip 192.168.0.100; echo "exit=$?"; } >> "$RUN/logs/00-readiness.log" 2>&1; tail -n 20 "$RUN/logs/00-readiness.log"

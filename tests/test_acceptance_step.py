@@ -48,6 +48,16 @@ class StepTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
         self.run_directory = self.runs / "r1"
+        self.readiness("# start 2026-10-03T10:00:00+02:00\nPASS  ...\n\nREADY for the agent run.\nexit=0\n")
+
+    def readiness(self, text):
+        """Write logs/00-readiness.log, as the C1a line does; None removes it."""
+        log = self.run_directory / "logs" / "00-readiness.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        if text is None:
+            log.unlink(missing_ok=True)
+        else:
+            log.write_text(text)
 
     def step(self, name):
         output, errors = io.StringIO(), io.StringIO()
@@ -63,6 +73,21 @@ class StepTests(unittest.TestCase):
         acceptance.append_record(self.run_directory, {
             "step": step, "kind": "check", "command": "headers", "arguments": [], "result": result,
             "values": {}, "log": f"logs/{step}-check-headers.log", "approved": ""})
+
+    def test_the_first_step_needs_a_passing_readiness_check_on_record(self):
+        """Run 34 ran the readiness check in the terminal only, and was not clean."""
+        for text, message in ((None, "has not run into logs/00-readiness.log"),
+                              ("# start a\nNOT READY: 2 checks failed.\nexit=1\n", "did not end with READY"),
+                              ("# start a\nREADY for the agent run.\nexit=0\n# start b\nFAIL\nexit=1\n",
+                               "did not end with READY")):
+            with self.subTest(message=message):
+                self.readiness(text)
+                code, output = self.step("01-1-first")
+                self.assertEqual(code, 3)
+                self.assertIn(message, output)
+                self.assertFalse((self.run_directory / "logs" / "01-1-first.log").exists())
+        self.readiness("# start a\nFAIL\nexit=1\n# start b\nREADY for the agent run.\nexit=0\n")
+        self.assertEqual(self.step("01-1-first")[0], 0)
 
     def test_steps_come_from_the_guide_in_its_order(self):
         steps = acceptance.guide_lines(GUIDE)
@@ -105,7 +130,7 @@ class StepTests(unittest.TestCase):
 
     def test_a_refused_step_must_exit_1_and_a_tool_step_must_pass(self):
         logs = self.run_directory / "logs"
-        logs.mkdir(parents=True)
+        logs.mkdir(parents=True, exist_ok=True)
         for name, text in (("01-1-first", "one"), ("01-2-json", '{"changed": true}'), ("01-3-after", "after")):
             (logs / f"{name}.log").write_text(f"# start now\n{text}\nexit=0\n")
         code, output = self.step("02-1-refused")
@@ -118,7 +143,7 @@ class StepTests(unittest.TestCase):
 
     def test_a_failed_check_may_run_once_more_and_then_the_next_step_runs(self):
         logs = self.run_directory / "logs"
-        logs.mkdir(parents=True)
+        logs.mkdir(parents=True, exist_ok=True)
         for name, text in (("01-1-first", "one"), ("01-2-json", '{"changed": true}'), ("01-3-after", "after"),
                            ("02-1-refused", "no")):
             (logs / f"{name}.log").write_text(f"# start now\n{text}\nexit={int(name.endswith('refused'))}\n")
@@ -134,7 +159,7 @@ class StepTests(unittest.TestCase):
 
     def test_a_step_that_is_still_running_holds_the_next_one(self):
         logs = self.run_directory / "logs"
-        logs.mkdir(parents=True)
+        logs.mkdir(parents=True, exist_ok=True)
         (logs / "01-1-first.log").write_text("# start now\n# command: echo one\n")
         code, output = self.step("01-2-json")
         self.assertEqual(code, 3)

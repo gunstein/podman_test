@@ -371,19 +371,23 @@ class RestoreEdgeTests(unittest.TestCase):
         self.assertEqual(self.removals(runner), [["podman", "rm", "--force", tool.restore_container]])
 
     def test_a_failed_cleanup_does_not_hide_why_the_start_failed(self):
-        for removal in (completed(returncode=1, stderr="busy"), subprocess.TimeoutExpired("podman", 30)):
-            class FailingStartAndRemoval(FakeRunner):
-                def __call__(self, arguments, timeout=None):
-                    if arguments[:3] == ["podman", "run", "--detach"]:
-                        return completed(returncode=125, stderr="cannot start")
-                    if arguments[:3] == ["podman", "rm", "--force"]:
-                        if isinstance(removal, Exception):
-                            raise removal
-                        return removal
-                    return super().__call__(arguments, timeout)
+        class FailingStartAndRemoval(FakeRunner):
+            def __init__(self, removal):
+                super().__init__()
+                self.removal = removal
 
+            def __call__(self, arguments, timeout=None):
+                if arguments[:3] == ["podman", "run", "--detach"]:
+                    return completed(returncode=125, stderr="cannot start")
+                if arguments[:3] == ["podman", "rm", "--force"]:
+                    if isinstance(self.removal, Exception):
+                        raise self.removal
+                    return self.removal
+                return super().__call__(arguments, timeout)
+
+        for removal in (completed(returncode=1, stderr="busy"), subprocess.TimeoutExpired("podman", 30)):
             with self.subTest(removal=removal):
-                tool = self.tool(FailingStartAndRemoval())
+                tool = self.tool(FailingStartAndRemoval(removal))
                 with self.assertRaisesRegex(
                         app_backup.BackupError,
                         r"Disposable PITR container start failed \(exit 125\): cannot start; removing "
@@ -645,7 +649,7 @@ class ConfigureArchiveTests(unittest.TestCase):
         result = self.configure(host)
         self.assertEqual(result, {'changed': False, 'restarted': [], 'verified': {}})
         for verb in ("stop", "restart"):
-            self.assertEqual(host.matching(lambda c: c[:3] == ["systemctl", "--user", verb]), [])
+            self.assertEqual(host.matching(lambda c, verb=verb: c[:3] == ["systemctl", "--user", verb]), [])
         self.assertFalse(host.matching(lambda c: any('ALTER SYSTEM' in part or 'pg_switch_wal' in part
                                                      for part in c)))
         self.assertTrue(host.matching(lambda c: c == ["systemctl", "--user", "start", "shared-proxy.service"]))

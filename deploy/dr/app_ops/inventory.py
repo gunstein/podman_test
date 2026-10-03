@@ -40,6 +40,8 @@ def load(path, roles):
         if not isinstance(name, str) or not NAME.fullmatch(name) or not isinstance(entry, dict):
             raise ValueError(f'{path}: invalid host entry {name!r}')
         role = entry.get('role')
+        if not isinstance(role, str):
+            raise ValueError(f'{path}: host {name} has no role')
         if role in hosts:
             raise ValueError(f'{path}: more than one host has role {role}')
         hosts[role] = HostSpec(

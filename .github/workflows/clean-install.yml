@@ -76,10 +76,15 @@ jobs:
           python-version: "3.12"
 
       - name: Install pinned script tooling
-        run: python -m pip install "ruff==0.16.5" "shellcheck-py==0.11.0.1" "PyYAML==6.0.3" jinja2
+        run: python -m pip install "ruff==0.16.5" "pyright==1.1.414" "shellcheck-py==0.11.0.1" "PyYAML==6.0.3" jinja2
 
       - name: Lint Python
         run: ruff check todo-backend notes-backend e2e deploy/scripts deploy/installer deploy/dr tests
+
+      # Calls with the wrong arguments across modules, which ruff (one file at a
+      # time) cannot see; the scope and basic mode are in pyrightconfig.json.
+      - name: Type-check the installer, DR and scripts
+        run: pyright
 
       - name: Test frontend authentication adapter and marker helper in Chromium
         run: |
@@ -160,26 +165,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PYTHONPATH=deploy/dr python - <<'PY'
-          from app_ops import failover, inventory
-          from app_ops.steps import apps
-          from app_ops.transport import Host
-
-          host = Host(inventory.HostSpec(name="ci", role="current_primary", address="127.0.0.1",
-                                         user="runner", home="/home/runner", local=True))
-          # The build-mode install serves the registry's hostnames.
-          failover.login_page(host, {app.name: app.hostname for app in apps.APPS})
-          # A redirect Keycloak does not know must be refused, or the check proves nothing.
-          query = failover.urlencode({"client_id": "todo-frontend", "redirect_uri": "https://evil.test/",
-                                      "response_type": "code", "scope": "openid",
-                                      "code_challenge": failover.PKCE_CHALLENGE, "code_challenge_method": "S256"})
-          try:
-              page = failover.https(host, "todo.test", "/auth/realms/todo/protocol/openid-connect/auth?" + query)
-          except RuntimeError:
-              page = ""
-          assert 'id="username"' not in page, "Keycloak showed its login form for an unknown redirect"
-          print("login-page check passed against the real stack")
-          PY
+          PYTHONPATH=deploy/installer:deploy/dr python deploy/scripts/dev/check_failover_login_page.py
 
       - name: Browser tests through nginx with a real Keycloak login
         shell: bash

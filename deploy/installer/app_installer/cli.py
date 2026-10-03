@@ -6,11 +6,11 @@ from pathlib import Path
 
 from . import apps, install, kube_play, settings, target_render, uninstall, workloads
 
-try:  # Jinja2 renders on build and DR hosts; an offline host installs without it.
+try:  # Jinja2 renders on a build host; an offline host installs without it.
     from jinja2 import TemplateError
+    RENDER_ERRORS: tuple = (TemplateError,)
 except ImportError:
-    class TemplateError(Exception):
-        """Stands in for jinja2.TemplateError where Jinja2 is not installed."""
+    RENDER_ERRORS = ()
 
 
 def paths(parser):
@@ -133,7 +133,7 @@ def main(argv=None):
                 changed = workloads.install_keycloak(
                     args.project_root, directory, runtime, manifests) or changed
             print(json.dumps({'changed': changed}))
-    except (OSError, RuntimeError, ValueError, KeyError, TemplateError) as error:
+    except (OSError, RuntimeError, ValueError, KeyError, *RENDER_ERRORS) as error:
         print(f'app-installer: {error}', file=sys.stderr)
         return 1
     return 0

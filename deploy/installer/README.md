@@ -118,6 +118,15 @@ python3 -m unittest discover --start-directory deploy/dr/tests
 python3 -m unittest discover --start-directory tests
 ```
 
+CI also lints with ruff (`ruff.toml`) and type-checks with pyright in basic
+mode (`pyrightconfig.json`, Jinja2 and PyYAML installed); both run the same
+way locally, from the repository root:
+
+```bash
+ruff check todo-backend notes-backend e2e deploy/scripts deploy/installer deploy/dr tests
+pyright
+```
+
 Most tests mock only runtime commands and use scratch directories. Project
 tests run app-ops against fake hosts, verify repeat change facts, and
 build/examine both delivery archives. Real multi-app dev/server, offline loading, persistence, trusted browser SSO and

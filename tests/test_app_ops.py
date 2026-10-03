@@ -129,6 +129,11 @@ class InventoryTests(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 self.load(text)
 
+    def test_a_host_without_a_role_is_named(self):
+        with self.assertRaisesRegex(ValueError, "host b has no role"):
+            self.load("user: ops\nhosts:\n  a: {role: primary, address: 192.0.2.10}\n"
+                      "  b: {address: 192.0.2.11}\n")
+
 
 class QuarantineToolTests(unittest.TestCase):
     def install(self, runner, **options):

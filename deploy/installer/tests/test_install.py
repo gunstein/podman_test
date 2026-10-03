@@ -443,7 +443,7 @@ class FailureBoundaryTests(unittest.TestCase):
                        '/opt/todo/bin/todo_dr.py', '/opt/todo/bin/todo_backup.py'):
             with patch('app_installer.install.exists', return_value=False), \
                     patch.object(Path, 'exists', autospec=True,
-                                 side_effect=lambda p: str(p).endswith(marker)), \
+                                 side_effect=lambda p, marker=marker: str(p).endswith(marker)), \
                     patch('app_installer.uninstall.run') as run:
                 with self.assertRaisesRegex(RuntimeError, 'single-host deployment'):
                     uninstall.uninstall()

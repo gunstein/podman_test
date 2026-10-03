@@ -89,7 +89,7 @@ def main(argv=None):
     try:
         if args.command == 'replicate-workload':
             database = next(d for d in apps.REPLICATED_DATABASES if d.name == args.app)
-            result = {'changed': False}
+            result: dict = {'changed': False}
             if args.operation == 'primary':
                 result['changed'] = replication.configure_primary(database, args.node_address)
             elif args.operation in ('standby', 'reseed-check'):

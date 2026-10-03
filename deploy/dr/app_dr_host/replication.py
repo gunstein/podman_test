@@ -54,7 +54,7 @@ def address(value):
 
 
 def sql(database, statement, *, container=None, description=None,
-        timeout=settings.COMMAND_TIMEOUT, secret_output=False, allowed=(0,)):
+        timeout: float = settings.COMMAND_TIMEOUT, secret_output=False, allowed=(0,)):
     """Run SQL with psql in the database's postgres database; the one way DR code runs SQL.
 
     The statement goes on stdin, never in argv. Fields come back separated by
@@ -92,7 +92,7 @@ def unreplayed_bytes(receive_lsn, replay_lsn):
     return max(0, lsn(receive_lsn) - lsn(replay_lsn))
 
 
-def status(database, query=None):
+def status(database, query=None) -> dict:
     """Report whether the database is a standby, and how far it has replayed WAL.
 
     Returns in_recovery, transaction_read_only, the received and replayed LSNs
@@ -112,7 +112,7 @@ def status(database, query=None):
                 receive_lsn=fields[2], replay_lsn=fields[3], apply_lag_bytes=lag)
 
 
-def require_primary(database, query=None):
+def require_primary(database, query=None) -> dict:
     """Return status() if the database is a writable primary, else raise."""
     state = status(database, query)
     if state['in_recovery'] or state['transaction_read_only']:
@@ -120,7 +120,7 @@ def require_primary(database, query=None):
     return state
 
 
-def require_standby(database, query=None):
+def require_standby(database, query=None) -> dict:
     """Return status() if the database is a read-only standby with all received WAL replayed.
 
     Promotion calls this first: a standby that has not replayed everything it

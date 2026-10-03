@@ -32,7 +32,8 @@ def request(path, method='GET', data=None, token=None, form=False, hostname=None
 
     hostname sets the Host header, which picks the app's virtual host.
     Raises unless the status is the one Keycloak's admin API returns on
-    success: 204 for PUT, 201 for creating a client, else 200.
+    success: 204 for PUT, 201 for creating a client, else 200. Those two
+    have no body, so they return an empty dict.
     """
     headers = {'Host': hostname} if hostname else {}
     body = None
@@ -48,7 +49,7 @@ def request(path, method='GET', data=None, token=None, form=False, hostname=None
                     201 if method == 'POST' and path.endswith('/clients') else 200)
         if response.status != expected:
             raise RuntimeError(f'Unexpected HTTP status {response.status} for {path}')
-        return json.load(response) if response.status == 200 else None
+        return json.load(response) if response.status == 200 else {}
 
 
 def wait(path, attempts, delay, status=None, hostname=None):

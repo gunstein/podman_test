@@ -24,6 +24,7 @@ import sys
 import tempfile
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
+from functools import partial
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence
 
@@ -100,7 +101,7 @@ def parse_config(raw: dict, source: Path) -> Config:
         if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
             raise ValueError('applications must be a list of registered names')
         config = Config(str(raw['primary_name']), str(raw['primary_address']), str(raw['standby_name']),
-                        int(raw.get('rpo_target_seconds', raw.get('rpo_seconds'))), tuple(names))
+                        int(raw['rpo_target_seconds'] if 'rpo_target_seconds' in raw else raw['rpo_seconds']), tuple(names))
     except (AttributeError, KeyError, TypeError, ValueError) as error:
         raise DrError(f'Cannot read valid DR configuration from {source}: {error}') from error
     if not all((config.primary_name, config.primary_address, config.standby_name)):
@@ -295,8 +296,8 @@ class StandbyGroup:
             self._record(decision)  # Durable decision before any irreversible operation.
             try:
                 for database in self.databases:
-                    replication.promote(database, query=self._query, command=lambda *argv: run(
-                        *argv, timeout=TIMEOUT, description=f'{database.name}: PostgreSQL promotion'))
+                    replication.promote(database, query=self._query, command=partial(
+                        run, timeout=TIMEOUT, description=f'{database.name}: PostgreSQL promotion'))
                     decision['completed'].append(database.name)
                     self._record(decision)
                 result = {database.name: self.database_status(database) for database in self.databases}

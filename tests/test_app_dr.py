@@ -298,7 +298,7 @@ class GroupPromotionTests(unittest.TestCase):
             tool = self.tool()
             original = self.runner
 
-            def failed(arguments, timeout=None):
+            def failed(arguments, timeout=None, failure=failure, original=original):
                 if failure == 'service' and 'notes-postgres.service' in arguments:
                     return completed('inactive')
                 if failure == 'health' and arguments[:2] == ['podman', 'inspect'] and 'notes-postgres' in arguments:

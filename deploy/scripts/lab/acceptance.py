@@ -559,7 +559,7 @@ def do_markers(step, phase):
     title = f'acceptance {step.run_directory.name} {phase}'
     result = step.run([PYTHON, ROOT / 'e2e/create_markers.py'], env=password_environment(MARKER=title), timeout=300)
     match = re.search(re.escape(repr(title)) + r': todo id=(\d+) note id=(\d+)', result.stdout)
-    if step.expect(result.returncode == 0 and match is not None, f'markers "{title}" created'):
+    if step.expect(result.returncode == 0 and match is not None, f'markers "{title}" created') and match:
         step.values.update(title=title, todo_id=int(match.group(1)), note_id=int(match.group(2)))
 
 

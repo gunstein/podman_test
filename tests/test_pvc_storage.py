@@ -47,7 +47,7 @@ class PVCStorageTests(unittest.TestCase):
                     self.assertFalse(mount.get("readOnly", False))
                     resolved[claim] = mount["mountPath"]
             self.assertEqual(resolved, {name: path for name, (path, uid) in expected.items()})
-            for name, (path, uid) in expected.items():
+            for name, (_path, uid) in expected.items():
                 self.assertEqual(claims[name]["metadata"]["annotations"], {
                     "volume.podman.io/uid": str(uid), "volume.podman.io/gid": str(uid),
                 })

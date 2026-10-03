@@ -16,6 +16,11 @@ from app_installer import apps  # noqa: E402
 from app_installer.target_render import PUBLISH_ADDRESS  # noqa: E402
 
 
+def recorder(order, name):
+    """A fake that only appends name to order when it is called."""
+    return lambda *args, **kwargs: order.append(name)
+
+
 class ReplicationTests(unittest.TestCase):
     def test_registry_replicates_each_independent_database(self):
         self.assertEqual([app.name for app in apps.APPS], ['todo', 'notes'])
@@ -212,14 +217,11 @@ class ReplicationTests(unittest.TestCase):
     def test_confirmed_reseed_orders_checks_before_cleanup_before_deletion(self):
         for app in [a.database for a in apps.APPS]:
             order = []
-            with patch.object(replication, 'reseed_check',
-                              side_effect=lambda *a, **k: order.append('check')) as gate, \
-                    patch.object(replication, 'authenticate',
-                                side_effect=lambda *a: order.append('authenticate')) as auth, \
+            with patch.object(replication, 'reseed_check', side_effect=recorder(order, 'check')) as gate, \
+                    patch.object(replication, 'authenticate', side_effect=recorder(order, 'authenticate')) as auth, \
                     patch.object(replication, 'remove_exited_containers_using',
-                                side_effect=lambda *a: order.append('cleanup')) as cleanup, \
-                    patch.object(replication, 'run',
-                                side_effect=lambda *a, **k: order.append('run')) as run, \
+                                side_effect=recorder(order, 'cleanup')) as cleanup, \
+                    patch.object(replication, 'run', side_effect=recorder(order, 'run')) as run, \
                     patch.object(replication, 'bootstrap_standby', return_value=True) as bootstrap:
                 self.assertTrue(replication.reseed_standby(app, '192.0.2.51',
                     confirm_fenced='old is fenced', confirm_reseed='old', project_root='/source'))

@@ -11,7 +11,7 @@ class CommandError(RuntimeError):
     """A command failed, ran out of time, or could not start (not installed, no permission)."""
 
 
-def run(*argv, input=None, allowed=(0,), timeout=settings.COMMAND_TIMEOUT, description=None,
+def run(*argv, input=None, allowed=(0,), timeout: float = settings.COMMAND_TIMEOUT, description=None,
         secret_output=False):
     """Run a command, capture its output, and raise CommandError unless its exit code is in allowed.
 

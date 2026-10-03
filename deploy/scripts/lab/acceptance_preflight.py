@@ -250,7 +250,7 @@ def _ssh(args, address):
 
 def main(argv=None):
     """Run every check and print READY or NOT READY; exit code 1 if anything FAILed."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or '').splitlines()[0])
     parser.add_argument('--primary', default='192.168.0.102')
     parser.add_argument('--standby', default='192.168.0.108')
     parser.add_argument('--primary-vmid', default='107')

@@ -507,6 +507,11 @@ while DR is degraded, as after the failover until the rebuild, and
 
   Use it only as `E2E_PASSWORD="$(cat "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password")"`
   inside a subshell. Delete the file at the end of the run.
+  `$XDG_RUNTIME_DIR` is outside the checkout: an agent tool that sandboxes
+  writes to the working directory shows it as read-only, which is the
+  sandbox, not the client. Ask in the C1a request for write access to
+  `$XDG_RUNTIME_DIR/todo-acceptance` for the whole run. If your tool refuses
+  `rm -f`, any other way to delete the file is fine; confirm it is gone.
 - Keycloak admin password: never leaves process memory on the client. Read it
   over SSH directly into an environment variable inside one subshell
   (`SERVING_IP` is the current serving host):

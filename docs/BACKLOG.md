@@ -32,7 +32,7 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 ## Order
 
 1. First, so a failover does not lose weeks of data: T3 (fencing without the
-   Oslo hypervisor, a procedure) and G2 (Trondheim is ready, checked by the DR check timer). When to
+   Oslo hypervisor, a procedure) and G2 (Trondheim is ready, checked by the DR check timer; done in code, waiting for its acceptance run). When to
    start is the owner's call.
 2. The rest of failover to Trondheim within 30 minutes (see the goal below):
    G3 (time it in the drill; with T4 kept as it is, the time includes the
@@ -70,10 +70,15 @@ such as a small cloud VM. Without one, the safe design is one human decision
 ("Oslo is lost", T3), after which one command, `app-ops failover`, does the
 rest (accepted in runs 18-22).
 
-- **G2. Trondheim is ready to take over.** *[new]* Part of the scheduled
-  check (`app_dr.py check`, `todo-dr-check.timer`): the same bundle and operations package revision as Oslo, every
-  DR secret and the shared CA (T4) synchronised, the recovery inventory in
-  place, and enough disk. A missing piece found during a fire is found too late.
+- **G2. Trondheim is ready to take over.** *[new]* Done in code; waiting for
+  its acceptance run. `app_dr.py check` (`todo-dr-check.timer`, both hosts)
+  also requires the offline bundle of the revision of the operations package
+  that ran `install-dr-tool` (recorded in the DR settings), every image
+  archive the bundle lists, every DR secret including the replication CA, and
+  10 % free disk; a ready host prints `Ready to take over: ...`, which
+  `check monitor ... ok` requires. Not part of it: the shared nginx CA (T4,
+  not built), and the recovery inventory, which the operator writes at
+  failover time with the surviving host as `local: true` (O1 says how).
 - **G3. Time the failover in the drill.** *[new]* Acceptance measures the time
   from "Oslo declared lost" to "users log in in Trondheim", and requires under
   30 minutes. The goal is then shown, not only that failover works.

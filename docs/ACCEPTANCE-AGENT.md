@@ -763,7 +763,7 @@ ops 05-4-install-quarantine-tool 192.168.0.102 '--inventory initial.yaml install
 ops 05-5-install-quarantine-tool-again 192.168.0.102 '--inventory initial.yaml install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint'  # → {"changed": false}
 $A --step 05-6 check quarantine-ready 107 todo-primary
 $A --step 05-7 do quarantine-profile 107 192.168.0.100 192.168.0.108
-$A --step 05-7a check monitor 192.168.0.102 ok     # install-dr-tool turned the DR check timer on on both hosts
+$A --step 05-7a check monitor 192.168.0.102 ok     # install-dr-tool turned the DR check timer on on both hosts; each is ready to take over
 $A --step 05-7b check monitor 192.168.0.108 ok
 ```
 

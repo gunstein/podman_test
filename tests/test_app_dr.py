@@ -410,10 +410,82 @@ class CheckTests(unittest.TestCase):
         self.assertIn("notes: primary", printed)
         self.assertIn("ERROR: todo: no standby streams", errors)
 
-    def test_the_check_needs_no_dr_settings(self):
+    def test_without_dr_settings_the_check_still_reports_replication_and_fails(self):
         CheckHost(self, todo={}, notes={}, keycloak={})
-        with mock.patch.object(app_dr.shutil, "disk_usage", return_value=self.DISK), mock.patch("sys.stdout"):
-            self.assertEqual(app_dr.main(["--config", "/nonexistent/todo-dr.json", "check"]), 0)
+        with mock.patch.object(app_dr.shutil, "disk_usage", return_value=self.DISK), \
+                mock.patch("sys.stdout") as stdout, mock.patch("sys.stderr") as stderr:
+            self.assertEqual(app_dr.main(["--config", "/nonexistent/todo-dr.json", "check"]), 1)
+        self.assertIn("todo: primary", "".join(call.args[0] for call in stdout.write.call_args_list))
+        self.assertIn("ERROR: Cannot read valid DR configuration from /nonexistent/todo-dr.json",
+                      "".join(call.args[0] for call in stderr.write.call_args_list))
+
+    def test_a_ready_host_passes_the_whole_check(self):
+        CheckHost(self, todo={}, notes={}, keycloak={})
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = ReadinessTests.bundle(Path(directory))
+            config = Path(directory) / "todo-dr.json"
+            app_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 30, "a" * 40, str(bundle))
+            with mock.patch.object(app_dr.shutil, "disk_usage", return_value=self.DISK), \
+                    mock.patch.object(app_dr, "secret_exists", return_value=True), \
+                    mock.patch("sys.stdout") as stdout:
+                self.assertEqual(app_dr.main(["--config", str(config), "check"]), 0)
+        self.assertIn("Ready to take over: offline bundle aaaaaaaaaaaa with 2 image archives",
+                      "".join(call.args[0] for call in stdout.write.call_args_list))
+
+
+class ReadinessTests(unittest.TestCase):
+    """app_dr.readiness: could this host take over now? Files and Podman secrets only."""
+
+    REVISION = "a" * 40
+
+    @staticmethod
+    def bundle(directory, revision="a" * 40, archives=("images/postgres-17.11.tar", "images/keycloak-m12.tar")):
+        bundle = directory / "todo-offline-m12"
+        (bundle / "images").mkdir(parents=True)
+        (bundle / "VERSION").write_text(f"package=todo-offline-m12\nsource_revision={revision}\nsource_state=clean\n")
+        (bundle / "SHA256SUMS").write_text("".join(f"{'0' * 64}  ./{name}\n" for name in archives)
+                                           + f"{'0' * 64}  ./install.sh\n")
+        for name in archives:
+            (bundle / name).write_bytes(b"archive")
+        return bundle
+
+    def readiness(self, bundle, revision=REVISION, missing=()):
+        config = app_dr.Config("todo-primary", "192.0.2.10", "todo-standby", 30, (), revision, str(bundle))
+        return app_dr.readiness(config, exists=lambda name: name not in missing)
+
+    def test_a_host_with_the_bundle_and_every_secret_is_ready(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lines, problems = self.readiness(self.bundle(Path(directory)))
+        self.assertEqual(problems, [])
+        names = app_dr.transfer.transfer_names()
+        self.assertIn("replication-ca-key", names)
+        self.assertEqual(lines, [f"Ready to take over: offline bundle aaaaaaaaaaaa with 2 image archives, "
+                                 f"all {len(names)} DR secrets"])
+
+    def test_every_missing_piece_is_named(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = self.bundle(Path(directory), revision="b" * 40)
+            (bundle / "images/keycloak-m12.tar").unlink()
+            lines, problems = self.readiness(bundle, missing=("notes-replicator-password", "replication-ca-cert"))
+        self.assertEqual(lines, [])
+        self.assertEqual(len(problems), 3, problems)
+        self.assertIn(f"is revision {'b' * 40}, but the DR tool was installed from {self.REVISION}", problems[0])
+        self.assertIn("lacks image archives: ./images/keycloak-m12.tar", problems[1])
+        self.assertEqual(problems[2], "DR secrets missing on this host: notes-replicator-password, "
+                                      "replication-ca-cert")
+
+    def test_no_bundle_or_no_settings_for_it_is_a_problem(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _lines, problems = self.readiness(Path(directory) / "missing")
+            self.assertIn("no complete offline bundle at", problems[0])
+            config = app_dr.Config("todo-primary", "192.0.2.10", "todo-standby", 30)
+            _lines, problems = app_dr.readiness(config, exists=lambda name: True)
+            self.assertEqual(problems, ["the DR settings name no offline bundle: run app-ops install-dr-tool again"])
+
+    def test_a_checkout_without_a_revision_checks_everything_else(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _lines, problems = self.readiness(self.bundle(Path(directory), revision="c" * 40), revision="")
+        self.assertEqual(problems, [])
 
 
 class ConfigureTests(unittest.TestCase):
@@ -446,6 +518,10 @@ class ConfigureTests(unittest.TestCase):
             self.assertFalse(app_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 30))
             self.assertTrue(app_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 60))
             self.assertEqual(app_dr.load_config(config).rpo_target_seconds, 60)
+            self.assertTrue(app_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 60,
+                                                "a" * 40, "/home/u/todo-offline-m12"))
+            loaded = app_dr.load_config(config)
+            self.assertEqual((loaded.revision, loaded.bundle), ("a" * 40, "/home/u/todo-offline-m12"))
 
     def test_invalid_values_are_refused_without_writing(self):
         with tempfile.TemporaryDirectory() as directory:

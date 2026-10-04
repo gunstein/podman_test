@@ -27,6 +27,16 @@ def paths(host):
             'bundle': host.spec.bundle or f'{home}/todo-offline-{settings.IMAGE_TAG}'}
 
 
+def package_revision(project_root):
+    """The Git revision in the operations package's VERSION file; '' when app-ops runs from a checkout."""
+    try:
+        lines = (Path(project_root) / 'VERSION').read_text().splitlines()
+    except OSError:
+        return ''
+    revision = next((line.split('=', 1)[1] for line in lines if line.startswith('source_revision=')), '')
+    return '' if revision == 'unknown' else revision
+
+
 def promotion_record(host):
     """The path of the promotion record on host, which app_dr.py writes when it promotes."""
     return f'{paths(host)["config"]}/{settings.PROMOTION_RECORD}'

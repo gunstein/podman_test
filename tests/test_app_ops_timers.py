@@ -143,6 +143,24 @@ class WhereTheTimersGoTests(unittest.TestCase):
         standby.install_dr_tools(str(self.commands.PROJECT), controller, primary, other)
         self.assertEqual(self.enabled(world), [("todo-primary", "todo-dr-check.timer"),
                                                ("todo-standby", "todo-dr-check.timer")])
+        # Each host's settings name its offline bundle, for the readiness part of the check.
+        configures = [command for _host, command in world.commands if "configure" in command]
+        self.assertEqual(len(configures), 2)
+        self.assertEqual(sorted(command[command.index("--bundle") + 1] for command in configures),
+                         ["/home/todo-primary/todo-offline-m12", "/home/todo-standby/todo-offline-m12"])
+        for command in configures:
+            self.assertIn("--revision", command)
+
+    def test_the_revision_comes_from_the_operations_package(self):
+        import tempfile
+        from pathlib import Path
+
+        from app_ops import steps
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(steps.package_revision(directory), "")
+            (Path(directory) / "VERSION").write_text("package=todo-operations\nsource_revision=" + "a" * 40
+                                                     + "\nsource_state=clean\n")
+            self.assertEqual(steps.package_revision(directory), "a" * 40)
 
     def test_configure_backup_turns_the_nightly_backup_on_on_the_current_primary(self):
         world = self.commands.World()

@@ -5,7 +5,8 @@ Installed as /opt/todo/bin/app_dr.py on both DR hosts and run there:
   app_dr.py configure ...   write the DR settings (done by install-dr-tool)
   app_dr.py status          show each database's role, lag and primary reachability
   app_dr.py check           read-only: is replication, archiving and disk space
-                            fine for this host's role? (todo-dr-check.timer)
+                            fine for this host's role, and could this host take
+                            over? (todo-dr-check.timer)
   app_dr.py preflight ...   read-only: may the group be promoted now? (standby)
   app_dr.py promote ...     preflight, then promote every database (standby)
 
@@ -34,7 +35,7 @@ from typing import Callable, List, Optional, Sequence
 # bin. In a checkout, set PYTHONPATH=deploy/installer:deploy/dr instead.
 # deploy/dr/README.md ("Where DR finds the installer") has the whole rule.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from app_dr_host import replication  # noqa: E402
+from app_dr_host import replication, transfer  # noqa: E402
 from app_installer import apps, quadlet, settings  # noqa: E402
 from app_installer.commands import run  # noqa: E402
 
@@ -59,13 +60,20 @@ class DrError(RuntimeError):
 
 @dataclass(frozen=True)
 class Config:
-    """The DR settings written by 'configure': who the primary is, and where."""
+    """The DR settings written by 'configure': who the primary is, and where.
+
+    revision and bundle are what the check compares this host with: the
+    revision of the operations package that installed the tool, and where
+    this host keeps its offline bundle ('' in settings written before them).
+    """
 
     primary_name: str
     primary_address: str
     standby_name: str
     rpo_target_seconds: int
     applications: tuple = ()
+    revision: str = ''
+    bundle: str = ''
 
 
 @dataclass(frozen=True)
@@ -101,7 +109,8 @@ def parse_config(raw: dict, source: Path) -> Config:
         if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
             raise ValueError('applications must be a list of registered names')
         config = Config(str(raw['primary_name']), str(raw['primary_address']), str(raw['standby_name']),
-                        int(raw['rpo_target_seconds'] if 'rpo_target_seconds' in raw else raw['rpo_seconds']), tuple(names))
+                        int(raw['rpo_target_seconds'] if 'rpo_target_seconds' in raw else raw['rpo_seconds']), tuple(names),
+                        str(raw.get('revision', '')), str(raw.get('bundle', '')))
     except (AttributeError, KeyError, TypeError, ValueError) as error:
         raise DrError(f'Cannot read valid DR configuration from {source}: {error}') from error
     if not all((config.primary_name, config.primary_address, config.standby_name)):
@@ -121,7 +130,7 @@ def load_config(path: Path) -> Config:
 
 
 def write_config(path: Path, primary_name: str, primary_address: str, standby_name: str,
-                 rpo_target_seconds: int) -> bool:
+                 rpo_target_seconds: int, revision: str = '', bundle: str = '') -> bool:
     """Write the private (0600) DR settings for the complete group; True if they changed.
 
     primary_address must be a literal IPv4 address, so the preflight's
@@ -135,6 +144,8 @@ def write_config(path: Path, primary_name: str, primary_address: str, standby_na
     raw = {'applications': [database.name for database in apps.REPLICATED_DATABASES], 'primary_name': primary_name,
            'primary_address': primary_address, 'standby_name': standby_name,
            'rpo_target_seconds': rpo_target_seconds}
+    # Only when given, so settings written without them stay byte for byte the same.
+    raw.update({key: value for key, value in (('revision', revision), ('bundle', bundle)) if value})
     parse_config(raw, path)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     path.parent.chmod(0o700)
@@ -357,18 +368,77 @@ def check(databases=apps.REPLICATED_DATABASES, disk=None):
     return lines, problems
 
 
+def bundle_facts(bundle: Path):
+    """The bundle's revision (VERSION) and its image archives (SHA256SUMS), or raise DrError."""
+    try:
+        version = dict(line.split('=', 1) for line in (bundle / 'VERSION').read_text().splitlines() if '=' in line)
+        sums = (bundle / 'SHA256SUMS').read_text().splitlines()
+    except OSError as error:
+        raise DrError(f'no complete offline bundle at {bundle}: {error.strerror or error}') from None
+    archives = [line.split(maxsplit=1)[1] for line in sums
+                if len(line.split(maxsplit=1)) == 2 and line.split(maxsplit=1)[1].startswith('./images/')]
+    return version.get('source_revision', ''), archives
+
+
+def secret_exists(name: str) -> bool:
+    """True if this host holds the Podman secret."""
+    return run('podman', 'secret', 'exists', name, allowed=(0, 1), timeout=TIMEOUT,
+               description=f'Podman secret {name} check').returncode == 0
+
+
+def readiness(config: Config, exists: Optional[Callable[[str], bool]] = None):
+    """Could this host take over now? Returns (lines, problems), like check().
+
+    A missing piece found during a fire is found too late, so the scheduled
+    check looks for it every 15 minutes, on both hosts: the offline bundle the
+    failover loads its images from is the revision of the operations package
+    that installed this tool, every image archive it lists is there, and this
+    host holds every DR secret, the replication CA included. It reads files
+    and asks Podman; it never contacts the other host.
+    """
+    exists = exists or secret_exists
+    problems = []
+    revision, archives = '', []
+    if not config.bundle:
+        problems.append('the DR settings name no offline bundle: run app-ops install-dr-tool again')
+    else:
+        bundle = Path(config.bundle)
+        try:
+            revision, archives = bundle_facts(bundle)
+        except DrError as error:
+            problems.append(str(error))
+        else:
+            if config.revision and revision != config.revision:
+                problems.append(f'the offline bundle at {bundle} is revision {revision or "unknown"}, but the DR '
+                                f'tool was installed from {config.revision}: stage the same revision on both hosts')
+            missing = [name for name in archives if not (bundle / name).is_file()]
+            if not archives or missing:
+                problems.append(f'the offline bundle at {bundle} lacks image archives: '
+                                + (', '.join(missing) or 'SHA256SUMS lists none'))
+    names = transfer.transfer_names()
+    absent = [name for name in names if not exists(name)]
+    if absent:
+        problems.append('DR secrets missing on this host: ' + ', '.join(absent))
+    if problems:
+        return [], problems
+    return [f'Ready to take over: offline bundle {revision[:12]} with {len(archives)} image archives, '
+            f'all {len(names)} DR secrets'], []
+
+
 def parser():
     """Command-line arguments; see the module docstring."""
     result = argparse.ArgumentParser(description='Inspect and safely promote the complete local database group.')
     result.add_argument('--config', type=Path, default=DEFAULT_CONFIG)
     commands = result.add_subparsers(dest='command', required=True)
     commands.add_parser('status')
-    commands.add_parser('check', help='Read-only check of replication, archiving and disk space')
+    commands.add_parser('check', help='Read-only check of replication, archiving, disk space and readiness')
     configure = commands.add_parser('configure', help='Write the private DR configuration for the complete group')
     configure.add_argument('--primary-name', required=True)
     configure.add_argument('--primary-address', required=True)
     configure.add_argument('--standby-name', required=True)
     configure.add_argument('--rpo-target-seconds', type=int, default=settings.RPO_TARGET_SECONDS)
+    configure.add_argument('--revision', default='', help='the operations package revision that installs the tool')
+    configure.add_argument('--bundle', default='', help="this host's offline bundle directory")
     preflight = commands.add_parser('preflight')
     preflight.add_argument('--confirm-primary-fenced', required=True)
     promote = commands.add_parser('promote')
@@ -383,10 +453,16 @@ def main(arguments: Optional[Sequence[str]] = None):
     try:
         if args.command == 'configure':
             print(json.dumps({'changed': write_config(args.config, args.primary_name, args.primary_address,
-                                                      args.standby_name, args.rpo_target_seconds)}))
+                                                      args.standby_name, args.rpo_target_seconds,
+                                                      args.revision, args.bundle)}))
             return 0
         if args.command == 'check':
             lines, problems = check()
+            try:
+                ready, missing = readiness(load_config(args.config))
+            except RuntimeError as error:  # unreadable settings, or Podman not answering
+                ready, missing = [], [str(error)]
+            lines, problems = lines + ready, problems + missing
             print('\n'.join(lines))
             for problem in problems:
                 print(f'ERROR: {problem}', file=sys.stderr)

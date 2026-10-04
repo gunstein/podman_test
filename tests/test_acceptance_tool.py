@@ -322,16 +322,21 @@ class FullRunTests(ToolTest):
     def test_monitor_needs_the_timer_and_the_expected_outcome(self):
         timer = ("is-enabled todo-dr-check.timer", (0, "enabled\nactive\n"))
         passed = ("systemctl --user start todo-dr-check.service",
-                  (0, "exit=0\ntodo: primary, 1 standby streaming over TLS, WAL archiving off\nDisk: 40% free (9000 MiB)\n"))
+                  (0, "exit=0\ntodo: primary, 1 standby streaming over TLS, WAL archiving off\nDisk: 40% free (9000 MiB)\n"
+                      "Ready to take over: offline bundle aaaaaaaaaaaa with 7 image archives, all 13 DR secrets\n"))
+        not_ready = ("systemctl --user start todo-dr-check.service",
+                     (0, "exit=0\ntodo: primary, 1 standby streaming over TLS, WAL archiving off\n"
+                         "Disk: 40% free (9000 MiB)\n"))
         failed = ("systemctl --user start todo-dr-check.service",
                   (0, "exit=1\nDisk: 40% free (9000 MiB)\nERROR: todo: no standby streams from this primary over TLS\n"))
         self.assertEqual(self.tool("--step", "05-7a", "check", "monitor", "192.168.0.102", "ok",
                                    rules=[timer, passed])[0], 0)
+        self.assertTrue(self.record()[-1]["values"]["ready"].startswith("Ready to take over: offline bundle"))
         self.assertEqual(self.tool("--step", "06-15", "check", "monitor", "192.168.0.108", "alert",
                                    rules=[timer, failed])[0], 0)
         self.assertEqual(self.record()[-1]["values"]["problems"],
                          ["todo: no standby streams from this primary over TLS"])
-        for rules in ([timer, failed], [("is-enabled", (1, "disabled\ninactive\n")), passed],
+        for rules in ([timer, failed], [timer, not_ready], [("is-enabled", (1, "disabled\ninactive\n")), passed],
                       [timer, ("systemctl --user start", (0, "exit=0\n"))]):
             with self.subTest(rules=rules[-1][1]):
                 self.assertEqual(self.tool("--step", "05-7a", "check", "monitor", "192.168.0.102", "ok",

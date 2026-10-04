@@ -664,8 +664,11 @@ PostgreSQL restarts the walreceiver at the start of the current WAL segment;
 
 `install-dr-tool` also turns on the scheduled DR check on both hosts:
 `todo-dr-check.timer` runs `app_dr.py check` every 15 minutes, and a problem
-leaves `todo-dr-check.service` failed, with the reason in the journal. Start
-it once on each host and require that it passes:
+leaves `todo-dr-check.service` failed, with the reason in the journal. Besides
+replication and disk space it checks that the host could take over: the
+offline bundle of the same revision, its image archives and every DR secret.
+Start it once on each host and require that it passes and ends with
+`Ready to take over: ...`:
 
 ```bash
 systemctl --user list-timers todo-dr-check.timer   # enabled, with its next run

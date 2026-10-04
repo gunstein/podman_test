@@ -54,7 +54,8 @@ Commands:
   check write-probe HOST                 the guide's rolled-back Todo and Notes inserts
   check replication-tls HOST             every standby connection streams over TLS
   check disk HOST                        backup and WAL sizes, at least 2 GiB free
-  check monitor HOST ok|alert            the DR check timer is on; one run passes or names a problem
+  check monitor HOST ok|alert            the DR check timer is on; one run passes, ready to take over,
+                                         or names a problem
   do    firewall-replication SOURCE HOST add|remove   5432-5434 from SOURCE to HOST
   do    proxmox-firewall VMID on|off     VM firewall switch, then a 20 s wait
   do    replication-exception VMID on|off   the todo-quarantine-replication rule, then 20 s
@@ -244,6 +245,8 @@ HEALTH_CHECK_UNIT = re.compile(r'[0-9a-f]{64}-[0-9a-f]+\.(service|timer)')
 # after a failover until the rebuild, not that a service is down; check
 # monitor tests it on its own.
 DR_CHECK = 'todo-dr-check'
+# The check's last line on a host that could take over (app_dr.readiness).
+READY = 'Ready to take over:'
 BACKUP = 'todo-backup'
 
 
@@ -491,12 +494,15 @@ printf '%s\\n' "$out"
 def check_monitor(step, host, expected):
     """The scheduled DR check: its timer is on, and one run now passes (ok) or fails naming why (alert)."""
     timer_on(step, host, DR_CHECK)
-    code, lines = start_unit(step, host, DR_CHECK, 'Disk:' if expected == 'ok' else 'ERROR:', 300)
+    code, lines = start_unit(step, host, DR_CHECK, READY if expected == 'ok' else 'ERROR:', 300)
     problems = [line.removeprefix('ERROR: ') for line in lines if line.startswith('ERROR: ')]
     step.values['problems'] = problems
     if expected == 'ok':
         step.expect(code == 0 and not problems, f'{DR_CHECK}.service passed')
         step.expect(any(line.startswith('Disk:') for line in lines), 'its report is in the journal')
+        ready = [line for line in lines if line.startswith(READY)]
+        step.expect(bool(ready), 'the host could take over (bundle, image archives and DR secrets)')
+        step.values['ready'] = ready[0] if ready else ''
     else:
         step.expect(code != 0, f'{DR_CHECK}.service failed, as it must')
         step.expect(bool(problems), 'the journal names the problem')

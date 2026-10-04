@@ -405,8 +405,8 @@ together with Podman on both hosts. The price is that the project owns the
 error handling and the tests of these tools. That is why acceptance restores
 to a named point and from a nightly backup in every run, stops and retries
 partial failures under explicit gates, checks that pruning keeps the latest
-backup and the WAL it needs, and why short incident runbooks are planned
-([backlog](BACKLOG.md) O1).
+backup and the WAL it needs, and why there are short
+[incident runbooks](runbooks/README.md).
 
 Reconsider a product when the needs grow beyond orchestration: large
 databases where full nightly backups or restores take too long, backups that
@@ -442,6 +442,7 @@ outside the demonstrated recovery scope.
 | What is demonstrated versus simplified? | [Concept coverage](WHAT-YOU-LEARN.md) |
 | Which definitions implement the pods? | [Kube runtime](../deploy/runtime/README.md) |
 | How is replication arranged? | [Standby architecture](../deploy/dr/STANDBY-ARCHITECTURE.md) |
+| What do I do in an incident? | [Runbooks](runbooks/README.md) |
 | How do I run acceptance safely? | [Acceptance sequence and criteria](ACCEPTANCE.md) |
 | How does old-primary isolation work? | [Quarantine](PROXMOX-QUARANTINE.md) |
 | How do backup and reseeding work? | [Backup/PITR](../deploy/dr/BACKUP-PITR.md), [restore redundancy](../deploy/dr/RESTORE-REDUNDANCY.md) |

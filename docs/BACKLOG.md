@@ -36,7 +36,7 @@ operator, not code; *[decision]* needs the owner's choice before any work.
    start is the owner's call.
 2. The rest of failover to Trondheim within 30 minutes (see the goal below):
    G3 (time it in the drill; with T4 kept as it is, the time includes the
-   client trust step), O1 (incident runbooks), G4 (the disaster drill in the
+   client trust step), G4 (the disaster drill in the
    lab) and G5 (rebuilding Oslo on new hardware).
 3. What operation needs: U1 (updating a replicated pair), T6 (planned
    switchover), U2 (certificate renewal, before replication stops by itself)
@@ -90,7 +90,7 @@ rest (accepted in runs 18-22).
     must not promote Trondheim on that basis, or, if it does, the quarantine
     must handle Oslo when the link returns.
   - *A name change like DNS.* `/etc/hosts` on the client as the documented
-    stand-in for the manual DNS change (O1).
+    stand-in for the manual DNS change (runbooks/primary-lost.md).
   The lab cannot show that the sites are independent (the VMs share hardware,
   power and storage) or the real link; both come from the real setup (T2).
 - **G5. Rebuild Oslo on new hardware, then move back.** *[new]* After a fire
@@ -168,23 +168,6 @@ rest (accepted in runs 18-22).
 
 ## Documentation
 
-- **O1. Short runbooks for real incidents.** *[docs]* ACCEPTANCE.md and the
-  agent guide are tests of over 800 lines that describe a drill, not an
-  incident. An operator without an assistant needs short pages with ready
-  app-ops commands for the common cases: the primary site is gone; the
-  standby is down or lost its slot (rebuild it); `todo-dr-check` or
-  `todo-backup` failed and what each message means; a disk is full; the
-  certificate has expired; data was deleted by mistake and needs PITR; a
-  single host must go back to last night's backup. Each fits on one page and
-  says how to notice it, what to check first, what to do and what never to
-  do, so that someone other than the developer can follow it.
-  `docs/manual-recipes/` is a starting point but does not cover these.
-  Pointing users at Trondheim is a manual change in the internal DNS (owner's
-  decision, 2026-09-27; perhaps manual for good): after `failover`, the DNS
-  owner points `todo.test` and `notes.test` at the address `failover` prints.
-  The runbook mentions, without detail: agree on a low TTL in advance (a few
-  minutes), make sure the records can be changed without Oslo, and name who
-  makes the change and how to reach them.
 - **O2. Align the runtime guide with the seven pods.** *[docs]*
   `deploy/runtime/README.md` still says "six" workloads and units in several
   places, and `README.md` may have similar passages. Check them against
@@ -236,6 +219,13 @@ archiving and a filling disk as a failed unit every 15 minutes, and
 backup from `install.sh` and restores to last night, and the WAL archive
 survives a power loss (both accepted in run 35).
 
+- **M5. Restore to a time, and a restore point every night.** *[new]*
+  `app_backup.py restore` replays WAL only to a named restore point that
+  someone created with `mark` before the mistake; the nightly backup creates
+  none, and there is no restore to a clock time. Add
+  `--target-time` (`recovery_target_time`) and let the nightly run mark a
+  point, so the runbook for a data mistake
+  ([data-mistake.md](runbooks/data-mistake.md)) works without foresight.
 - **M3. Regular restore tests.** *[optional]* A backup that was never restored
   is not proven. Run the existing disposable PITR restore on a schedule (for
   example weekly) and compare it with a known point, or document a manual
@@ -344,6 +334,14 @@ promoted primary.
   *[docs]* It refuses unless that host is the machine running app-ops
   (`local: true`). `failover` runs there anyway, so document the limit as
   deliberate in `deploy/dr/README.md` and remove the item.
+- **D10. Re-seed a standby that lost its slot, without a failover.** *[new]*
+  `rebuild-standby` expects the old primary after a failover: it requires
+  every application unit loaded and stopped, which a database-only standby
+  does not have, and it refuses when the rebuild slot already exists, so a
+  pair can be rebuilt only once. Today the
+  [runbook](runbooks/standby-rebuild.md) removes the standby's volumes and
+  the lost slots by hand and runs `bootstrap-standby` again (untested). Make
+  that one guarded command, and test it in acceptance.
 - **D5. pgBackRest only if the needs grow.** *[optional]* Decided 2026-10-04:
   keep the own tools, which only orchestrate PostgreSQL's standard methods
   ([architecture](ARCHITECTURE.md#own-scripts-not-a-backup-or-ha-product));

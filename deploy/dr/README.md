@@ -1,5 +1,8 @@
 # app-ops: DR operations over plain SSH
 
+For an incident, start with the one-page [runbooks](../../docs/runbooks/README.md);
+this page is the reference behind them.
+
 `app-ops` runs the DR and multi-host operations over plain `ssh` from the
 controller. It is the only DR tool: the Ansible playbooks it replaced were
 retired after its CLEAN PASS on `2165933`

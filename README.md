@@ -269,6 +269,7 @@ manual lab acceptance test.
 | Learn the system in dependency order | [Learning guide](docs/LEARNING-GUIDE.md) |
 | Run or hand off acceptance; change VM IPs (humans and agents: start here) | [Acceptance sequence](docs/ACCEPTANCE.md) |
 | Check demonstrated versus simplified concepts | [What you learn](docs/WHAT-YOU-LEARN.md) |
+| Act on a real incident (Oslo lost, failed timer, full disk, data mistake) | [Runbooks](docs/runbooks/README.md) |
 | Operate deployment and recovery | [app-ops operations](deploy/dr/README.md) |
 | Understand SELinux and rootless ownership | [SELinux](docs/SELINUX.md) |
 | Understand runtime credentials | [Secrets](docs/SECRETS.md) |

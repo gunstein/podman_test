@@ -42,6 +42,7 @@ cp "$project_root/docs/ARCHITECTURE.md" \
   "$project_root/docs/ACCEPTANCE-TROUBLESHOOTING.md" \
   "$project_root/docs/PROXMOX-QUARANTINE.md" \
   "$bundle_directory/docs/"
+cp -r "$project_root/docs/runbooks" "$bundle_directory/docs/"
 
 cp "$project_root/deploy/README.md" "$bundle_directory/deploy/"
 cp "$project_root/deploy/quadlet/README.md" "$bundle_directory/deploy/quadlet/"

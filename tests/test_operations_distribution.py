@@ -107,6 +107,8 @@ class OperationsDistributionTests(unittest.TestCase):
                 "deploy/dr/PROMOTION.md",
                 "docs/ACCEPTANCE-TROUBLESHOOTING.md",
                 "docs/ARCHITECTURE.md",
+                "docs/runbooks/README.md",
+                "docs/runbooks/primary-lost.md",
             ):
                 self.assertIn(path, names)
             # The DR tools install the same rendered target files as the offline bundle.

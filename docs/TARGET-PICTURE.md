@@ -8,8 +8,8 @@ separate sites, and no third machine.
 
 ```mermaid
 flowchart LR
-  users(["Users"]) --> dns{{"todo / notes names<br>DNS, short TTL (O1)"}}
-  op(["Operator<br>runbooks (O1)"])
+  users(["Users"]) --> dns{{"todo / notes names<br>DNS, short TTL"}}
+  op(["Operator<br>runbooks"])
 
   subgraph OSLO["Oslo: primary"]
     o_proxy["nginx, TLS, shared CA (T4)<br>security headers"]
@@ -45,7 +45,7 @@ flowchart LR
 flowchart LR
   a["Oslo lost<br>alert from the<br>DR check"] --> b["Operator decides<br>Oslo is lost and<br>fenced (T3)"]
   b --> c["One command in<br>Trondheim, app-ops failover:<br>promote, apps,<br>backups, login check"]
-  c --> d["Names point to<br>Trondheim (O1)"]
+  c --> d["Names point to<br>Trondheim"]
   d --> e["Users log in,<br>same CA: no<br>certificate errors (T4)"]
 ```
 

@@ -42,6 +42,7 @@ cp "$project_root/docs/ARCHITECTURE.md" \
   "$project_root/docs/ACCEPTANCE-TROUBLESHOOTING.md" \
   "$project_root/docs/PROXMOX-QUARANTINE.md" \
   "$package_directory/docs/"
+cp -r "$project_root/docs/runbooks" "$package_directory/docs/"
 
 mkdir -p "$package_directory/deploy/installer/app_installer"
 cp "$project_root/deploy/installer/README.md" "$project_root/deploy/installer/pyproject.toml" "$package_directory/deploy/installer/"

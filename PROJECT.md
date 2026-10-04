@@ -10,8 +10,8 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `ae4ade9` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-ae4ade9.md)),
+**Current verdict: CLEAN PASS** on `fae11ba` for the seven-pod, three-database
+topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-fae11ba.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 115 steps PASS
@@ -33,7 +33,7 @@ single-host install gets the same nightly backup and can restore the latest
 one, and the WAL archive survives a power loss. Install, standby bootstrap,
 quarantine rehearsal, fencing, the one `failover` command (group promotion,
 application tier, backup, services and the login page), backup and isolated
-PITR, rebuild of the old primary and sequential reboots all passed as written.
+PITR, to a named point and to a time, rebuild of the old primary and sequential reboots all passed as written.
 CI also runs the Todo API as `todo_app` and the whole stack with the browser
 tests on Podman 5.7. The single-host installer (`deploy/installer`) and DR
 (`deploy/dr`) are separate in the tree; the code clean-up since `24b32ee` (R5,
@@ -43,6 +43,9 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `fae11ba` run 40: CLEAN PASS ([record](docs/history/ACCEPTANCE-fae11ba.md)),
+  accepting M5: a restore to a time. Run 39 on the same revision has no
+  verdict; its agent session ran out of context mid-run.
 - `ae4ade9` run 38: CLEAN PASS ([record](docs/history/ACCEPTANCE-ae4ade9.md)),
   accepting G2: the DR check also says whether a host could take over.
 - `d2ec17f` run 37: CLEAN PASS ([record](docs/history/ACCEPTANCE-d2ec17f.md)),

@@ -217,14 +217,10 @@ archiving and a filling disk as a failed unit every 15 minutes, and
 `todo-backup.timer` takes and prunes the primary's base backups every night
 (accepted in run 32; deploy/dr/README.md). A single host gets the same nightly
 backup from `install.sh` and restores to last night, and the WAL archive
-survives a power loss (both accepted in run 35).
+survives a power loss (both accepted in run 35). `app_backup.py --app A
+restore --target-time T` restores to a time from the newest base backup
+before it (accepted in run 40).
 
-- **M5. Restore to a time.** *[new]* Done in code; waiting for its acceptance
-  run. `app_backup.py --app A restore --target-time T` restores to a time
-  (ISO 8601 with its UTC offset), from the newest base backup before it
-  unless `--backup` names one, after it has archived the live WAL. Phase 8
-  restores Notes to a time and Todo to a named point. A restore point every
-  night, first planned too, was left out: a time does the same.
 - **M3. Regular restore tests.** *[optional]* A backup that was never restored
   is not proven. Run the existing disposable PITR restore on a schedule (for
   example weekly) and compare it with a known point, or document a manual

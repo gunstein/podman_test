@@ -383,6 +383,10 @@ or tokens.
 Next I will: <what you do afterwards>
 ```
 
+- Send the request as **one** fenced `text` block and nothing else, so the
+  operator copies it in one go; plain text inside, no Markdown formatting.
+  Write the same text to `~/todo-acceptance-runs/<RUN_ID>/operator/NN-request.txt`
+  first, so it can also be read with `cat` or attached.
 - Put everything the operator must do at that moment into one request, in the
   order to run it. Never send one question at a time.
 - Commands must be complete and ready to paste: no `<placeholders>`, no
@@ -976,7 +980,11 @@ Write the draft record in the style of `docs/history/ACCEPTANCE-12c3bef.md` to
 never from memory. Leave both VMs in their final roles (`.108` primary with
 application, `.102` database-only standby) and do not reset, promote or
 rebuild anything after the verdict. Report to the operator: verdict, revision,
-final topology, every deviation, and `REPORT.md`.
+final topology and every deviation. Write that report to `$RUN/FINAL-REPORT.md`
+and show it as one fenced `text` block, with every value copied from
+`REPORT.md` or a log. Never retype `REPORT.md` or a log into the chat: give its
+path and the command to show it (`cat ~/todo-acceptance-runs/<RUN_ID>/REPORT.md`),
+because a retyped copy can differ from the file, as it once did.
 
 #### C9.13 app-ops in an agent run
 

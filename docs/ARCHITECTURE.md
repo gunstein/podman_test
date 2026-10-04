@@ -386,6 +386,32 @@ days of nightly backups and the WAL they need) and failed-unit alerts are in
 place; off-host copies, encryption and alerts that reach a person remain
 production work.
 
+### Own scripts, not a backup or HA product
+
+Replication, promotion, backup, PITR and rebuild are the project's own Python
+tools, not Patroni, repmgr, pgBackRest, Barman or WAL-G (decided 2026-10-04).
+They only orchestrate what PostgreSQL itself provides: streaming replication
+with slots, `pg_basebackup`, `pg_verifybackup`, `archive_command`,
+`pg_archivecleanup`, `pg_ctl promote` and recovery to a named restore point.
+Their job is to run those steps in the right order for the whole group, check
+each result, refuse when a check fails and tell the operator why.
+
+The reasons: the setup is small and fixed (two hosts, three databases, one
+standby, a human decides on failover), and every product would be one more
+piece of third-party code to package, review for security, update and test
+together with Podman on both hosts. The price is that the project owns the
+error handling and the tests of these tools. That is why acceptance restores
+to a named point and from a nightly backup in every run, stops and retries
+partial failures under explicit gates, checks that pruning keeps the latest
+backup and the WAL it needs, and why short incident runbooks are planned
+([backlog](BACKLOG.md) O1).
+
+Reconsider a product when the needs grow beyond orchestration: large
+databases where full nightly backups or restores take too long, backups that
+must be encrypted or copied off the host as a repository, more standbys, or
+automatic failover. Until then the tools must not grow into a general backup
+or HA system (backlog D5).
+
 ## 11. Verification status and production limits
 
 See [Project status](../PROJECT.md#acceptance) for the current acceptance

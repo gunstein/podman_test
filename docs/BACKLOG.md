@@ -176,9 +176,12 @@ rest (accepted in runs 18-22).
   agent guide are tests of over 800 lines that describe a drill, not an
   incident. An operator without an assistant needs short pages with ready
   app-ops commands for the common cases: the primary site is gone; the
-  standby is down or lost its slot; a disk is full; the certificate has
-  expired; data was deleted by mistake and needs PITR. Each says how to notice
-  it, what to check first, what to do and what never to do.
+  standby is down or lost its slot (rebuild it); `todo-dr-check` or
+  `todo-backup` failed and what each message means; a disk is full; the
+  certificate has expired; data was deleted by mistake and needs PITR; a
+  single host must go back to last night's backup. Each fits on one page and
+  says how to notice it, what to check first, what to do and what never to
+  do, so that someone other than the developer can follow it.
   `docs/manual-recipes/` is a starting point but does not cover these.
   Pointing users at Trondheim is a manual change in the internal DNS (owner's
   decision, 2026-09-27; perhaps manual for good): after `failover`, the DNS
@@ -345,12 +348,16 @@ promoted primary.
   *[docs]* It refuses unless that host is the machine running app-ops
   (`local: true`). `failover` runs there anyway, so document the limit as
   deliberate in `deploy/dr/README.md` and remove the item.
-- **D5. pgBackRest only if the needs grow.** *[optional]* `app_backup.py` uses
-  PostgreSQL's standard methods, and D2 needs only standard tools
-  too. pgBackRest (or Barman, WAL-G) adds parallel and incremental backups,
-  compression, an encrypted repository and faster restores, which matter for
-  large databases, but breaks principle 2. Consider it only if the databases
-  grow large, restores become too slow, or backups must be encrypted at rest.
+- **D5. pgBackRest only if the needs grow.** *[optional]* Decided 2026-10-04:
+  keep the own tools, which only orchestrate PostgreSQL's standard methods
+  ([architecture](ARCHITECTURE.md#own-scripts-not-a-backup-or-ha-product));
+  D2 needs only standard tools too. pgBackRest (or Barman, WAL-G) adds
+  parallel and incremental backups, compression, an encrypted repository and
+  faster restores, which matter for large databases, but breaks principle 2;
+  Patroni or repmgr add automatic failover, which this design leaves to a
+  person. Reconsider only if the databases grow large, restores become too
+  slow, backups must be encrypted or kept off the host as a repository, or
+  more standbys or automatic failover are wanted.
 
 ## fapolicyd
 

@@ -43,6 +43,9 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `304c701` run 42: repaired functional pass ([record](docs/history/ACCEPTANCE-304c701.md)):
+  all steps passed and the report was clean, but the operator had to answer
+  the agent three times; the guide gaps behind them are fixed.
 - `0fe52ca` run 41: passed, not clean ([record](docs/history/ACCEPTANCE-0fe52ca.md)):
   an extra read-only log while the agent resolved two guide gaps, both
   fixed since.

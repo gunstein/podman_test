@@ -41,7 +41,7 @@ stopped three times and its tool once refused a command:
 4. Phase 11: its tool refused `rm -f` of the password file; it deleted the
    file with Python's `Path.unlink` and confirmed it was gone.
 
-C6 says since `7c2a3ef`-and-later that the sandbox needs write access to
+C6 says since `1c8e455` that the sandbox needs write access to
 `$XDG_RUNTIME_DIR/todo-acceptance` for the whole run, and that any way to
 delete the file is fine.
 

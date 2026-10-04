@@ -198,7 +198,9 @@ Pre-approvals (durable for this run only; every STOP rule still applies):
   [x] Store the generated testuser password in a 0600 tmpfs file for this run
 Not approved: anything else destructive, any source change, commit or push,
 and any change on the client outside the run folder (do not stop, start or
-reconfigure services or processes there; report a blocker instead).
+reconfigure services or processes there; report a blocker instead), except
+what C9's own steps write there: dist/, Podman images and build storage,
+temporary build directories, todo-backend/.venv and the Playwright cache.
 
 Run every C9 step with `$A step NAME`, one step at a time, and read its output
 before the next. Never type a step's command line yourself. A step that ends

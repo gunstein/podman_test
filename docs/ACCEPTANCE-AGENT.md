@@ -969,6 +969,13 @@ rm -f "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password"
 $A report full
 ```
 
+After the final report (below), write `EVIDENCE.md`, one file with `REPORT.md`,
+your notes and the end of every key log, and tell the operator its path:
+
+```bash
+$A evidence
+```
+
 `report` writes `REPORT.md` from `record.jsonl` and the logs. The verdict is
 exactly one of:
 

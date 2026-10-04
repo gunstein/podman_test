@@ -11,6 +11,7 @@ the result with the expected values itself and records it.
   acceptance.py --run RUN_ID --step 03-4 check services 192.168.0.102 app
   acceptance.py --run RUN_ID --step 03-9 do reboot 107 192.168.0.102 app
   acceptance.py --run RUN_ID report full       (or quick)
+  acceptance.py --run RUN_ID evidence          (EVIDENCE.md: one file to copy and send)
 
 step    runs one command line of docs/ACCEPTANCE-AGENT.md C9 exactly as the
         guide writes it, named by its step (what follows "$A --step", "vm",
@@ -924,6 +925,44 @@ def product_logs(run_directory, tool_logs):
 
 GUIDES = {'full': 'docs/ACCEPTANCE-AGENT.md', 'quick': 'docs/ACCEPTANCE-QUICK.md'}
 
+# The logs a reviewer reads after a run, by the start of their name, in run order.
+EVIDENCE_LOGS = ('00-readiness', '03-2-install', '03-12a-', '03-12c-restore', '03-12d-restored',
+                 '03-13-install-again', '05-1-install-dr-tool', '05-7a-', '06-10-failover', '06-15-',
+                 '08-7-mark', '08-9-restore-todo', '08-10-restore-notes', '08-15-backup-status', '08-16-',
+                 '09-10-rebuild', '09-11d-cluster-status', '10-7d-', '10-7e-', '11-4-restarts')
+EVIDENCE_TAIL = 25
+# Lines that are never evidence: SSH's post-quantum warning and Podman's events in the journal.
+NOISE = re.compile(r'^\*\* |^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+ [+-]\d{4} \w+ m=\+\S+ (container|pod) ')
+
+
+def attempt(path):
+    """('03-4-check-services', 2) for logs/03-4-check-services-2.log, so repeats sort after the first log."""
+    name, _, number = path.stem.rpartition('-')
+    return (name, int(number)) if number.isdigit() and name else (path.stem, 1)
+
+
+def evidence(run_directory):
+    """EVIDENCE.md: REPORT.md, the agent's notes and the end of every key log, as one file to copy.
+
+    It only reads the run folder. Noise lines (SSH warnings, Podman events)
+    are left out of the log tails, and each tail says how many.
+    """
+    parts = [f'# Evidence for acceptance run {run_directory.name}', '']
+    for name in ('REPORT.md', 'FINAL-REPORT.md', 'run-record.md'):
+        path = run_directory / name
+        parts += [f'## {name}', '', path.read_text().rstrip() if path.is_file() else '(missing)', '']
+    logs = sorted((run_directory / 'logs').glob('*.log'), key=attempt)
+    for prefix in EVIDENCE_LOGS:
+        matching = [log for log in logs if log.name.startswith(prefix)]
+        # A repeated step logs to name-2.log, name-3.log: the last attempt is the one that counts.
+        for path in [log for log in matching if attempt(log)[0] == attempt(matching[0])[0]][-1:]:
+            lines = path.read_text(errors='replace').splitlines()
+            kept = [line for line in lines if not NOISE.match(line)]
+            parts += [f'## logs/{path.name} (last {min(EVIDENCE_TAIL, len(kept))} lines, '
+                      f'{len(lines) - len(kept)} noise lines left out)', '', '```text',
+                      *kept[-EVIDENCE_TAIL:], '```', '']
+    return '\n'.join(parts)
+
 
 def guide_steps(text):
     """What a guide asks for: its acceptance.py lines by step label, and the log names of its other commands."""
@@ -1189,7 +1228,7 @@ def main(argv=None):
     parser.add_argument('--step', help='phase and step from the guide, for example 03-9 (not for report)')
     parser.add_argument('--user', default='gunstein', help='service user on the VMs')
     parser.add_argument('--operator-approved', default='', help='why the operator allows a second run')
-    parser.add_argument('kind', choices=('check', 'do', 'report', 'step'))
+    parser.add_argument('kind', choices=('check', 'do', 'report', 'step', 'evidence'))
     parser.add_argument('command', nargs='?')
     parser.add_argument('arguments', nargs='*')
     args = parser.parse_args(argv)
@@ -1203,6 +1242,13 @@ def main(argv=None):
         (runs / args.run / 'REPORT.md').write_text(text)
         print(text, end='')
         return 0 if passed else 1
+    if args.kind == 'evidence':
+        if args.command or args.arguments or not (runs / args.run).is_dir():
+            parser.error('evidence takes no command and needs an existing run folder')
+        path = runs / args.run / 'EVIDENCE.md'
+        path.write_text(evidence(runs / args.run))
+        print(f'Wrote {path}\nCopy it in one go: wl-copy < {path}   (X11: xclip -selection clipboard < {path})')
+        return 0
     if args.kind == 'step':
         if not args.command or args.arguments or args.step or not re.fullmatch(r'[0-9]{2}-[\w.-]+', args.command):
             parser.error('step takes one step name from the guide, for example 06-6-preflight or 06-3')

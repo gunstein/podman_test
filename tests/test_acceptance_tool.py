@@ -623,6 +623,35 @@ class ReportTests(ToolTest):
                 acceptance.main(arguments)
 
 
+class EvidenceTests(ToolTest):
+    def test_evidence_holds_the_reports_and_the_end_of_the_last_attempt_of_each_key_log(self):
+        logs = self.run_directory / "logs"
+        logs.mkdir(parents=True)
+        (self.run_directory / "REPORT.md").write_text("# Report\nNeeds attention: Nothing\n")
+        (logs / "08-10-restore-notes-2.log").write_text(
+            "** WARNING: connection is not using a post-quantum key exchange algorithm.\n"
+            "2026-10-04 16:21:30.123456789 +0000 UTC m=+0.1 container exec_died abc\n"
+            + "".join(f"line {number}\n" for number in range(30)) + "exit=0\n")
+        (logs / "08-10-restore-notes.log").write_text("the first attempt\n")
+        (logs / "99-unrelated.log").write_text("not evidence\n")
+        self.assertEqual(self.tool("evidence")[0], 0)
+        text = (self.run_directory / "EVIDENCE.md").read_text()
+        self.assertIn("Needs attention: Nothing", text)
+        self.assertIn("## run-record.md\n\n(missing)", text)
+        self.assertIn("## logs/08-10-restore-notes-2.log (last 25 lines, 2 noise lines left out)", text)
+        self.assertIn("line 29\nexit=0\n```", text)
+        self.assertNotIn("line 5\n", text)
+        self.assertNotIn("post-quantum", text)
+        self.assertNotIn("the first attempt", text)
+        self.assertNotIn("not evidence", text)
+
+    def test_evidence_needs_a_run_folder_and_nothing_else(self):
+        self.run_directory.mkdir()
+        for arguments in (["--run", "run-2", "evidence"], ["--run", "run-1", "evidence", "full"]):
+            with self.subTest(arguments), self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                acceptance.main(arguments)
+
+
 class GuideCommandTests(ToolTest):
     """The commands A4 needs so the agent guide becomes a command list."""
 

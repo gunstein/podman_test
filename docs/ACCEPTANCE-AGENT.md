@@ -738,6 +738,10 @@ sudo sed -i -e '/[[:space:]]todo\.test\([[:space:]]\|$\)/d' -e '/[[:space:]]note
 deploy/scripts/lab/trust-serving-ca.sh "gunstein@$IP"
 ```
 
+The script is the review: it verifies the new CA's fingerprint against the
+serving host before it replaces `/usr/local/share/ca-certificates/todo-nginx-root.crt`,
+which holds an earlier run's lab CA. Do not stop to inspect that file first.
+
 The test user (`03-4b`, C9.3) lives in the replicated Keycloak database and
 survives failover; it is not provisioned again after promotion.
 

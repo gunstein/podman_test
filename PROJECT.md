@@ -10,8 +10,8 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `d2ec17f` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-d2ec17f.md)),
+**Current verdict: CLEAN PASS** on `ae4ade9` for the seven-pod, three-database
+topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-ae4ade9.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 115 steps PASS
@@ -26,7 +26,8 @@ copies the primary's public hostnames to the standby, and failover and
 rebuild use the recorded names. No target renders, so none needs Jinja2,
 and since D9 the VMs have none installed.
 A scheduled check on both hosts (`todo-dr-check.timer`) reports replication,
-archive and disk problems as a failed unit, and a nightly timer on the
+archive and disk problems as a failed unit, and whether the host could take
+over (the same bundle revision, its image archives and every DR secret), and a nightly timer on the
 primary takes and prunes the base backups (`todo-backup.timer`); every
 single-host install gets the same nightly backup and can restore the latest
 one, and the WAL archive survives a power loss. Install, standby bootstrap,
@@ -42,6 +43,8 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `ae4ade9` run 38: CLEAN PASS ([record](docs/history/ACCEPTANCE-ae4ade9.md)),
+  accepting G2: the DR check also says whether a host could take over.
 - `d2ec17f` run 37: CLEAN PASS ([record](docs/history/ACCEPTANCE-d2ec17f.md)),
   accepting D9: the VMs install only `python3-pyyaml`, no Jinja2.
 - `a2b68f7` run 36: CLEAN PASS ([record](docs/history/ACCEPTANCE-a2b68f7.md)),

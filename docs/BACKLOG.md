@@ -472,6 +472,27 @@ limited to 1.2 and 1.3.
   `readOnlyRootFilesystem` where a container allows it, with writable volumes
   only where needed.
 
+## Lab platform
+
+- **P1. The lab on libvirt/KVM instead of Proxmox.** *[new]* *[optional]*
+  Only if Proxmox has to go. The product does not depend on the hypervisor;
+  the lab tools and the quarantine guides do. Every operation acceptance uses
+  has a `virsh` counterpart, run over SSH with no new dependency:
+  snapshot rollback (`snapshot-revert`, internal qcow2 snapshots), power
+  (`start`/`shutdown`/`reboot`/`destroy`, polling `domstate`), links
+  (`domif-setlink ... down/up`), `onboot` (`autostart --disable`) and Guest
+  Agent exec (`qemu-agent-command` with `guest-exec`; the same QEMU agent, so
+  `install-quarantine-tool` stays as it is). Three things take real work: the
+  quarantine firewall becomes nwfilter or host nftables rules instead of
+  Proxmox VM rules (toggling the replication exception means swapping a
+  filter reference); libvirt access is root-equivalent on the host unless
+  polkit rules narrow it per VM and action, where the Proxmox token is scoped
+  today; and the fencing check "not managed by HA" falls away (no HA layer).
+  One gain: the filter reference lives in the domain XML, which the snapshot
+  holds, so W3 goes away. Work: a libvirt driver in place of `pve_lab.py`,
+  the Proxmox paths in `acceptance.py`, phases 1, 5, 6 and 9 and
+  PROXMOX-QUARANTINE.md.
+
 ## Lab housekeeping (operator)
 
 - **K1.** *[optional]* *[operator]* Rebuild the `clean-agent` snapshots with

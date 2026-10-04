@@ -33,8 +33,9 @@ def backup(test, runner, **kwargs):
 class FakeRunner:
     def __init__(
         self, recovery="f|off", containers=None, volumes=None,
-        archive_status="on|000000010000000000000001||1h|1|0",
+        archive_status="on|000000010000000000000001||1h|1|0", backups=(),
     ):
+        self.backups = list(backups)
         self.recovery = recovery
         self.containers = set(containers or ())
         self.volumes = set(volumes or ())
@@ -49,6 +50,8 @@ class FakeRunner:
             return completed(returncode=0 if command[3] in self.containers else 1)
         if command[:3] == ["podman", "volume", "exists"]:
             return completed(returncode=0 if command[3] in self.volumes else 1)
+        if 'cat "$1"; ls "$2"' in command:  # backups.listing: LATEST, then every backup
+            return completed("\n".join([max(self.backups, default="none"), *self.backups]) + "\n")
         if "psql" in command:
             sql = command[-1]
             if "pg_is_wal_replay_paused" in sql:
@@ -388,7 +391,7 @@ class RestoreEdgeTests(unittest.TestCase):
                     return completed(returncode=1 if self.stops else 0)
                 return super().__call__(arguments, timeout)
 
-        for stops, message in ((False, "did not reach the named restore point within 60 seconds"),
+        for stops, message in ((False, "did not reach its target within 60 seconds"),
                                (True, "stopped during recovery")):
             with self.subTest(stops=stops):
                 runner = NeverPaused(stops)
@@ -461,6 +464,69 @@ class RestoreEdgeTests(unittest.TestCase):
                               (lambda: tool._exists("volume", "x"), "inspection timed out")):
             with self.subTest(message=message), self.assertRaisesRegex(app_backup.CommandError, message):
                 call()
+
+
+class TargetTimeTests(unittest.TestCase):
+    """Restore to a time: the time is checked, the base backup chosen, and the latest WAL archived first."""
+
+    NOW = datetime(2026, 10, 4, 12, 40, 0, tzinfo=timezone.utc)
+    BACKUPS = ("base-20261003T023000Z", "base-20261004T023000Z", "base-20261004T124500Z")
+
+    def tool(self, runner):
+        return backup(self, runner, clock=lambda: self.NOW, **fake_time())
+
+    def test_a_time_needs_its_offset_and_must_be_in_the_past(self):
+        parse = app_backup.parse_target_time
+        self.assertEqual(parse("2026-10-04T14:36:00+02:00", self.NOW), datetime(2026, 10, 4, 12, 36, tzinfo=timezone.utc))
+        self.assertEqual(parse("2026-10-04 12:36:00Z", self.NOW), datetime(2026, 10, 4, 12, 36, tzinfo=timezone.utc))
+        for text, message in (("2026-10-04T14:36:00", "needs its UTC offset"), ("yesterday", "Not an ISO 8601"),
+                              ("2026-10-04T12:41:00Z", "not in the past")):
+            with self.subTest(text=text), self.assertRaisesRegex(app_backup.BackupError, message):
+                parse(text, self.NOW)
+
+    def test_the_newest_backup_before_the_time_is_restored_after_the_live_wal_is_archived(self):
+        runner = FakeRunner(backups=self.BACKUPS)
+        chosen = self.tool(runner).restore(None, None, False, target_time="2026-10-04T14:36:00+02:00")
+        self.assertEqual(chosen, "base-20261004T023000Z")
+        commands = runner.commands
+        point = next(i for i, command in enumerate(commands)
+                     if "SELECT pg_create_restore_point('archive_before_restore');" in command)
+        switch = next(i for i, command in enumerate(commands) if "SELECT pg_switch_wal();" in command)
+        self.assertLess(point, switch)
+        copy = next(i for i, command in enumerate(commands) if any("cp -a" in part for part in command))
+        self.assertLess(switch, copy)
+        start = next(command for command in commands if "--detach" in command)
+        self.assertIn("recovery_target_time=2026-10-04 12:36:00+00", start)
+        self.assertFalse(any(part.startswith("recovery_target_name=") for part in start))
+        self.assertIn("base-20261004T023000Z", next(command for command in commands
+                                                    if any("cp -a" in part for part in command)))
+
+    def test_refusals_change_nothing(self):
+        cases = (
+            (dict(backup=None, target=None, target_time=None), "either a named restore point or a target time"),
+            (dict(backup=None, target="before_delete", target_time=None), "needs --backup"),
+            (dict(backup=None, target=None, target_time="2026-10-03T01:00:00Z"), "No base backup was taken before"),
+            (dict(backup="base-20261004T124500Z", target=None, target_time="2026-10-04T12:36:00Z"),
+             "was taken after the target time"),
+        )
+        for arguments, message in cases:
+            runner = FakeRunner(backups=self.BACKUPS)
+            with self.subTest(message=message), self.assertRaisesRegex(app_backup.BackupError, message):
+                self.tool(runner).restore(arguments["backup"], arguments["target"], False,
+                                          target_time=arguments["target_time"])
+            self.assertFalse(any("pg_switch_wal" in " ".join(command) or "create" in command
+                                 for command in runner.commands))
+
+    def test_the_command_line_takes_a_time_without_a_backup(self):
+        runner = FakeRunner(backups=self.BACKUPS)
+        route_commands(self, runner)
+        with mock.patch.object(app_backup, "datetime", wraps=datetime) as clock, \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            clock.now.return_value = self.NOW
+            self.assertEqual(app_backup.main(["--app", "notes", "restore", "--target-time", "2026-10-04T12:36:00Z"]), 0)
+        self.assertIn("notes: PITR from base-20261004T023000Z paused at 2026-10-04T12:36:00Z", stdout.getvalue())
+        with mock.patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
+            app_backup.main(["--app", "notes", "restore", "--target", "x", "--target-time", "2026-10-04T12:36:00Z"])
 
 
 class ApplicationBackupTests(unittest.TestCase):

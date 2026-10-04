@@ -832,7 +832,7 @@ podman exec todo-postgres-restore psql --username todo --dbname todo \
 podman exec todo-postgres psql --username todo --dbname todo \
   --command "SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;"
 python3 /opt/todo/bin/app_backup.py --app notes restore \
-  --backup base-YYYYMMDDTHHMMSSZ --target acceptance_before_after
+  --target-time 2026-10-04T12:36:05Z
 python3 /opt/todo/bin/app_backup.py --app notes restore-status
 podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}'
 podman exec notes-postgres-restore psql --username notes --dbname notes \
@@ -841,7 +841,11 @@ podman exec notes-postgres psql --username notes --dbname notes \
   --command "SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;"
 ```
 
-Replace each backup placeholder with that database's recorded verified backup. Require
+Todo goes back to the named restore point, from its recorded verified backup.
+Notes goes back to a time, which acceptance takes with `date --utc` right
+after the restore point and before the after-rows: without `--backup`,
+`app_backup.py` chooses the newest base backup before that time and first
+archives the live WAL, so the after-rows are in the archive too. Require
 `recovery|paused|read_only = t|t|on`, network `none`, only the before-row in
 restored data and both rows in live data. Never substitute a live volume as a
 restore target. Existing disposable restore state is a STOP condition; inspect

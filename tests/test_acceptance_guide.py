@@ -48,14 +48,18 @@ class AcceptanceGuideTests(unittest.TestCase):
         for line in commands:
             self.assertNotRegex(line.split('  #')[0], r'<[^<>]+>', line)
 
-    def test_pitr_backup_names_are_read_from_the_create_log(self):
-        # Run 23 stopped because the agent typed the backup names; the restore
-        # lines read them from the 08-4 log (helpers.sh backup_name, tested in
-        # test_acceptance_step.py).
-        guide = (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text()
-        for app in ('todo', 'notes'):
-            line = next(line for line in guide.splitlines() if line.startswith(f'vm 08-{9 if app == "todo" else 10}-'))
-            self.assertIn(f'--app {app} restore --backup $(backup_name {app}) --target acceptance_before_after', line)
+    def test_pitr_values_are_read_from_the_logs(self):
+        # Run 23 stopped because the agent typed the backup names. The restore
+        # lines read every value from a log (helpers.sh backup_name and
+        # restore_time, tested in test_acceptance_step.py): Todo goes to the
+        # named point from the 08-4 backup, Notes to the time 08-7 printed.
+        lines = (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text().splitlines()
+        todo = next(line for line in lines if line.startswith('vm 08-9-'))
+        notes = next(line for line in lines if line.startswith('vm 08-10-'))
+        mark = next(line for line in lines if line.startswith('vm 08-7-'))
+        self.assertIn('--app todo restore --backup $(backup_name todo) --target acceptance_before_after', todo)
+        self.assertIn('--app notes restore --target-time $(restore_time) && ', notes)
+        self.assertIn("sleep 1 && date --utc +%Y-%m-%dT%H:%M:%SZ && sleep 1", mark)
 
     def test_direct_mutation_examples_keep_exact_confirmation_arguments(self):
         commands = '\n'.join(shell_blocks()).replace('\\\n', '')

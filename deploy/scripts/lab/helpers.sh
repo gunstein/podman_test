@@ -37,6 +37,12 @@ backup_name() {
   sed -n "s/^$1: Verified base backup: \(base-[0-9TZ]*\)\$/\1/p" "$RUN/logs/08-4-backup-create.log"
 }
 
+# The time (UTC, ISO 8601) that step 08-7 printed between the PITR rows, such
+# as 2026-10-04T12:36:05Z; empty if the log has none.
+restore_time() {
+  sed -n 's/^\([0-9]\{4\}-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z\)$/\1/p' "$RUN/logs/08-7-mark.log" | tail -n 1
+}
+
 # The onboot value that step 01-3 (do rollback of VM 107) read from its clean
 # snapshot; phase 9 sets it back.
 recorded_onboot() {

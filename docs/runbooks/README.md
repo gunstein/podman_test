@@ -18,7 +18,7 @@ the service user unless they say `sudo`.
 | The standby is down, behind, or lost its slot | [standby-rebuild.md](standby-rebuild.md) | The rebuild after a failover (phase 9); a rebuild without failover is not |
 | The disk is filling up | [disk-full.md](disk-full.md) | No |
 | A certificate expires or has expired | [certificates.md](certificates.md) | Partly (nginx renews at start) |
-| Data was deleted or changed by mistake | [data-mistake.md](data-mistake.md) | Yes, to a named restore point (phase 8) |
+| Data was deleted or changed by mistake | [data-mistake.md](data-mistake.md) | Yes, to a named restore point and to a time (phase 8) |
 | A single host (no DR) must go back to last night | [single-host-restore.md](single-host-restore.md) | Yes, every run (phase 3) |
 
 ## Before an incident

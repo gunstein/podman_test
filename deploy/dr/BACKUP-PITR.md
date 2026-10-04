@@ -100,7 +100,8 @@ fapolicyd diagnostics and trust-entry cleanup.
 | `create` | Requires writable database and archive mode; runs `pg_basebackup` inside the database container over its local socket (the installer's `app_installer.backup.create`, the same as a single host's nightly backup) and verifies its SHA-256 manifest with `pg_verifybackup` before `LATEST` names it |
 | `nightly --keep-days N` | Always the complete group; does nothing on a standby. Otherwise `create` for every database, then deletes base backups older than N days (never the latest) and, with `pg_archivecleanup`, the archived WAL older than the oldest kept backup. Run by `todo-backup.timer` |
 | `mark --name NAME` | Creates a named restore point, switches WAL and waits for the exact segment in the archive |
-| `restore --backup NAME --target POINT` | Copies into fixed disposable resources and pauses recovery at the target; database networking is disabled and backup is mounted read-only |
+| `restore --backup NAME --target POINT` | Copies into fixed disposable resources and pauses recovery at the named restore point; database networking is disabled and backup is mounted read-only |
+| `restore --target-time TIME [--backup NAME]` | The same, paused at a time (ISO 8601 with its UTC offset, such as `2026-10-04T14:36:00+02:00`; it must be in the past). Without `--backup` it uses the newest base backup taken before that time. It first switches the live database to a new WAL file and waits until the last one is archived, so changes from the last hour are in the archive too. Recovery cannot reach a time after the last archived change, or one before the end of the chosen base backup |
 | `restore-status` | Reports recovery, pause and read-only state |
 | `cleanup-restore --confirm <database>-postgres-restore` | Deletes only the selected database's fixed disposable restore container and volume |
 

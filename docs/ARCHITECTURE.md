@@ -381,8 +381,8 @@ Promotion restores availability; rebuild restores redundancy. Returning the
 application to the originally named primary is a separate switchover, not an
 automatic DR step. Machine names stay fixed while roles change.
 
-Base backup plus archived WAL supports a named-point restore into a fixed,
-disposable, network-disabled test database. Live data is never a PITR test
+Base backup plus archived WAL supports a restore to a named point or to a time
+into a fixed, disposable, network-disabled test database. Live data is never a PITR test
 target. Verified test cleanup removes only disposable resources. Retention (7
 days of nightly backups and the WAL they need) and failed-unit alerts are in
 place; off-host copies, encryption and alerts that reach a person remain
@@ -394,7 +394,8 @@ Replication, promotion, backup, PITR and rebuild are the project's own Python
 tools, not Patroni, repmgr, pgBackRest, Barman or WAL-G (decided 2026-10-04).
 They only orchestrate what PostgreSQL itself provides: streaming replication
 with slots, `pg_basebackup`, `pg_verifybackup`, `archive_command`,
-`pg_archivecleanup`, `pg_ctl promote` and recovery to a named restore point.
+`pg_archivecleanup`, `pg_ctl promote` and recovery to a named restore point or
+a time.
 Their job is to run those steps in the right order for the whole group, check
 each result, refuse when a check fails and tell the operator why.
 

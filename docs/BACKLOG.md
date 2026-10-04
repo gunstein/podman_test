@@ -219,13 +219,12 @@ archiving and a filling disk as a failed unit every 15 minutes, and
 backup from `install.sh` and restores to last night, and the WAL archive
 survives a power loss (both accepted in run 35).
 
-- **M5. Restore to a time, and a restore point every night.** *[new]*
-  `app_backup.py restore` replays WAL only to a named restore point that
-  someone created with `mark` before the mistake; the nightly backup creates
-  none, and there is no restore to a clock time. Add
-  `--target-time` (`recovery_target_time`) and let the nightly run mark a
-  point, so the runbook for a data mistake
-  ([data-mistake.md](runbooks/data-mistake.md)) works without foresight.
+- **M5. Restore to a time.** *[new]* Done in code; waiting for its acceptance
+  run. `app_backup.py --app A restore --target-time T` restores to a time
+  (ISO 8601 with its UTC offset), from the newest base backup before it
+  unless `--backup` names one, after it has archived the live WAL. Phase 8
+  restores Notes to a time and Todo to a named point. A restore point every
+  night, first planned too, was left out: a time does the same.
 - **M3. Regular restore tests.** *[optional]* A backup that was never restored
   is not proven. Run the existing disposable PITR restore on a schedule (for
   example weekly) and compare it with a known point, or document a manual

@@ -9,7 +9,10 @@ Installed as /opt/todo/bin/app_backup.py on the current primary and run there:
                                        (todo-backup.timer; nothing on a standby)
   app_backup.py mark --name N          a named restore point, archived at once
   app_backup.py --app A restore ...    point-in-time restore into a throwaway
-                                       container with no network
+                                       container with no network: to a named
+                                       restore point (--backup B --target N), or
+                                       to a time (--target-time T, the base
+                                       backup chosen unless --backup)
   app_backup.py --app A restore-status | cleanup-restore --confirm ...
 
 Without --app, status, create and mark act on every database. Backups and
@@ -71,6 +74,25 @@ RESTORE_POINT = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,62}")
 WAL_SEGMENT = re.compile(r"[0-9A-F]{24}")
 # The line of a base backup's backup_label that names the first WAL file it needs.
 START_WAL = re.compile(r"^START WAL LOCATION: \S+ \(file ([0-9A-F]{24})\)$", re.M)
+
+
+def parse_target_time(text: str, now: datetime) -> datetime:
+    """A restore target time in ISO 8601 with its UTC offset, returned in UTC.
+
+    For example 2026-10-04T14:36:00+02:00, or 2026-10-04T12:36:00Z. A time
+    without an offset is refused: it would name a different moment depending
+    on the host's time zone. So is one that is not in the past.
+    """
+    try:
+        moment = datetime.fromisoformat(text.strip().replace("Z", "+00:00"))
+    except ValueError:
+        raise BackupError(f"Not an ISO 8601 time: {text!r} (for example 2026-10-04T14:36:00+02:00)") from None
+    if moment.tzinfo is None:
+        raise BackupError(f"The target time {text!r} needs its UTC offset, such as +02:00 or Z")
+    moment = moment.astimezone(timezone.utc)
+    if moment >= now:
+        raise BackupError(f"The target time {moment:%Y-%m-%d %H:%M:%S} UTC is not in the past")
+    return moment
 
 
 class BackupError(RuntimeError):
@@ -296,10 +318,33 @@ class DatabaseBackup:
         self.require_writable_primary()
         self._validate_restore_point(name)
         output = self._sql(f"SELECT pg_create_restore_point('{name}');", "Named restore point creation")
-        wal = self._sql("SELECT pg_walfile_name(pg_current_wal_lsn());", "Current WAL segment query")
-        self._sql("SELECT pg_switch_wal();", "WAL switch after restore point")
-        self._wait_for_archived_wal(wal)
+        self._switch_and_archive()
         return output
+
+    def archive_current_wal(self) -> None:
+        """Make every change made so far reach the archive, and wait for it.
+
+        Without this, the last changes can wait for archive_timeout (an hour)
+        before they reach the archive, and a restore cannot replay them. The
+        restore point it writes first gives a quiet database a WAL record to
+        switch away from; a restore point is only a marker.
+        """
+        self._sql("SELECT pg_create_restore_point('archive_before_restore');", "Restore point before a restore")
+        self._switch_and_archive()
+
+    def _switch_and_archive(self) -> None:
+        """Switch to a new WAL file and wait until the one before it is archived."""
+        wal = self._sql("SELECT pg_walfile_name(pg_current_wal_lsn());", "Current WAL segment query")
+        self._sql("SELECT pg_switch_wal();", "WAL switch")
+        self._wait_for_archived_wal(wal)
+
+    def backup_before(self, moment: datetime) -> str:
+        """The newest base backup taken before moment (UTC); names sort by time."""
+        _latest, names = backups.listing(self.database)
+        older = [name for name in names if name < moment.strftime("base-%Y%m%dT%H%M%SZ")]
+        if not older:
+            raise BackupError(f"No base backup was taken before {moment:%Y-%m-%d %H:%M:%S} UTC")
+        return max(older)
 
     def _wait_for_archived_wal(self, wal: str) -> None:
         """Wait up to 30 seconds for the WAL file to appear in the backup volume."""
@@ -316,17 +361,38 @@ class DatabaseBackup:
             self.sleeper(1)
         raise BackupError(f"WAL segment was not archived within 30 seconds: {wal}")
 
-    def restore(self, backup: str, target: str, replace: bool) -> None:
-        """Restore a base backup up to a named restore point, in a throwaway container.
+    def restore(self, backup: Optional[str], target: Optional[str], replace: bool,
+                target_time: Optional[str] = None) -> str:
+        """Restore a base backup up to a named restore point or a time, in a throwaway container; return the backup.
+
+        Give either target (a restore point made with mark) or target_time
+        (parse_target_time). For a time, backup may be None: the newest base
+        backup taken before it is used, and the live database first archives
+        its current WAL, so the last changes are in the archive too.
 
         The copy goes into a new restore volume, and PostgreSQL starts there
         with no network, archiving off and no link to a primary. It replays
         archived WAL, then pauses at the target so the data can be read. The
-        live database and backups are only read. Existing restore state is
-        replaced only with replace=True.
+        live data and the backups are only read (for a time, the live
+        database only writes a restore point and switches WAL). Existing
+        restore state is replaced only with replace=True.
         """
+        if (target is None) == (target_time is None):
+            raise BackupError("Give either a named restore point or a target time")
+        if target is not None:
+            if backup is None:
+                raise BackupError("A named restore point needs --backup: the base backup taken before it")
+            self._validate_restore_point(target)
+            recovery_target = f"recovery_target_name={target}"
+        else:
+            moment = parse_target_time(target_time or "", self.clock())
+            self.require_writable_primary()
+            backup = backup or self.backup_before(moment)
+            if backup >= moment.strftime("base-%Y%m%dT%H%M%SZ"):
+                raise BackupError(f"{backup} was taken after the target time; choose an older one")
+            self.archive_current_wal()
+            recovery_target = f"recovery_target_time={moment:%Y-%m-%d %H:%M:%S}+00"
         self._validate_backup_name(backup)
-        self._validate_restore_point(target)
         self._run(
             [
                 "podman", "run", "--rm",
@@ -400,7 +466,7 @@ class DatabaseBackup:
                     "-D", DATA_DIRECTORY,
                     "-c",
                     "restore_command=cp /var/lib/postgresql/backup/wal/%f %p",
-                    "-c", f"recovery_target_name={target}",
+                    "-c", recovery_target,
                     "-c", "recovery_target_action=pause",
                     "-c", "recovery_target_timeline=latest",
                     "-c", "primary_conninfo=",
@@ -411,6 +477,7 @@ class DatabaseBackup:
                 "Disposable PITR container start",
             )
             self._wait_for_restore_pause()
+            return backup
         except Exception as error:
             if self._remove_restore_container():
                 raise
@@ -444,7 +511,8 @@ class DatabaseBackup:
             if not self._exists("container", self.restore_container):
                 raise BackupError("Disposable PITR container stopped during recovery")
             self.sleeper(1)
-        raise BackupError("PITR did not reach the named restore point within 60 seconds")
+        raise BackupError("PITR did not reach its target within 60 seconds; recovery cannot reach a target "
+                          "after the last archived change or before the end of the base backup")
 
     def restore_status(self) -> str:
         """'recovery|paused|read_only' for the restore container; 't|t|on' means paused at the target."""
@@ -577,8 +645,10 @@ def parser() -> argparse.ArgumentParser:
     restore = commands.add_parser(
         "restore", help="Restore into an isolated disposable PostgreSQL container"
     )
-    restore.add_argument("--backup", required=True)
-    restore.add_argument("--target", required=True)
+    restore.add_argument("--backup", help="the base backup; with --target-time, the newest before it by default")
+    target = restore.add_mutually_exclusive_group(required=True)
+    target.add_argument("--target", help="a restore point made with mark")
+    target.add_argument("--target-time", help="a time with its UTC offset, e.g. 2026-10-04T14:36:00+02:00")
     restore.add_argument("--replace", action="store_true")
     commands.add_parser("restore-status", help="Show disposable PITR state")
     configuration = commands.add_parser(
@@ -624,8 +694,9 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
                 lsn = tool.create_restore_point(args.name)
                 print(prefix + f"Archived restore point {args.name} at {lsn}")
             elif args.command == 'restore':
-                tool.restore(args.backup, args.target, args.replace)
-                print(prefix + f"PITR paused at {args.target}. Live database was not modified.")
+                chosen = tool.restore(args.backup, args.target, args.replace, args.target_time)
+                print(prefix + f"PITR from {chosen} paused at {args.target or args.target_time}. "
+                      "Live database was not modified.")
             elif args.command == 'restore-status':
                 print(prefix + f"recovery|paused|read_only = {tool.restore_status()}")
             elif args.command == 'cleanup-restore':

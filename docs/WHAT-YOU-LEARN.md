@@ -32,7 +32,7 @@ its lifecycle. See [`deploy/runtime/README.md`](../deploy/runtime/README.md).
 | Application failover | Stable hostname, issuer, nginx and promoted app tier | Client name/IP mapping is manual |
 | TLS identity during DR | Server/private-key versus client/root trust, hostname validation and explicit nginx root export | Promoted application recovery creates a new local OpenSSL demo CA; production should pre-stage trust, use managed PKI/public ACME or terminate TLS at a redundant stable endpoint |
 | Restore redundancy | Re-seed the old primary as the new standby | Full re-seed is preferred over `pg_rewind` for clarity |
-| Backup/PITR | Nightly verified base backups on every server install with a restore of the latest one; on a DR primary also continuous WAL, a named restore point and an isolated restore test | Backup volume is on the same VM; a single host restores to last night only |
+| Backup/PITR | Nightly verified base backups on every server install with a restore of the latest one; on a DR primary also continuous WAL and an isolated restore test to a named restore point or to a time | Backup volume is on the same VM; a single host restores to last night only |
 | Backup operations | Archive status, safe disposable cleanup, 7 days' retention with WAL pruning, and a crash-safe WAL archive | Off-host copy, encryption and regular restore tests are documented, not implemented |
 | Observability | Health/readiness, replication/slot status, operator commands, and systemd timers that turn a stopped replication, a failing archive or backup, or a filling disk into a failed unit | No Prometheus, alert manager or dashboard stack; nobody is paged |
 

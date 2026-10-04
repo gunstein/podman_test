@@ -864,18 +864,21 @@ vm 08-3-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'
 vm 08-4-backup-create 192.168.0.108 'python3 /opt/todo/bin/app_backup.py create'        # note the three base-... names
 vm 08-5-restore-state 192.168.0.108 'podman ps -a --filter name=restore --format "{{.Names}}"; podman volume ls --filter name=restore --format "{{.Name}}"'   # must print nothing
 vm 08-6-before-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR before restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR before restore point');\""
-vm 08-7-mark 192.168.0.108 'python3 /opt/todo/bin/app_backup.py mark --name acceptance_before_after'
+vm 08-7-mark 192.168.0.108 'python3 /opt/todo/bin/app_backup.py mark --name acceptance_before_after && sleep 1 && date --utc +%Y-%m-%dT%H:%M:%SZ && sleep 1'   # the restore point, and a time between the rows
 vm 08-8-after-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR after restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR after restore point');\""
 ```
 
-The two restores use the Todo and Notes backup names that `08-4` logged:
-`backup_name todo` reads the name from that log (`helpers.sh`). If a name is
-missing, `app_backup.py` refuses `--backup` without a value before it changes
-anything, and the step is a STOP.
+Todo is restored to the named restore point, from the backup name that `08-4`
+logged (`backup_name todo` in `helpers.sh`). Notes is restored to the time
+`08-7` printed between the rows (`restore_time`), with no backup named:
+`app_backup.py` chooses the newest base backup before that time and first
+archives the live WAL. The seconds of sleep around that time keep each row
+on its own side of it. If a value is missing, `app_backup.py` refuses before
+it changes anything, and the step is a STOP.
 
 ```bash
 vm 08-9-restore-todo 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app todo restore --backup $(backup_name todo) --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app todo restore-status && podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec todo-postgres-restore psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec todo-postgres psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
-vm 08-10-restore-notes 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app notes restore --backup $(backup_name notes) --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app notes restore-status && podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec notes-postgres-restore psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec notes-postgres psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
+vm 08-10-restore-notes 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app notes restore --target-time $(restore_time) && python3 /opt/todo/bin/app_backup.py --app notes restore-status && podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec notes-postgres-restore psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec notes-postgres psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
 ```
 
 Each must show `recovery|paused|read_only = t|t|on`, network `none`, only the

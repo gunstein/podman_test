@@ -199,8 +199,14 @@ class HelperTests(unittest.TestCase):
             (Path(run) / "record.jsonl").write_text(
                 json.dumps({"step": "01-3", "result": "STARTED", "values": {}}) + "\n"
                 + json.dumps({"step": "01-3", "result": "PASS", "values": {"onboot": 1}}) + "\n")
-            result = self.bash(run, 'echo "$(backup_name todo) $(backup_name notes) $(recorded_onboot)"')
-        self.assertEqual(result.stdout, "base-20260928T191946Z base-20260928T191948Z 1\n", result.stderr)
+            (Path(run) / "logs/08-7-mark.log").write_text(
+                "# start 2026-10-04T14:36:00+02:00\n"
+                "todo: Archived restore point acceptance_before_after at 0/5000100\n"
+                "2026-10-04T12:36:05Z\n"
+                "exit=0\n")
+            result = self.bash(run, 'echo "$(backup_name todo) $(backup_name notes) $(recorded_onboot) $(restore_time)"')
+        self.assertEqual(result.stdout, "base-20260928T191946Z base-20260928T191948Z 1 2026-10-04T12:36:05Z\n",
+                         result.stderr)
 
     def test_a_second_run_of_a_product_step_refuses_and_keeps_the_first_log(self):
         with tempfile.TemporaryDirectory() as run:

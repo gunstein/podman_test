@@ -263,7 +263,7 @@ Before phase 1, and before anything that changes a VM:
 | Node firewall disabled | Node Shell: `pvesh set /nodes/<node>/firewall/options -enable 1` and `systemctl enable --now pve-firewall`. |
 | Datacenter firewall disabled | Node Shell: `pvesh get /cluster/firewall/options`, then `pvesh set /cluster/firewall/options -enable 1`. Say that Proxmox then blocks incoming traffic to the Proxmox host except the web GUI (8006) and SSH (22) from its local network. The operator decides; do not enable it yourself (C2 rule 6). |
 | QEMU Guest Agent not enabled on a VM | Node Shell: `qm set <VMID> --agent enabled=1`, **before** the snapshot step, so that the new snapshot contains it. |
-| Snapshot `clean-agent` missing, passwordless sudo missing, Jinja2/PyYAML missing, or client SSH key not accepted | ThinkPad, in the checkout: `bash deploy/scripts/lab/prepare-agent-snapshots.sh 107:192.168.0.102:<existing clean snapshot> 108:192.168.0.108:<existing clean snapshot>`. Say that it destroys the current state of both VMs, and that it asks for each VM's login password and sudo password. |
+| Snapshot `clean-agent` missing, passwordless sudo missing, PyYAML missing, or client SSH key not accepted | ThinkPad, in the checkout: `bash deploy/scripts/lab/prepare-agent-snapshots.sh 107:192.168.0.102:<existing clean snapshot> 108:192.168.0.108:<existing clean snapshot>`. Say that it destroys the current state of both VMs, and that it asks for each VM's login password and sudo password. |
 | `clean-agent` exists but a guest check still fails | STOP and ask. The snapshot is not the documented baseline, and deleting a snapshot is the operator's decision. |
 | Client tool missing and no client sudo | ThinkPad: one `sudo apt-get install -y ...` line with exactly the missing packages (`podman`, `libnss3-tools`, `python3-venv`). |
 | Hostname or VM identity mismatch | STOP: wrong VM or wrong kickoff values. |
@@ -644,8 +644,8 @@ $A --step 01-3 do rollback 107 clean-agent 192.168.0.102
 $A --step 01-4 do rollback 108 clean-agent 192.168.0.108
 $A --step 01-5 check clean-host 192.168.0.102
 $A --step 01-6 check clean-host 192.168.0.108
-vm 01-7-prerequisites-102 192.168.0.102 'sudo -n dnf install -y python3-jinja2 python3-pyyaml'
-vm 01-8-prerequisites-108 192.168.0.108 'sudo -n dnf install -y python3-jinja2 python3-pyyaml'
+vm 01-7-prerequisites-102 192.168.0.102 'sudo -n dnf install -y python3-pyyaml'
+vm 01-8-prerequisites-108 192.168.0.108 'sudo -n dnf install -y python3-pyyaml'
 product 02-1-build-offline deploy/offline/build-bundle.sh &   # wait for exit=
 product 02-2-build-operations deploy/scripts/build-operations-package.sh
 product 02-3-transfer-102 scp dist/todo-offline-m12.tar.gz dist/todo-offline-m12.tar.gz.sha256 dist/todo-operations.tar.gz dist/todo-operations.tar.gz.sha256 gunstein@192.168.0.102:
@@ -655,8 +655,11 @@ vm 02-6-verify-108 192.168.0.108 'sha256sum -c todo-offline-m12.tar.gz.sha256 to
 ```
 
 Both `VERSION` files on both VMs must show the kickoff revision and
-`source_state=clean`. Installing `python3-jinja2` is a documented target
-prerequisite, not a source change: record it as an expected deviation.
+`source_state=clean`. `python3-pyyaml` is the DR tools' one documented
+prerequisite (`deploy/offline/README.md`); `dnf` leaves it alone when the
+snapshot already has it. The VMs need no Jinja2: the builds render every file
+here. A `python3-jinja2` left in an older `clean-agent` snapshot is unused and
+not a deviation.
 
 #### C9.3 Phase 3 — Initial deployment on `.102`
 

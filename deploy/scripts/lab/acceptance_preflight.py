@@ -193,7 +193,7 @@ for unit in sshd firewalld fapolicyd qemu-guest-agent; do echo "unit_$unit=$(sys
 echo "linger=$(loginctl show-user "$USER" -p Linger --value)"
 echo "rootless=$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)"
 echo "podman=$(podman --version 2>/dev/null)"
-echo "jinja2_yaml=$(python3 -c 'import jinja2, yaml' 2>/dev/null && echo ok || echo missing)"
+echo "pyyaml=$(python3 -c 'import yaml' 2>/dev/null && echo ok || echo missing)"
 echo "sudo=$(sudo -n true 2>/dev/null && echo ok || echo password-required)"
 echo "sudoers_file=$(sudo -n test -e /etc/sudoers.d/90-todo-acceptance 2>/dev/null && echo present || echo missing)"
 echo "mem_mib=$(free -m | awk '/^Mem:/ {print $2}')"
@@ -223,8 +223,9 @@ def check_guest(report, args, address, hostname):
         report.check(facts.get('unit_' + unit) == 'active', f'{unit} active', facts.get('unit_' + unit, ''))
     report.check(facts.get('linger') == 'yes', 'User lingering', facts.get('linger', ''))
     report.check(facts.get('rootless') == 'true', 'Rootless Podman', facts.get('podman', ''))
-    report.check(facts.get('jinja2_yaml') == 'ok', 'Python Jinja2 and PyYAML installed',
-                 'run deploy/scripts/lab/prepare-agent-snapshots.sh, or dnf install -y python3-jinja2 python3-pyyaml')
+    # The DR tools parse the canonical PVC YAML; the install itself needs only Python.
+    report.check(facts.get('pyyaml') == 'ok', 'Python PyYAML installed (DR tools)',
+                 'run deploy/scripts/lab/prepare-agent-snapshots.sh, or dnf install -y python3-pyyaml')
     report.check(facts.get('sudo') == 'ok', 'Passwordless sudo in the running VM', facts.get('sudo', ''), level='WARN')
     report.line('INFO', 'Lab sudoers file', facts.get('sudoers_file', '') +
                 ' (what matters is that the clean snapshot contains it)')

@@ -103,7 +103,7 @@ After promotion and rebuild, machine names stay fixed while roles reverse:
 | Database-only standby | `todo-primary` | `192.168.0.102` |
 
 Both runtimes use Oracle Linux 9.8, SELinux enforcing, active `fapolicyd` and
-firewalld, the system Python 3.9 with Jinja2 and PyYAML, user lingering, 4 GiB memory and
+firewalld, the system Python 3.9 with PyYAML (for the DR tools), user lingering, 4 GiB memory and
 an 18 GiB home filesystem per VM.
 
 These values describe the lab used for the earlier four-pod runs. The
@@ -207,7 +207,7 @@ getenforce
 systemctl is-active sshd firewalld fapolicyd qemu-guest-agent
 loginctl show-user "$USER" -p Linger
 podman info --format 'Rootless={{.Host.Security.Rootless}} GraphRoot={{.Store.GraphRoot}}'
-python3 -c 'import jinja2, yaml; print("jinja2/pyyaml ok")'
+python3 -c 'import yaml; print("pyyaml ok")'
 openssl version
 df -h "$HOME"
 free -m
@@ -244,7 +244,7 @@ without any Todo-state symptom above. If found, clear or disable it explicitly
 record why it was present before continuing.
 
 Pass when identities differ, security services are active, SELinux is enforcing,
-Podman is rootless, Jinja2 and PyYAML import successfully, user systemd is
+Podman is rootless, PyYAML imports successfully, user systemd is
 available and no Todo state exists. A VM
 snapshot is a lab convenience, not part of the application recovery model.
 Container creation times close to VM boot do not prove a clean restore: any

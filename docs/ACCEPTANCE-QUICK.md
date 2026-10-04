@@ -74,12 +74,11 @@ must equal the kickoff revision:
 ```bash
 $A --step 01-1 do rollback 107 clean-agent 192.168.0.102
 $A --step 01-2 check clean-host 192.168.0.102
-ssh gunstein@192.168.0.102 'sudo -n dnf install -y python3-jinja2 python3-pyyaml' > "$RUN/logs/01-3-prerequisites.log" 2>&1; echo "exit=$?" >> "$RUN/logs/01-3-prerequisites.log"
+ssh gunstein@192.168.0.102 'python3 --version' > "$RUN/logs/01-3-python.log" 2>&1; echo "exit=$?" >> "$RUN/logs/01-3-python.log"
 ```
 
-Installing `python3-jinja2` is a documented target prerequisite
-(`deploy/offline/README.md`), not a source change; record it as an expected
-deviation.
+A single host needs only Python 3 (`deploy/offline/README.md`): the bundle
+carries every file already rendered, so nothing is installed here.
 
 **2. Build and stage.**
 

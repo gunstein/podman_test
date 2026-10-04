@@ -341,9 +341,6 @@ promoted primary.
 - **D8. A hostname in acceptance.** *[decision]* A public hostname other than
   the default is covered by unit tests only. Decide whether acceptance gets a
   step that installs the primary with one and checks it after failover.
-- **D9. No Jinja2 on the VMs.** *[docs]* The acceptance guide still installs
-  `python3-jinja2` on both VMs, which no target needs since D6; drop it the
-  next time the guide changes.
 - **D3. Say that `deploy-promoted-application` runs on the promoted host.**
   *[docs]* It refuses unless that host is the machine running app-ops
   (`local: true`). `failover` runs there anyway, so document the limit as
@@ -477,9 +474,9 @@ limited to 1.2 and 1.3.
 
 ## Lab housekeeping (operator)
 
-- **K1.** *[operator]* Rebuild the `clean-agent` snapshots with
-  `prepare-agent-snapshots.sh`, so they contain `python3-jinja2` and
-  `python3-pyyaml` (every run still installs them as a recorded deviation).
+- **K1.** *[optional]* *[operator]* Rebuild the `clean-agent` snapshots with
+  `prepare-agent-snapshots.sh`, so they hold `python3-pyyaml` and no longer
+  the unused `python3-jinja2` an older version of the script installed.
 - **K2.** *[operator]* Remove the old `todo-lab-ca-*` nicknames from the
   client NSS database (`certutil -D -d sql:$HOME/.pki/nssdb -n NAME`).
 - **K3.** *[operator]* Review and remove the old Proxmox firewall rules: three

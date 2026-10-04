@@ -137,11 +137,11 @@ class AcceptancePreflightTests(unittest.TestCase):
                           "podman volume rm", "tee ", ">"):
             self.assertNotIn(forbidden, acceptance_preflight.SSH_CHECKS.replace("2>/dev/null", ""))
 
-    def check_guest(self, jinja2_yaml):
+    def check_guest(self, pyyaml):
         facts = {"hostname": "todo-primary", "client": "192.168.0.100", "selinux": "Enforcing",
                 "unit_sshd": "active", "unit_firewalld": "active", "unit_fapolicyd": "active",
                 "unit_qemu-guest-agent": "active", "linger": "yes", "rootless": "true",
-                "podman": "podman version 5.8.2", "jinja2_yaml": jinja2_yaml, "sudo": "ok",
+                "podman": "podman version 5.8.2", "pyyaml": pyyaml, "sudo": "ok",
                 "sudoers_file": "present", "mem_mib": "3457", "home_free": "16G", "todo_state": "0"}
         out = "\n".join(f"{key}={value}" for key, value in facts.items())
         args = argparse.Namespace(client_ip="192.168.0.100", user="gunstein")
@@ -152,16 +152,17 @@ class AcceptancePreflightTests(unittest.TestCase):
                 acceptance_preflight.check_guest(report, args, "192.168.0.102", "todo-primary")
         return report, output.getvalue()
 
-    def test_guest_reports_missing_jinja2_or_pyyaml(self):
+    def test_guest_reports_missing_pyyaml(self):
         report, output = self.check_guest("missing")
-        self.assertIn("FAIL  Python Jinja2 and PyYAML installed", output)
+        self.assertIn("FAIL  Python PyYAML installed (DR tools)", output)
         self.assertIn("prepare-agent-snapshots.sh", output)
         self.assertGreaterEqual(report.failed, 1)
 
-    def test_guest_passes_with_jinja2_and_pyyaml_present(self):
+    def test_guest_passes_with_pyyaml_and_needs_no_jinja2(self):
         report, output = self.check_guest("ok")
-        self.assertIn("PASS  Python Jinja2 and PyYAML installed", output)
+        self.assertIn("PASS  Python PyYAML installed (DR tools)", output)
         self.assertEqual(report.failed, 0, output)
+        self.assertNotIn("jinja2", acceptance_preflight.SSH_CHECKS)
 
 
 if __name__ == "__main__":

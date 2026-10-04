@@ -42,7 +42,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
    switchover), U2 (certificate renewal, before replication stops by itself)
    and L1 (command logging).
 4. fapolicyd (F0 first), firewalls (W) and data checks (C).
-5. The rest.
+5. The rest. A1 and A2 (acceptance run speed) only change the lab tooling and
+   can go in whenever no acceptance run is in progress.
 
 For a single host without DR (`install.sh` only), what matters, in order:
 the nginx part of U2 (the certificate
@@ -467,6 +468,25 @@ limited to 1.2 and 1.3.
 - **H4. Read-only root filesystems.** *[optional]* Set
   `readOnlyRootFilesystem` where a container allows it, with writable volumes
   only where needed.
+
+## Acceptance run speed
+
+A full agent run is mostly agent turns: each of the 115 steps and about 60
+other commands is one round of reading output, thinking and choosing the next
+step. A slow or careful model spends most of its time and tokens there, not
+in the builds, reboots and backups.
+
+- **A1. Time each step and phase in the report.** *[new]* Every log already
+  starts with its time. `report full` could show how long each step and each
+  phase took, and the gaps between steps (agent time), so a change to the
+  guide is chosen by where the time goes, not by guess. Measure first.
+- **A2. One turn for consecutive read-only checks.** *[new]* Many phases run
+  five to ten `check` steps in a row (markers, roles, CA, headers, monitor,
+  ports). `acceptance.py step` could run the consecutive checks up to the
+  next `do` or product command in one call, print every result and stop at
+  the first FAIL. Steps that change something still run one at a time, and
+  the record keeps one line and one log per step as now. Fewer turns save
+  time and tokens with every model. A1 shows how much.
 
 ## Lab platform
 

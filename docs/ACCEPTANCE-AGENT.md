@@ -315,7 +315,12 @@ echo "Wrote $dir/pve.env"
 6. **Never** enable the Proxmox datacenter or node firewall yourself.
 7. **Never** change or delete a Proxmox firewall rule you did not create in this
    run. Identify rules by their `comment`, and read the full rule before you
-   change or delete it; never act on a rule position alone.
+   change or delete it; never act on a rule position alone. The one
+   exception: VM 107's rules commented `todo-quarantine-replication`,
+   `todo-quarantine-ssh-peer` and `todo-quarantine-ssh-client`. A snapshot
+   rollback does not remove VM firewall rules, so earlier runs leave them
+   behind; steps `05-7` and `09-8` replace exactly those by comment, and
+   nothing else.
 8. A failed check means **STOP** (C3). A passing command exit code alone is not
    a passing check: compare the output with the expected values.
 9. **Never** run `install.sh` or `app_installer install` after

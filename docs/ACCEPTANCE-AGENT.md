@@ -369,19 +369,24 @@ The operator should be able to act without reading any other document. Every
 request uses this form:
 
 ```text
-OPERATOR ACTION <n> (about <m> minutes)
+OPERATOR ACTION <n>: <what the operator does, in a few words>
+
+DO THIS in <exact place: ThinkPad terminal | Proxmox node Shell
+(web GUI: Datacenter > <node> > Shell) | a named web GUI page>:
+
+<complete command or script path, every real value filled in>
+<next command, if any>
+
+THEN REPLY: done   (or paste the lines that start with <...>; never a password)
+
+You should see: <expected output per command>
 Why: <one sentence>
-Where: <exact place: ThinkPad terminal in the checkout | Proxmox node Shell
-       (web GUI: Datacenter > <node> > Shell) | a named web GUI page>
 Destructive: <what is destroyed, or "nothing">
-Steps:
-  1. <complete command or script path, with every real value filled in>
-  2. ...
-You should see: <expected output per step>
-Reply: "done", or paste the lines that start with <...>. Never paste passwords
-or tokens.
 Next I will: <what you do afterwards>
 ```
+
+The commands come first, alone on their lines, so the operator can act
+without reading further; the explanation follows them.
 
 - Send the request as **one** fenced `text` block and nothing else, so the
   operator copies it in one go; plain text inside, no Markdown formatting.

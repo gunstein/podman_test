@@ -137,7 +137,7 @@ class AcceptancePreflightTests(unittest.TestCase):
                           "podman volume rm", "tee ", ">"):
             self.assertNotIn(forbidden, acceptance_preflight.SSH_CHECKS.replace("2>/dev/null", ""))
 
-    def check_guest(self, pyyaml):
+    def check_guest(self, pyyaml, stderr=""):
         facts = {"hostname": "todo-primary", "client": "192.168.0.100", "selinux": "Enforcing",
                 "unit_sshd": "active", "unit_firewalld": "active", "unit_fapolicyd": "active",
                 "unit_qemu-guest-agent": "active", "linger": "yes", "rootless": "true",
@@ -146,7 +146,7 @@ class AcceptancePreflightTests(unittest.TestCase):
         out = "\n".join(f"{key}={value}" for key, value in facts.items())
         args = argparse.Namespace(client_ip="192.168.0.100", user="gunstein")
         report = acceptance_preflight.Report()
-        with patch.object(acceptance_preflight, "_ssh", return_value=(0, out, "")):
+        with patch.object(acceptance_preflight, "_ssh", return_value=(0, out, stderr)):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 acceptance_preflight.check_guest(report, args, "192.168.0.102", "todo-primary")
@@ -159,8 +159,11 @@ class AcceptancePreflightTests(unittest.TestCase):
         self.assertGreaterEqual(report.failed, 1)
 
     def test_guest_passes_with_pyyaml_and_needs_no_jinja2(self):
-        report, output = self.check_guest("ok")
-        self.assertIn("PASS  Python PyYAML installed (DR tools)", output)
+        warning = "** The server may need to be upgraded. See https://openssh.com/pq.html"
+        report, output = self.check_guest("ok", stderr=warning)
+        # A passing line shows neither SSH's warning nor the advice for a missing PyYAML.
+        self.assertIn("PASS  Key-based SSH with verified host key\n", output)
+        self.assertIn("PASS  Python PyYAML installed (DR tools)\n", output)
         self.assertEqual(report.failed, 0, output)
         self.assertNotIn("jinja2", acceptance_preflight.SSH_CHECKS)
 

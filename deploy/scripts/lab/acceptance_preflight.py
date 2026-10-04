@@ -207,7 +207,9 @@ def check_guest(report, args, address, hostname):
     # The running VM, which may differ from its clean snapshot; phase 1 checks again after rollback.
     print(f'== {hostname} ({address}) over SSH, read-only (running state, not the snapshot)')
     code, out, error = _ssh(args, address)
-    if not report.check(code == 0, 'Key-based SSH with verified host key', error.splitlines()[-1] if error else ''):
+    # SSH's stderr is only worth showing when it failed; on success it holds warnings, not the result.
+    if not report.check(code == 0, 'Key-based SSH with verified host key',
+                        error.splitlines()[-1] if code and error else ''):
         if 'Permission denied' in error:
             report.line('INFO', 'Your SSH key is not authorized for this user; see ACCEPTANCE-AGENT.md A3 '
                         '(ssh-copy-id before taking the clean snapshot)')
@@ -224,8 +226,9 @@ def check_guest(report, args, address, hostname):
     report.check(facts.get('linger') == 'yes', 'User lingering', facts.get('linger', ''))
     report.check(facts.get('rootless') == 'true', 'Rootless Podman', facts.get('podman', ''))
     # The DR tools parse the canonical PVC YAML; the install itself needs only Python.
-    report.check(facts.get('pyyaml') == 'ok', 'Python PyYAML installed (DR tools)',
-                 'run deploy/scripts/lab/prepare-agent-snapshots.sh, or dnf install -y python3-pyyaml')
+    pyyaml = facts.get('pyyaml') == 'ok'
+    report.check(pyyaml, 'Python PyYAML installed (DR tools)',
+                 '' if pyyaml else 'run deploy/scripts/lab/prepare-agent-snapshots.sh, or dnf install -y python3-pyyaml')
     report.check(facts.get('sudo') == 'ok', 'Passwordless sudo in the running VM', facts.get('sudo', ''), level='WARN')
     report.line('INFO', 'Lab sudoers file', facts.get('sudoers_file', '') +
                 ' (what matters is that the clean snapshot contains it)')

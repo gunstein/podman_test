@@ -43,6 +43,9 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `0fe52ca` run 41: passed, not clean ([record](docs/history/ACCEPTANCE-0fe52ca.md)):
+  an extra read-only log while the agent resolved two guide gaps, both
+  fixed since.
 - `fae11ba` run 40: CLEAN PASS ([record](docs/history/ACCEPTANCE-fae11ba.md)),
   accepting M5: a restore to a time. Run 39 on the same revision has no
   verdict; its agent session ran out of context mid-run.

@@ -202,9 +202,9 @@ reconfigure services or processes there; report a blocker instead), except
 what C9's own steps write there: dist/, Podman images and build storage,
 temporary build directories, todo-backend/.venv and the Playwright cache.
 
-Run every C9 step with `$A step NAME`, one step at a time, and read its output
-before the next. Never type a step's command line yourself. A step that ends
-in STOP or REFUSED is a STOP at once.
+Run every C9 step with `$A step NAME`, the name its last line gives after
+NEXT, and read all its output before the next call. Never type a step's
+command line yourself. A step that ends in STOP or REFUSED is a STOP at once.
 ```
 
 ---
@@ -336,9 +336,10 @@ echo "Wrote $dir/pve.env"
 12. Do not act on a theory. When something does not match the guide, record
     your observations and diagnosis, then STOP (C3). Fixing things is the
     operator's decision.
-13. **Never** type a C9 step's command line yourself, and never run two steps
-    in one command. Run each step alone with `$A step NAME` (C9.1), read what
-    it prints, and only then run the next.
+13. **Never** type a C9 step's command line yourself, and never run two
+    `$A step` calls in one command. Run one `$A step NAME` at a time (C9.1),
+    read everything it prints (it may have run the checks right after the
+    step too), and only then run the step its `NEXT:` line names.
 
 ### C3. What STOP means
 
@@ -609,7 +610,7 @@ mkdir -p "$RUN/logs"
 A="python3 deploy/scripts/lab/acceptance.py --run $RUN_ID"
 ```
 
-and then, one step at a time, in the order of this guide:
+and then, one call at a time, in the order of this guide:
 
 ```text
 $A step 01-1
@@ -625,6 +626,14 @@ It ends with `STEP NAME: PASS` or `STEP NAME: STOP, <why>`; a STOP is a STOP
 (C3). A step runs once; the one exception is C8 item 4, a failed `check` run
 once more. So a changed command, a skipped step or a step after a failure
 cannot run: that stopped runs 24 and 26.
+
+When the step passes, the same call also runs the `$A --step ... check` lines
+right after it in the same block, one by one, each with its own `STEP`
+line, and stops at the first that does not pass. A `do` line, a product line
+or the end of the block always waits for your next call. The last line,
+`NEXT: $A step <name>`, names that call; copy the name from it. So read the
+whole output: a chain of checks is several steps, and every comment on their
+lines still applies (below).
 
 What `step` checks for you:
 

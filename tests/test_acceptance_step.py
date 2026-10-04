@@ -133,10 +133,10 @@ class StepTests(unittest.TestCase):
         logs.mkdir(parents=True, exist_ok=True)
         for name, text in (("01-1-first", "one"), ("01-2-json", '{"changed": true}'), ("01-3-after", "after")):
             (logs / f"{name}.log").write_text(f"# start now\n{text}\nexit=0\n")
+        self.record("02-2", "FAIL")  # recorded first, so 02-1 does not run it as the check after it
         code, output = self.step("02-1-refused")
         self.assertEqual(code, 0, output)
         self.assertEqual(self.log("02-1-refused")[-1], "exit=1")
-        self.record("02-2", "FAIL")
         code, output = self.step("02-3-last")
         self.assertEqual(code, 3)
         self.assertIn("02-2 FAIL", output)
@@ -156,6 +156,35 @@ class StepTests(unittest.TestCase):
         code, output = self.step("02-2")
         self.assertEqual(code, 3)
         self.assertIn("already ran", output)
+
+    def test_the_checks_right_after_a_step_run_in_the_same_call(self):
+        """A2: consecutive read-only checks need no agent turn each; a do, a product line or a block end waits."""
+        Path(acceptance.AGENT_GUIDE).write_text(
+            "```bash\nproduct 01-1-first echo one\n$A --step 01-2 check headers\n$A --step 01-3 check browser\n"
+            "$A --step 01-4 do markers phase1\n$A --step 01-5 check headers\n```\n\n"
+            "```bash\n$A --step 02-1 check headers\n```\n")
+        real_run, results = acceptance.subprocess.run, {}
+
+        def run(argv, **keywords):
+            step = re.search(r"--step (\S+)", argv[-1])
+            if not step:
+                return real_run(argv, **keywords)
+            self.record(step.group(1), results.get(step.group(1), "PASS"))
+            return None
+
+        with patch.object(acceptance.subprocess, "run", side_effect=run):
+            code, output = self.step("01-1-first")
+            self.assertEqual(code, 0, output)
+            for name in ("01-1-first", "01-2", "01-3"):
+                self.assertIn(f"STEP {name}: PASS", output)
+            self.assertNotIn("01-4", output.split("NEXT:")[0])
+            self.assertIn("NEXT: $A step 01-4", output)
+            results["01-5"] = "FAIL"
+            code, output = self.step("01-4")
+            self.assertEqual(code, 1, output)
+            self.assertIn("STEP 01-5: STOP, FAIL", output)
+            self.assertNotIn("NEXT:", output)
+            self.assertNotIn("02-1", output)
 
     def test_a_step_that_is_still_running_holds_the_next_one(self):
         logs = self.run_directory / "logs"

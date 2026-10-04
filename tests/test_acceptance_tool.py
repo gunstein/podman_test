@@ -1,5 +1,6 @@
 """deploy/scripts/lab/acceptance.py with every external command faked."""
 import contextlib
+import datetime
 import io
 import json
 import os
@@ -563,7 +564,7 @@ class ReportTests(ToolTest):
                          "guide log logs/06-6-preflight.log is missing",
                          "log logs/06-8-preflight.log is not in the guide"):
             self.assertIn(expected, text)
-        self.assertNotIn("09-12b", text.split("## Needs attention")[1])
+        self.assertNotIn("09-12b", text.split("## Needs attention")[1].split("## Repeated")[0])
 
     def test_a_step_with_other_arguments_than_the_guide_needs_attention(self):
         self.tool("--step", "04-15", "check", "roles", "192.168.0.108", "primary",
@@ -621,6 +622,31 @@ class ReportTests(ToolTest):
                           ["--run", "run-1", "report"], ["--run", "run-1", "report", "full", "extra"]):
             with self.subTest(arguments), self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
                 acceptance.main(arguments)
+
+
+class TimeTests(ToolTest):
+    def test_the_report_times_each_phase_and_the_gaps_between_steps(self):
+        """A1: where a run spends its time, in steps or between them, read from the logs."""
+        logs = self.run_directory / "logs"
+        logs.mkdir(parents=True)
+        start = datetime.datetime(2026, 10, 4, 18, 0, tzinfo=datetime.timezone.utc)
+        for name, offset, length in (("03-2-install", 0, 300), ("03-3-check-services", 360, 60),
+                                     ("04-1-trust-ops", 600, 30), ("04-10-bootstrap", 700, 400),
+                                     ("04-11-status", 750, 10)):
+            path = logs / f"{name}.log"
+            began = start + datetime.timedelta(seconds=offset)
+            first = f"# start {began.isoformat()}" if "-check-" not in name else f"# {began.isoformat()} check"
+            path.write_text(f"{first}\nexit=0\n")
+            os.utime(path, (began.timestamp() + length,) * 2)
+        (logs / "05-1-untimed.log").write_text("no time here\n")
+        text = "\n".join(acceptance.timing(self.run_directory))
+        # 03: 0-300 and 360-420, a 60 s gap; 04: 600-630 and 700-1100 (background) after 180 s and 70 s gaps,
+        # and 750-760 inside the background step.
+        self.assertIn("| 03 | 2 | 7 min 00 s | 6 min 00 s | 1 min 00 s |", text)
+        self.assertIn("| 04 | 3 | 8 min 20 s | 7 min 20 s | 4 min 10 s |", text)
+        self.assertIn("| all | 5 | 18 min 20 s | 13 min 20 s | 5 min 10 s |", text)
+        self.assertIn("Slowest steps: 04-10-bootstrap 6 min 40 s, 03-2-install 5 min 00 s,", text)
+        self.assertEqual(acceptance.minutes(3725), "1 h 02 min")
 
 
 class EvidenceTests(ToolTest):

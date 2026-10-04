@@ -17,7 +17,10 @@ step    runs one command line of docs/ACCEPTANCE-AGENT.md C9 exactly as the
         guide writes it, named by its step (what follows "$A --step", "vm",
         "ops" or "product" on that line). It refuses unless that is the next
         step of the guide and the step before it passed, so a changed
-        command, a skipped step or a step after a failure cannot run.
+        command, a skipped step or a step after a failure cannot run. After
+        a step that passed, it also runs the read-only check lines right
+        after it in the same block, stopping at the first that does not
+        pass, and ends by naming the next step.
 
 check   reads only and may be repeated.
 do      changes state. After a FAIL it refuses the same command with the same
@@ -37,7 +40,9 @@ line and every log the guide names must be there, and nothing else. It exits
 every other log ends in exit=0 (exit=1 for a log named *-refused.log, a
 refusal the guide asks for) and every step ran from the same clean
 checkout. Each record line carries the revision and cleanliness of the
-checkout at the time of that step; report never reads git itself.
+checkout at the time of that step; report never reads git itself. Its last
+section times the run from the logs: each phase, the time in steps and the
+time between them (the agent and the operator), and the slowest steps.
 
 Commands:
   do    rollback VMID SNAPSHOT HOST      reset the VM, start it, wait for SSH
@@ -924,6 +929,67 @@ def product_logs(run_directory, tool_logs):
 
 
 GUIDES = {'full': 'docs/ACCEPTANCE-AGENT.md', 'quick': 'docs/ACCEPTANCE-QUICK.md'}
+SLOWEST = 8
+ISO_TIME = re.compile(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d')
+
+
+def log_times(run_directory):
+    """(name, start, end) for every log, by start: the time its first line names, and its last write.
+
+    Each log starts with the time it began (acceptance.py's '# <time> ...',
+    helpers.sh's '# start <time>'); the file's modification time is when the
+    last line was written, so a log is timed without a line of its own.
+    """
+    times = []
+    for path in (run_directory / 'logs').glob('*.log'):
+        with path.open(errors='replace') as log:
+            found = ISO_TIME.search(log.readline())
+        if found:
+            start = datetime.datetime.fromisoformat(found.group()).timestamp()
+            times.append((path.stem, start, max(start, path.stat().st_mtime)))
+    return sorted(times, key=lambda item: item[1])
+
+
+def minutes(seconds):
+    """12 min 05 s, or 1 h 02 min."""
+    seconds = round(seconds)
+    if seconds >= 3600:
+        return f'{seconds // 3600} h {seconds % 3600 // 60:02d} min'
+    return f'{seconds // 60} min {seconds % 60:02d} s'
+
+
+def timing(run_directory):
+    """The report's Time section: where a run spends its time, read from the logs alone.
+
+    Time between steps is the gap from one log's last line to the next
+    log's start: the agent reading and choosing the next step, or waiting
+    for the operator. It counts towards the phase of the step after it.
+    """
+    times = log_times(run_directory)
+    if not times:
+        return ['- No timed logs.']
+    phases, previous_end = {}, None
+    for name, start, end in times:
+        phase = phases.setdefault(name[:2], {'steps': 0, 'first': start, 'last': end, 'in': 0.0, 'between': 0.0})
+        phase['steps'] += 1
+        phase['last'] = max(phase['last'], end)
+        phase['in'] += end - start
+        if previous_end is not None and start > previous_end:
+            phase['between'] += start - previous_end
+        previous_end = end if previous_end is None else max(previous_end, end)
+    lines = ['| Phase | Logs | From first start to last end | In steps | Between steps |', '|---|---|---|---|---|']
+    for phase, value in sorted(phases.items()):
+        lines.append(f'| {phase} | {value["steps"]} | {minutes(value["last"] - value["first"])} | '
+                     f'{minutes(value["in"])} | {minutes(value["between"])} |')
+    total_in = sum(value['in'] for value in phases.values())
+    total_between = sum(value['between'] for value in phases.values())
+    lines.append(f'| all | {len(times)} | {minutes(max(end for _, _, end in times) - times[0][1])} | {minutes(total_in)} | '
+                 f'{minutes(total_between)} |')
+    slowest = sorted(times, key=lambda item: item[2] - item[1], reverse=True)[:SLOWEST]
+    lines += ['', 'Slowest steps: ' + ', '.join(f'{name} {minutes(end - start)}' for name, start, end in slowest)
+              + '.', '', 'A step that ran in the background (failover, rebuild) overlaps the steps after it, '
+              'so "In steps" can add up to more than the phase took.']
+    return lines
 
 # The logs a reviewer reads after a run, by the start of their name, in run order.
 EVIDENCE_LOGS = ('00-readiness', '03-2-install', '03-12a-', '03-12c-restore', '03-12d-restored',
@@ -1085,24 +1151,36 @@ def report(run_directory, guide):
     lines += [f'- {item}' for item in attention] or ['- Nothing.']
     lines += ['', '## Repeated checks (allowed; listed for the record)', '']
     lines += [f'- {item}' for item in repeats] or ['- None.']
+    lines += ['', '## Time', ''] + timing(run_directory)
     return '\n'.join(lines) + '\n', passed
 
 
-# The agent guide's command lines, run one at a time by "step".
+# The agent guide's command lines, run by "step": one, then the read-only checks right after it.
 AGENT_GUIDE = 'docs/ACCEPTANCE-AGENT.md'
 HELPERS = 'deploy/scripts/lab/helpers.sh'
 STEP_LINE = re.compile(r'^(?:\$A --step (\S+) |(?:vm|ops|product) ([0-9][\w.-]*) )')
 
 
-def guide_lines(text):
-    """The guide's steps in order: (name, command line) for each fixed line in its bash blocks."""
-    steps = []
+CHECK_LINE = re.compile(r'^\$A --step \S+ check ')
+
+
+def guide_blocks(text):
+    """The guide's steps by bash block: for each block that has any, its (name, command line) pairs in order."""
+    blocks = []
     for block in re.findall(r'```bash\n(.*?)```', text, re.S):
+        steps = []
         for line in block.splitlines():
             match = STEP_LINE.match(line)
             if match:
                 steps.append((match.group(1) or match.group(2), line))
-    return steps
+        if steps:
+            blocks.append(steps)
+    return blocks
+
+
+def guide_lines(text):
+    """The guide's steps in order: (name, command line) for each fixed line in its bash blocks."""
+    return [step for block in guide_blocks(text) for step in block]
 
 
 def without_comment(line):
@@ -1168,8 +1246,16 @@ def readiness_state(run_directory):
 
 
 def run_step(run_directory, run_id, name):
-    """Run the guide line named name if it is the next step and the one before passed; 0 if it passed."""
-    steps = guide_lines((ROOT / AGENT_GUIDE).read_text())
+    """Run the guide line named name if it is the next step and the one before passed; 0 if it passed.
+
+    A step that passed is followed at once by the read-only check lines right
+    after it in the same block, each run and judged the same way, until one
+    does not pass. Each is a round of reading and thinking for an agent that
+    adds nothing a check needs (A2). A do line, a product line or the end of
+    the block always waits for the agent's next call.
+    """
+    blocks = guide_blocks((ROOT / AGENT_GUIDE).read_text())
+    steps = [step for block in blocks for step in block]
     names = [step for step, _ in steps]
     if name not in names:
         raise Refused(f'{name} is not a step in {AGENT_GUIDE} C9')
@@ -1200,6 +1286,29 @@ def run_step(run_directory, run_id, name):
                 raise Refused(f'{previous} is still running: wait until its log ends with exit=')
             raise Refused(f'{previous} {states[index - 1]}: STOP (docs/ACCEPTANCE-AGENT.md C3)')
 
+    block = next(block for block in blocks if (name, line) in block)
+    checks_after = []
+    for step, step_line in block[block.index((name, line)) + 1:]:
+        if not CHECK_LINE.match(step_line) or tool_state(entries, step) != 'not run':
+            break
+        checks_after.append((step, step_line))
+
+    code = run_line(run_directory, run_id, name, line)
+    last = index
+    if code == 0 and not without_comment(line).endswith('&'):
+        for step, step_line in checks_after:
+            print(f'\n{step} is the read-only check right after it: run in the same call', flush=True)
+            code = run_line(run_directory, run_id, step, step_line)
+            last = names.index(step)
+            if code:
+                break
+    if code == 0:
+        print(f'NEXT: $A step {names[last + 1]}' if last + 1 < len(names) else 'NEXT: the final report (C9.11)')
+    return code
+
+
+def run_line(run_directory, run_id, name, line):
+    """Run one guide line with the helpers; print STEP NAME: PASS or STOP and return 0 if it passed."""
     (run_directory / 'logs').mkdir(parents=True, exist_ok=True)
     command = without_comment(line)
     background = command.endswith('&')
@@ -1215,8 +1324,10 @@ def run_step(run_directory, run_id, name):
               'the next step waits for that')
         return 0
     subprocess.run(['bash', '-c', script], cwd=ROOT, env=environment)
-    entries = read_record(run_directory)  # an acceptance.py step has added its result
-    result = state(name, line)
+    if line.startswith('$A '):
+        result = tool_state(read_record(run_directory), name)  # the acceptance.py step has added its result
+    else:
+        result = product_state(run_directory, name, line)
     print(f'STEP {name}: ' + ('PASS' if result == 'passed' else f'STOP, {result}'))
     return 0 if result == 'passed' else 1
 

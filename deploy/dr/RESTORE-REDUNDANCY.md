@@ -112,6 +112,28 @@ standby-then-primary reboots with application, CA, data and backup persistence.
 Use [Acceptance](../../docs/ACCEPTANCE.md) for the full sequence and verdict.
 [688a0f6](../../docs/history/ACCEPTANCE-688a0f6.md) records historical evidence only.
 
+## A standby that lost its slot
+
+Without a failover, a standby that was away longer than the primary keeps
+WAL for it (`max_slot_wal_keep_size`, 1 GB per database) loses its slot and
+can never catch up. `reseed-standby` copies it again while the primary keeps
+serving; the inventory names the current roles, `primary` and `standby`:
+
+```bash
+python3 -m app_ops --inventory initial.yaml reseed-standby --confirm-reseed todo-standby
+```
+
+`--confirm-reseed` must be the standby's name. Before anything is deleted,
+each database on the standby must prove it is a read-only standby, no
+application service may run there, and every database must reach and log in
+to the primary over TLS; a host that is a primary is never erased. The primary
+must hold at most one slot per database (a pair has one standby). Then the
+standby's three data volumes are deleted (never its backup volumes or
+secrets), the primary drops each idle slot, and each database is copied
+again with the same slot name. If it fails after the erase, the primary is
+untouched and `bootstrap-standby` builds the standby again. Acceptance
+phase 9 runs it on the rebuilt standby.
+
 ## Failback is separate
 
 The healthy end state may remain:

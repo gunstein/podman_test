@@ -103,6 +103,7 @@ python3 -m app_ops --inventory initial.yaml bootstrap-standby
 python3 -m app_ops --inventory initial.yaml replication-status
 python3 -m app_ops --inventory initial.yaml install-dr-tool
 python3 -m app_ops --inventory initial.yaml install-quarantine-tool
+python3 -m app_ops --inventory initial.yaml reseed-standby --confirm-reseed todo-standby
 python3 -m app_ops --inventory recovery.yaml failover \
   --confirm-primary-fenced "todo-primary is fenced" --confirm-promotion todo-standby
 python3 -m app_ops --inventory recovery.yaml deploy-promoted-application
@@ -191,7 +192,8 @@ acceptance records:
 5. [Backup and PITR](BACKUP-PITR.md): `configure-backup`, then the local
    `app_backup.py`.
 6. [Restoring redundancy](RESTORE-REDUNDANCY.md): `preflight-standby-rebuild`,
-   `rebuild-standby`, `cluster-status`.
+   `rebuild-standby`, `cluster-status`, and `reseed-standby` for a standby
+   that lost its slot.
 
 For full validation, follow [ACCEPTANCE.md](../../docs/ACCEPTANCE.md).
 

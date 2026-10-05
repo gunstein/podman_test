@@ -15,6 +15,9 @@ changes it. The functions come in this order:
   require_quarantined_group, reseed_check, reseed_standby, reseed_group. Only
   an explicitly confirmed reseed deletes a data volume, and only after every
   check of the whole group passed.
+- Copy a standby again without a failover (a lost slot): standby_slot,
+  drop_idle_slot, standby_reseed_check, erase_standby_group. The standby must
+  prove it is a read-only standby before anything on it is deleted.
 
 Encryption of the stream is replication_tls.py: configure_primary and
 publish_primaries call its ensure_ca and install_server_tls, and the standby
@@ -415,14 +418,15 @@ def promote(database, *, query=None, command=None):
     return require_primary(database, query)
 
 
-def streaming_status(database, *, rebuilt=False):
+def streaming_status(database, *, rebuilt=False, slot=None):
     """On a primary: raise unless the standby on this slot streams asynchronously over TLS and the slot keeps its WAL.
 
-    The slot is the bootstrap one, or the rebuild one with rebuilt=True.
+    The slot is the bootstrap one, the rebuild one with rebuilt=True, or the
+    one named by slot (a re-seeded standby keeps the slot it had).
     Returns the connection row and the slot row.
     """
     require_primary(database)
-    slot = identifier(database.replication_slot(rebuilt))
+    slot = identifier(slot or database.replication_slot(rebuilt))
     fields = sql(database, "SELECT application_name, client_addr, state, sync_state, "
                  "pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)::bigint, COALESCE(ssl, false) "
                  "FROM pg_stat_replication LEFT JOIN pg_stat_ssl USING (pid) "
@@ -690,4 +694,88 @@ def reseed_group(primary_address, *, confirm_fenced, confirm_reseed, **paths):
         (runtime / name).unlink(missing_ok=True)
     for database in apps.REPLICATED_DATABASES:
         reseed_standby(database, primary_address, **confirmations, **paths)
+    return [database.name for database in apps.REPLICATED_DATABASES]
+
+
+def standby_slot(database):
+    """On a primary: the name of the one physical slot its standby uses, or the bootstrap name if there is none.
+
+    A pair has one standby, so more than one physical slot is something a
+    person must look at; this refuses instead of guessing which to drop.
+    A re-seed gives the standby the same slot name again, so the checks that
+    name the slot (cluster-status after a rebuild) still hold afterwards.
+    """
+    require_primary(database)
+    names = sql(database, "SELECT slot_name FROM pg_replication_slots WHERE slot_type = 'physical' "
+                "ORDER BY slot_name;").split()
+    if len(names) > 1:
+        raise RuntimeError(f'{database.name}: more than one replication slot ({", ".join(names)}); '
+                           'a pair has one standby, so nothing was changed')
+    return identifier(names[0] if names else database.replication_slot())
+
+
+def drop_idle_slot(database, slot):
+    """On a primary: drop slot if it exists and no standby is connected to it; True if it was dropped.
+
+    The re-seed stops the standby's databases first; their WAL senders end a
+    moment later, so app-ops retries while this raises that the slot is still
+    in use. An active slot is never dropped.
+    """
+    require_primary(database)
+    slot = identifier(slot)
+    active = sql(database, f"SELECT active FROM pg_replication_slots WHERE slot_name = '{slot}';")
+    if not active:
+        return False
+    if active != 'f':
+        raise RuntimeError(f'{database.name}: replication slot {slot} is still in use; the standby has not stopped')
+    sql(database, f"SELECT pg_drop_replication_slot('{slot}');")
+    return True
+
+
+def standby_reseed_check(primary_address):
+    """On a standby, read-only: it may be copied again from the primary at primary_address.
+
+    Every database must run as a read-only standby: that is the proof this
+    host is not the primary, so a mistaken inventory erases nothing. No
+    application service may be active (a database-only standby), and every
+    database must reach the primary's replication port and log in there
+    over TLS, so a wrong address or password stops the run while the old
+    copy still exists. A standby that is down must be started first; it
+    comes up in recovery and waits for the primary.
+    """
+    primary_address = address(primary_address)
+    for database in apps.REPLICATED_DATABASES:
+        state = status(database)
+        if not (state['in_recovery'] and state['transaction_read_only']):
+            raise RuntimeError(f'{database.name}: this host is not a read-only standby; '
+                               'a re-seed never erases a primary, so nothing was changed')
+    services = apps.services(databases=False)
+    states = run('systemctl', '--user', 'is-active', *services, allowed=(0, 3, 4)).stdout.split()
+    running = [service for service, state in zip(services, states) if state not in ('inactive', 'failed')]
+    if running:
+        raise RuntimeError(f'the application tier runs here ({", ".join(running)}); '
+                           'only a database-only standby is re-seeded, so nothing was changed')
+    for database in apps.REPLICATED_DATABASES:
+        replication_path(database, primary_address)
+        authenticate(database, primary_address)
+    return False
+
+
+def erase_standby_group(primary_address, confirm_reseed):
+    """On a standby: stop its databases and delete their data volumes, after every check passed again.
+
+    confirm_reseed must be this host's name. The backup volumes and the
+    secrets stay; bootstrap_standby then copies each database again. If the
+    run stops after this, the primary is untouched, and bootstrap-standby
+    builds the standby from here (its volumes are gone, as it requires).
+    """
+    if confirm_reseed != socket.gethostname():
+        raise RuntimeError('The exact local hostname is required to erase this standby')
+    standby_reseed_check(primary_address)
+    run('systemctl', '--user', 'stop', *(database.service for database in apps.REPLICATED_DATABASES))
+    for database in apps.REPLICATED_DATABASES:
+        require_stopped_service(database.service)
+        remove_exited_containers_using(database.volume('data'))
+        # No force and no backup-volume removal. In-use data must fail closed.
+        run('podman', 'volume', 'rm', database.volume('data'))
     return [database.name for database in apps.REPLICATED_DATABASES]

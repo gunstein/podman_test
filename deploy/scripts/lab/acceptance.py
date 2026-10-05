@@ -209,7 +209,7 @@ BIT = matching(r'[01]')
 OUTCOME = matching(r'ok|alert')
 SNAPSHOT = matching(r'[A-Za-z0-9_-]+')
 MODE = matching(r'app|standby')
-PHASE = matching(r'phase[0-9]+')
+PHASE = matching(r'phase[0-9]+[a-z]?')
 
 
 def source_address(text):
@@ -995,7 +995,8 @@ def timing(run_directory):
 EVIDENCE_LOGS = ('00-readiness', '03-2-install', '03-12a-', '03-12c-restore', '03-12d-restored',
                  '03-13-install-again', '05-1-install-dr-tool', '05-7a-', '06-10-failover', '06-15-',
                  '08-7-mark', '08-9-restore-todo', '08-10-restore-notes', '08-15-backup-status', '08-16-',
-                 '09-10-rebuild', '09-11d-cluster-status', '10-7d-', '10-7e-', '11-4-restarts')
+                 '09-10-rebuild', '09-11d-cluster-status', '09-13c-reseed', '09-13f-cluster-status', '10-7d-',
+                 '10-7e-', '11-4-restarts')
 EVIDENCE_TAIL = 25
 # Lines that are never evidence: SSH's post-quantum warning and Podman's events in the journal.
 NOISE = re.compile(r'^\*\* |^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+ [+-]\d{4} \w+ m=\+\S+ (container|pod) ')

@@ -50,22 +50,37 @@ message, fix the cause, and run the preflight again.
 
 ## 2b. Without a failover: a standby that lost its slot
 
-**Not tested in acceptance**, and there is no single command for it yet
-(backlog D10). The standby's copy is thrown away and taken again, as at
-bootstrap:
+The standby's copy is thrown away and taken again while the primary keeps
+serving (ACCEPTANCE.md phase 9 tests it on the rebuilt standby). If the
+standby's databases are down, start them first (`systemctl --user start
+todo-postgres.service notes-postgres.service keycloak-postgres.service`):
+they come up as standbys and wait. Then, on the primary, with an inventory
+naming the current primary as `primary` and the standby as `standby`
+(`initial.yaml`):
 
-1. On the standby, stop the three databases, then remove their data volumes
-   (the standby's copy only; the primary keeps everything):
-   `systemctl --user stop todo-postgres.service notes-postgres.service keycloak-postgres.service`,
-   then `podman volume rm todo-postgres-data notes-postgres-data keycloak-postgres-data`.
-2. On the primary, drop every slot that is lost or inactive, for each
-   database, for example
+```bash
+cd ~/todo-operations && export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
+python3 -m app_ops --inventory initial.yaml reseed-standby --confirm-reseed todo-standby
+```
+
+`--confirm-reseed` is the standby's name (here the standby is `todo-standby`;
+after a failover it is `todo-primary`). It deletes the standby's three
+databases only after each proved it is a read-only standby that reaches the
+primary, and drops only idle slots on the primary. It prints
+`{"changed": true}` when all three stream again; the DR check then passes on
+both hosts. If it stops with `nothing was changed`, fix what it names and run
+it again. If it stops later, the primary is untouched, and the standby is
+finished by hand, as at bootstrap:
+
+1. On the standby, remove any data volume that is left
+   (`podman volume rm todo-postgres-data notes-postgres-data keycloak-postgres-data`;
+   the standby's copy only, never on the primary).
+2. On the primary, drop each slot that is not `active` (section 1 shows them),
+   for example
    `podman exec todo-postgres psql -U todo -d postgres -c "SELECT pg_drop_replication_slot('todo_standby');"`.
-3. From the operations package on the primary, with `initial.yaml` (the
-   current primary as `primary`, this host as `standby`), run
-   `preflight-standby` and then `bootstrap-standby`. Both refuse
-   before anything changes if a step above is missing.
-4. The DR check passes again on both hosts.
+3. With the same inventory, run `preflight-standby` and then
+   `bootstrap-standby`. Both refuse before anything changes if a step above
+   is missing.
 
 **Never** drop a slot that is `active`, and never remove a data volume on
 the primary.

@@ -1,7 +1,7 @@
 """Command line interface for DR on each host; every command prints one JSON result.
 
 These are the building blocks app_ops runs on each host over SSH: replicate
-a database, publish the primaries, reseed the old primary, deploy the
+a database, publish the primaries, reseed the old primary or a standby, deploy the
 application on a promoted host, and the status and pair checks. The single
 host installer (app_installer) knows nothing about them. Errors print one
 "app-dr-host: ..." line on stderr and return 1.
@@ -37,7 +37,7 @@ def main(argv=None):
     paths(replicate)
     replicate.add_argument('operation', choices=('primary', 'standby', 'status', 'authenticate', 'streaming', 'hba',
                                                    'rebuild-primary-check', 'quarantined', 'reseed-check',
-                                                   'replication-path'))
+                                                   'replication-path', 'slot', 'drop-slot'))
     replicate.add_argument('--app', choices=[d.name for d in apps.REPLICATED_DATABASES],
                            default=apps.SHARED_RESOURCE_OWNER.name)
     replicate.add_argument('--node-address', default='')
@@ -49,6 +49,11 @@ def main(argv=None):
     replicate.add_argument('--confirm-reseed', default='')
     replicate.add_argument('--target-values', type=json.loads, default=None,
                            help="the primary's hostnames (target-values on the primary)")
+    reseed_check = subcommands.add_parser('standby-reseed-check')
+    reseed_check.add_argument('--primary-address', required=True)
+    erase = subcommands.add_parser('erase-standby')
+    erase.add_argument('--primary-address', required=True)
+    erase.add_argument('--confirm-reseed', required=True)
     cluster = subcommands.add_parser('cluster-status')
     cluster.add_argument('role', choices=('primary', 'standby'))
     reseed = subcommands.add_parser('reseed-group')
@@ -116,7 +121,13 @@ def main(argv=None):
                 replication.require_primary(database)
                 result['changed'] = replication.refresh_hba(database)
             elif args.operation == 'streaming':
-                result['status'] = replication.streaming_status(database, rebuilt=args.rebuilt)
+                result['status'] = replication.streaming_status(database, rebuilt=args.rebuilt, slot=args.slot)
+            elif args.operation == 'slot':
+                result['slot'] = replication.standby_slot(database)
+            elif args.operation == 'drop-slot':
+                if not args.slot:
+                    raise ValueError('drop-slot needs --slot')
+                result['changed'] = replication.drop_idle_slot(database, args.slot)
             elif args.operation == 'replication-path':
                 result['path'] = replication.replication_path(database, args.primary_address)
             elif args.operation == 'authenticate':
@@ -124,6 +135,11 @@ def main(argv=None):
             else:
                 result['status'] = replication.status(database)
             print(json.dumps(result))
+        elif args.command == 'standby-reseed-check':
+            print(json.dumps({'changed': replication.standby_reseed_check(args.primary_address)}))
+        elif args.command == 'erase-standby':
+            erased = replication.erase_standby_group(args.primary_address, args.confirm_reseed)
+            print(json.dumps({'changed': True, 'erased': erased}))
         elif args.command == 'cluster-status':
             print(json.dumps({'changed': False, 'status': replication.cluster_status(args.role)}))
         elif args.command == 'reseed-group':

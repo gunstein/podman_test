@@ -15,7 +15,7 @@ the service user unless they say `sudo`.
 |---|---|---|
 | Oslo is lost (fire, power, hardware): users cannot work | [primary-lost.md](primary-lost.md) | Yes, every run (phases 6 and 7) |
 | A timer failed: `todo-dr-check` or `todo-backup` | [timer-failed.md](timer-failed.md) | The failure and its message (phase 6); the fixes are the other pages |
-| The standby is down, behind, or lost its slot | [standby-rebuild.md](standby-rebuild.md) | The rebuild after a failover (phase 9); a rebuild without failover is not |
+| The standby is down, behind, or lost its slot | [standby-rebuild.md](standby-rebuild.md) | The rebuild after a failover and the re-seed without one (both phase 9) |
 | The disk is filling up | [disk-full.md](disk-full.md) | No |
 | A certificate expires or has expired | [certificates.md](certificates.md) | Partly (nginx renews at start) |
 | Data was deleted or changed by mistake | [data-mistake.md](data-mistake.md) | Yes, to a named restore point and to a time (phase 8) |

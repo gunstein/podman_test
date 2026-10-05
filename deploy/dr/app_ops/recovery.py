@@ -1,4 +1,4 @@
-"""After group promotion: application tier, backup, standby rebuild and cluster status."""
+"""After group promotion: application tier, backup, standby rebuild and cluster status; and a standby re-seed."""
 import json
 
 from . import standby, steps, trust
@@ -105,6 +105,56 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
                   *steps.group_paths(rebuild_host), timeout=steps.COPY_STEP_TIMEOUT)
     standby.install_dr_tool(project_root, controller, rebuild_host, current.spec, rebuild_host.name)
     standby.streaming(current, current_path, rebuilt=True)
+    return True
+
+
+def reseed_standby(project_root, controller, primary, standby_host, confirm_reseed):
+    """Copy every database to the standby again from the primary, without a failover. Deletes the standby's copy.
+
+    For a standby that lost its slot (backlog D10), or any time its copy must
+    be taken again; the primary keeps serving throughout. Order: both hosts
+    match the inventory, the primary's firewall rule is there, each
+    database's one slot is found on the primary, the standby proves it is a
+    read-only, database-only standby that reaches and logs in to the
+    primary, and only then does it stop and erase its databases. The primary
+    drops each idle slot, the standby copies every database again with the
+    same slot name, its DR check is installed again, and the run ends when all
+    of them stream. A failure stops where it is; after the erase, the primary
+    is untouched and bootstrap-standby builds the standby again.
+    """
+    if confirm_reseed != standby_host.name:
+        raise RuntimeError(f'--confirm-reseed must name the standby exactly ({standby_host.name}); '
+                           'nothing was changed')
+    for host in (primary, standby_host):
+        require_identity(host)
+    standby.require_firewall(primary, standby_host)
+    primary_path = steps.stage_target_files(project_root, controller, primary)
+    slots = {database.name: json.loads(app_dr_host(primary, primary_path, 'replicate-workload', 'slot',
+                                                   '--app', database.name).stdout)['slot']
+             for database in steps.GROUP}
+    hostnames = steps.target_values(primary, primary_path, steps.paths(primary)['target'])
+    standby.sync_secrets(project_root, controller, primary, standby_host)
+    standby_path = steps.stage_target_files(project_root, controller, standby_host)
+    app_dr_host(standby_host, standby_path, 'standby-reseed-check', '--primary-address', primary.spec.address)
+    app_dr_host(standby_host, standby_path, 'erase-standby', '--primary-address', primary.spec.address,
+                '--confirm-reseed', confirm_reseed)
+    for database in steps.GROUP:
+        # The standby's WAL senders end a moment after its databases stop.
+        steps.retry(lambda database=database: app_dr_host(
+            primary, primary_path, 'replicate-workload', 'drop-slot', '--app', database.name,
+            '--slot', slots[database.name]), 15, 2)
+    images = steps.paths(standby_host)['bundle'] + '/images/'
+    for database in steps.GROUP:
+        app_dr_host(standby_host, standby_path, 'replicate-workload', 'standby', '--app', database.name,
+                    '--primary-address', primary.spec.address, '--slot', slots[database.name],
+                    '--image-archive', images + database.image_archive,
+                    '--node-address', standby_host.spec.address, '--target-values', hostnames,
+                    *steps.group_paths(standby_host), timeout=steps.COPY_STEP_TIMEOUT)
+    standby.install_dr_tool(project_root, controller, standby_host, primary.spec, standby_host.name)
+    for database in steps.GROUP:
+        steps.retry(lambda database=database: app_dr_host(
+            primary, primary_path, 'replicate-workload', 'streaming', '--app', database.name,
+            '--slot', slots[database.name]), 15, 2)
     return True
 
 

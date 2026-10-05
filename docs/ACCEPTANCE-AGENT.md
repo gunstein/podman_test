@@ -190,6 +190,7 @@ Pre-approvals (durable for this run only; every STOP rule still applies):
   [x] Quarantine rehearsal with a brief outage of VM 107 before promotion
   [x] Fence VM 107 and promote the standby database group
   [x] Destructive reseed of VM 107's three databases after verified backup/PITR
+  [x] A second reseed of VM 107's three databases, without a failover (09-13c)
   [x] Cleanup of the disposable PITR restore containers/volumes
   [x] One nightly backup run on VM 107 (03-12a) and the restore of VM 107's
       three databases from it (03-12c), which discards the row written after it
@@ -969,6 +970,29 @@ $A --step 09-11j check monitor 192.168.0.102 ok
 $A --step 09-12a do proxmox-firewall 107 off
 $A --step 09-12b do onboot 107 "$(recorded_onboot)"   # the value 01-3 read from the clean snapshot
 ```
+
+Then copy the standby again without a failover, as for a standby that lost
+its slot (`docs/runbooks/standby-rebuild.md` 2b, pre-approved). `.108` keeps
+serving throughout. The pair inventory names the current roles,
+`.108` as primary and `.102` as standby. A wrong confirmation must refuse
+before anything changes; the real run deletes `.102`'s three databases only
+after `.102` proved it is a read-only standby that reaches `.108`.
+
+```bash
+vm 09-13a-pair-inventory 192.168.0.108 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-standby: {role: primary, address: 192.168.0.108, local: true}" "  todo-primary: {role: standby, address: 192.168.0.102}" > initial.yaml && cat initial.yaml'
+ops 09-13b-reseed-refused 192.168.0.108 '--inventory initial.yaml reseed-standby --confirm-reseed todo-standby'   # exit=1, it must name the standby exactly
+ops 09-13c-reseed 192.168.0.108 '--inventory initial.yaml reseed-standby --confirm-reseed todo-primary' &   # → {"changed": true}; wait for exit=
+$A --step 09-13d check roles 192.168.0.102 standby
+$A --step 09-13e check replication-tls 192.168.0.108
+ops 09-13f-cluster-status 192.168.0.108 '--inventory recovery.yaml cluster-status'   # → {"changed": false}; the same slots, streaming, zero lag
+$A --step 09-13g do markers phase9b
+$A --step 09-13h check markers 192.168.0.102
+$A --step 09-13i check monitor 192.168.0.108 ok
+$A --step 09-13j check monitor 192.168.0.102 ok
+```
+
+If `09-13c` fails before it erased anything (`nothing was changed`), STOP.
+If it failed after, `.108` is untouched: STOP and report; never run it again.
 
 #### C9.11 Phases 10 and 11 — Final reboots and verdict
 

@@ -933,6 +933,39 @@ database. Create an authenticated Todo through `todo.test` and an authenticated
 Note through `notes.test`, and verify both directly on rebuilt standby. The DR
 check passes again on both hosts.
 
+### Re-seed the standby without a failover
+
+A standby that was away too long loses its slot and can never catch up; its
+copy must be taken again while the primary keeps serving
+([standby-rebuild.md](runbooks/standby-rebuild.md) 2b). Test that here, on the
+standby just rebuilt. On the current primary, write an inventory with the
+current roles, `todo-standby` (this host, `local: true`) as `primary` and
+`todo-primary` as `standby`, as `initial.yaml`. A wrong confirmation must
+refuse before anything changes:
+
+```bash
+python3 -m app_ops --inventory initial.yaml reseed-standby --confirm-reseed todo-standby; echo "exit=$?"
+```
+
+Require exit 1 and a message saying it must name the standby. Then run it once:
+
+```bash
+python3 -m app_ops --inventory initial.yaml reseed-standby --confirm-reseed todo-primary
+```
+
+It checks both hosts against the inventory and the primary's firewall rule,
+finds each database's one slot on the primary, and requires `.102` to prove,
+for every database, that it is a read-only standby, that no application
+service runs there, and that it reaches and logs in to `.108` over TLS. Only
+then does it stop and erase `.102`'s three databases; `.108` drops each idle
+slot, `.102` takes a fresh base backup of each with the same slot name, its
+DR check is installed again, and the run ends when all three stream. Pass on
+`{"changed": true}`, `t|on` for all three on `.102`, `cluster-status` with
+the same slots streaming at zero lag, a new authenticated marker on `.102`,
+and the DR check passing on both hosts. If it fails after the erase, `.108`
+is untouched; `bootstrap-standby` builds `.102` again. Never run it twice
+after a failure.
+
 ## 10. Final reboot sequence
 
 - **Where:** Proxmox node Shell for one reboot at a time; current primary for cluster checks; client/build host for HTTPS.

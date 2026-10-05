@@ -45,8 +45,10 @@ class World:
     """Every host answers healthily unless told otherwise; records (host, command) in order."""
 
     def __init__(self, firewall_rule=True, stream_failures=0, writable_standby=False,
-                 rule_in=("running", "permanent"), zone="public", rule_zone="public", blocked_path=False):
+                 rule_in=("running", "permanent"), zone="public", rule_zone="public", blocked_path=False,
+                 failing=()):
         self.firewall_rule, self.stream_failures = firewall_rule, stream_failures
+        self.failing = set(failing)  # app_dr_host steps that fail, such as ("standby-reseed-check",)
         self.blocked_path = blocked_path
         self.rule_in, self.zone, self.rule_zone = rule_in, zone, rule_zone
         self.writable_standby = writable_standby
@@ -67,6 +69,10 @@ class World:
         if command[:1] == ["env"] and "app_dr_host" in command:
             sub = command[command.index("app_dr_host") + 1:]
             step = tuple(sub[:2]) if sub[0] == "replicate-workload" else (sub[0],)
+            if step in self.failing:
+                return step, "", 1
+            if sub[:2] == ["replicate-workload", "slot"]:
+                return step, json.dumps({"changed": False, "slot": sub[sub.index("--app") + 1] + "_rebuilt_standby"}), 0
             if sub[0] == "node-facts":
                 return step, json.dumps({"host": host}), 0
             if sub[0] == "target-values":
@@ -263,6 +269,59 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse([step for step in world.steps() if step[0] in ("sh", "trust-files", "install")])
 
 
+class ReseedStandbyTests(unittest.TestCase):
+    """reseed-standby (D10): every check before the erase; the primary only loses idle slots."""
+
+    def hosts(self, world):
+        return (Host(cli.LOCAL, runner=world), Host(spec("todo-standby", "primary", "192.0.2.11"), runner=world),
+                Host(spec("todo-primary", "standby", "192.0.2.10"), runner=world))
+
+    def test_the_standby_proves_it_is_one_then_is_erased_then_copied_again_with_its_slot(self):
+        world = World()
+        self.assertTrue(recovery.reseed_standby(str(PROJECT), *self.hosts(world), "todo-primary"))
+        order = [step[0] if step[0] != "replicate-workload" else step[1] for step in world.steps()
+                 if step[0] in ("replicate-workload", "standby-reseed-check", "erase-standby",
+                                "import-replication-secrets", "firewall-rule", "app_dr.py")]
+        first = {kind: order.index(kind) for kind in reversed(order)}
+        last = {kind: i for i, kind in enumerate(order)}
+        self.assertLess(last["firewall-rule"], first["slot"])
+        self.assertLess(last["slot"], first["import-replication-secrets"])
+        self.assertLess(first["import-replication-secrets"], first["standby-reseed-check"])
+        self.assertLess(first["standby-reseed-check"], first["erase-standby"])
+        self.assertLess(first["erase-standby"], first["drop-slot"])
+        self.assertLess(last["drop-slot"], first["standby"])
+        self.assertLess(last["standby"], first["app_dr.py"])
+        self.assertEqual(order[-3:], ["streaming"] * 3)
+        # The erase and the copies run on the standby; the slots are found and dropped on the primary.
+        self.assertIn(("erase-standby",), world.steps("todo-primary"))
+        self.assertEqual([step for step in world.steps("todo-standby") if step[:2] == ("replicate-workload", "drop-slot")],
+                         [("replicate-workload", "drop-slot", name) for name in NAMES])
+        for operation in (("replicate-workload", "drop-slot"), ("replicate-workload", "standby"),
+                          ("replicate-workload", "streaming")):
+            host = "todo-primary" if operation[1] == "standby" else "todo-standby"
+            self.assertEqual(world.option(host, operation, "--slot"), [name + "_rebuilt_standby" for name in NAMES])
+        self.assertEqual(set(world.option("todo-primary", ("erase-standby",), "--confirm-reseed")), {"todo-primary"})
+        self.assertEqual(set(world.option("todo-primary", ("replicate-workload", "standby"), "--node-address")),
+                         {"192.0.2.10"})
+
+    def test_a_wrong_confirmation_or_a_failed_check_erases_nothing(self):
+        world = World()
+        with self.assertRaisesRegex(RuntimeError, "must name the standby exactly"):
+            recovery.reseed_standby(str(PROJECT), *self.hosts(world), "todo-standby")
+        self.assertEqual(world.steps(), [])
+        for failing in ("standby-reseed-check",), ("replicate-workload", "slot"):
+            with self.subTest(failing=failing):
+                world = World(failing=[failing])
+                with self.assertRaises(RuntimeError):
+                    recovery.reseed_standby(str(PROJECT), *self.hosts(world), "todo-primary")
+                self.assertFalse([step for step in world.steps()
+                                  if step[0] == "erase-standby" or step[1:2] == ("drop-slot",)])
+        world = World(firewall_rule=False)
+        with self.assertRaisesRegex(RuntimeError, "rich rule"):
+            recovery.reseed_standby(str(PROJECT), *self.hosts(world), "todo-primary")
+        self.assertFalse([step for step in world.steps() if step[0] == "erase-standby"])
+
+
 class CliTests(unittest.TestCase):
     def test_each_command_requires_its_topology(self):
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as file:
@@ -308,6 +367,7 @@ class CliDispatchTests(unittest.TestCase):
             ("bootstrap-standby", standby, "bootstrap", self.INITIAL, controller + both),
             ("replication-status", standby, "replication_status", self.INITIAL, controller + both),
             ("install-dr-tool", standby, "install_dr_tools", self.INITIAL, controller + both),
+            ("reseed-standby", recovery, "reseed_standby", self.INITIAL, controller + both),
             ("install-quarantine-tool", cli.quarantine, "install", self.INITIAL, controller + ["todo-primary"]),
             ("deploy-promoted-application", recovery, "deploy_promoted", self.RECOVERY,
              controller + ["todo-standby"]),
@@ -318,7 +378,8 @@ class CliDispatchTests(unittest.TestCase):
         for command, module, function, text, hosts in cases:
             with self.subTest(command=command), unittest.mock.patch.object(
                     module, function, return_value=True) as called:
-                code, printed, _ = self.main(text, command)
+                confirmation = ["--confirm-reseed", "todo-standby"] if command == "reseed-standby" else []
+                code, printed, _ = self.main(text, command, *confirmation)
                 self.assertEqual(code, 0)
                 self.assertEqual(json.loads(printed), {"changed": True})
                 self.assertEqual(called.call_count, 1)

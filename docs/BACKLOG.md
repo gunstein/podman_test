@@ -330,13 +330,11 @@ promoted primary.
   (`local: true`). `failover` runs there anyway, so document the limit as
   deliberate in `deploy/dr/README.md` and remove the item.
 - **D10. Re-seed a standby that lost its slot, without a failover.** *[new]*
-  `rebuild-standby` expects the old primary after a failover: it requires
-  every application unit loaded and stopped, which a database-only standby
-  does not have, and it refuses when the rebuild slot already exists, so a
-  pair can be rebuilt only once. Today the
-  [runbook](runbooks/standby-rebuild.md) removes the standby's volumes and
-  the lost slots by hand and runs `bootstrap-standby` again (untested). Make
-  that one guarded command, and test it in acceptance.
+  Done in code; waiting for its acceptance run. `app-ops reseed-standby
+  --confirm-reseed <standby>` copies the standby again while the primary
+  serves: the standby must prove it is a read-only, database-only standby
+  that reaches the primary before its databases are erased, and the primary
+  drops only idle slots. Phase 9 runs it on the rebuilt standby (`09-13`).
 - **D5. pgBackRest only if the needs grow.** *[optional]* Decided 2026-10-04:
   keep the own tools, which only orchestrate PostgreSQL's standard methods
   ([architecture](ARCHITECTURE.md#own-scripts-not-a-backup-or-ha-product));

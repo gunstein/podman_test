@@ -1267,6 +1267,14 @@ def run_step(run_directory, run_id, name):
     states = [state(step, line) for step, line in steps]
     index = names.index(name)
     line = steps[index][1]
+    if states[index] == 'passed':
+        # Run 43: the agent dropped the output of a call that had run this check after the step
+        # before it, and asked for it again. Nothing runs; it says so and names the next step.
+        following = names[states.index('not run')] if 'not run' in states else None
+        print(f'STEP {name}: already passed, nothing run (the call that passed it may have run it as a '
+              'check right after the step before)')
+        print(f'NEXT: $A step {following}' if following else 'NEXT: the final report (C9.11)')
+        return 0
     if states[index] != 'not run':
         # C8: a failed read-only check may run once more (after check services passes).
         checks = [entry for entry in entries if entry['step'] == name and entry['result'] != 'STARTED']

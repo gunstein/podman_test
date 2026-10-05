@@ -112,10 +112,12 @@ class StepTests(unittest.TestCase):
         self.assertIn("is not a step", output)
 
     def test_a_step_runs_once(self):
+        """A passed step is not run again: the call says so and names the next step (run 43)."""
         self.step("01-1-first")
         code, output = self.step("01-1-first")
-        self.assertEqual(code, 3)
-        self.assertIn("already ran", output)
+        self.assertEqual(code, 0)
+        self.assertIn("STEP 01-1-first: already passed, nothing run", output)
+        self.assertIn("NEXT: $A step 01-2-json", output)
         self.assertEqual(len(self.log("01-1-first")), 4)
 
     def test_the_expected_json_must_be_printed_and_nothing_runs_after_a_stop(self):

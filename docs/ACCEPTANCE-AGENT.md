@@ -624,7 +624,8 @@ guide in the checkout and runs it exactly as written, with the helpers from
 run) unless NAME is the next step of the guide and the step before it passed.
 It ends with `STEP NAME: PASS` or `STEP NAME: STOP, <why>`; a STOP is a STOP
 (C3). A step runs once; the one exception is C8 item 4, a failed `check` run
-once more. So a changed command, a skipped step or a step after a failure
+once more. Asking again for a step that already passed runs nothing and says
+`already passed`, with the `NEXT:` line; that is not a STOP. So a changed command, a skipped step or a step after a failure
 cannot run: that stopped runs 24 and 26.
 
 When the step passes, the same call also runs the `$A --step ... check` lines

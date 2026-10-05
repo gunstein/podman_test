@@ -10,8 +10,8 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `24afaf9` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-24afaf9.md)),
+**Current verdict: CLEAN PASS** on `7ab33fc` for the seven-pod, three-database
+topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-7ab33fc.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 115 steps PASS
@@ -33,7 +33,7 @@ single-host install gets the same nightly backup and can restore the latest
 one, and the WAL archive survives a power loss. Install, standby bootstrap,
 quarantine rehearsal, fencing, the one `failover` command (group promotion,
 application tier, backup, services and the login page), backup and isolated
-PITR, to a named point and to a time, rebuild of the old primary and sequential reboots all passed as written.
+PITR, to a named point and to a time, rebuild of the old primary, a re-seed of the standby without a failover and sequential reboots all passed as written.
 CI also runs the Todo API as `todo_app` and the whole stack with the browser
 tests on Podman 5.7. The single-host installer (`deploy/installer`) and DR
 (`deploy/dr`) are separate in the tree; the code clean-up since `24b32ee` (R5,
@@ -43,6 +43,9 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `7ab33fc` run 44: CLEAN PASS ([record](docs/history/ACCEPTANCE-7ab33fc.md)),
+  accepting D10: `reseed-standby` copies a standby again while the primary
+  serves (121 steps, 45 min 38 s).
 - `24afaf9` run 43: CLEAN PASS ([record](docs/history/ACCEPTANCE-24afaf9.md)),
   accepting A1 and A2: the report times the run (47 min 46 s, of which
   17 min 36 s between steps), and consecutive checks run in one call.

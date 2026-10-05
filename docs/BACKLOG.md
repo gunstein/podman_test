@@ -211,8 +211,9 @@ rest (accepted in runs 18-22).
 ## Monitoring and backup routine
 
 WAL on the primary is bounded (`max_slot_wal_keep_size=1GB`): a standby that is
-down too long invalidates its slot, `cluster-status` reports it, and the standby
-is rebuilt. On both DR hosts `todo-dr-check.timer` reports that, failed WAL
+down too long invalidates its slot, `cluster-status` reports it, and
+`app-ops reseed-standby` copies the standby again while the primary serves
+(accepted in run 44). On both DR hosts `todo-dr-check.timer` reports that, failed WAL
 archiving and a filling disk as a failed unit every 15 minutes, and
 `todo-backup.timer` takes and prunes the primary's base backups every night
 (accepted in run 32; deploy/dr/README.md). A single host gets the same nightly
@@ -329,12 +330,6 @@ promoted primary.
   *[docs]* It refuses unless that host is the machine running app-ops
   (`local: true`). `failover` runs there anyway, so document the limit as
   deliberate in `deploy/dr/README.md` and remove the item.
-- **D10. Re-seed a standby that lost its slot, without a failover.** *[new]*
-  Done in code; waiting for its acceptance run. `app-ops reseed-standby
-  --confirm-reseed <standby>` copies the standby again while the primary
-  serves: the standby must prove it is a read-only, database-only standby
-  that reaches the primary before its databases are erased, and the primary
-  drops only idle slots. Phase 9 runs it on the rebuilt standby (`09-13`).
 - **D5. pgBackRest only if the needs grow.** *[optional]* Decided 2026-10-04:
   keep the own tools, which only orchestrate PostgreSQL's standard methods
   ([architecture](ARCHITECTURE.md#own-scripts-not-a-backup-or-ha-product));
@@ -494,6 +489,7 @@ limited to 1.2 and 1.3.
   the unused `python3-jinja2` an older version of the script installed.
 - **K2.** *[operator]* Remove the old `todo-lab-ca-*` nicknames from the
   client NSS database (`certutil -D -d sql:$HOME/.pki/nssdb -n NAME`).
-- **K3.** *[operator]* Review and remove the old Proxmox firewall rules: three
-  `todo-quarantine-*` rules and DROP policies on VM 107, and one rule without
-  a comment (tcp 5432 from `.111`) on VM 108.
+- **K3.** *[operator]* Review and remove the old rule without a comment
+  (tcp 5432 from `.111`) on VM 108; run 44 still found it. The three
+  `todo-quarantine-*` rules and DROP policies on VM 107 may stay: every run
+  replaces them (rule 7's exception).

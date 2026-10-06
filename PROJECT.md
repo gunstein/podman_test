@@ -15,7 +15,7 @@ topology in a full two-VM run without an agent (`acceptance.py run`,
 [record](docs/history/ACCEPTANCE-c5f4a59.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
-`deploy/scripts/lab/acceptance.py`. Its `report full` found all 115 steps PASS
+`deploy/scripts/lab/acceptance.py`. Its `report full` found all 121 steps PASS
 on one clean revision and compared them with the agent guide: every step and
 log it names, nothing else. Every step ran through `acceptance.py step`, which
 runs the guide's line as written and only after the step before it passed,

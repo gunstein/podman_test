@@ -8,7 +8,12 @@ installs again. It never touches VM 108.
 | The change touches | Run |
 |---|---|
 | Frontend, backend code, nginx configuration, Keycloak realm settings, docs | This quick run |
-| Installer, Quadlet templates, Kube YAML structure, replication, app-ops, backup, DR tools | The full run ([ACCEPTANCE-AGENT.md](ACCEPTANCE-AGENT.md)) |
+| Installer, Quadlet templates, Kube YAML structure, replication, app-ops, backup, DR tools | The full run: one command ([ACCEPTANCE-HUMAN.md](ACCEPTANCE-HUMAN.md)) or an agent ([ACCEPTANCE-AGENT.md](ACCEPTANCE-AGENT.md)) |
+
+`acceptance.py run` runs only the full guide; this quick run is still done by
+an agent with the kickoff below, or by a person typing its steps in order.
+The full run without an agent takes about 35 minutes, so for most changes it
+is the simpler choice.
 
 The verdict is `QUICK PASS` or `QUICK FAIL`. A quick pass accepts the change
 for single-host behaviour only; it is not a CLEAN PASS of the DR design.

@@ -12,9 +12,11 @@ data; use disposable lab hosts and explicit infrastructure fencing.
 state or authorization. A NEW run evaluates its own clean revision. Use
 [troubleshooting](ACCEPTANCE-TROUBLESHOOTING.md) only when a gate fails;
 [Proxmox quarantine](PROXMOX-QUARANTINE.md) supplies the specialized
-infrastructure procedure. An autonomous agent run additionally follows
-[ACCEPTANCE-AGENT.md](ACCEPTANCE-AGENT.md) for Proxmox API, sudo, secret and
-evidence handling. The pages under [deploy/dr](../deploy/dr/README.md#the-workflows)
+infrastructure procedure. The lab runs it in one of two ways, with the same
+steps and the same report: a person runs one command,
+[`acceptance.py run`](ACCEPTANCE-HUMAN.md) (about 35 minutes, two sudo
+prompts), or an agent follows [ACCEPTANCE-AGENT.md](ACCEPTANCE-AGENT.md) for
+Proxmox API, sudo, secret and evidence handling. The pages under [deploy/dr](../deploy/dr/README.md#the-workflows)
 describe each operation's contract, not another acceptance sequence. Ansible is
 retired; runs before `f1f07b5` used its playbooks.
 

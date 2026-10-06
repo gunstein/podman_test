@@ -65,6 +65,9 @@ a stop it stays for the run that goes on. Remove it with
 
 ## What it does not do
 
+It runs only the full two-VM guide; the 20-minute
+[quick acceptance](ACCEPTANCE-QUICK.md) on one VM still has no `run`.
+
 It does not record the verdict in the repository, and it does not decide
 anything a person must decide: a stop is reported, never worked around. The
 agent guide stays for runs by an agent; both run the same steps.

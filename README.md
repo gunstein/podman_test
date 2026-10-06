@@ -267,6 +267,7 @@ manual lab acceptance test.
 | Understand the system architecture | [Architecture](docs/ARCHITECTURE.md) |
 | Recover old primary without VM console | [Proxmox quarantine preparation](docs/PROXMOX-QUARANTINE.md) |
 | Learn the system in dependency order | [Learning guide](docs/LEARNING-GUIDE.md) |
+| Run the full lab acceptance yourself, one command | [Acceptance without an agent](docs/ACCEPTANCE-HUMAN.md) |
 | Run or hand off acceptance; change VM IPs (humans and agents: start here) | [Acceptance sequence](docs/ACCEPTANCE.md) |
 | Check demonstrated versus simplified concepts | [What you learn](docs/WHAT-YOU-LEARN.md) |
 | Act on a real incident (Oslo lost, failed timer, full disk, data mistake) | [Runbooks](docs/runbooks/README.md) |

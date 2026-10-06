@@ -448,6 +448,74 @@ full-stack job and acceptance cover that.
 - **Q4. Secret scanning.** *[optional]* GitHub secret scanning, or a
   gitleaks/trufflehog run, on top of the pattern search already done.
 
+## File-based secrets and certificates (demo)
+
+A reference for another installer that already runs a Bash script on the host
+to make PKI material: how such files reach a Kube pod as a file secret and
+through a plain PVC volume.
+
+- **X1. PFX secret and CA volume in Notes.** *[new]* Extend `notes` (not
+  `todo`) with both flows:
+  1. A small Bash script with OpenSSL, started by the Python installer before
+     secrets are provisioned and the app starts, makes a demo CA, a signing
+     key and certificate, and a password-protected `.pfx` in a dedicated
+     directory under the install user's home (for example
+     `~/.local/share/todo-pki/notes`, 0700). It runs on every install but
+     keeps existing valid material (key, certificate and PFX password never
+     change on a reinstall) and stops with a clear error on incomplete or
+     inconsistent files. None of it goes into images or the offline bundle;
+     the script and the code do, so an offline install works.
+  2. The `.pfx` becomes a Kube-compatible Podman secret mounted as a file
+     (for example `/run/secrets/notes-signing-pfx/signing.pfx`); its password
+     goes separately through the existing secret mechanism (a raw Podman
+     secret and a `*-kube-*` secret, as `secrets.create_kube`). Existing
+     secrets are reused, never overwritten, and a mismatch with the files
+     stops the install. The PFX bytes and the password stay out of logs,
+     manifests and API responses.
+  3. Only the public CA certificate goes into a new named volume
+     `notes-root-cert-data`, before the app starts (`podman volume import` of
+     a tar with only that file), mounted read-only through a
+     `persistentVolumeClaim`. Its content is not changed while the app runs;
+     define what a reinstall does when the file differs.
+  4. The Notes backend opens the PFX with the password, signs a fixed test
+     message, verifies the signature with the certificate's public key, and
+     checks that the certificate was issued by the CA read from the volume.
+     The Notes UI shows "Signering og sertifikatkontroll OK" with subject,
+     expiry and fingerprint, or a clear failure (missing file, wrong
+     password, wrong CA), behind the existing login. No general signing API.
+     The backend would need `cryptography` (PKCS#12, signing and issuer
+     checks); the standard library has none of it.
+
+  Findings so far, from reading the code (2026-10-06):
+  - `deploy/manifests/app.yaml.j2` is shared by both apps, so the new
+    volumes and mounts need a per-app switch in the App registry
+    (`apps.py`), not a copy of the template.
+  - `secrets.read` and `create_kube` handle text only (`--showsecret`,
+    `.encode()`); a binary PFX needs its own path, for example the Kube
+    secret built straight from the file's bytes, or a raw secret holding
+    its base64.
+  - DR: a promoted host starts the Notes pod with `deploy-promoted`, which
+    requires every secret in `transfer.replicated_names()`. Either the PFX,
+    its password and the CA certificate join the DR secret copy and the
+    volume is created on the promoted host from them, or the promoted host
+    refuses with a clear message; it must never report a working app that
+    cannot start. The base backup and WAL archive do not hold these files;
+    say so, as SECRETS.md does for the other secrets. The DR code may import
+    the installer, never the other way (tests/test_dr_boundary.py).
+  - Development (`podman kube play`, `dev-up.sh`) and production (Quadlet)
+    both need the volume and secrets before the pod starts; `dev-down.sh`
+    must clean them up.
+  - Real Podman tests run only in CI ("Full stack in rootless Podman") and
+    in the lab acceptance, not in this session's container.
+
+  Tests: unit tests for the script's keep/refuse rules and the secret and
+  volume steps; a CI full-stack check that Notes reports OK after the first
+  install, keeps the same key, password and secret identity after a second
+  install and a pod recreation, and reports failure for a wrong password,
+  missing certificate and wrong CA; a failed generation or import stops
+  before the app starts; the bundle holds no private file or password; both
+  `podman kube play` and Quadlet; then a lab acceptance step.
+
 ## Security hardening
 
 The containers already run as non-root users, with

@@ -9,6 +9,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -208,6 +209,128 @@ class StepTests(unittest.TestCase):
                 break
             __import__("time").sleep(0.05)
         self.assertEqual(log.read_text().splitlines()[1:], ["# command: echo done", "done", "exit=0"])
+
+
+class RunAllTests(unittest.TestCase):
+    """acceptance.py run: the whole guide in order, without an agent, stopping at the first failure."""
+
+    GUIDE = """```bash
+{ echo "# start now"; echo acceptance_preflight.py; echo "READY for the agent run."; echo "exit=0"; } >> "$RUN/logs/00-readiness.log"
+```
+
+```bash
+product 01-1-first echo one   # → one
+product 01-2-long sh -c 'sleep 0.2; echo long' &
+product 01-3-after echo after   # → after
+```
+
+```bash
+IP=192.168.0.102
+echo "trust $IP"
+```
+"""
+
+    def setUp(self):
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(directory))
+        self.runs, self.guide = directory / "runs", directory / "guide.md"
+        self.guide.write_text(self.GUIDE)
+        (directory / "xdg").mkdir()
+        for patcher in (patch.object(acceptance, "AGENT_GUIDE", str(self.guide)),
+                        patch.dict(os.environ, {"ACCEPTANCE_RUNS": str(self.runs), "XDG_RUNTIME_DIR": str(directory / "xdg")}),
+                        patch.object(acceptance, "checkout", return_value=("abc123", True)),
+                        patch.object(acceptance, "report", return_value=("# Report\n\n**ALL STEPS PASS**\n\n## Steps\n", True)),
+                        patch.object(acceptance, "POLL_SECONDS", 0.05),
+                        patch.object(acceptance, "CLIENT_TRUST", {"01-3-after": "192.168.0.102"}),
+                        patch.object(acceptance, "client_trust", return_value=True)):
+            self.mocks = getattr(self, "mocks", []) + [patcher.start()]
+            self.addCleanup(patcher.stop)
+        self.password = directory / "xdg/todo-acceptance/e2e-password"
+
+    def run_all(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = acceptance.main(["--run", "r1", "run"])
+        return code, output.getvalue()
+
+    def test_every_step_runs_in_order_with_readiness_trust_and_a_background_wait(self):
+        code, output = self.run_all()
+        self.assertEqual(code, 0, output)
+        logs = self.runs / "r1/logs"
+        self.assertIn("READY for the agent run.", (logs / "00-readiness.log").read_text())
+        for name in ("01-1-first", "01-2-long", "01-3-after"):
+            self.assertTrue((logs / f"{name}.log").read_text().endswith("exit=0\n"), name)
+        self.assertIn("STEP 01-3-after: PASS", output)
+        acceptance.client_trust.assert_called_once()
+        self.assertEqual(acceptance.client_trust.call_args.args[2], "192.168.0.102")
+        self.assertFalse(self.password.exists(), "the password file is removed at the end")
+        self.assertTrue((self.runs / "r1/EVIDENCE.md").exists())
+        self.assertIn("ALL STEPS PASS", output)
+
+    def test_a_failed_step_stops_the_run_and_a_second_run_does_not_repeat_it(self):
+        self.guide.write_text(self.GUIDE.replace("echo one   # → one", "echo two   # → one"))
+        code, output = self.run_all()
+        self.assertEqual(code, 1)
+        self.assertIn("STEP 01-1-first: STOP, did not print one", output)
+        self.assertIn("two", output, "a stopped step shows its output")
+        self.assertFalse((self.runs / "r1/logs/01-2-long.log").exists())
+        self.assertTrue(self.password.exists(), "kept for a run that goes on after a fix")
+        code, output = self.run_all()
+        self.assertEqual(code, 1)
+        self.assertIn("STOP: 01-1-first did not print one", output)
+
+    def test_a_dirty_checkout_or_a_failed_readiness_check_runs_nothing(self):
+        acceptance.checkout.return_value = ("abc123", False)
+        self.assertEqual(self.run_all()[0], 1)
+        acceptance.checkout.return_value = ("abc123", True)
+        self.guide.write_text(self.GUIDE.replace('echo "READY for the agent run."; echo "exit=0"', 'echo "exit=1"'))
+        code, output = self.run_all()
+        self.assertEqual(code, 1)
+        self.assertIn("STOP: the readiness check", output)
+        self.assertFalse((self.runs / "r1/logs/01-1-first.log").exists())
+
+
+class ClientTrustTests(unittest.TestCase):
+    """The guide's C9.4 lines for one address, with the person's sudo, then checked."""
+
+    def trust(self, mapped, answers=0):
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(directory))
+        hosts = directory / "hosts"
+        hosts.write_text(f"{mapped} todo.test notes.test\n")
+        commands = []
+
+        def run(argv, **keywords):
+            commands.append(argv)
+            return subprocess.CompletedProcess(argv, 0 if argv[0] == "bash" else answers, "trusted\n", "")
+
+        guide = (ROOT / acceptance.AGENT_GUIDE).read_text()
+        with patch.object(acceptance, "HOSTS", hosts), patch.object(acceptance.subprocess, "run", side_effect=run), \
+                contextlib.redirect_stdout(io.StringIO()):
+            passed = acceptance.client_trust(directory, guide, "192.168.0.108")
+        return passed, commands, (directory / "operator/client-trust-192.168.0.108.log").read_text()
+
+    def test_the_guide_lines_run_for_the_address_and_both_names_must_answer(self):
+        passed, commands, record = self.trust("192.168.0.108")
+        self.assertTrue(passed)
+        script = commands[0][2]
+        self.assertIn("IP=192.168.0.108", script)
+        self.assertIn('trust-serving-ca.sh "gunstein@$IP"', script)
+        self.assertEqual([argv[-1] for argv in commands[1:]], ["https://todo.test:8443/ready",
+                                                              "https://notes.test:8443/ready"])
+        self.assertTrue(record.endswith("exit=0\n"))
+
+    def test_a_wrong_hosts_line_or_no_https_answer_fails(self):
+        self.assertFalse(self.trust("192.168.0.102")[0])
+        self.assertFalse(self.trust("192.168.0.108", answers=22)[0])
+
+    def test_the_real_guide_has_what_run_needs(self):
+        guide = (ROOT / acceptance.AGENT_GUIDE).read_text()
+        names = [name for name, _ in acceptance.guide_lines(guide)]
+        for name in acceptance.CLIENT_TRUST:
+            self.assertIn(name, names)
+        self.assertIn("acceptance_preflight.py", acceptance.guide_block(guide, "acceptance_preflight.py"))
+        self.assertRegex(acceptance.guide_block(guide, "trust-serving-ca.sh"), r"(?m)^IP=\S+$")
 
 
 class ExpectationTests(unittest.TestCase):

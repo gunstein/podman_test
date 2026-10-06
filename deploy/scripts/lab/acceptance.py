@@ -12,6 +12,7 @@ the result with the expected values itself and records it.
   acceptance.py --run RUN_ID --step 03-9 do reboot 107 192.168.0.102 app
   acceptance.py --run RUN_ID report full       (or quick)
   acceptance.py --run RUN_ID evidence          (EVIDENCE.md: one file to copy and send)
+  acceptance.py --run RUN_ID run               (the whole guide, no agent: docs/ACCEPTANCE-HUMAN.md)
 
 step    runs one command line of docs/ACCEPTANCE-AGENT.md C9 exactly as the
         guide writes it, named by its step (what follows "$A --step", "vm",
@@ -1328,7 +1329,7 @@ def readiness_state(run_directory):
     return 'passed'
 
 
-def run_step(run_directory, run_id, name):
+def run_step(run_directory, run_id, name, quiet=False):
     """Run the guide line named name if it is the next step and the one before passed; 0 if it passed.
 
     A step that passed is followed at once by the read-only check lines right
@@ -1384,43 +1385,180 @@ def run_step(run_directory, run_id, name):
             break
         checks_after.append((step, step_line))
 
-    code = run_line(run_directory, run_id, name, line)
+    code = run_line(run_directory, run_id, name, line, quiet)
     last = index
     if code == 0 and not without_comment(line).endswith('&'):
         for step, step_line in checks_after:
-            print(f'\n{step} is the read-only check right after it: run in the same call', flush=True)
-            code = run_line(run_directory, run_id, step, step_line)
+            if not quiet:
+                print(f'\n{step} is the read-only check right after it: run in the same call', flush=True)
+            code = run_line(run_directory, run_id, step, step_line, quiet)
             last = names.index(step)
             if code:
                 break
-    if code == 0:
+    if code == 0 and not quiet:
         print(f'NEXT: $A step {names[last + 1]}' if last + 1 < len(names) else 'NEXT: the final report (C9.11)')
     return code
 
 
-def run_line(run_directory, run_id, name, line):
-    """Run one guide line with the helpers; print STEP NAME: PASS or STOP and return 0 if it passed."""
+def run_line(run_directory, run_id, name, line, quiet=False):
+    """Run one guide line with the helpers; print STEP NAME: PASS or STOP and return 0 if it passed.
+
+    quiet (acceptance.py run) keeps the step's output off the terminal unless
+    it stops; its log holds all of it either way.
+    """
     (run_directory / 'logs').mkdir(parents=True, exist_ok=True)
     command = without_comment(line)
     background = command.endswith('&')
     script = f'source {HELPERS}\n{command.rstrip("& ")}\n'
     environment = {**os.environ, 'RUN': str(run_directory), 'RUN_ID': run_id,
                    'A': f'python3 deploy/scripts/lab/acceptance.py --run {run_id}'}
-    print(f'$ {line}', flush=True)
+    if not quiet:
+        print(f'$ {line}', flush=True)
     if background:
         # A long step (failover, rebuild) runs on even if this process is stopped.
         subprocess.Popen(['bash', '-c', script], cwd=ROOT, env=environment, start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(f'STARTED in the background: logs/{name}.log ends with exit= when it is done; '
-              'the next step waits for that')
+        print(f'STARTED in the background ({name}): logs/{name}.log ends with exit= when it is done; '
+              'the next step waits for that', flush=True)
         return 0
-    subprocess.run(['bash', '-c', script], cwd=ROOT, env=environment)
+    output = subprocess.PIPE if quiet else None
+    shown = subprocess.run(['bash', '-c', script], cwd=ROOT, env=environment, text=True, stdout=output,
+                           stderr=subprocess.STDOUT if quiet else None)
     if line.startswith('$A '):
         result = tool_state(read_record(run_directory), name)  # the acceptance.py step has added its result
     else:
         result = product_state(run_directory, name, line)
-    print(f'STEP {name}: ' + ('PASS' if result == 'passed' else f'STOP, {result}'))
+    if quiet and result != 'passed' and shown.stdout:
+        print('\n'.join(shown.stdout.splitlines()[-30:]))
+    print(f'STEP {name}: ' + ('PASS' if result == 'passed' else f'STOP, {result}'), flush=True)
     return 0 if result == 'passed' else 1
+
+
+# acceptance.py run: the whole guide without an agent. A person starts it
+# and types their sudo password twice, for the client trust steps; it stops
+# at the first step that does not pass. It runs the same guide lines in the
+# same order as an agent run, so its report is the same report.
+CLIENT_TRUST = {'03-4a-browser-env': '192.168.0.102', '07-5': '192.168.0.108'}  # the step it comes before
+BACKGROUND_LIMIT = 2 * 3600
+HOSTS = Path('/etc/hosts')
+
+
+def guide_block(text, marker):
+    """The bash block of the guide that holds marker, as text."""
+    for block in re.findall(r'```bash\n(.*?)```', text, re.S):
+        if marker in block:
+            return block
+    raise RuntimeError(f'the guide has no bash block with {marker!r}')
+
+
+def password_file():
+    """The C6 testuser password file in tmpfs, made (0600, never printed) if it is missing; returns its path."""
+    directory = Path(os.environ['XDG_RUNTIME_DIR']) / 'todo-acceptance'
+    directory.mkdir(mode=0o700, exist_ok=True)
+    path = directory / 'e2e-password'
+    if not path.exists():
+        import secrets
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, 'w') as file:
+            file.write(secrets.token_urlsafe(24) + '\n')
+    return path
+
+
+def client_trust(run_directory, text, address):
+    """The guide's C9.4 lines for address, run with the person's sudo; True if both names then answer over HTTPS.
+
+    The output goes to operator/client-trust-<address>.log, not logs/: it is
+    not a guide step, so the report must not count it.
+    """
+    record = run_directory / 'operator' / f'client-trust-{address}.log'
+    if record.exists() and record.read_text().rstrip().endswith('exit=0'):
+        return True
+    record.parent.mkdir(exist_ok=True)
+    block = re.sub(r'^IP=\S+$', f'IP={address}', guide_block(text, 'trust-serving-ca.sh'), count=1, flags=re.M)
+    print(f'\nOPERATOR: the client must reach todo.test and notes.test at {address} and trust its CA.\n'
+          'Type your sudo password when sudo asks for it.', flush=True)
+    result = subprocess.run(['bash', '-c', 'set -e\n' + block], cwd=ROOT, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    hosts = HOSTS.read_text()
+    answered = all(subprocess.run(['curl', '--silent', '--fail', '--max-time', '10', url],
+                                  capture_output=True).returncode == 0
+                   for url in (f'{TODO_URL}/ready', f'{NOTES_URL}/ready'))
+    passed = result.returncode == 0 and f'{address} todo.test notes.test' in hosts and answered
+    record.write_text(result.stdout + f'\n/etc/hosts maps both names to {address}: '
+                      f'{f"{address} todo.test notes.test" in hosts}\nboth answer over trusted HTTPS: {answered}\n'
+                      + ('exit=0' if passed else 'exit=1') + '\n')
+    print(result.stdout.rstrip())
+    print(f'client trust for {address}: ' + ('done' if passed else f'FAILED, see {record}'), flush=True)
+    return passed
+
+
+def run_all(run_directory, run_id):
+    """Run the whole agent guide in order, unattended but for the client trust; 0 if every step passed.
+
+    Readiness first (the guide's C1a line), then the password file, then
+    each next step through run_step, waiting while a background step runs,
+    with the client trust before the steps that need it. It stops at the
+    first step that does not pass and can be run again to go on after an
+    interruption: a step that ran is never run again. At the end it removes
+    the password file and writes REPORT.md and EVIDENCE.md.
+    """
+    revision, clean = checkout()
+    if not clean:
+        print(f'STOP: the checkout {revision} is not clean')
+        return 1
+    print(f'Acceptance run {run_id} of {revision}; logs in {run_directory}/logs', flush=True)
+    text = (ROOT / AGENT_GUIDE).read_text()
+    (run_directory / 'logs').mkdir(parents=True, exist_ok=True)
+    environment = {**os.environ, 'RUN': str(run_directory)}
+    if readiness_state(run_directory) != 'passed':
+        line = next(line for line in guide_block(text, 'acceptance_preflight.py').splitlines()
+                    if 'acceptance_preflight.py' in line).strip()
+        subprocess.run(['bash', '-c', line], cwd=ROOT, env=environment)
+        if readiness_state(run_directory) != 'passed':
+            print(f'STOP: the readiness check {readiness_state(run_directory)}; fix what it names (FAIL lines)')
+            return 1
+    password_file()
+    steps = guide_lines(text)
+    waited = 0.0
+    while True:
+        entries = read_record(run_directory)
+        states = [tool_state(entries, name) if line.startswith('$A ') else product_state(run_directory, name, line)
+                  for name, line in steps]
+        pending = [index for index, state in enumerate(states) if state != 'passed']
+        if not pending:
+            break
+        name, state = steps[pending[0]][0], states[pending[0]]
+        if state == 'running':
+            if waited >= BACKGROUND_LIMIT:
+                print(f'STOP: {name} still runs after {minutes(waited)}; see logs/{name}.log')
+                return 1
+            if waited % 60 == 0:
+                print(f'waiting for {name} to finish (logs/{name}.log)', flush=True)
+            time.sleep(POLL_SECONDS)
+            waited += POLL_SECONDS
+            continue
+        waited = 0.0
+        if state != 'not run':
+            print(f'STOP: {name} {state}. Nothing more runs; see its log under {run_directory}/logs')
+            return 1
+        if name in CLIENT_TRUST and not client_trust(run_directory, text, CLIENT_TRUST[name]):
+            print('STOP: the client trust did not complete')
+            return 1
+        try:
+            stopped = run_step(run_directory, run_id, name, quiet=True)
+        except Refused as error:
+            print(f'STOP: {error}')
+            return 1
+        if stopped:
+            print(f'STOP at {name}. Nothing more runs; its log is under {run_directory}/logs')
+            return 1
+    password_file().unlink()
+    report_text, passed = report(run_directory, 'full')
+    (run_directory / 'REPORT.md').write_text(report_text)
+    (run_directory / 'EVIDENCE.md').write_text(evidence(run_directory))
+    print('\n' + report_text.split('## Steps')[0].strip())
+    print(f'\nREPORT.md and EVIDENCE.md are in {run_directory}; send EVIDENCE.md for review.')
+    return 0 if passed else 1
 
 
 def main(argv=None):
@@ -1430,7 +1568,7 @@ def main(argv=None):
     parser.add_argument('--step', help='phase and step from the guide, for example 03-9 (not for report)')
     parser.add_argument('--user', default='gunstein', help='service user on the VMs')
     parser.add_argument('--operator-approved', default='', help='why the operator allows a second run')
-    parser.add_argument('kind', choices=('check', 'do', 'report', 'step', 'evidence'))
+    parser.add_argument('kind', choices=('check', 'do', 'report', 'step', 'evidence', 'run'))
     parser.add_argument('command', nargs='?')
     parser.add_argument('arguments', nargs='*')
     args = parser.parse_args(argv)
@@ -1451,6 +1589,10 @@ def main(argv=None):
         path.write_text(evidence(runs / args.run))
         print(f'Wrote {path}\nCopy it in one go: wl-copy < {path}   (X11: xclip -selection clipboard < {path})')
         return 0
+    if args.kind == 'run':
+        if args.command or args.arguments or args.step:
+            parser.error('run takes no command: it runs the whole guide')
+        return run_all(runs / args.run, args.run)
     if args.kind == 'step':
         if not args.command or args.arguments or args.step or not re.fullmatch(r'[0-9]{2}-[\w.-]+', args.command):
             parser.error('step takes one step name from the guide, for example 06-6-preflight or 06-3')

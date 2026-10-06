@@ -40,6 +40,10 @@ retired; runs before `f1f07b5` used its playbooks.
 
 ### Who runs what, and where
 
+The lab run of this procedure needs no agent: `acceptance.py run` runs every
+step of the agent guide in order and stops at the first failure; a person
+types their sudo password twice ([ACCEPTANCE-HUMAN.md](ACCEPTANCE-HUMAN.md)).
+
 | Location | Responsibility |
 |---|---|
 | Client/build terminal (ThinkPad in this lab) | Build, transfer, run guest commands through SSH, configure client DNS/CA and execute browser tests. An agent with access can do scoped checks here. |

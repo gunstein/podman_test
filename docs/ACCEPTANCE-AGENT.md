@@ -8,7 +8,9 @@ The operations tool is `app-ops` (plain SSH, [deploy/dr](../deploy/dr/README.md)
 C9.13 says how the agent handles its sudo, trust and inventories.
 For a change that cannot affect DR, the 20-minute
 [quick acceptance](ACCEPTANCE-QUICK.md) on one VM is enough; it uses Part A's
-preparation but not the rest of this document.
+preparation but not the rest of this document. A person can run the same
+steps without an agent: [ACCEPTANCE-HUMAN.md](ACCEPTANCE-HUMAN.md)
+(`acceptance.py run`), with Part A's preparation.
 
 - Part A: one-time operator preparation.
 - Part B: the kickoff message the operator pastes to the agent.
@@ -684,8 +686,8 @@ product 02-1-build-offline deploy/offline/build-bundle.sh &   # wait for exit=
 product 02-2-build-operations deploy/scripts/build-operations-package.sh
 product 02-3-transfer-102 scp dist/todo-offline-m12.tar.gz dist/todo-offline-m12.tar.gz.sha256 dist/todo-operations.tar.gz dist/todo-operations.tar.gz.sha256 gunstein@192.168.0.102:
 product 02-4-transfer-108 scp dist/todo-offline-m12.tar.gz dist/todo-offline-m12.tar.gz.sha256 dist/todo-operations.tar.gz dist/todo-operations.tar.gz.sha256 gunstein@192.168.0.108:
-vm 02-5-verify-102 192.168.0.102 'sha256sum -c todo-offline-m12.tar.gz.sha256 todo-operations.tar.gz.sha256 && tar -xzf todo-offline-m12.tar.gz && tar -xzf todo-operations.tar.gz && (cd todo-offline-m12 && sha256sum --quiet -c SHA256SUMS && cat VERSION) && (cd todo-operations && sha256sum --quiet -c SHA256SUMS && cat VERSION)'
-vm 02-6-verify-108 192.168.0.108 'sha256sum -c todo-offline-m12.tar.gz.sha256 todo-operations.tar.gz.sha256 && tar -xzf todo-offline-m12.tar.gz && tar -xzf todo-operations.tar.gz && (cd todo-offline-m12 && sha256sum --quiet -c SHA256SUMS && cat VERSION) && (cd todo-operations && sha256sum --quiet -c SHA256SUMS && cat VERSION)'
+vm 02-5-verify-102 192.168.0.102 'sha256sum -c todo-offline-m12.tar.gz.sha256 todo-operations.tar.gz.sha256 && tar -xzf todo-offline-m12.tar.gz && tar -xzf todo-operations.tar.gz && (cd todo-offline-m12 && sha256sum --quiet -c SHA256SUMS && cat VERSION) && (cd todo-operations && sha256sum --quiet -c SHA256SUMS && cat VERSION)'   # → 2× "source_state=clean"; both VERSION files name the kickoff revision
+vm 02-6-verify-108 192.168.0.108 'sha256sum -c todo-offline-m12.tar.gz.sha256 todo-operations.tar.gz.sha256 && tar -xzf todo-offline-m12.tar.gz && tar -xzf todo-operations.tar.gz && (cd todo-offline-m12 && sha256sum --quiet -c SHA256SUMS && cat VERSION) && (cd todo-operations && sha256sum --quiet -c SHA256SUMS && cat VERSION)'   # → 2× "source_state=clean"; both VERSION files name the kickoff revision
 ```
 
 Both `VERSION` files on both VMs must show the kickoff revision and

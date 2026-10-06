@@ -210,6 +210,40 @@ class StepTests(unittest.TestCase):
         self.assertEqual(log.read_text().splitlines()[1:], ["# command: echo done", "done", "exit=0"])
 
 
+class ExpectationTests(unittest.TestCase):
+    """What a product step must print, read from the comment after '→'."""
+
+    def state(self, comment, *output, name="05-1-x"):
+        with tempfile.TemporaryDirectory() as run:
+            logs = Path(run) / "logs"
+            logs.mkdir()
+            (logs / f"{name}.log").write_text("\n".join(
+                ["# start 2026-10-06T12:00:00+02:00", "# command: true",
+                 "** WARNING: connection is not using a post-quantum key exchange algorithm.", *output, "exit=0"]) + "\n")
+            return acceptance.product_state(Path(run), name, f"vm {name} 192.168.0.102 'true'   # → {comment}")
+
+    def test_each_form(self):
+        cases = [('{"changed": false}', ['{"changed": false, "x": 1}'], ['{"changed": true}']),
+                 ("nothing", [], ["something"]),
+                 ('3× "Writable: no"', ["Writable: no"] * 3, ["Writable: no"] * 2 + ["Writable: yes"]),
+                 ('only "0"', ["0", "", "0", "", "0"], ["0", "10", "0"]),
+                 ('"rich rule"', ["app-ops: zone public has no rich rule in it"], ["app-ops: other"]),
+                 ("1", ["        1", "(1 row)"], ["        0"]),
+                 ('"a: 0", "b: 3"', ["a: 0", "b: 3"], ["a: 0", "b: 2"])]
+        for comment, good, bad in cases:
+            with self.subTest(comment=comment):
+                self.assertEqual(self.state(comment, *good), "passed")
+                self.assertTrue(self.state(comment, *bad).startswith("did not print"), comment)
+
+    def test_only_needs_one_line_and_ssh_warnings_and_headers_do_not_count(self):
+        self.assertEqual(self.state('only "0"'), 'did not print only "0"')
+        self.assertEqual(self.state("nothing"), "passed")
+
+    def test_an_unreadable_expectation_is_an_error(self):
+        with self.assertRaises(ValueError):
+            acceptance.expectations('vm 05-1-x h \'true\'   # → 3× unquoted')
+
+
 class HelperTests(unittest.TestCase):
     """deploy/scripts/lab/helpers.sh, which every guide line runs with."""
 
@@ -258,19 +292,21 @@ def natural(name):
 class AgentGuideStepTests(unittest.TestCase):
     """The real guide: every step runs in the order its names give, each name once."""
 
-    def test_every_expectation_is_json_or_one_word(self):
-        """product_state() compares what follows '→' up to ';' with the output: JSON fields, or one whole line.
+    def test_every_comment_check_is_an_expectation_the_tool_reads(self):
+        """Every product line's check is machine-read: an expectation after '→', or only its exit code.
 
         Run 33 stopped at 03-12c because its comment began with a description
-        ("todo, notes, keycloak restored") that the command never prints as a line.
+        the command never prints. Since then a comment that says what output
+        must look like is written as an expectation (EXPECTATION), so neither
+        an agent nor a person has to judge it.
         """
         text = (ROOT / acceptance.AGENT_GUIDE).read_text()
-        for line in text.splitlines():
-            expected = re.search(r'#\s*→\s*([^;]+)', line)
-            if expected and acceptance.STEP_LINE.match(line):
-                value = expected.group(1).strip()
-                with self.subTest(line=line[:60]):
-                    self.assertTrue(value.startswith('{') or re.fullmatch(r'\S+', value), value)
+        for name, line in acceptance.guide_lines(text):
+            if line.startswith('$A ') or '#' not in line:
+                continue
+            with self.subTest(step=name):
+                found = acceptance.expectations(line)
+                self.assertTrue(found or name == '02-1-build-offline', line[-80:])
 
     def test_the_guide_steps_are_in_order_and_unique(self):
         steps = acceptance.guide_lines((ROOT / acceptance.AGENT_GUIDE).read_text())

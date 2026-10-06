@@ -1214,11 +1214,72 @@ def without_comment(line):
     return re.sub(r'\s+#\s.*$', '', line)
 
 
+# What a product line's comment gives after '→', up to ';', one or more
+# separated by commas: a JSON line with those fields ({"changed": true}),
+# nothing (no output at all), N× "text" (exactly N output lines contain
+# text), only "text" (every output line is text, and there is one), "text"
+# (some output line contains text), or a word (a whole output line).
+EXPECTATION = re.compile(r'\s*(?:(?P<count>[0-9]+)× "(?P<counted>[^"]*)"|only "(?P<only>[^"]*)"|'
+                         r'"(?P<contains>[^"]*)"|(?P<word>[^\s,"]+))\s*(?:,|$)')
+
+
+def expectations(line):
+    """The expectations of a guide line, as (kind, text, count) tuples; [] without '→'; ValueError if unreadable."""
+    found = re.search(r'#\s*→\s*([^;]+)', line)
+    if not found:
+        return []
+    text = found.group(1).strip()
+    if text.startswith('{'):
+        return [('json', text, 0)]
+    result, position = [], 0
+    while position < len(text):
+        match = EXPECTATION.match(text, position)
+        if not match or match.end() == position:
+            raise ValueError(f'unreadable expectation after →: {text}')
+        if match['count']:
+            result.append(('count', match['counted'], int(match['count'])))
+        elif match['only'] is not None:
+            result.append(('only', match['only'], 0))
+        elif match['contains'] is not None:
+            result.append(('contains', match['contains'], 0))
+        elif match['word'] == 'nothing':
+            result.append(('nothing', '', 0))
+        else:
+            result.append(('word', match['word'], 0))
+        position = match.end()
+    return result
+
+
+def unmet(expectation, lines):
+    """Why the output lines do not meet one expectation, or ''."""
+    kind, text, count = expectation
+    printed = [line.strip() for line in lines if line.strip()]
+    if kind == 'json':
+        pairs = re.findall(r'"\w+": (?:true|false|[0-9]+|"[^"]*")', text)
+        met = any(line.startswith('{"changed"') and all(pair in line for pair in pairs) for line in printed)
+    elif kind == 'nothing':
+        met = not printed
+    elif kind == 'count':
+        met = sum(text in line for line in printed) == count
+    elif kind == 'only':
+        met = bool(printed) and all(line == text for line in printed)
+    elif kind == 'contains':
+        met = any(text in line for line in printed)
+    else:
+        met = text in printed
+    if met:
+        return ''
+    described = {'json': text, 'nothing': 'nothing', 'count': f'{count}× "{text}"', 'only': f'only "{text}"',
+                 'contains': f'"{text}"', 'word': text}[kind]
+    return f'did not print {described}'
+
+
 def product_state(run_directory, name, line):
     """'not run', 'running', 'passed', or why a product step failed, read from its log.
 
     It must end with exit=0 (exit=1 for a *-refused step), and print what its
-    comment gives after '→': a JSON line with those values, or that word.
+    comment gives after '→' (EXPECTATION). Only the command's own output
+    counts: not the log's '# ' header lines, its exit= line or SSH warnings.
     """
     log = run_directory / 'logs' / f'{name}.log'
     if not log.exists():
@@ -1230,16 +1291,12 @@ def product_state(run_directory, name, line):
     wanted = 'exit=1' if name.endswith('-refused') else 'exit=0'
     if exits[-1] != wanted:
         return f'ended with {exits[-1]}, not {wanted}'
-    expected = re.search(r'#\s*→\s*([^;]+)', line)
-    if expected:
-        text = expected.group(1).strip()
-        if text.startswith('{'):
-            pairs = re.findall(r'"\w+": (?:true|false|[0-9]+|"[^"]*")', text)
-            if not any(output.startswith('{"changed"') and all(pair in output for pair in pairs)
-                       for output in lines):
-                return f'did not print {text}'
-        elif text not in (output.strip() for output in lines):
-            return f'did not print {text}'
+    output = [text for text in lines if not (text.startswith(('# start ', '# command:', 'exit='))
+                                             or NOISE.match(text))]
+    for expectation in expectations(line):
+        problem = unmet(expectation, output)
+        if problem:
+            return problem
     return 'passed'
 
 

@@ -648,12 +648,14 @@ What `step` checks for you:
   ACCEPTANCE.md): its log `logs/NAME.log` holds the start time, the exact
   command (`# command: ...`), the full output and the exit status. It must end
   with `exit=0`, or `exit=1` for a name ending in `-refused`, and print what
-  the comment gives after `→`: that JSON line, or that word.
+  the comment gives after `→`, up to `;`: a JSON line with those fields,
+  `nothing`, `3× "text"` (exactly three output lines contain it),
+  `only "text"` (every output line is it), `"text"` (some line contains it),
+  or a word (a whole line). Several are separated by commas.
 
-What you still check yourself, in the output `step` prints: everything else a
-comment says (for example `must print nothing` or `zero failed archive
-attempts`) and what the text under a block asks for. If it does not match:
-STOP, even when `step` said PASS.
+Every check a comment states is one of those, so `step` judges it; the rest
+of a comment only explains. What you still check yourself is what the text
+under a block asks for. If it does not match: STOP, even when `step` said PASS.
 
 - Values are the lab defaults (`.102` = VM 107 = `todo-primary`, `.108` =
   VM 108 = `todo-standby`, client `.100`, snapshot `clean-agent`). `step` runs
@@ -730,7 +732,7 @@ markers, written before the backup, remain:
 $A --step 03-12a do backup-nightly 192.168.0.102
 vm 03-12b-after-backup 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('written after the nightly backup', false);\""
 vm 03-12c-restore 192.168.0.102 'cd ~/todo-offline-m12 && PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore todo-primary'   # → {"changed": true}; after one "restored" line each for todo, notes and keycloak
-vm 03-12d-restored 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"SELECT 1 / (CASE WHEN count(*) = 0 THEN 1 ELSE 0 END) AS row_gone FROM todos WHERE title = 'written after the nightly backup';\""   # division by zero if the row survived
+vm 03-12d-restored 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"SELECT 1 / (CASE WHEN count(*) = 0 THEN 1 ELSE 0 END) AS row_gone FROM todos WHERE title = 'written after the nightly backup';\""   # → 1; division by zero if the row survived
 $A --step 03-12e check services 192.168.0.102 app
 $A --step 03-12f check markers 192.168.0.102
 vm 03-13-install-again 192.168.0.102 'cd ~/todo-offline-m12 && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": false}
@@ -773,13 +775,13 @@ vm 04-3-inventory 192.168.0.102 'cd ~/todo-operations && printf "%s\n" "user: gu
 product 04-4-sudo-refusal-skip echo 'C9.13 item 1: first sudo refusal check skipped (lab sudoers)'
 $A --step 04-5 do pin-ssh 192.168.0.102 192.168.0.108
 $A --step 04-6 do pin-ssh 192.168.0.108 192.168.0.102
-ops 04-7-preflight-refused 192.168.0.102 '--inventory initial.yaml preflight-standby'   # exit=1, message names the missing rich rule
+ops 04-7-preflight-refused 192.168.0.102 '--inventory initial.yaml preflight-standby'   # → "rich rule"; exit=1, the message names the missing rule
 $A --step 04-8 do firewall-replication 192.168.0.108 192.168.0.102 add
 ops 04-9-preflight 192.168.0.102 '--inventory initial.yaml preflight-standby'           # → {"changed": false}
 ops 04-10-bootstrap 192.168.0.102 '--inventory initial.yaml bootstrap-standby' &        # → {"changed": true}; wait for exit=
 ops 04-11-status 192.168.0.102 '--inventory initial.yaml replication-status'            # → {"changed": false}
 ops 04-12-status-again 192.168.0.102 '--inventory initial.yaml replication-status'      # → {"changed": false}
-vm 04-13-no-secrets 192.168.0.102 'cd ~/todo-operations && find . -newer SHA256SUMS -type f'   # only initial.yaml
+vm 04-13-no-secrets 192.168.0.102 'cd ~/todo-operations && find . -newer SHA256SUMS -type f'   # → only "./initial.yaml"; no secret file
 $A --step 04-14 check replication-tls 192.168.0.102
 $A --step 04-15 check roles 192.168.0.108 standby
 $A --step 04-16 do markers phase4
@@ -794,7 +796,7 @@ $A --step 04-20 check markers 192.168.0.108
 ```bash
 ops 05-1-install-dr-tool 192.168.0.102 '--inventory initial.yaml install-dr-tool'          # → {"changed": true}
 ops 05-2-install-dr-tool-again 192.168.0.102 '--inventory initial.yaml install-dr-tool'    # → {"changed": false}
-vm 05-3-dr-status 192.168.0.108 'python3 /opt/todo/bin/app_dr.py status'                   # standby, not writable, 0 bytes lag, primary reachable
+vm 05-3-dr-status 192.168.0.108 'python3 /opt/todo/bin/app_dr.py status'                   # → 3× "Database role: standby", 3× "Writable: no", 3× "Local apply lag: 0 bytes", 3× ": reachable"
 ops 05-4-install-quarantine-tool 192.168.0.102 '--inventory initial.yaml install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint'        # → {"changed": true}
 ops 05-5-install-quarantine-tool-again 192.168.0.102 '--inventory initial.yaml install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint'  # → {"changed": false}
 $A --step 05-6 check quarantine-ready 107 todo-primary
@@ -821,7 +823,7 @@ $A --step 05-8-3b check connect client 192.168.0.102 8443 blocked
 $A --step 05-8-3c check connect 192.168.0.108 192.168.0.102 22 open
 $A --step 05-8-3d check connect 192.168.0.108 192.168.0.102 5432 blocked
 $A --step 05-8-3e check connect 192.168.0.102 192.168.0.108 22 blocked
-vm 05-8-3f-ipv6 192.168.0.102 'ip -6 addr show scope global'   # must print nothing; a global IPv6 address: STOP
+vm 05-8-3f-ipv6 192.168.0.102 'ip -6 addr show scope global'   # → nothing; a global IPv6 address: STOP
 # 4-6. Links down, start isolated, stop the services through the Guest Agent
 $A --step 05-8-4a do power 107 shutdown
 $A --step 05-8-4b do link 107 down 192.168.0.102
@@ -896,11 +898,11 @@ $A --step 07-15 check markers 192.168.0.108
 ```bash
 ops 08-1-configure-backup 192.168.0.108 '--inventory recovery.yaml configure-backup'   # → {"changed": false}; failover configured it
 $A --step 08-2 check roles 192.168.0.108 archiving
-vm 08-3-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'        # zero failed archive attempts
-vm 08-4-backup-create 192.168.0.108 'python3 /opt/todo/bin/app_backup.py create'        # note the three base-... names
-vm 08-5-restore-state 192.168.0.108 'podman ps -a --filter name=restore --format "{{.Names}}"; podman volume ls --filter name=restore --format "{{.Name}}"'   # must print nothing
+vm 08-3-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'        # → 3× "Archive mode: on", 3× "Failed archive attempts: 0"
+vm 08-4-backup-create 192.168.0.108 'python3 /opt/todo/bin/app_backup.py create'        # → 3× "Verified base backup: base-"; 08-9 reads the todo one
+vm 08-5-restore-state 192.168.0.108 'podman ps -a --filter name=restore --format "{{.Names}}"; podman volume ls --filter name=restore --format "{{.Name}}"'   # → nothing
 vm 08-6-before-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR before restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR before restore point');\""
-vm 08-7-mark 192.168.0.108 'python3 /opt/todo/bin/app_backup.py mark --name acceptance_before_after && sleep 1 && date --utc +%Y-%m-%dT%H:%M:%SZ && sleep 1'   # the restore point, and a time between the rows
+vm 08-7-mark 192.168.0.108 'python3 /opt/todo/bin/app_backup.py mark --name acceptance_before_after && sleep 1 && date --utc +%Y-%m-%dT%H:%M:%SZ && sleep 1'   # → 3× "Archived restore point acceptance_before_after"; 08-10 reads the time
 vm 08-8-after-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR after restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR after restore point');\""
 ```
 
@@ -921,11 +923,11 @@ Each must show `recovery|paused|read_only = t|t|on`, network `none`, only the
 before-row in the restored view and both rows in the live view. Then:
 
 ```bash
-vm 08-11-cleanup 192.168.0.108 'python3 /opt/todo/bin/app_backup.py --app todo cleanup-restore --confirm todo-postgres-restore && python3 /opt/todo/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore && podman ps -a --filter name=restore --format "{{.Names}}" && podman volume ls --format "{{.Name}}"'   # no restore resources; the three -backup volumes remain
+vm 08-11-cleanup 192.168.0.108 'python3 /opt/todo/bin/app_backup.py --app todo cleanup-restore --confirm todo-postgres-restore && python3 /opt/todo/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore && echo "restore containers: $(podman ps -aq --filter name=restore | wc -l)" && echo "restore volumes: $(podman volume ls -q --filter name=restore | wc -l)" && echo "backup volumes: $(podman volume ls -q --filter name=postgres-backup | wc -l)"'   # → "restore containers: 0", "restore volumes: 0", "backup volumes: 3"
 ops 08-12-configure-backup-again 192.168.0.108 '--inventory recovery.yaml configure-backup'   # → {"changed": false}
 $A --step 08-13 do reboot 108 192.168.0.108 app
 $A --step 08-14 check roles 192.168.0.108 archiving
-vm 08-15-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'   # zero failed archive attempts
+vm 08-15-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'   # → 3× "Archive mode: on", 3× "Failed archive attempts: 0"
 $A --step 08-16 do backup-nightly 192.168.0.108   # one run of the nightly backup that failover turned on
 ```
 
@@ -946,7 +948,7 @@ $A --step 09-6a do firewall-replication 192.168.0.108 192.168.0.102 remove
 $A --step 09-6b do firewall-replication 192.168.0.102 192.168.0.108 add
 $A --step 09-7 do pin-ssh 192.168.0.108 192.168.0.102
 $A --step 09-8 do replication-exception 107 on
-ops 09-9a-rebuild-refused 192.168.0.108 '--inventory recovery.yaml preflight-standby-rebuild --confirm-fenced todo-primary --confirm-reseed todo-primary'   # exit=1, both exact confirmations are required
+ops 09-9a-rebuild-refused 192.168.0.108 '--inventory recovery.yaml preflight-standby-rebuild --confirm-fenced todo-primary --confirm-reseed todo-primary'   # → "exact confirmations"; exit=1
 ops 09-9b-preflight 192.168.0.108 "--inventory recovery.yaml preflight-standby-rebuild --confirm-fenced 'todo-primary is fenced' --confirm-reseed todo-primary"   # → {"changed": false}
 ops 09-10-rebuild 192.168.0.108 "--inventory recovery.yaml rebuild-standby --confirm-fenced 'todo-primary is fenced' --confirm-reseed todo-primary" &   # → {"changed": true}; wait for exit=
 ```
@@ -960,7 +962,7 @@ including `replication port ... is not reachable`: STOP, never run it again.
 $A --step 09-11a check connect 192.168.0.102 192.168.0.108 5432 open
 $A --step 09-11b check connect 192.168.0.102 192.168.0.108 5433 open
 $A --step 09-11c check connect 192.168.0.102 192.168.0.108 5434 open
-ops 09-11d-cluster-status 192.168.0.108 '--inventory recovery.yaml cluster-status'   # streaming, async, slots active, zero lag
+ops 09-11d-cluster-status 192.168.0.108 '--inventory recovery.yaml cluster-status'   # → {"changed": false}; it exits 1 unless every database streams, async, with an active slot
 $A --step 09-11e check roles 192.168.0.102 standby
 $A --step 09-11f check replication-tls 192.168.0.108
 $A --step 09-11g do markers phase9
@@ -980,7 +982,7 @@ after `.102` proved it is a read-only standby that reaches `.108`.
 
 ```bash
 vm 09-13a-pair-inventory 192.168.0.108 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-standby: {role: primary, address: 192.168.0.108, local: true}" "  todo-primary: {role: standby, address: 192.168.0.102}" > initial.yaml && cat initial.yaml'
-ops 09-13b-reseed-refused 192.168.0.108 '--inventory initial.yaml reseed-standby --confirm-reseed todo-standby'   # exit=1, it must name the standby exactly
+ops 09-13b-reseed-refused 192.168.0.108 '--inventory initial.yaml reseed-standby --confirm-reseed todo-standby'   # → "must name the standby exactly"; exit=1
 ops 09-13c-reseed 192.168.0.108 '--inventory initial.yaml reseed-standby --confirm-reseed todo-primary' &   # → {"changed": true}; wait for exit=
 $A --step 09-13d check roles 192.168.0.102 standby
 $A --step 09-13e check replication-tls 192.168.0.108
@@ -1014,7 +1016,7 @@ $A --step 10-8 check disk 192.168.0.108
 $A --step 11-1 check browser
 $A --step 11-2 check services 192.168.0.108 app
 $A --step 11-3 check services 192.168.0.102 standby
-vm 11-4-restarts 192.168.0.108 'systemctl --user show -p NRestarts --value todo-app.service notes-app.service shared-proxy.service'   # 0, 0, 0
+vm 11-4-restarts 192.168.0.108 'systemctl --user show -p NRestarts --value todo-app.service notes-app.service shared-proxy.service'   # → only "0"
 rm -f "$XDG_RUNTIME_DIR/todo-acceptance/e2e-password"
 $A report full
 ```

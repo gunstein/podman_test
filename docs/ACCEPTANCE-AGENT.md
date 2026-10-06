@@ -6,9 +6,7 @@ It adds **how** the agent operates (Proxmox API token, passwordless lab sudo,
 evidence, stop rules) on top of the canonical **what** in ACCEPTANCE.md.
 The operations tool is `app-ops` (plain SSH, [deploy/dr](../deploy/dr/README.md));
 C9.13 says how the agent handles its sudo, trust and inventories.
-For a change that cannot affect DR, the 20-minute
-[quick acceptance](ACCEPTANCE-QUICK.md) on one VM is enough; it uses Part A's
-preparation but not the rest of this document. A person can run the same
+A person can run the same
 steps without an agent: [ACCEPTANCE-HUMAN.md](ACCEPTANCE-HUMAN.md)
 (`acceptance.py run`), with Part A's preparation.
 

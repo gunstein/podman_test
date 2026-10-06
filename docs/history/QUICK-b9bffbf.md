@@ -2,7 +2,7 @@
 
 **QUICK PASS:** `b9bffbfd175509936f61994a1ba087e464e476f7`.
 Run `2026-09-27-quick-1`, executed by an agent under
-[ACCEPTANCE-QUICK.md](../ACCEPTANCE-QUICK.md), the first run with
+[ACCEPTANCE-QUICK.md](https://github.com/gunstein/podman_test/blob/a05125fb9974e6e30639de73fdb24d6e4688aa79/docs/ACCEPTANCE-QUICK.md), the first run with
 `deploy/scripts/acceptance.py`. The checkout stayed clean; no source was
 changed, nothing was committed or pushed, and no step ran twice. From the
 rollback to the last browser test it took nine minutes (08:22 to 08:31).

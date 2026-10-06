@@ -65,8 +65,8 @@ a stop it stays for the run that goes on. Remove it with
 
 ## What it does not do
 
-It runs only the full two-VM guide; the 20-minute
-[quick acceptance](ACCEPTANCE-QUICK.md) on one VM still has no `run`.
+Every change gets this full run: the one-VM quick acceptance is retired,
+since the full run needs no agent and takes about 35 minutes.
 
 It does not record the verdict in the repository, and it does not decide
 anything a person must decide: a stop is reported, never worked around. The

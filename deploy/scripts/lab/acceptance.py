@@ -10,7 +10,7 @@ the result with the expected values itself and records it.
   acceptance.py --run RUN_ID step 03-4           (the next line of the guide)
   acceptance.py --run RUN_ID --step 03-4 check services 192.168.0.102 app
   acceptance.py --run RUN_ID --step 03-9 do reboot 107 192.168.0.102 app
-  acceptance.py --run RUN_ID report full       (or quick)
+  acceptance.py --run RUN_ID report full
   acceptance.py --run RUN_ID evidence          (EVIDENCE.md: one file to copy and send)
   acceptance.py --run RUN_ID run               (the whole guide, no agent: docs/ACCEPTANCE-HUMAN.md)
 
@@ -34,8 +34,8 @@ JSON line to record.jsonl. Exit status: 0 PASS, 1 FAIL, 2 usage, 3 refused.
 
 report writes REPORT.md in the run folder from record.jsonl and the other
 logs, so no value in the run record is copied by hand, and
-compares the run with the guide (full: ACCEPTANCE-AGENT.md, quick:
-ACCEPTANCE-QUICK.md) as it was at the recorded revision: every acceptance.py
+compares the run with the guide (full: ACCEPTANCE-AGENT.md) as it was at
+the recorded revision: every acceptance.py
 line and every log the guide names must be there, and nothing else. It exits
 0 only if every step passed, no do was left unfinished or needed approval,
 every other log ends in exit=0 (exit=1 for a log named *-refused.log, a
@@ -931,7 +931,8 @@ def product_logs(run_directory, tool_logs):
     return rows
 
 
-GUIDES = {'full': 'docs/ACCEPTANCE-AGENT.md', 'quick': 'docs/ACCEPTANCE-QUICK.md'}
+# The guide a report compares with. The one-VM quick guide is retired; Git history keeps it.
+GUIDES = {'full': 'docs/ACCEPTANCE-AGENT.md'}
 SLOWEST = 8
 ISO_TIME = re.compile(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d')
 
@@ -1578,7 +1579,7 @@ def main(argv=None):
         parser.error('--run looks like 2026-09-27-app-ops-13')
     if args.kind == 'report':
         if args.command not in GUIDES or args.arguments or not (runs / args.run / 'record.jsonl').is_file():
-            parser.error('report takes full or quick (the guide to compare with) and needs a run with record.jsonl')
+            parser.error('report takes full (the guide to compare with) and needs a run with record.jsonl')
         text, passed = report(runs / args.run, args.command)
         (runs / args.run / 'REPORT.md').write_text(text)
         print(text, end='')

@@ -44,6 +44,9 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- The one-VM quick acceptance (`ACCEPTANCE-QUICK.md`) is retired since run 46:
+  the full run needs no agent and takes about 35 minutes, so every change gets
+  it. Git history keeps the guide (last at `a05125f`).
 - `c5f4a59` run 46: CLEAN PASS ([record](docs/history/ACCEPTANCE-c5f4a59.md)),
   the first run without an agent: `acceptance.py run`, every comment check an
   expectation, 32 min 57 s, failover 3 min 28 s.

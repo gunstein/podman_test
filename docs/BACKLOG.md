@@ -35,8 +35,7 @@ operator, not code; *[decision]* needs the owner's choice before any work.
    Oslo hypervisor, a procedure). When to
    start is the owner's call.
 2. The rest of failover to Trondheim within 30 minutes (see the goal below):
-   G3 (time it in the drill; with T4 kept as it is, the time includes the
-   client trust step), G4 (the disaster drill in the
+   G4 (the disaster drill in the
    lab) and G5 (rebuilding Oslo on new hardware).
 3. What operation needs: U1 (updating a replicated pair), T6 (planned
    switchover), U2 (certificate renewal, before replication stops by itself)
@@ -68,15 +67,10 @@ promoted itself on a broken link, both sites would take writes (split-brain),
 which loses and corrupts data. Fully automatic failover needs a third witness,
 such as a small cloud VM. Without one, the safe design is one human decision
 ("Oslo is lost", T3), after which one command, `app-ops failover`, does the
-rest (accepted in runs 18-22).
+rest (accepted in runs 18-22). Acceptance times it: users logged in on the
+promoted host 5 min 18 s after the fence in run 45, and `report full` needs
+attention above 30 minutes (G3).
 
-- **G3. Time the failover in the drill.** *[new]* Done in code; waiting for
-  its acceptance run. `report full` prints "Failover (G3)", the time from the
-  first line of the old primary's fence (`06-3`) to the last of the browser
-  test that logs users in to both apps on the promoted host (`07-8`), the
-  operator's client trust step included, and needs attention when it is over
-  30 minutes. The time before the fence,
-  a person deciding "Oslo is lost" (T3), is outside the drill.
 - **G4. A disaster drill in the Proxmox lab.** *[new]* A separate, shorter
   drill next to acceptance that simulates the Oslo fire realistically on the
   two lab VMs, timed as in G3:

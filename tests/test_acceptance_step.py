@@ -215,6 +215,10 @@ class RunAllTests(unittest.TestCase):
     """acceptance.py run: the whole guide in order, without an agent, stopping at the first failure."""
 
     GUIDE = """```bash
+python3 deploy/scripts/lab/acceptance_preflight.py --only-prints-in-part-a
+```
+
+```bash
 { echo "# start now"; echo acceptance_preflight.py; echo "READY for the agent run."; echo "exit=0"; } >> "$RUN/logs/00-readiness.log"
 ```
 
@@ -329,7 +333,10 @@ class ClientTrustTests(unittest.TestCase):
         names = [name for name, _ in acceptance.guide_lines(guide)]
         for name in acceptance.CLIENT_TRUST:
             self.assertIn(name, names)
-        self.assertIn("acceptance_preflight.py", acceptance.guide_block(guide, "acceptance_preflight.py"))
+        # Run 46: the first block with the preflight was Part A's, which writes no log.
+        block = acceptance.guide_block(guide, "00-readiness.log")
+        self.assertTrue([line for line in block.splitlines()
+                         if "acceptance_preflight.py" in line and '>> "$RUN/logs/00-readiness.log"' in line])
         self.assertRegex(acceptance.guide_block(guide, "trust-serving-ca.sh"), r"(?m)^IP=\S+$")
 
 

@@ -1511,8 +1511,9 @@ def run_all(run_directory, run_id):
     (run_directory / 'logs').mkdir(parents=True, exist_ok=True)
     environment = {**os.environ, 'RUN': str(run_directory)}
     if readiness_state(run_directory) != 'passed':
-        line = next(line for line in guide_block(text, 'acceptance_preflight.py').splitlines()
-                    if 'acceptance_preflight.py' in line).strip()
+        # C1a's line, which appends to logs/00-readiness.log; Part A's only prints.
+        line = next(line for line in guide_block(text, '00-readiness.log').splitlines()
+                    if 'acceptance_preflight.py' in line and '00-readiness.log' in line).strip()
         subprocess.run(['bash', '-c', line], cwd=ROOT, env=environment)
         if readiness_state(run_directory) != 'passed':
             print(f'STOP: the readiness check {readiness_state(run_directory)}; fix what it names (FAIL lines)')

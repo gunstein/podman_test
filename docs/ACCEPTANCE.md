@@ -756,7 +756,7 @@ fails with `no standby streams from this primary over TLS` in the journal.
 
 - **Where:** Promoted host for deployment; client/build host for routing/trust/browser; Proxmox node Shell for reboot.
 - **Preconditions:** Phase 6 passed, including `failover`; old primary fenced.
-- **PASS:** Healthy application, stable production issuer, real login and persistent marker; `deploy-promoted-application` repeat `{"changed": false}`; reboot preserves CA/data.
+- **PASS:** Healthy application, stable production issuer, real login and persistent marker; `deploy-promoted-application` repeat `{"changed": false}`; reboot preserves CA/data. Users log in on the promoted host within 30 minutes of the old primary's fence, client trust step included (the goal of [BACKLOG.md](BACKLOG.md#goal-trondheim-running-within-30-minutes); `report full` prints the time as "Failover (G3)").
 - **Evidence:** app-ops JSON results, trusted browser results, marker/CA and boot IDs.
 - **STOP if:** Missing secrets/images, TLS or login failure, unexpected role/bootstrap activity or marker loss.
 

@@ -649,6 +649,45 @@ class TimeTests(ToolTest):
         self.assertEqual(acceptance.minutes(3725), "1 h 02 min")
 
 
+class FailoverTimeTests(ToolTest):
+    """G3: the drill shows that Trondheim serves within 30 minutes of the fence."""
+    report = ReportTests.report
+    matching_guide = ReportTests.matching_guide
+
+    def logs(self, length):
+        self.tool("--step", "04-2", "check", "headers", rules=[("curl", (0, APP_HEADERS))])
+        logs = self.run_directory / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        start = datetime.datetime(2026, 10, 6, 12, 0, tzinfo=datetime.timezone.utc)
+        for name, offset, duration in (("06-3-do-fence", 0, 20), ("06-10-failover", 60, 120),
+                                       ("07-8-check-browser", length - 30, 30)):
+            path = logs / f"{name}.log"
+            began = start + datetime.timedelta(seconds=offset)
+            path.write_text(f"# {began.isoformat()} step\nexit=0\n")
+            os.utime(path, (began.timestamp() + duration,) * 2)
+
+    def test_the_time_from_the_fence_to_the_browser_test_is_reported(self):
+        self.logs(9 * 60 + 5)
+        self.assertEqual(acceptance.failover_time(self.run_directory), 545)
+        code, text = self.report()
+        self.assertEqual(code, 0, text)
+        self.assertIn("Failover (G3): 9 min 05 s from the fence of the old primary (06-3)", text)
+
+    def test_a_failover_over_30_minutes_needs_attention(self):
+        self.logs(31 * 60)
+        code, text = self.report()
+        self.assertEqual(code, 1)
+        self.assertIn("failover took 31 min 00 s from 06-3-fence to 07-8-browser, over the goal of 30 min 00 s",
+                      text.split("## Needs attention")[1])
+
+    def test_a_run_without_both_steps_reports_no_failover_time(self):
+        self.assertIsNone(acceptance.failover_time(self.run_directory))
+        logs = self.run_directory / "logs"
+        logs.mkdir(parents=True)
+        (logs / "06-3-do-fence.log").write_text("# 2026-10-06T12:00:00+00:00 do fence\n")
+        self.assertIsNone(acceptance.failover_time(self.run_directory))
+
+
 class EvidenceTests(ToolTest):
     def test_evidence_holds_the_reports_and_the_end_of_the_last_attempt_of_each_key_log(self):
         logs = self.run_directory / "logs"

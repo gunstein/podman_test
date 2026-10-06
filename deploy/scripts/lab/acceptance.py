@@ -42,7 +42,9 @@ refusal the guide asks for) and every step ran from the same clean
 checkout. Each record line carries the revision and cleanliness of the
 checkout at the time of that step; report never reads git itself. Its last
 section times the run from the logs: each phase, the time in steps and the
-time between them (the agent and the operator), and the slowest steps.
+time between them (the agent and the operator), and the slowest steps. Its
+header gives the failover time (G3), from the old primary's fence (06-3) to
+users logging in on the promoted host (07-8); over 30 minutes needs attention.
 
 Commands:
   do    rollback VMID SNAPSHOT HOST      reset the VM, start it, wait for SSH
@@ -958,6 +960,22 @@ def minutes(seconds):
     return f'{seconds // 60} min {seconds % 60:02d} s'
 
 
+# G3: Trondheim must serve within 30 minutes of "Oslo is lost". In the drill
+# that is from the fence of the old primary (06-3, the decision acted on) to
+# the browser test logging users in to both apps on the promoted host (07-8),
+# with the operator's client trust step between them.
+FAILOVER_FROM, FAILOVER_TO = '06-3-', '07-8-'
+FAILOVER_GOAL = 30 * 60
+
+
+def failover_time(run_directory):
+    """Seconds from the fence's first line to the promoted host's browser test's last, or None without both."""
+    times = log_times(run_directory)
+    starts = [start for name, start, _ in times if name.startswith(FAILOVER_FROM)]
+    ends = [end for name, _, end in times if name.startswith(FAILOVER_TO)]
+    return max(ends) - min(starts) if starts and ends else None
+
+
 def timing(run_directory):
     """The report's Time section: where a run spends its time, read from the logs alone.
 
@@ -1132,6 +1150,10 @@ def report(run_directory, guide):
         attention += compare_with_guide(entries, products, guide_text)
     else:
         attention.append(f'{GUIDES[guide]} at the recorded revision could not be read to compare the steps')
+    failover = failover_time(run_directory)
+    if failover is not None and failover > FAILOVER_GOAL:
+        attention.append(f'failover took {minutes(failover)} from {FAILOVER_FROM}fence to {FAILOVER_TO}browser, '
+                         f'over the goal of {minutes(FAILOVER_GOAL)}')
 
     passed = not attention and bool(finished)
     counts = {result: sum(entry['result'] == result for entry in finished) for result in ('PASS', 'FAIL', 'REFUSED')}
@@ -1141,8 +1163,11 @@ def report(run_directory, guide):
              f'acceptance.py steps: {len(finished)} (PASS {counts["PASS"]}, FAIL {counts["FAIL"]}, '
              f'REFUSED {counts["REFUSED"]}, unfinished {len(unfinished)}); other logs: {len(products)}.',
              '', f'**From the record: {"ALL STEPS PASS" if passed else "NOT CLEAN"}.** '
-             f'Compared with {GUIDES[guide]} at that revision: every step and log it names, nothing else.', '',
-             '## Steps', '', '| Step | Command | Result | Values | Log |', '|---|---|---|---|---|']
+             f'Compared with {GUIDES[guide]} at that revision: every step and log it names, nothing else.', '']
+    if failover is not None:
+        lines += [f'Failover (G3): {minutes(failover)} from the fence of the old primary (06-3) to users logging '
+                  f'in to both apps on the promoted host (07-8); the goal is under {minutes(FAILOVER_GOAL)}.', '']
+    lines += ['## Steps', '', '| Step | Command | Result | Values | Log |', '|---|---|---|---|---|']
     for entry in finished:
         command = ' '.join([entry['kind'], entry['command'], *entry['arguments']])
         lines.append(f'| {entry["step"]} | `{command}` | {entry["result"]} | {short(entry["values"])} | {entry["log"]} |')

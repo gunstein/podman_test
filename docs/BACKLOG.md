@@ -70,9 +70,13 @@ such as a small cloud VM. Without one, the safe design is one human decision
 ("Oslo is lost", T3), after which one command, `app-ops failover`, does the
 rest (accepted in runs 18-22).
 
-- **G3. Time the failover in the drill.** *[new]* Acceptance measures the time
-  from "Oslo declared lost" to "users log in in Trondheim", and requires under
-  30 minutes. The goal is then shown, not only that failover works.
+- **G3. Time the failover in the drill.** *[new]* Done in code; waiting for
+  its acceptance run. `report full` prints "Failover (G3)", the time from the
+  first line of the old primary's fence (`06-3`) to the last of the browser
+  test that logs users in to both apps on the promoted host (`07-8`), the
+  operator's client trust step included, and needs attention when it is over
+  30 minutes. The time before the fence,
+  a person deciding "Oslo is lost" (T3), is outside the drill.
 - **G4. A disaster drill in the Proxmox lab.** *[new]* A separate, shorter
   drill next to acceptance that simulates the Oslo fire realistically on the
   two lab VMs, timed as in G3:

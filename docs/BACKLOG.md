@@ -536,6 +536,14 @@ the same whichever identity server reads the files.
   and password (with `X509KeyStorageFlags.EphemeralKeySet`, as .NET in a
   Linux container usually needs) and prints the certificate's fingerprint.
   It tests the .NET side without replacing Keycloak. After X1.
+  - What it covers: the line Duende relies on before `AddSigningCredential`,
+    `new X509Certificate2(path, password, EphemeralKeySet)`, against the same
+    Podman secret mounts: a PFX that arrives byte for byte, the file mode and
+    owner the container user can read, the right password, and no need for a
+    user profile key store.
+  - What it does not cover: `AddSigningCredential` itself, Duende's automatic
+    key management, ASP.NET data protection and Duende's database. Those need
+    Duende (and its licence) and stay out of scope.
 
 ## Security hardening
 

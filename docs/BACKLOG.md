@@ -494,14 +494,30 @@ through a plain PVC volume.
     `.encode()`); a binary PFX needs its own path, for example the Kube
     secret built straight from the file's bytes, or a raw secret holding
     its base64.
-  - DR: a promoted host starts the Notes pod with `deploy-promoted`, which
-    requires every secret in `transfer.replicated_names()`. Either the PFX,
-    its password and the CA certificate join the DR secret copy and the
-    volume is created on the promoted host from them, or the promoted host
-    refuses with a clear message; it must never report a working app that
-    cannot start. The base backup and WAL archive do not hold these files;
-    say so, as SECRETS.md does for the other secrets. The DR code may import
-    the installer, never the other way (tests/test_dr_boundary.py).
+  - DR, decided 2026-10-06: the material joins the DR secret copy, so both
+    sites hold the same key and CA and a signature made in Oslo still
+    verifies in Trondheim. Without this, the promoted host's Notes pod lacks
+    its secrets and volume, and `failover` stops at its services step.
+    - The PFX (as base64 text: the copy is JSON text), its password and the
+      public CA certificate are kept as raw Podman secrets on the primary
+      and added to `transfer.transfer_names()`, so `bootstrap-standby`, and
+      `rebuild-standby` and `reseed-standby` through `sync_secrets`, copy
+      them; an existing standby value that differs stops the import, as for
+      every other secret.
+    - `deploy-promoted` requires them (`replicated_names()`), makes the Kube
+      secrets from them and creates `notes-root-cert-data` with only the CA
+      certificate before the Notes pod starts, through an installer
+      function the DR code calls (the DR code may import the installer,
+      never the other way; tests/test_dr_boundary.py).
+    - The DR check's "Ready to take over" counts the new secrets, so a
+      standby without them is reported as not ready.
+    - An acceptance step after failover (phase 7) checks that Notes on
+      `.108` reports "Signering og sertifikatkontroll OK" with the same
+      certificate fingerprint as on `.102` in phase 3.
+    - The base backup and WAL archive do not hold these files; SECRETS.md
+      says so, as it does for the other secrets. A single-host restore keeps
+      them (they stay on the host); losing a host loses its PKI directory,
+      and the other host's copy is the recovery.
   - Development (`podman kube play`, `dev-up.sh`) and production (Quadlet)
     both need the volume and secrets before the pod starts; `dev-down.sh`
     must clean them up.

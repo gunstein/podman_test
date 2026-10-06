@@ -448,87 +448,94 @@ full-stack job and acceptance cover that.
 
 ## File-based secrets and certificates (demo)
 
-A reference for another installer that already runs a Bash script on the host
-to make PKI material: how such files reach a Kube pod as a file secret and
-through a plain PVC volume.
+Concepts for another installer, tested here first. That installer runs larger
+applications and Duende IdentityServer, which signs its tokens with a key from
+a password-protected PFX file and needs certificates to trust; handling the PFX
+as a secret has proved hard there. Keycloak can do the same thing (decided
+2026-10-06), so the demo is not contrived: the identity server signs tokens
+with an organisation key from a PFX, and an app trusts that key only because
+its certificate was issued by the organisation's CA. The Podman mechanics are
+the same whichever identity server reads the files.
 
-- **X1. PFX secret and CA volume in Notes.** *[new]* Extend `notes` (not
-  `todo`) with both flows:
-  1. A small Bash script with OpenSSL, started by the Python installer before
-     secrets are provisioned and the app starts, makes a demo CA, a signing
-     key and certificate, and a password-protected `.pfx` in a dedicated
+- **X1. Keycloak signs with a PFX secret; Notes trusts it through a CA volume.**
+  *[new]* Two parts, each with its own acceptance run: X1a on one host, X1b
+  for DR. Start with a short CI spike that proves the Keycloak part
+  (step 2) before building the rest; if it fails, fall back to signing in
+  the Notes backend.
+  1. *Generation, in Python.* The installer, not a Bash script, makes the
+     demo PKI before secrets are provisioned and the pods start, by running
+     `openssl` (present on the hosts; the offline installer has only the
+     standard library, so no `cryptography` there): a demo CA, a signing key
+     and certificate issued by it, and a PKCS#12 file (`.pfx`) holding the key
+     and certificate under a random password. The files live in one
      directory under the install user's home (for example
-     `~/.local/share/todo-pki/notes`, 0700). It runs on every install but
-     keeps existing valid material (key, certificate and PFX password never
-     change on a reinstall) and stops with a clear error on incomplete or
-     inconsistent files. None of it goes into images or the offline bundle;
-     the script and the code do, so an offline install works.
-  2. The `.pfx` becomes a Kube-compatible Podman secret mounted as a file
-     (for example `/run/secrets/notes-signing-pfx/signing.pfx`); its password
-     goes separately through the existing secret mechanism (a raw Podman
-     secret and a `*-kube-*` secret, as `secrets.create_kube`). Existing
-     secrets are reused, never overwritten, and a mismatch with the files
-     stops the install. The PFX bytes and the password stay out of logs,
-     manifests and API responses.
-  3. Only the public CA certificate goes into a new named volume
-     `notes-root-cert-data`, before the app starts (`podman volume import` of
-     a tar with only that file), mounted read-only through a
-     `persistentVolumeClaim`. Its content is not changed while the app runs;
-     define what a reinstall does when the file differs.
-  4. The Notes backend opens the PFX with the password, signs a fixed test
-     message, verifies the signature with the certificate's public key, and
-     checks that the certificate was issued by the CA read from the volume.
-     The Notes UI shows "Signering og sertifikatkontroll OK" with subject,
-     expiry and fingerprint, or a clear failure (missing file, wrong
-     password, wrong CA), behind the existing login. No general signing API.
-     The backend would need `cryptography` (PKCS#12, signing and issuer
-     checks); the standard library has none of it.
-
-  Findings so far, from reading the code (2026-10-06):
-  - `deploy/manifests/app.yaml.j2` is shared by both apps, so the new
-    volumes and mounts need a per-app switch in the App registry
-    (`apps.py`), not a copy of the template.
-  - `secrets.read` and `create_kube` handle text only (`--showsecret`,
-    `.encode()`); a binary PFX needs its own path, for example the Kube
-    secret built straight from the file's bytes, or a raw secret holding
-    its base64.
-  - DR, decided 2026-10-06: the material joins the DR secret copy, so both
-    sites hold the same key and CA and a signature made in Oslo still
-    verifies in Trondheim. Without this, the promoted host's Notes pod lacks
-    its secrets and volume, and `failover` stops at its services step.
-    - The PFX (as base64 text: the copy is JSON text), its password and the
-      public CA certificate are kept as raw Podman secrets on the primary
-      and added to `transfer.transfer_names()`, so `bootstrap-standby`, and
-      `rebuild-standby` and `reseed-standby` through `sync_secrets`, copy
-      them; an existing standby value that differs stops the import, as for
-      every other secret.
-    - `deploy-promoted` requires them (`replicated_names()`), makes the Kube
-      secrets from them and creates `notes-root-cert-data` with only the CA
-      certificate before the Notes pod starts, through an installer
-      function the DR code calls (the DR code may import the installer,
-      never the other way; tests/test_dr_boundary.py).
-    - The DR check's "Ready to take over" counts the new secrets, so a
-      standby without them is reported as not ready.
-    - An acceptance step after failover (phase 7) checks that Notes on
-      `.108` reports "Signering og sertifikatkontroll OK" with the same
-      certificate fingerprint as on `.102` in phase 3.
-    - The base backup and WAL archive do not hold these files; SECRETS.md
-      says so, as it does for the other secrets. A single-host restore keeps
-      them (they stay on the host); losing a host loses its PKI directory,
-      and the other host's copy is the recovery.
-  - Development (`podman kube play`, `dev-up.sh`) and production (Quadlet)
-    both need the volume and secrets before the pod starts; `dev-down.sh`
-    must clean them up.
-  - Real Podman tests run only in CI ("Full stack in rootless Podman") and
-    in the lab acceptance, not in this session's container.
-
-  Tests: unit tests for the script's keep/refuse rules and the secret and
-  volume steps; a CI full-stack check that Notes reports OK after the first
-  install, keeps the same key, password and secret identity after a second
-  install and a pod recreation, and reports failure for a wrong password,
-  missing certificate and wrong CA; a failed generation or import stops
-  before the app starts; the bundle holds no private file or password; both
-  `podman kube play` and Quadlet; then a lab acceptance step.
+     `~/.local/share/todo-pki`, 0700, files 0600), never in images or the
+     offline bundle. Every install keeps existing valid material: key,
+     certificate and password never change on a reinstall. Incomplete or
+     inconsistent files stop the install with a clear message, and so do
+     existing secrets with a missing or different directory: the installer
+     never makes new keys silently next to old secrets; changing the key is
+     a deliberate act.
+  2. *The PFX as a file secret for Keycloak.* The PFX becomes a Kube secret
+     built from the file's bytes (base64; the project's secret helpers
+     handle text only, and `--showsecret`, newline stripping or UTF-8 would
+     corrupt it), mounted as a file in the Keycloak container with a clear
+     path, readable by Keycloak's user only. Its password is a separate raw
+     Podman secret and Kube secret, as the other credentials
+     (`secrets.create_kube`), never in a manifest, plain environment value,
+     log or API response. Existing secrets are reused, never overwritten,
+     and a difference from the files stops the install. `keycloak.configure`
+     adds a realm key of Keycloak's `java-keystore` provider (PKCS#12, alias,
+     password) with a higher priority than the generated RSA key, so the
+     realm's tokens are signed with the PFX key. Wrong password or missing
+     file: Keycloak cannot load the key, and the install stops there.
+  3. *The CA certificate in a plain PVC volume for Notes.* Only the public CA
+     certificate goes into a new named volume, `notes-root-cert-data`, before
+     the Notes pod starts (`podman volume import` of a tar holding just that
+     file), mounted read-only through a `persistentVolumeClaim` in the Notes
+     backend. Its content changes only while Notes is stopped, and a
+     reinstall with the same CA leaves it alone. When the Notes backend
+     validates a token, it also checks that the signing certificate Keycloak
+     publishes in its JWKS (`x5c`) was issued by that CA, and rejects the
+     token otherwise. The Notes backend uses `cryptography` in its own image
+     for the chain check; the standard library has none.
+  4. *Visible result.* After login, Notes shows a short status: "Token
+     signert med organisasjonens nøkkel, sertifikat kontrollert mot CA",
+     with the signing certificate's subject, expiry and fingerprint. A wrong
+     CA in the volume makes Notes reject the token with a clear message. No
+     general signing API.
+  5. *Development and production.* Direct `podman kube play` (`dev-up.sh`,
+     `dev-down.sh` cleans the volume and secrets up) and Quadlet both get the
+     volume and secrets before the pods start. `deploy/manifests/app.yaml.j2`
+     is shared by both apps, so the mounts follow a per-app switch in the
+     registry (`apps.py`), not a copy of the template.
+  6. *DR (X1b), decided 2026-10-06.* The PFX (as base64 text: the DR copy is
+     JSON text), its password and the CA certificate are kept as raw Podman
+     secrets on the primary and join `transfer.transfer_names()`, so
+     bootstrap, rebuild and reseed copy them. Keycloak in Trondheim then
+     signs with the same key, and a signature made in Oslo still verifies
+     after a failover. `deploy-promoted` requires them, makes the Kube
+     secrets and creates `notes-root-cert-data` before Keycloak and Notes
+     start, through an installer function (the DR code may import the
+     installer, never the other way). The DR check's "Ready to take over"
+     counts them. Until X1b, a promoted host without them must refuse with a
+     clear message, never report a working failover. The base backup and WAL
+     archive do not hold these files (SECRETS.md says so); a single-host
+     restore keeps them on the host.
+  7. *Tests.* Unit tests for generation (keep, refuse, never regenerate next
+     to existing secrets), the binary-safe secret and the volume step; CI
+     with real Podman: first install, a second install with the same key,
+     password and secret identity, a recreated pod keeping volume and
+     secrets, a wrong password and a missing file stopping the install
+     before the pods start, a wrong CA rejected by Notes, and no private file
+     or password in the bundle; both `podman kube play` and Quadlet. Then
+     acceptance: the status after login in phase 3 (X1a) and, after failover,
+     the same certificate fingerprint on `.108` in phase 7 (X1b).
+- **X2. Load the PFX in .NET.** *[optional]* The part only Duende has: a
+  minimal .NET container that loads the same PFX from the same file secret
+  and password (with `X509KeyStorageFlags.EphemeralKeySet`, as .NET in a
+  Linux container usually needs) and prints the certificate's fingerprint.
+  It tests the .NET side without replacing Keycloak. After X1.
 
 ## Security hardening
 

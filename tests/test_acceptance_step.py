@@ -306,12 +306,15 @@ class ClientTrustTests(unittest.TestCase):
 
         def run(argv, **keywords):
             commands.append(argv)
-            return subprocess.CompletedProcess(argv, 0 if argv[0] == "bash" else answers, "trusted\n", "")
+            output = "** WARNING: connection is not using a post-quantum key exchange algorithm.\ntrusted\n"
+            return subprocess.CompletedProcess(argv, 0 if argv[0] == "bash" else answers, output, "")
 
         guide = (ROOT / acceptance.AGENT_GUIDE).read_text()
+        shown = io.StringIO()
         with patch.object(acceptance, "HOSTS", hosts), patch.object(acceptance.subprocess, "run", side_effect=run), \
-                contextlib.redirect_stdout(io.StringIO()):
+                contextlib.redirect_stdout(shown):
             passed = acceptance.client_trust(directory, guide, "192.168.0.108")
+        self.shown = shown.getvalue()
         return passed, commands, (directory / "operator/client-trust-192.168.0.108.log").read_text()
 
     def test_the_guide_lines_run_for_the_address_and_both_names_must_answer(self):
@@ -323,6 +326,8 @@ class ClientTrustTests(unittest.TestCase):
         self.assertEqual([argv[-1] for argv in commands[1:]], ["https://todo.test:8443/ready",
                                                               "https://notes.test:8443/ready"])
         self.assertTrue(record.endswith("exit=0\n"))
+        self.assertIn("post-quantum", record, "the log keeps everything")
+        self.assertNotIn("post-quantum", self.shown, "the terminal does not show SSH's warning")
 
     def test_a_wrong_hosts_line_or_no_https_answer_fails(self):
         self.assertFalse(self.trust("192.168.0.102")[0])

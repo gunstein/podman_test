@@ -10,8 +10,9 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `9174f6c` for the seven-pod, three-database
-topology in a full two-VM agent run ([record](docs/history/ACCEPTANCE-9174f6c.md)),
+**Current verdict: CLEAN PASS** on `c5f4a59` for the seven-pod, three-database
+topology in a full two-VM run without an agent (`acceptance.py run`,
+[record](docs/history/ACCEPTANCE-c5f4a59.md)),
 with replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 115 steps PASS
@@ -43,6 +44,9 @@ database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
 
+- `c5f4a59` run 46: CLEAN PASS ([record](docs/history/ACCEPTANCE-c5f4a59.md)),
+  the first run without an agent: `acceptance.py run`, every comment check an
+  expectation, 32 min 57 s, failover 3 min 28 s.
 - `9174f6c` run 45: CLEAN PASS ([record](docs/history/ACCEPTANCE-9174f6c.md)),
   accepting G3: users log in on the promoted host 5 min 18 s after the fence,
   against a 30-minute goal.

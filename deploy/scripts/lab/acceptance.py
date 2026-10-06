@@ -1487,7 +1487,7 @@ def client_trust(run_directory, text, address):
     record.write_text(result.stdout + f'\n/etc/hosts maps both names to {address}: '
                       f'{f"{address} todo.test notes.test" in hosts}\nboth answer over trusted HTTPS: {answered}\n'
                       + ('exit=0' if passed else 'exit=1') + '\n')
-    print(result.stdout.rstrip())
+    print('\n'.join(line for line in result.stdout.splitlines() if not NOISE.match(line)))
     print(f'client trust for {address}: ' + ('done' if passed else f'FAILED, see {record}'), flush=True)
     return passed
 

@@ -1,5 +1,7 @@
 FROM docker.io/library/nginx:1.30.4-alpine
 LABEL io.todo.proxy="nginx"
+# The TLS modes proxy-entrypoint.sh knows; app_installer tls-install requires provided.
+LABEL io.todo.proxy.tls="local provided"
 
 RUN apk add --no-cache openssl \
     && mkdir -p /var/lib/todo-tls \

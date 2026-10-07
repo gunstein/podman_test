@@ -45,8 +45,7 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 5. The rest.
 
 For a single host without DR (`install.sh` only), what matters, in order:
-the nginx part of U2 (the certificate
-expires after 397 days without a restart), and Q3 (security updates, which `install.sh` can roll out). Then U3
+Q3 (security updates, which `install.sh` can roll out). Then U3
 and L4. F0, S4, E3, E8 and O2 do not change how a single host runs.
 
 The real setup has two machines and no third, on separate hardware at separate
@@ -120,7 +119,14 @@ attention above 30 minutes (G3).
   on site, power removed, the network closed from the surviving side), and
   for what to do when that site comes back with its old primary. The
   quarantine covers the return only when the hypervisor is reachable.
-- **T4. One CA for both sites.** *[decision]* The promoted host creates its own
+- **T4. One CA for both sites.** *[step 1 of 3 done]* Step 1, provided mode on a
+  single host, is done: `deploy/scripts/app_ca.py` (an offline CA with name
+  constraints), `app_installer tls-request` (key made in the TLS volume,
+  only the CSR leaves), `tls-install` (every check before any change, no
+  fallback to the demo CA) and the nightly expiry check (docs/TLS.md). The
+  key lives in the TLS volume rather than a Podman secret: it is made there
+  and never leaves it. Steps 2 (DR) and 3 (acceptance) below remain.
+  The promoted host creates its own
   CA, so after a failover every client must trust a new CA before users stop
   seeing certificate errors (`failover` prints its fingerprint; acceptance
   trusts it on its one client by hand). Kept as it is for now (owner's
@@ -193,12 +199,11 @@ attention above 30 minutes (G3).
     check fails on both hosts below 180 days. Missing: a tested procedure
     that replaces it on both hosts and issues the primary a new certificate,
     without a window where the standby trusts neither.
-  - *nginx: open.* The server certificate lasts 397 days, and
-    `proxy-entrypoint.sh` issues a new one only when nginx starts with fewer
-    than 30 days left. nginx running for over a year without a restart serves
-    an expired certificate. Add an expiry check and a renewal that needs no
-    restart (`nginx -s reload`), run from a timer; with T4's `provided`
-    mode the timer warns and prepares a request instead of issuing.
+  - *nginx: partly done.* On a single host the nightly backup run checks
+    the certificate: in local mode it fails below 30 days (a restart
+    renews it), in provided mode it prepares a request 60 days ahead and
+    fails below 30 (T4). Open: local mode still renews only at a restart,
+    and DR hosts, whose nightly run is app_backup.py, check nothing yet.
 - **U3. Time synchronisation.** *[new]* Token expiry, TLS and log timestamps
   depend on correct clocks on both hosts. Check that chrony (or another time
   service) is active in the preflight and in acceptance phase 1, and document

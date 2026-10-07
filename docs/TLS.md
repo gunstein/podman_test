@@ -5,9 +5,16 @@ in container `nginx`, owned by `shared-proxy.service`. It routes to the HTTP-onl
 frontends, FastAPI backends and Keycloak over Podman DNS. Frontend holds no TLS material.
 
 Reverse-proxy choice and certificate authority choice are separate decisions.
-nginx never acts as a CA.
+nginx never acts as a CA in provided mode.
 
-## Current offline lab mode
+nginx has two TLS modes, chosen per host and stored in the TLS volume itself
+(`tls-mode`): **local**, the default, where nginx makes its own demo CA (below),
+and **provided**, where the organisation's own CA issues the certificate and
+nginx only uses it ([provided mode](#provided-mode-the-organisations-own-ca)).
+A single host can use provided mode now; DR hosts get it in a later step
+(backlog T4).
+
+## Current offline lab mode (local)
 
 The container entrypoint uses the image's OpenSSL package on first start to
 create:
@@ -113,6 +120,85 @@ The deployment tooling should consume already issued artifacts:
 
 Node-specific TLS keys require a per-host provisioning process; never reuse one
 leaf private key merely to make distribution easier.
+
+## Provided mode: the organisation's own CA
+
+For a host without a central PKI: one small offline CA, kept on encrypted
+storage that is offline between uses, signs a certificate for each host about
+once a year. Each host makes its own private key, which never leaves its TLS
+volume; only a certificate signing request (CSR) goes to the CA, and only the
+signed certificate comes back. Clients trust the CA once.
+
+```text
+offline root CA (deploy/scripts/app_ca.py, 20 years, name constraints:
+     |           only names in your domains)
+     +-- certificate for host A (1 year) -- key made on host A
+     +-- certificate for host B (1 year) -- key made on host B
+```
+
+**Once, on the administrator's machine** (Python 3 and openssl; openssl asks
+for the CA key's passphrase):
+
+```bash
+python3 deploy/scripts/app_ca.py init --directory /media/ca-usb/todo-ca   --domain todo.example.org --domain notes.example.org
+```
+
+`--domain` limits what the CA can ever sign (X.509 name constraints): a
+stolen CA key cannot issue a certificate for anyone else's site. Give every
+client `ca.crt` (never `ca.key`), and keep a second copy of the directory in
+another place.
+
+**On the host, after a normal install** (the hostnames come from the
+installed `shared-proxy.yaml`):
+
+```bash
+cd ~/todo-offline-m12
+PYTHONPATH=deploy/installer python3 -m app_installer tls-request --output ~/host.csr
+```
+
+**On the administrator's machine**, sign it (at most 825 days, the most Apple
+clients accept; 365 by default). The tool refuses any name outside the CA's
+domains, and appends every certificate it issues to `issued.log`:
+
+```bash
+python3 deploy/scripts/app_ca.py sign --directory /media/ca-usb/todo-ca   --request host.csr --output host.crt
+```
+
+**Back on the host**:
+
+```bash
+PYTHONPATH=deploy/installer python3 -m app_installer tls-install   --certificate ~/host.crt --ca ~/ca.crt
+```
+
+`tls-install` changes nothing until the certificate passes every check: the
+CA file is a self-signed root, the certificate chains to it (intermediates
+may follow the certificate in the same file), is valid now for TLS servers,
+names every public hostname nginx serves, and belongs to the key waiting in
+the volume. Then it switches the volume to provided mode, removes the demo CA
+and its key, reloads nginx (no restart) and waits until nginx serves the new
+certificate for every hostname. Every openssl step runs in a throwaway
+container of the proxy image with no network, so the host needs no openssl.
+
+From then on nginx's entrypoint only checks what it was given and never
+issues anything: a missing file, a key that does not match, or a hostname the
+certificate does not name stops nginx with an `ERROR:` line in
+`journalctl --user -u shared-proxy.service`. It never falls back to the demo
+CA. An expired certificate still starts, with a warning, so browsers can name
+the cause. A new public hostname therefore needs a new certificate first:
+`tls-request`, sign, `tls-install`, then install with the new hostname.
+
+**Renewal.** Every night the single host's backup run (`todo-backup.timer`)
+also looks at the certificate. 60 days before it expires it makes a new key
+and request in the volume and copies the request to
+`~/.config/todo/nginx-tls-request.csr`; below 30 days the run fails, so it
+shows in `systemctl --user --failed`. Sign that request and `tls-install` the
+result, as above. `tls-status` shows the mode and the days left at any time.
+The CA itself is not renewed automatically: issue a new CA well before its 20
+years end, and give clients the new `ca.crt` before switching hosts to it.
+
+Going back to local mode is deliberate, not a fallback: `uninstall
+--remove-data` removes the TLS volume, and the next install starts a new demo
+CA.
 
 ## Proxy contract
 

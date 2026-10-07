@@ -100,6 +100,7 @@ class OperationsDistributionTests(unittest.TestCase):
                 "deploy/dr/systemd/todo-replication-tls.service",
                 "deploy/dr/systemd/todo-replication-tls.timer",
                 "deploy/scripts/trust-files.sh",
+                "deploy/scripts/app_ca.py",
                 "deploy/dr/README.md",
                 "deploy/dr/app_ops/cli.py",
                 "deploy/dr/app_ops/transport.py",

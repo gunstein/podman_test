@@ -37,6 +37,9 @@ clears itself on the next run after the cause is gone, or start it now with
 | Message | Meaning | Do |
 |---|---|---|
 | `only N% of the disk is free` | The backup was taken, but the disk is low | [disk-full.md](disk-full.md) |
+| `the nginx certificate expires in N days` | The backup was taken; nginx's certificate from your CA needs renewing | [certificates.md](certificates.md#nginx-certificate-from-your-own-ca-provided-mode) |
+| `the nginx demo certificate expires in N days` | The backup was taken; nginx renews its demo certificate only when it starts | [certificates.md](certificates.md#nginx-leaf-397-days-local-mode) |
+| `cannot check the nginx certificate: ...` | The backup was taken; looking at the certificate failed | `PYTHONPATH=deploy/installer python3 -m app_installer tls-status` shows why |
 | `archive_mode is not on` | A DR primary without WAL archiving | `configure-backup` from the operations package with `recovery.yaml` |
 | `Live PostgreSQL is not a writable promoted primary` | A DR backup on a host whose databases are not all writable primaries | `python3 /opt/todo/bin/app_dr.py status`; on a split group, as below |
 | `the latest verified backup ... is missing; nothing was deleted` | The newest backup the marker names is gone | Do not delete anything; take a new one: `systemctl --user start todo-backup.service` |

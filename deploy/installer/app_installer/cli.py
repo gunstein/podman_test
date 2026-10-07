@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import apps, backup, install, kube_play, settings, target_render, uninstall
+from . import apps, backup, install, kube_play, settings, target_render, tls, uninstall
 
 try:  # Jinja2 renders on a build host; an offline host installs without it.
     from jinja2 import TemplateError
@@ -37,6 +37,9 @@ def backup_command(args):
         if args.keep_days < 1:
             raise ValueError('--keep-days must keep at least one day')
         lines, problems = backup.nightly(args.keep_days)
+        # The same nightly run looks at nginx's certificate (tls.check).
+        tls_lines, tls_problems = tls_check()
+        lines, problems = lines + tls_lines, problems + tls_problems
         print('\n'.join(lines))
         for problem in problems:
             print(f'ERROR: {problem}', file=sys.stderr)
@@ -49,10 +52,37 @@ def backup_command(args):
     return 0
 
 
+def tls_check(kube_runtime_dir=None):
+    """tls.check(), with a failure to look reported as a problem rather than raised."""
+    try:
+        return tls.check(kube_runtime_dir)
+    except (OSError, RuntimeError, ValueError) as error:
+        return [], [f'cannot check the nginx certificate: {error}']
+
+
+def tls_command(args):
+    """tls-request | tls-install | tls-status: nginx's certificate in provided mode (tls.py)."""
+    if args.command == 'tls-request':
+        names = tls.request(args.output, args.new_key, kube_runtime_dir=args.kube_runtime_dir)
+        print(f'Have the CA sign {args.output}, then: python3 -m app_installer tls-install '
+              '--certificate FILE --ca FILE', file=sys.stderr)
+        print(json.dumps({'changed': True, 'request': str(args.output), 'hostnames': names}))
+        return 0
+    if args.command == 'tls-install':
+        changed = tls.install(args.certificate, args.ca, kube_runtime_dir=args.kube_runtime_dir)
+        print(json.dumps({'changed': changed}))
+        return 0
+    lines, problems = tls_check(args.kube_runtime_dir)
+    print('\n'.join(lines or ['nginx has no certificate yet']))
+    for problem in problems:
+        print(f'ERROR: {problem}', file=sys.stderr)
+    return 1 if problems else 0
+
+
 def main(argv=None):
     """Parse one subcommand, run it, and return the exit code.
 
-    install, uninstall, down and backup serve a single host; replication-apps
+    install, uninstall, down, backup and the tls- commands serve a single host; replication-apps
     prints the DR group for the acceptance guide to compare with its table.
     The DR tools import the installer's functions instead, and their own
     commands live in app_dr_host (deploy/dr). Each command prints one JSON
@@ -85,6 +115,16 @@ def main(argv=None):
     nightly.add_argument('--keep-days', type=int, required=True)
     restore = backup_commands.add_parser('restore', help='put every database back to its latest backup')
     restore.add_argument('--confirm-restore', required=True, help="exactly this host's name")
+    tls_request = subcommands.add_parser('tls-request', help="a key and CSR for nginx's certificate (provided mode)")
+    tls_request.add_argument('--output', type=Path, required=True, help='where to write the CSR')
+    tls_request.add_argument('--new-key', action='store_true', help='replace a key that already waits')
+    tls_install = subcommands.add_parser('tls-install', help='check and use a certificate the CA signed')
+    tls_install.add_argument('--certificate', type=Path, required=True,
+                             help='the server certificate, then any intermediate CAs (PEM)')
+    tls_install.add_argument('--ca', type=Path, required=True, help="the organisation's root CA (PEM)")
+    tls_status = subcommands.add_parser('tls-status', help="nginx's TLS mode and how long its certificate lasts")
+    for command in (tls_request, tls_install, tls_status):
+        command.add_argument('--kube-runtime-dir', type=Path, help='where the installed Kube YAML is')
     down = subcommands.add_parser('down')
     down.add_argument('--rendered-manifest-dir', type=Path,
                       default=Path(__file__).resolve().parents[3] / 'generated/dev')
@@ -109,6 +149,8 @@ def main(argv=None):
             print(json.dumps({'changed': changed}))
         elif args.command == 'backup':
             return backup_command(args)
+        elif args.command.startswith('tls-'):
+            return tls_command(args)
         elif args.command == 'down':
             if not kube_play.down(args.rendered_manifest_dir):
                 print('No installed development manifests were found under '

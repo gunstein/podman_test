@@ -1417,8 +1417,13 @@ def run_line(run_directory, run_id, name, line, quiet=False):
         print(f'$ {line}', flush=True)
     if background:
         # A long step (failover, rebuild) runs on even if this process is stopped.
-        subprocess.Popen(['bash', '-c', script], cwd=ROOT, env=environment, start_new_session=True,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        process = subprocess.Popen(['bash', '-c', script], cwd=ROOT, env=environment, start_new_session=True,
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Until bash has written the step's log, the step looks 'not run', and run_all would
+        # start it a second time. Wait for the log, or for bash to end without one.
+        log = run_directory / 'logs' / f'{name}.log'
+        while not log.exists() and process.poll() is None:
+            time.sleep(0.05)
         print(f'STARTED in the background ({name}): logs/{name}.log ends with exit= when it is done; '
               'the next step waits for that', flush=True)
         return 0

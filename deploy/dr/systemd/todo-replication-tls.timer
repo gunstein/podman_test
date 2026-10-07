@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew the Todo replication TLS certificates when they are due
+
+[Timer]
+OnCalendar=*-*-* 03:30
+RandomizedDelaySec=30min
+# A host that was off at night renews when it starts.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -76,7 +76,7 @@ class InstallServerTlsTests(unittest.TestCase):
                    apps.REPLICATION_CA_SECRETS[1]: certificate.read_text().strip()}
         self.container = {}
 
-    def install(self, settings):
+    def install(self, settings, action=lambda: replication_tls.install_server_tls(APP, '192.0.2.10')):
         writes, statements = [], []
 
         def run(*argv, input=None, allowed=(0,), timeout=None, secret_output=False):
@@ -102,7 +102,7 @@ class InstallServerTlsTests(unittest.TestCase):
         with patch.object(replication_tls, 'run', side_effect=run), \
                 patch.object(replication_tls.secrets, 'read', side_effect=self.ca.__getitem__), \
                 patch('app_dr_host.replication.sql', side_effect=sql):
-            changed = replication_tls.install_server_tls(APP, '192.0.2.10')
+            changed = action()
         return changed, writes, statements
 
     def test_a_new_primary_gets_a_certificate_and_tls_on(self):
@@ -141,6 +141,84 @@ class InstallServerTlsTests(unittest.TestCase):
                 patch.object(replication_tls.time, 'sleep'), \
                 self.assertRaisesRegex(RuntimeError, 'did not turn TLS on'):
             replication_tls.install_server_tls(APP, '192.0.2.10')
+
+
+class ExpiryTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: subprocess.run(['rm', '-rf', str(self.directory)], check=True))
+        self.ca_key, self.ca_certificate = replication_tls.make_ca(self.directory)
+
+    def test_days_left_and_the_address_come_from_the_certificate(self):
+        _, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10')
+        # openssl counts from the second it signs; a test run never takes a whole day.
+        self.assertIn(replication_tls.days_left(certificate),
+                      (replication_tls.SERVER_DAYS - 1, replication_tls.SERVER_DAYS))
+        self.assertIn(replication_tls.days_left(self.ca_certificate),
+                      (replication_tls.CA_DAYS - 1, replication_tls.CA_DAYS))
+        self.assertEqual(replication_tls.certificate_address(certificate), '192.0.2.10')
+        self.assertEqual(replication_tls.certificate_address(self.ca_certificate), '')
+
+    def test_an_expired_certificate_has_negative_days(self):
+        with patch.object(replication_tls, 'SERVER_DAYS', 1):
+            _, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10')
+        with patch.object(replication_tls.time, 'time', return_value=replication_tls.time.time() + 3 * 86400):
+            # Whole days round down: just over two days ago is -3.
+            self.assertIn(replication_tls.days_left(certificate), (-3, -2))
+
+    def test_the_ca_and_a_primary_certificate_are_read_from_where_they_live(self):
+        _, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10')
+
+        def run(*argv, allowed=(0,), **_):
+            if argv[0] == 'openssl':
+                return commands.run(*argv, allowed=allowed)
+            self.assertEqual(argv, ('podman', 'exec', APP.container, 'cat', f'{replication_tls.DATA}/server.crt'))
+            return subprocess.CompletedProcess(argv, 0, certificate.read_text(), '')
+
+        with patch.object(replication_tls, 'run', side_effect=run), \
+                patch.object(replication_tls.secrets, 'read', return_value=self.ca_certificate.read_text().strip()):
+            self.assertGreater(replication_tls.server_days_left(APP), 800)
+            self.assertGreater(replication_tls.ca_days_left(), 3600)
+
+
+class RenewTests(InstallServerTlsTests):
+    """renew: the nightly renewal on a running primary, with the same fakes as install_server_tls."""
+
+    def renew(self):
+        return self.install('on|TLSv1.2', action=lambda: replication_tls.renew(APP))
+
+    def certificate(self, address='192.0.2.10', days=None):
+        ca_key, ca_certificate = self.directory / 'ca.key', self.directory / 'ca.crt'
+        with patch.object(replication_tls, 'SERVER_DAYS', days or replication_tls.SERVER_DAYS):
+            _, certificate = replication_tls.issue(self.directory, ca_key, ca_certificate, address)
+        self.container['crt'] = certificate.read_text()
+
+    def test_a_certificate_with_more_than_30_days_is_kept(self):
+        self.certificate()
+        changed, writes, statements = self.renew()
+        self.assertFalse(changed)
+        self.assertEqual((writes, statements), ([], []))
+
+    def test_a_certificate_about_to_expire_is_replaced_for_the_same_address(self):
+        self.certificate(days=20)
+        changed, writes, statements = self.renew()
+        self.assertTrue(changed)
+        self.assertEqual(writes, ['server.key', 'server.crt'])
+        # PostgreSQL reloads the new files; nothing restarts the database.
+        self.assertIn('SELECT pg_reload_conf();', statements)
+        renewed = self.directory / 'renewed.crt'
+        renewed.write_text(self.container['crt'])
+        self.assertEqual(replication_tls.certificate_address(renewed), '192.0.2.10')
+        self.assertGreater(replication_tls.days_left(renewed), 800)
+
+    def test_a_primary_without_a_certificate_is_left_to_app_ops(self):
+        with self.assertRaisesRegex(RuntimeError, 'no replication certificate; publish it with app-ops'):
+            self.renew()
+
+    def test_a_certificate_without_an_address_is_never_guessed(self):
+        self.container['crt'] = (self.directory / 'ca.crt').read_text()
+        with self.assertRaisesRegex(RuntimeError, 'names no address'):
+            self.renew()
 
 
 if __name__ == '__main__':

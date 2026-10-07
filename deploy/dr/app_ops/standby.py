@@ -132,12 +132,15 @@ def replication_status(project_root, controller, primary, standby):
 
 
 def install_dr_tool(project_root, controller, host, primary_spec, standby_name):
-    """Install app_dr.py on host with exact-file trust, write its DR settings and turn on its check timer.
+    """Install app_dr.py on host with exact-file trust, write its DR settings and turn on its timers.
 
-    Both hosts get the same tool and settings: the standby promotes with it,
-    and on either host todo-dr-check.timer runs `app_dr.py check` every 15
-    minutes. The settings also name this operations package's revision and
-    the host's offline bundle, which the check compares (app_dr.readiness).
+    Both hosts get the same tool, settings and timers: the standby promotes
+    with it, on either host todo-dr-check.timer runs `app_dr.py check` every
+    15 minutes, and todo-replication-tls.timer runs `app_dr.py renew-tls`
+    every night, which renews the replication certificates on whichever
+    host is the primary. The settings also name this operations package's
+    revision and the host's offline bundle, which the check compares
+    (app_dr.readiness).
     """
     trust.stage_installer(project_root, controller, host)
     changed = trust.install_trusted(project_root, controller, host,
@@ -149,7 +152,8 @@ def install_dr_tool(project_root, controller, host, primary_spec, standby_name):
                        '--standby-name', standby_name, '--rpo-target-seconds', str(settings.RPO_TARGET_SECONDS),
                        '--bundle', steps.paths(host)['bundle'], '--revision', steps.package_revision(project_root)])
     changed = steps.changed(result) or changed
-    return steps.install_timer(project_root, host, 'todo-dr-check') or changed
+    changed = steps.install_timer(project_root, host, 'todo-dr-check') or changed
+    return steps.install_timer(project_root, host, 'todo-replication-tls') or changed
 
 
 def install_dr_tools(project_root, controller, primary, standby):

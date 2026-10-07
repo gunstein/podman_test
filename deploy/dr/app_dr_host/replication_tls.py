@@ -11,18 +11,28 @@ a network between sites in clear text. This module only encrypts it:
 - install_server_tls: put the certificate into the PostgreSQL container, turn
   on ssl (TLS 1.2 at least) and reload. A certificate with less than 30 days
   left is issued again.
+- renew: the same for a running primary, for the address its certificate
+  already names; days_left and ca_days_left say how long the certificate
+  and the CA still last.
 
-replication.py decides when: configure_primary and publish_primaries call
-ensure_ca and install_server_tls; the standby only uses the CA certificate
-with sslmode=verify-full, so it refuses any server without a certificate for
-the primary's address from this CA. The certificate lasts 825 days and is
-renewed only when a primary is published (bootstrap or rebuild); see backlog
-U2. This CA is not the nginx CA that users trust (backlog T4).
+replication.py decides when a primary gets its first certificate:
+configure_primary and publish_primaries call ensure_ca and
+install_server_tls. The standby only uses the CA certificate with
+sslmode=verify-full, so it refuses any server without a certificate for the
+primary's address from this CA. The certificate lasts 825 days.
+todo-replication-tls.timer runs `app_dr.py renew-tls` every night on both
+hosts: on the primary it calls renew, which issues a new certificate once
+fewer than 30 days are left, and PostgreSQL reloads it without a restart;
+the standby has nothing to renew. `app_dr.py check` fails when a
+certificate has fewer than ALERT_DAYS left, so a renewal that keeps failing
+is seen in time. The CA lasts 10 years and is not renewed automatically
+(backlog U2). This CA is not the nginx CA that users trust (backlog T4).
 
 The host's openssl command does the certificate work; the Python standard
 library cannot create certificates. Private keys only pass through a 0700
 temporary directory and the database containers.
 """
+import calendar
 import secrets as random
 import tempfile
 import time
@@ -37,6 +47,11 @@ STANDBY_CA_FILE = f'{DATA}/replication-ca.crt'
 CA_DAYS = 3650
 SERVER_DAYS = 825
 RENEW_SECONDS = 30 * 24 * 3600
+# app_dr.py check fails below these. The nightly renewal replaces a server
+# certificate at 30 days, so 25 means it has failed for about five nights.
+# The CA is replaced by hand, which needs months of notice.
+ALERT_DAYS = 25
+CA_ALERT_DAYS = 180
 
 
 def openssl(*arguments, allowed=(0,)):
@@ -147,3 +162,74 @@ def install_server_tls(database, node_address):
         else:
             raise RuntimeError(f'{database.name}: PostgreSQL did not turn TLS on; check its log for the certificate')
     return changed
+
+
+def days_left(certificate):
+    """Whole days until the certificate file expires; negative once it has expired."""
+    end = openssl('x509', '-in', str(certificate), '-noout', '-enddate').stdout.strip()
+    # openssl prints notAfter=Oct  7 12:00:00 2028 GMT, always in English and in UTC.
+    expires = calendar.timegm(time.strptime(end.split('=', 1)[1], '%b %d %H:%M:%S %Y %Z'))
+    return int((expires - time.time()) // 86400)
+
+
+def certificate_address(certificate):
+    """The IPv4 address in the certificate's subjectAltName, or '' if it names none."""
+    names = openssl('x509', '-in', str(certificate), '-noout', '-ext', 'subjectAltName').stdout
+    for part in names.replace(',', '\n').splitlines():
+        if part.strip().startswith('IP Address:'):
+            return part.strip().split(':', 1)[1]
+    return ''
+
+
+def current_certificate(database, directory):
+    """Copy the primary's server certificate to directory/current.crt and return its path; raise if it has none."""
+    text = run('podman', 'exec', database.container, 'cat', f'{DATA}/server.crt', allowed=(0, 1)).stdout
+    if not text.strip():
+        raise RuntimeError(f'{database.name}: the primary has no replication certificate; '
+                           'publish it with app-ops (bootstrap or rebuild) first')
+    path = Path(directory) / 'current.crt'
+    path.write_text(text)
+    return path
+
+
+def server_days_left(database):
+    """Whole days the primary's replication certificate still lasts."""
+    with tempfile.TemporaryDirectory() as directory:
+        return days_left(current_certificate(database, directory))
+
+
+def ca_days_left():
+    """Whole days the replication CA certificate on this host still lasts."""
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / 'ca.crt'
+        path.write_text(secrets.read(apps.REPLICATION_CA_SECRETS[1]) + '\n')
+        return days_left(path)
+
+
+def renew(database):
+    """On a running primary, replace a certificate that is about to expire; True if it was replaced.
+
+    The new certificate names the same address as the current one, so the
+    standby, which connects to that address with verify-full, accepts it.
+    A certificate that still has more than 30 days, from this host's CA, is
+    kept and nothing changes. A new one is installed by install_server_tls,
+    which reloads PostgreSQL: the standby's running stream is not cut, and
+    its next connection gets the new certificate. A primary without a
+    certificate, or with one that names no address, is left to app-ops: it
+    was never published, and renewal must not guess its address. After a
+    failover the promoted primary still holds the old primary's certificate
+    (pg_basebackup copied it) until rebuild-standby publishes it for its own
+    address; renewing it before then is harmless, as no standby connects.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        current = current_certificate(database, directory)
+        node_address = certificate_address(current)
+        if not node_address:
+            raise RuntimeError(f'{database.name}: the replication certificate names no address; '
+                               'publish the primary again with app-ops')
+        ca_certificate = Path(directory) / 'ca.crt'
+        ca_certificate.write_text(secrets.read(apps.REPLICATION_CA_SECRETS[1]) + '\n')
+        if certificate_ok(current, ca_certificate, node_address):
+            return False
+    install_server_tls(database, node_address)
+    return True

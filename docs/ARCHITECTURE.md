@@ -112,7 +112,7 @@ This is a tested baseline, not a claim about the capability's minimum version.
 | Kube YAML | Pod contents, init ordering, runtime settings and secret references | Infrastructure fencing or host policy |
 | .kube Quadlet | Binding a workload to user systemd, published ports and dependencies | Database failover decisions |
 | systemd | Service ordering, restart, shutdown and boot behavior | PostgreSQL replication correctness |
-| systemd user timers | The nightly backup (`todo-backup.timer`) and, on DR hosts, the DR check every 15 minutes (`todo-dr-check.timer`); a failure leaves a failed unit | Paging anyone: the failed unit and the journal are the alert |
+| systemd user timers | The nightly backup (`todo-backup.timer`) and, on DR hosts, the DR check every 15 minutes (`todo-dr-check.timer`) and the nightly replication certificate renewal (`todo-replication-tls.timer`); a failure leaves a failed unit | Paging anyone: the failed unit and the journal are the alert |
 | Python installer | Single-host dev/server lifecycle and shared workload installation | DR decisions or remote transport |
 | app-ops | Multi-host DR over plain SSH: transport, security integration and assertions | A separate workload installer |
 | Python tools | Guarded DR, backup and resumable operator stages | A second configuration-management system |
@@ -348,7 +348,9 @@ PostgreSQL database's WAL asynchronously. Physical slots retain needed WAL withi
 lag and invalidated slots require monitoring: `todo-dr-check.timer` runs
 `app_dr.py check` on both hosts every 15 minutes, which also checks that the
 host could take over (the same bundle revision, its image archives and every
-DR secret), and a nightly
+DR secret, and the expiry of the replication certificates), a nightly
+`todo-replication-tls.timer` renews those certificates on the current primary
+before they expire, and a nightly
 `todo-backup.timer` takes and prunes the base backups on the current primary
 ([scheduled check and nightly backup](../deploy/dr/README.md#scheduled-check-and-nightly-backup)).
 Async replication cannot guarantee that unsent commits survive abrupt loss.

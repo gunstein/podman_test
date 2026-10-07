@@ -195,11 +195,13 @@ database from `todo-backup.timer`, with 7 days kept; a single host can restore
 the latest one (`app_installer backup restore --confirm-restore <this host>`), which loses
 everything written since that night because it has no WAL archive. On the DR
 pair, `todo-dr-check.timer` runs `app_dr.py check` every 15 minutes and turns a
-stopped replication, a failing archive or a filling disk into a failed unit.
+stopped replication, a failing archive, a filling disk or a replication
+certificate close to expiry into a failed unit, and `todo-replication-tls.timer`
+renews those certificates every night before they expire.
 
 ```bash
 systemctl --user list-timers 'todo-*'
-journalctl --user -u todo-backup.service -u todo-dr-check.service -n 20
+journalctl --user -u todo-backup.service -u todo-dr-check.service -u todo-replication-tls.service -n 20
 ```
 
 For observation on the configured standby / promoted primary respectively:

@@ -17,6 +17,8 @@ assert SPEC and SPEC.loader
 app_dr = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(app_dr)
 
+from app_installer.commands import CommandError  # noqa: E402
+
 from tests.fake_commands import route_commands  # noqa: E402
 
 
@@ -318,13 +320,31 @@ class GroupPromotionTests(unittest.TestCase):
 
 
 class CheckHost:
-    """Answers the check's SQL per database from a small description of each one."""
+    """Answers the check's SQL per database from a small description of each one.
 
-    def __init__(self, test, **databases):
+    How long the certificates last comes from the description too:
+    certificate_days per database (a primary's replication certificate) and
+    ca_days for the replication CA. The real reading of a certificate is
+    tested with openssl in deploy/dr/tests/test_replication_tls.py.
+    """
+
+    def __init__(self, test, ca_days=3000, **databases):
         healthy = dict(role="primary", streams="1", slots="todo_standby|t|reserved|", archive="on",
-                       archiver="f|off|on|000000010000000000000003|0|healthy", receiver="streaming")
+                       archiver="f|off|on|000000010000000000000003|0|healthy", receiver="streaming",
+                       certificate_days=400)
         self.databases = {f"{name}-postgres": {**healthy, **changes} for name, changes in databases.items()}
         route_commands(test, self)
+        tls = app_dr.replication_tls
+        for name, days in (("server_days_left", self.certificate_days), ("ca_days_left", lambda: ca_days)):
+            patcher = mock.patch.object(tls, name, side_effect=days)
+            patcher.start()
+            test.addCleanup(patcher.stop)
+
+    def certificate_days(self, database):
+        days = self.databases[database.container]["certificate_days"]
+        if isinstance(days, Exception):
+            raise days
+        return days
 
     def __call__(self, arguments, timeout=None):
         database, statement = self.databases[container(arguments)], arguments[-1]
@@ -350,8 +370,8 @@ class CheckTests(unittest.TestCase):
 
     DISK = (100 * 2**30, 50 * 2**30, 50 * 2**30)
 
-    def check(self, disk=DISK, **databases):
-        CheckHost(self, **{name: databases.get(name, {}) for name in ("todo", "notes", "keycloak")})
+    def check(self, disk=DISK, ca_days=3000, **databases):
+        CheckHost(self, ca_days, **{name: databases.get(name, {}) for name in ("todo", "notes", "keycloak")})
         return app_dr.check(disk=disk)
 
     def test_a_healthy_primary_and_a_healthy_standby_pass(self):
@@ -363,6 +383,47 @@ class CheckTests(unittest.TestCase):
         lines, problems = self.check(todo=standby, notes=standby, keycloak=standby)
         self.assertEqual(problems, [])
         self.assertIn("keycloak: standby, receiving WAL from the primary", lines)
+
+    def test_each_primary_certificate_and_the_ca_are_reported_with_their_days(self):
+        lines, problems = self.check()
+        self.assertEqual(problems, [])
+        self.assertIn("todo: replication certificate: valid 400 more days", lines)
+        self.assertIn("keycloak: replication certificate: valid 400 more days", lines)
+        self.assertIn("Replication CA: valid 3000 more days", lines)
+        # A standby uses the primary's certificate: only the CA is checked there.
+        standby = {"role": "standby"}
+        lines, problems = self.check(todo=standby, notes=standby, keycloak=standby)
+        self.assertEqual(problems, [])
+        self.assertFalse([line for line in lines if "replication certificate" in line])
+        self.assertIn("Replication CA: valid 3000 more days", lines)
+
+    def test_a_certificate_the_renewal_did_not_replace_fails_the_check(self):
+        _lines, problems = self.check(notes={"certificate_days": 24})
+        self.assertEqual(problems, ["notes: replication certificate expires in 24 days; "
+                                    "todo-replication-tls.timer has not renewed it"])
+        # 25 days left is still fine: the nightly renewal starts at 30.
+        _lines, problems = self.check(notes={"certificate_days": 25})
+        self.assertEqual(problems, [])
+
+    def test_an_expired_certificate_is_named_next_to_the_stream_it_broke(self):
+        _lines, problems = self.check(todo={"streams": "0", "certificate_days": -3})
+        self.assertEqual(problems, ["todo: no standby streams from this primary over TLS",
+                                    "todo: replication certificate expires in -3 days; "
+                                    "todo-replication-tls.timer has not renewed it"])
+
+    def test_a_primary_without_a_readable_certificate_fails(self):
+        missing = RuntimeError("todo: the primary has no replication certificate")
+        _lines, problems = self.check(todo={"certificate_days": missing})
+        self.assertEqual(problems, ["todo: replication certificate: cannot read its expiry "
+                                    "(todo: the primary has no replication certificate)"])
+
+    def test_a_ca_that_is_about_to_expire_fails_on_either_host(self):
+        standby = {"role": "standby"}
+        for databases in ({}, {"todo": standby, "notes": standby, "keycloak": standby}):
+            with self.subTest(databases=databases):
+                _lines, problems = self.check(ca_days=179, **databases)
+                self.assertEqual(problems, ["Replication CA expires in 179 days; "
+                                            "replace it by hand before then (backlog U2)"])
 
     def test_archiving_off_is_reported_not_failed(self):
         lines, problems = self.check(todo={"archive": "off"})
@@ -431,6 +492,59 @@ class CheckTests(unittest.TestCase):
                 self.assertEqual(app_dr.main(["--config", str(config), "check"]), 0)
         self.assertIn("Ready to take over: offline bundle aaaaaaaaaaaa with 2 image archives",
                       "".join(call.args[0] for call in stdout.write.call_args_list))
+
+
+class RenewTlsTests(unittest.TestCase):
+    """app_dr.py renew-tls: the nightly renewal renews what is due on the primary, and nothing on a standby."""
+
+    def setUp(self):
+        self.roles = {"todo": "f", "notes": "f", "keycloak": "f"}
+        self.renewed, self.failing = [], {}
+
+        def query(database, _statement):
+            return f"{self.roles[database.name]}|off|0/30|0/30"
+
+        def renew(database):
+            if database.name in self.failing:
+                raise self.failing[database.name]
+            return database.name in self.renewed
+
+        for target, name, fake in ((app_dr.StandbyGroup, "_query", query),
+                                   (app_dr.replication_tls, "renew", renew),
+                                   (app_dr.replication_tls, "server_days_left", lambda database: 824)):
+            patcher = mock.patch.object(target, name, side_effect=fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_due_certificates_are_renewed_and_the_others_kept(self):
+        self.renewed = ["notes"]
+        lines, problems = app_dr.renew_tls()
+        self.assertEqual(problems, [])
+        self.assertEqual(lines, ["todo: replication certificate kept, valid 824 more days",
+                                 "notes: new replication certificate, valid 824 more days",
+                                 "keycloak: replication certificate kept, valid 824 more days"])
+
+    def test_a_standby_renews_nothing(self):
+        self.roles = dict.fromkeys(self.roles, "t")
+        lines, problems = app_dr.renew_tls()
+        self.assertEqual(problems, [])
+        self.assertEqual(lines, [f"{name}: standby, nothing to renew" for name in ("todo", "notes", "keycloak")])
+        app_dr.replication_tls.renew.assert_not_called()
+
+    def test_one_failure_does_not_stop_the_others_and_the_command_exits_1(self):
+        self.renewed = ["keycloak"]
+        self.failing = {"todo": CommandError("openssl x509 failed (exit 1)")}
+        with mock.patch("sys.stdout") as stdout, mock.patch("sys.stderr") as stderr:
+            self.assertEqual(app_dr.main(["renew-tls"]), 1)
+        printed = "".join(call.args[0] for call in stdout.write.call_args_list)
+        self.assertIn("keycloak: new replication certificate", printed)
+        self.assertIn("notes: replication certificate kept", printed)
+        self.assertIn("ERROR: openssl x509 failed (exit 1)",
+                      "".join(call.args[0] for call in stderr.write.call_args_list))
+
+    def test_the_command_exits_0_when_everything_is_fine(self):
+        with mock.patch("sys.stdout"):
+            self.assertEqual(app_dr.main(["renew-tls"]), 0)
 
 
 class ReadinessTests(unittest.TestCase):

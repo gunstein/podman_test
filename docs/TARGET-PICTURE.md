@@ -69,6 +69,6 @@ switchover with no data loss moves operation back (T6).
 | Backups | Each host backs up its own copy: a full backup every night and the WAL archive, 7 days, so PITR works even if one site is lost (D2; the primary's half is done). |
 | Security | Keycloak lockout and password policy, HTTP security headers, fapolicyd trusts only root-owned files (F), tool-owned firewall rules (W). |
 | Logs | Every tool command in journald with time, host and result (L1, L2), kept across reboots (L4), copied to the other site (L6), one page on where to look (L5). |
-| Warnings | Timers turn replication, slot, archive, disk and certificate problems into failed units and optional mail (certificates U2; the rest is done). |
+| Warnings | Timers turn replication, slot, archive, disk and certificate problems into failed units and optional mail (the replication certificate is checked and renewed; the replication CA and nginx are U2; the rest is done). |
 | Proof | Acceptance with content fingerprints for all three databases (C1-C3), plus the timed disaster drill (G3, G4). |
 | Size | Less code than today, new features included. |

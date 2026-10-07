@@ -38,7 +38,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
    G4 (the disaster drill in the
    lab) and G5 (rebuilding Oslo on new hardware).
 3. What operation needs: U1 (updating a replicated pair), T6 (planned
-   switchover), U2 (certificate renewal, before replication stops by itself)
+   switchover), U2 (the replication CA and nginx; the replication certificate
+   renews itself now)
    and L1 (command logging).
 4. fapolicyd (F0 first), firewalls (W) and data checks (C).
 5. The rest.
@@ -182,25 +183,22 @@ attention above 30 minutes (G3).
   current primary while keeping the LAN publication, a fixed order for
   PostgreSQL minor updates (standby first), and a plan for major upgrades such
   as 17 to 18, which cannot stream between versions.
-- **U2. Certificate renewal while running.** *[new]* Two certificates expire
-  without anyone being warned:
-  - *nginx.* The server certificate lasts 397 days, and `proxy-entrypoint.sh`
-    issues a new one only when nginx starts with fewer than 30 days left. nginx
-    running for over a year without a restart serves an expired certificate.
-  - *Replication.* Each primary's PostgreSQL certificate lasts 825 days and is
-    renewed only when the host is published as primary (bootstrap or rebuild).
-    A pair that runs longer without a rebuild gets an expired certificate; the
-    standby then refuses it (`verify-full`) and replication stops, which only
-    `replication-status` or `cluster-status` would show. The CA lasts 10 years.
-
-  Check the expiry of both certificates, and of the replication CA, in the
-  scheduled DR check (`app_dr.py check`), with a warning well before the end (for example 60 days).
-  Add renewal that needs no full service restart: for replication, an app-ops
-  command that runs `replication_tls.install_server_tls` on the current
-  primary, which already reissues a certificate with less than 30 days left
-  and reloads PostgreSQL; for nginx, a reissue followed by `nginx -s reload`.
-  Run both from a systemd timer, so renewal does not depend on someone
-  remembering it.
+- **U2. Certificate renewal while running.** *[partly done]*
+  - *Replication server certificate: done.* `todo-replication-tls.timer`
+    runs `app_dr.py renew-tls` every night on both hosts; on the primary it
+    issues a new certificate for the same address once fewer than 30 days
+    are left and reloads PostgreSQL. `app_dr.py check` fails below 25 days.
+    Unit-tested with real openssl; not yet exercised in a lab acceptance run.
+  - *Replication CA: open.* It lasts 10 years and nothing renews it. The DR
+    check fails on both hosts below 180 days. Missing: a tested procedure
+    that replaces it on both hosts and issues the primary a new certificate,
+    without a window where the standby trusts neither.
+  - *nginx: open.* The server certificate lasts 397 days, and
+    `proxy-entrypoint.sh` issues a new one only when nginx starts with fewer
+    than 30 days left. nginx running for over a year without a restart serves
+    an expired certificate. Add an expiry check and a renewal that needs no
+    restart (`nginx -s reload`), run from a timer; with T4's `provided`
+    mode the timer warns and prepares a request instead of issuing.
 - **U3. Time synchronisation.** *[new]* Token expiry, TLS and log timestamps
   depend on correct clocks on both hosts. Check that chrony (or another time
   service) is active in the preflight and in acceptance phase 1, and document

@@ -1,12 +1,13 @@
-# A timer failed: todo-dr-check or todo-backup
+# A timer failed: todo-dr-check, todo-backup or todo-replication-tls
 
-Both timers turn a problem into a **failed unit**; nobody is paged. Look
+Every timer turns a problem into a **failed unit**; nobody is paged. Look
 daily, on both DR hosts (and on a single host for the backup):
 
 ```bash
 systemctl --user --failed
 journalctl --user -u todo-dr-check.service -n 30 -o cat
 journalctl --user -u todo-backup.service -n 30 -o cat
+journalctl --user -u todo-replication-tls.service -n 30 -o cat
 ```
 
 Each problem is one `ERROR:` line. The check runs every 15 minutes; it
@@ -27,6 +28,9 @@ clears itself on the next run after the cause is gone, or start it now with
 | `no complete offline bundle at ...`, `lacks image archives` | A failover here could not load its images | Copy and verify the bundle again (`sha256sum -c`) |
 | `DR secrets missing on this host: ...` | A failover here could not start | `sync-standby-secrets` from the operations package with `initial.yaml` |
 | `Cannot read valid DR configuration` | The DR tool is not set up on this host | `install-dr-tool` |
+| `replication certificate expires in N days; todo-replication-tls.timer has not renewed it` | The nightly renewal has failed for several nights | [certificates.md](certificates.md#replication-server-certificate-825-days) |
+| `replication certificate: cannot read its expiry` | The primary has no certificate, or openssl could not read it | [certificates.md](certificates.md#replication-server-certificate-825-days) |
+| `Replication CA expires in N days` | The replication CA must be replaced by hand | [certificates.md](certificates.md#replication-ca-10-years) |
 
 ## todo-backup (every night at 02:30)
 
@@ -41,3 +45,9 @@ clears itself on the next run after the cause is gone, or start it now with
 
 On a standby, `standby: nothing to back up` is normal: the primary takes the
 backups.
+
+## todo-replication-tls (DR hosts, every night at 03:30)
+
+Each database's line says whether its certificate was kept or renewed, and
+for how many days it is valid. On a standby `standby, nothing to renew` is
+normal. Any `ERROR:` line: [certificates.md](certificates.md#replication-server-certificate-825-days).

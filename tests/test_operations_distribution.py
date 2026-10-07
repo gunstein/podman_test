@@ -97,6 +97,8 @@ class OperationsDistributionTests(unittest.TestCase):
                 "deploy/dr/systemd/todo-dr-check.timer",
                 "deploy/dr/systemd/todo-backup.service",
                 "deploy/dr/systemd/todo-backup.timer",
+                "deploy/dr/systemd/todo-replication-tls.service",
+                "deploy/dr/systemd/todo-replication-tls.timer",
                 "deploy/scripts/trust-files.sh",
                 "deploy/dr/README.md",
                 "deploy/dr/app_ops/cli.py",

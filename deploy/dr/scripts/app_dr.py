@@ -4,9 +4,12 @@ Installed as /opt/todo/bin/app_dr.py on both DR hosts and run there:
 
   app_dr.py configure ...   write the DR settings (done by install-dr-tool)
   app_dr.py status          show each database's role, lag and primary reachability
-  app_dr.py check           read-only: is replication, archiving and disk space
-                            fine for this host's role, and could this host take
-                            over? (todo-dr-check.timer)
+  app_dr.py check           read-only: is replication, archiving, its TLS
+                            certificates and disk space fine for this host's
+                            role, and could this host take over?
+                            (todo-dr-check.timer)
+  app_dr.py renew-tls       renew each primary's replication certificate once
+                            fewer than 30 days are left (todo-replication-tls.timer)
   app_dr.py preflight ...   read-only: may the group be promoted now? (standby)
   app_dr.py promote ...     preflight, then promote every database (standby)
 
@@ -35,7 +38,7 @@ from typing import Callable, List, Optional, Sequence
 # bin. In a checkout, set PYTHONPATH=deploy/installer:deploy/dr instead.
 # deploy/dr/README.md ("Where DR finds the installer") has the whole rule.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from app_dr_host import replication, transfer  # noqa: E402
+from app_dr_host import replication, replication_tls, transfer  # noqa: E402
 from app_installer import apps, quadlet, settings  # noqa: E402
 from app_installer.commands import run  # noqa: E402
 
@@ -335,14 +338,18 @@ def check(databases=apps.REPLICATED_DATABASES, disk=None):
     Returns (lines, problems). Each database's role is read live, so the same
     check fits the primary and the standby, and still fits after a failover
     or a rebuild. A primary needs a standby streaming over TLS, slots that
-    keep their WAL, and healthy WAL archiving if archiving is on; a standby
-    must receive WAL. The group must be all primary or all standby, and the
-    disk must have MIN_FREE_FRACTION free. Every database is checked before
-    anything is reported, so one run names every problem. disk replaces
+    keep their WAL, healthy WAL archiving if archiving is on, and a
+    replication certificate with at least replication_tls.ALERT_DAYS left
+    (renew-tls replaces it at 30); a standby must receive WAL. The
+    replication CA must have CA_ALERT_DAYS left on either host. The group
+    must be all primary or all standby, and the disk must have
+    MIN_FREE_FRACTION free. Every database is checked before anything is
+    reported, so one run names every problem. disk replaces
     shutil.disk_usage(home) in tests.
     """
     lines, problems, roles = [], [], {}
     for database in databases:
+        primary = False
         try:
             state = replication.status(database, query=StandbyGroup._query)
             if state['in_recovery']:
@@ -350,12 +357,19 @@ def check(databases=apps.REPLICATED_DATABASES, disk=None):
                 roles[database.name] = 'standby'
                 lines.append(f'{database.name}: standby, receiving WAL from the primary')
             else:
+                primary = True
                 streams = replication.standby_streams(database)
                 archive = 'WAL archive healthy' if replication.archiving(database) else 'WAL archiving off'
                 roles[database.name] = 'primary'
                 lines.append(f'{database.name}: primary, {streams} standby streaming over TLS, {archive}')
         except RuntimeError as error:  # replication's own checks and a failed command (CommandError)
             problems.append(str(error))
+        # Checked even when streaming failed: an expired certificate is a likely reason.
+        if primary:
+            expiry(f'{database.name}: replication certificate', partial(replication_tls.server_days_left, database),
+                   replication_tls.ALERT_DAYS, 'todo-replication-tls.timer has not renewed it', lines, problems)
+    expiry('Replication CA', replication_tls.ca_days_left, replication_tls.CA_ALERT_DAYS,
+           'replace it by hand before then (backlog U2)', lines, problems)
     if len(set(roles.values())) > 1:
         problems.append('the group is split: ' + ', '.join(f'{name} {role}' for name, role in roles.items()))
     total, _used, free = disk or shutil.disk_usage(Path.home())
@@ -365,6 +379,44 @@ def check(databases=apps.REPLICATED_DATABASES, disk=None):
                         f'the check wants {MIN_FREE_FRACTION:.0%}')
     else:
         lines.append(f'Disk: {percent}% free ({free // 2**20} MiB)')
+    return lines, problems
+
+
+def expiry(name, read_days, alert_days, advice, lines, problems):
+    """Add how long a certificate lasts to lines, or a problem when fewer than alert_days are left."""
+    try:
+        days = read_days()
+    except (RuntimeError, ValueError) as error:  # no certificate, or openssl could not read it
+        problems.append(f'{name}: cannot read its expiry ({error})')
+        return
+    if days < alert_days:
+        problems.append(f'{name} expires in {days} days; {advice}')
+    else:
+        lines.append(f'{name}: valid {days} more days')
+
+
+def renew_tls(databases=apps.REPLICATED_DATABASES):
+    """The nightly renewal (todo-replication-tls.timer): renew each primary's certificate if it is due.
+
+    Returns (lines, problems), like check(). Each database's role is read
+    live, so the same timer runs on both hosts: a standby has nothing to
+    renew, and after a failover the promoted host renews its own
+    certificates. Every database is tried, so one failure does not keep the
+    others from being renewed.
+    """
+    lines, problems = [], []
+    for database in databases:
+        try:
+            if replication.status(database, query=StandbyGroup._query)['in_recovery']:
+                lines.append(f'{database.name}: standby, nothing to renew')
+                continue
+            renewed = replication_tls.renew(database)
+            days = replication_tls.server_days_left(database)
+            lines.append(f'{database.name}: ' + ('new replication certificate' if renewed
+                                                 else 'replication certificate kept')
+                         + f', valid {days} more days')
+        except (RuntimeError, ValueError) as error:  # CommandError included
+            problems.append(str(error))
     return lines, problems
 
 
@@ -432,6 +484,7 @@ def parser():
     commands = result.add_subparsers(dest='command', required=True)
     commands.add_parser('status')
     commands.add_parser('check', help='Read-only check of replication, archiving, disk space and readiness')
+    commands.add_parser('renew-tls', help="Renew each primary's replication certificate when it is due")
     configure = commands.add_parser('configure', help='Write the private DR configuration for the complete group')
     configure.add_argument('--primary-name', required=True)
     configure.add_argument('--primary-address', required=True)
@@ -463,6 +516,12 @@ def main(arguments: Optional[Sequence[str]] = None):
             except RuntimeError as error:  # unreadable settings, or Podman not answering
                 ready, missing = [], [str(error)]
             lines, problems = lines + ready, problems + missing
+            print('\n'.join(lines))
+            for problem in problems:
+                print(f'ERROR: {problem}', file=sys.stderr)
+            return 1 if problems else 0
+        if args.command == 'renew-tls':
+            lines, problems = renew_tls()
             print('\n'.join(lines))
             for problem in problems:
                 print(f'ERROR: {problem}', file=sys.stderr)

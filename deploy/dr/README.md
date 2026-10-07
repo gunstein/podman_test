@@ -140,13 +140,14 @@ marked `local: true`.
 
 ## Scheduled check and nightly backup
 
-Two user timers do the routine work, so nobody has to remember it. A failed
+Three user timers do the routine work, so nobody has to remember it. A failed
 run leaves its service failed: that is the alert, seen with
 `systemctl --user --failed` and in the journal (`journalctl --user -u NAME`).
 
 | Timer | Installed by | Runs | What it does |
 |---|---|---|---|
 | `todo-dr-check.timer` | `install-dr-tool` on both hosts, `rebuild-standby` on the rebuilt one | every 15 minutes | `app_dr.py check`: each database's role, read live. A primary needs a standby streaming over TLS, slots that keep their WAL and, if archiving is on, a healthy archive; a standby must receive WAL. The group must not be split, and the disk under the home directory must be at least 10 % free. And the host must be ready to take over: its offline bundle is the revision of the operations package that ran `install-dr-tool`, every image archive the bundle lists is there, and it holds every DR secret, the replication CA included; it then prints `Ready to take over: ...`. |
+| `todo-replication-tls.timer` | `install-dr-tool` on both hosts, `rebuild-standby` on the rebuilt one | every night at 03:30 (+ up to 30 min), and at boot if a night was missed | `app_dr.py renew-tls`: on the primary, a new replication certificate for every database with fewer than 30 days left, for the same address and from the same replication CA, then a PostgreSQL reload (no restart; the standby needs nothing new). On a standby it does nothing. The DR check above also fails once a certificate has fewer than 25 days left, or the replication CA fewer than 180 (the CA is replaced by hand). |
 | `todo-backup.timer` | `install.sh` on every server install; `configure-backup` (so `failover`) replaces its service on the current primary | every night at 02:30 (+ up to 30 min), and at boot if a night was missed | `app_backup.py nightly --keep-days 7`: a verified base backup of every database, then deletion of the backups older than 7 days (never the latest) and of the archived WAL older than the oldest kept backup (`pg_archivecleanup`). On a standby it does nothing. |
 
 The units are in `deploy/dr/systemd` and go to `~/.config/systemd/user` on the

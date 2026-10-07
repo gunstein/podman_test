@@ -673,13 +673,25 @@ PostgreSQL restarts the walreceiver at the start of the current WAL segment;
 leaves `todo-dr-check.service` failed, with the reason in the journal. Besides
 replication and disk space it checks that the host could take over: the
 offline bundle of the same revision, its image archives and every DR secret.
-Start it once on each host and require that it passes and ends with
-`Ready to take over: ...`:
+The check also prints how many days each primary's replication certificate
+and the replication CA are valid. Start it once on each host and require that
+it passes and ends with `Ready to take over: ...`:
 
 ```bash
 systemctl --user list-timers todo-dr-check.timer   # enabled, with its next run
 systemctl --user start todo-dr-check.service
 journalctl _SYSTEMD_USER_UNIT=todo-dr-check.service -o cat --no-pager | tail -n 5
+```
+
+It turns on the nightly certificate renewal too, `todo-replication-tls.timer`.
+Start it once on each host and require that it passes: the primary prints
+`replication certificate kept, valid N more days` for todo, notes and
+keycloak, the standby `standby, nothing to renew`:
+
+```bash
+systemctl --user list-timers todo-replication-tls.timer
+systemctl --user start todo-replication-tls.service
+journalctl _SYSTEMD_USER_UNIT=todo-replication-tls.service -o cat --no-pager | tail -n 3
 ```
 
 Prepare and rehearse [Proxmox quarantine](PROXMOX-QUARANTINE.md) now, while

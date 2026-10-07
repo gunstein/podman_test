@@ -25,7 +25,8 @@ def unit(name):
 class UnitTests(unittest.TestCase):
     def test_each_service_runs_one_installed_tool_once(self):
         for name, command in (("todo-dr-check", "app_dr.py check"),
-                              ("todo-backup", "app_backup.py nightly --keep-days 7")):
+                              ("todo-backup", "app_backup.py nightly --keep-days 7"),
+                              ("todo-replication-tls", "app_dr.py renew-tls")):
             with self.subTest(name=name):
                 service = unit(f"{name}.service")
                 self.assertEqual(service["Service"]["Type"], "oneshot")
@@ -35,17 +36,21 @@ class UnitTests(unittest.TestCase):
                 self.assertEqual(timer["Install"]["WantedBy"], "timers.target")
                 self.assertNotIn("Unit", timer["Timer"])  # the timer starts the service of its own name
 
-    def test_the_check_runs_every_quarter_hour_and_the_backup_every_night(self):
+    def test_the_check_runs_every_quarter_hour_and_the_backup_and_renewal_every_night(self):
         self.assertEqual(unit("todo-dr-check.timer")["Timer"]["OnCalendar"], "*:0/15")
         backup = unit("todo-backup.timer")["Timer"]
         self.assertEqual(backup["OnCalendar"], "*-*-* 02:30")
         self.assertEqual(backup["Persistent"], "true")
+        # After the backup has usually finished; neither depends on the other.
+        renewal = unit("todo-replication-tls.timer")["Timer"]
+        self.assertEqual(renewal["OnCalendar"], "*-*-* 03:30")
+        self.assertEqual(renewal["Persistent"], "true")
 
     def test_systemd_accepts_the_units(self):
         analyze = subprocess.run(["sh", "-c", "command -v systemd-analyze"], capture_output=True, text=True)
         if analyze.returncode:
             self.skipTest("systemd-analyze is not installed")
-        for name in ("todo-dr-check.timer", "todo-backup.timer"):
+        for name in ("todo-dr-check.timer", "todo-backup.timer", "todo-replication-tls.timer"):
             result = subprocess.run(["systemd-analyze", "calendar",
                                      unit(name)["Timer"]["OnCalendar"]], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -137,12 +142,14 @@ class WhereTheTimersGoTests(unittest.TestCase):
                 Host(spec("todo-primary", current_role, "192.0.2.10"), runner=world),
                 Host(spec("todo-standby", other_role, "192.0.2.11"), runner=world))
 
-    def test_install_dr_tool_turns_the_check_on_on_both_hosts(self):
+    def test_install_dr_tool_turns_the_check_and_the_renewal_on_on_both_hosts(self):
         world = self.commands.World()
         controller, primary, other = self.hosts(world)
         standby.install_dr_tools(str(self.commands.PROJECT), controller, primary, other)
         self.assertEqual(self.enabled(world), [("todo-primary", "todo-dr-check.timer"),
-                                               ("todo-standby", "todo-dr-check.timer")])
+                                               ("todo-primary", "todo-replication-tls.timer"),
+                                               ("todo-standby", "todo-dr-check.timer"),
+                                               ("todo-standby", "todo-replication-tls.timer")])
         # Each host's settings name its offline bundle, for the readiness part of the check.
         configures = [command for _host, command in world.commands if "configure" in command]
         self.assertEqual(len(configures), 2)
@@ -168,11 +175,12 @@ class WhereTheTimersGoTests(unittest.TestCase):
         recovery.configure_backup(str(self.commands.PROJECT), controller, current)
         self.assertEqual(self.enabled(world), [("todo-primary", "todo-backup.timer")])
 
-    def test_rebuild_turns_the_check_on_on_the_rebuilt_standby(self):
+    def test_rebuild_turns_the_check_and_the_renewal_on_on_the_rebuilt_standby(self):
         world = self.commands.World()
         recovery.rebuild(str(self.commands.PROJECT), *self.commands.RecoveryTests.hosts(None, world),
                          "todo-primary is fenced", "todo-primary")
         self.assertIn(("todo-primary", "todo-dr-check.timer"), self.enabled(world))
+        self.assertIn(("todo-primary", "todo-replication-tls.timer"), self.enabled(world))
 
 
 if __name__ == "__main__":

@@ -119,17 +119,6 @@ def readiness():
     return [f'nginx certificate from your CA: valid {days} more days'], []
 
 
-def renew():
-    """The nightly look (renew-tls): prepare the next request 60 days ahead; (lines, problems).
-
-    Only for a pair in provided mode, on both hosts; app-ops nginx-tls-request
-    then collects the waiting requests.
-    """
-    if pair_mode() != tls.PROVIDED:
-        return [], []
-    return tls.check(hostnames=tls.recorded_hostnames())
-
-
 def require_for_failover():
     """Raise unless a pair in provided mode has a fitting certificate here; deploy-promoted calls it first."""
     if pair_mode() != tls.PROVIDED:

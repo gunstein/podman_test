@@ -156,7 +156,8 @@ next to `ca.key` it would protect nothing.
   signed around the tool fails for names outside the domains: clients
   enforce the name constraints.
 - **`tls-request`** makes a new key in the TLS volume and a CSR for every
-  public hostname nginx serves; only the CSR leaves the volume.
+  public hostname nginx serves, as every install records them
+  (`~/.config/todo/target-values.json`); only the CSR leaves the volume.
 - **`tls-install`** checks everything before the volume changes: the CA file
   is a self-signed root, the certificate chains to it (intermediates may
   follow it in the same file), is valid now for TLS servers, names every
@@ -182,10 +183,9 @@ pending: request.key + request.csr   until the signed certificate passed every c
 ```
 
 1. `tls-request` makes a new `request.key` and `request.csr`; the active pair
-   is untouched. Every night the single host's backup run (`todo-backup.timer`)
-   does this by itself 60 days before the certificate ends and copies the CSR
-   to `~/.config/todo/nginx-tls-request.csr`; below 30 days the run fails, so
-   it shows in `systemctl --user --failed`.
+   is untouched. Nothing makes it by itself: the single host's nightly
+   backup run (`todo-backup.timer`) fails below 30 days, so it shows in
+   `systemctl --user --failed`, and on a DR pair `app_dr.py check` does.
 2. The CA signs the CSR (`app_ca.py sign`, or `sudo todo-ca-sign` in v1).
 3. `tls-install` checks the certificate against the pending key. A
    certificate that fits neither key, misses a hostname or chains to another

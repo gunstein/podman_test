@@ -83,9 +83,13 @@ from pathlib import Path
 from app_installer import tls
 
 work, volume, image, step = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
-where = {'volume': volume, 'image': image, 'kube_runtime_dir': work}
+where = {'volume': volume, 'image': image, 'hostnames': ['todo.test', 'notes.test']}
 if step == 'request':
     print(json.dumps(tls.request(work / 'host.csr', **where)))
+elif step == 'status':
+    # The image's own entrypoint check (TODO_TLS_ROLE=check): mode and problem, not the days.
+    current, days, problem = tls.status(where.pop('hostnames'), **where)
+    print(current, days is not None, problem or 'fits')
 else:
     print(json.dumps(tls.install(work / 'host.crt', work / 'ca/ca.crt', **where)))
 PY
@@ -96,6 +100,7 @@ python3 "$project_root/deploy/scripts/app_ca.py" sign --directory "$work_directo
   --passphrase-file "$work_directory/passphrase"
 test "$(tls install)" = true
 test "$(tls install)" = false
+test "$(tls status)" = 'provided True fits'
 podman run --rm \
   --env TODO_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
   --volume "$volume:/var/lib/todo-tls" \

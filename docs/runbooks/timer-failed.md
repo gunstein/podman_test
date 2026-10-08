@@ -29,7 +29,7 @@ clears itself on the next run after the cause is gone, or start it now with
 | `DR secrets missing on this host: ...` | A failover here could not start | `sync-standby-secrets` from the operations package with `initial.yaml` |
 | `Cannot read valid DR configuration` | The DR tool is not set up on this host | `install-dr-tool` |
 | `nginx could not start here with your CA's certificate: ...` | A pair in provided mode, and this host's certificate is missing or does not fit its recorded hostnames; a failover here would refuse to start nginx | [certificates.md](certificates.md#nginx-certificate-from-your-own-ca-provided-mode) |
-| `the nginx certificate on this host expires in N days` | The next request is waiting (renew-tls); it was not signed and installed | [certificates.md](certificates.md#nginx-certificate-from-your-own-ca-provided-mode) |
+| `the nginx certificate on this host expires in N days` | The pair's nginx certificates need renewing: app-ops `nginx-tls-request`, sign, `nginx-tls-install` | [certificates.md](certificates.md#nginx-certificate-from-your-own-ca-provided-mode) |
 | `replication certificate expires in N days; todo-replication-tls.timer has not renewed it` | The nightly renewal has failed for several nights | [certificates.md](certificates.md#replication-server-certificate-825-days) |
 | `replication certificate: cannot read its expiry` | The primary has no certificate, or openssl could not read it | [certificates.md](certificates.md#replication-server-certificate-825-days) |
 | `Replication CA expires in N days` | The replication CA must be replaced by hand | [certificates.md](certificates.md#replication-ca-10-years) |

@@ -112,6 +112,20 @@ class EntrypointTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('not valid for extra.example.test', result.stderr)
 
+    def test_the_check_role_reports_the_mode_and_end_date_and_writes_nothing(self):
+        # app_installer.tls runs this for tls-status, the nightly look and the DR readiness.
+        self.assertEqual(self.start(role='check').returncode, 1)
+        self.assertEqual(list(self.volume.iterdir()), [])
+        self.provided()
+        before = self.snapshot()
+        result = self.start(role='check')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertRegex(result.stdout, r'^mode=provided\nnotAfter=.* GMT\n$')
+        self.assertEqual(self.snapshot(), before)
+        result = self.start(NAMES + ('extra.example.test',), role='check')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('not valid for extra.example.test', result.stderr)
+
     def test_an_unknown_role_stops_before_anything(self):
         result = self.start(role='admin')
         self.assertEqual(result.returncode, 1)

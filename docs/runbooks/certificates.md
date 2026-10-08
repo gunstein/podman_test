@@ -15,14 +15,16 @@ python3 /opt/todo/bin/app_dr.py check | grep -i 'certificate\|Replication CA'
 ## nginx certificate from your own CA (provided mode)
 
 Set up as in [TLS.md](../TLS.md#provided-mode-a-separate-ca-process). The
-nightly backup run checks it: 60 days before the end it prepares
-`~/.config/todo/nginx-tls-request.csr` (a new key waits in the TLS volume),
-and below 30 days it fails with `the nginx certificate expires in N days`.
-Have the CA sign the request (`app_ca.py sign`, or `sudo todo-ca-sign` in v1), and install the result:
+nightly backup run checks it: below 30 days it fails with `the nginx
+certificate expires in N days`. Make a request (a new key waits in the TLS
+volume), have the CA sign it (`app_ca.py sign`, or `sudo todo-ca-sign` in
+v1), and install the result:
 
 ```bash
+PYTHONPATH=deploy/installer python3 -m app_installer tls-request \
+  --output ~/host.csr                                         # on the host
 python3 deploy/scripts/app_ca.py sign --directory /media/ca-usb/todo-ca \
-  --request nginx-tls-request.csr --output host.crt          # the CA, from its own storage
+  --request host.csr --output host.crt                        # the CA, from its own storage
 PYTHONPATH=deploy/installer python3 -m app_installer tls-install \
   --certificate ~/host.crt --ca ~/ca.crt                      # on the host
 ```
@@ -35,8 +37,7 @@ PYTHONPATH=deploy/installer python3 -m app_installer tls-install \
 | `does not know provided TLS mode` | The proxy image predates provided mode | Rebuild it (`install --refresh-images`) or load it from a current offline bundle |
 
 **On a DR pair** both hosts have a certificate, and renewal goes through
-app-ops on the controller: the nightly `renew-tls` prepares each host's
-request 60 days ahead, then
+app-ops on the controller, once `app_dr.py check` warns (below 30 days):
 
 ```bash
 python3 -m app_ops --inventory initial.yaml nginx-tls-request --output ~/nginx-requests

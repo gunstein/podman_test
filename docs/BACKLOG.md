@@ -234,9 +234,9 @@ attention above 30 minutes (G3).
     without a window where the standby trusts neither.
   - *nginx: partly done.* On a single host the nightly backup run checks
     the certificate: in local mode it fails below 30 days (a restart
-    renews it), in provided mode it prepares a request 60 days ahead and
-    fails below 30 (T4). A DR pair in provided mode is checked by
-    `app_dr.py check` and `renew-tls` on both hosts. Open: local mode
+    renews it), in provided mode it fails below 30 (T4); the request,
+    the CA step and the install are by hand. A DR pair in provided mode is
+    checked by `app_dr.py check` on both hosts. Open: local mode
     still renews only at a restart, and a DR pair in local mode checks
     nothing.
 - **U3. Time synchronisation.** *[new]* Token expiry, TLS and log timestamps

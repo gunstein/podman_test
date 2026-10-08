@@ -14,12 +14,15 @@
 #     role in its init container, nginx-tls, which then runs `true`.
 #   serve: nginx itself, with the volume mounted read-only. It never writes
 #     there; it only checks that the files it is about to serve fit.
+#   check: the same check as serve, for app_installer.tls (tls-status, the
+#     nightly look, the DR readiness): it prints the mode and the end date
+#     and exits, running nothing.
 set -efu
 
 tls_directory=${TODO_TLS_DIRECTORY:-/var/lib/todo-tls}
 tls_role=${TODO_TLS_ROLE:-provision}
 case "$tls_role" in
-    provision|serve) ;;
+    provision|serve|check) ;;
     *)
         echo "ERROR: invalid TODO_TLS_ROLE: $tls_role" >&2
         exit 1
@@ -50,7 +53,8 @@ for name in $tls_hostnames; do
 done
 
 # Use this pod's DNS, so one absent app cannot prevent other apps from starting.
-awk '$1 == "nameserver" {
+# A check runs nothing and has no network, so it needs no resolver.
+[ "$tls_role" = check ] || awk '$1 == "nameserver" {
     address = index($2, ":") ? "[" $2 "]" : $2
     servers = servers " " address
 } END {
@@ -91,6 +95,16 @@ check_served() {
 tls_mode=local
 if [ -s "$tls_directory/tls-mode" ]; then
     tls_mode=$(cat "$tls_directory/tls-mode")
+fi
+if [ "$tls_role" = check ]; then
+    case "$tls_mode" in
+        local) check_served local 'the nginx-tls init container provisions it' ;;
+        provided) check_served provided 'run app_installer tls-install' ;;
+        *) echo "ERROR: unknown TLS mode in $tls_directory/tls-mode: $tls_mode" >&2; exit 1 ;;
+    esac
+    echo "mode=$tls_mode"
+    openssl x509 -in "$tls_directory/server.crt" -noout -enddate
+    exit 0
 fi
 case "$tls_mode" in
     local)

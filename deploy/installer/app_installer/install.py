@@ -259,17 +259,16 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         quadlet.systemctl('start', app.service)
         setup_roles(app)
     quadlet.systemctl('start', 'shared-proxy.service')
-    configured = keycloak.configure(
-        secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
-        clients(applications, app_hostnames(root, mode, target, applications)))
+    hostnames = app_hostnames(root, mode, target, applications)
+    configured = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(applications, hostnames))
     for service in selected_services:
         source = quadlet.systemctl('show', service + '.service', '--property=SourcePath',
                                   '--value').stdout.strip()
         if source != str(runtime / (service + '.kube')):
             raise RuntimeError(f'Unexpected SourcePath for {service}: {source}')
-    # The hostnames this host now serves, for the next install and the DR tools.
-    if target is not None:
-        target_render.write_record(target.values)
+    # The hostnames this host now serves, for the next install, tls.py and the DR tools.
+    target_render.write_record(target.values if target is not None else
+                               {target_render.hostname_target(app): hostnames[app.name] for app in applications})
     # Every server install backs itself up every night, so a single host can at
     # least go back to last night (backup.py).
     backups_changed = backup.install_timer(Path(__file__).resolve().parents[1])

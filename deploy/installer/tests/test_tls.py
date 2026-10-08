@@ -4,7 +4,9 @@ FakePodman runs what tls.py starts in a throwaway proxy container (podman
 run ... /bin/sh -c ...) as a local process in a temporary directory that
 plays the TLS volume, so every openssl step is real. Certificates come from
 the CA tool, deploy/scripts/app_ca.py, run on this same host from its own
-directory, apart from the directory that plays the TLS volume.
+directory, apart from the directory that plays the TLS volume. The image's
+entrypoint is this repository's proxy/proxy-entrypoint.sh, and the host's
+recorded hostnames are a file of the test's own.
 """
 import importlib.util
 import json
@@ -99,25 +101,19 @@ class TlsTest(unittest.TestCase):
         self.addCleanup(lambda: REAL_RUN(['rm', '-rf', str(self.directory)], check=True))
         self.volume = self.directory / 'volume'
         self.volume.mkdir()
-        self.runtime = self.directory / 'kube-runtime'
-        self.runtime.mkdir()
-        self.write_runtime(NAMES)
+        self.record = self.directory / 'target-values.json'
+        self.record.write_text(json.dumps({'TARGET_EXTERNAL_HOSTNAME': NAMES[0], 'TARGET_NOTES_HOSTNAME': NAMES[1]}))
         self.podman = FakePodman(self, self.volume)
-        for name, value in (('REQUEST_PATH', self.directory / 'config/nginx-tls-request.csr'),
-                            ('KEY', 'rsa:2048')):  # a smaller key only to keep the tests fast
-            patcher = patch.object(tls, name, value)
+        for target, name, value in ((tls, 'KEY', 'rsa:2048'),  # a smaller key only to keep the tests fast
+                                    (tls, 'ENTRYPOINT', str(ROOT / 'proxy/proxy-entrypoint.sh')),
+                                    (tls.target_render, 'record_path', lambda: self.record)):
+            patcher = patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def write_runtime(self, names):
-        (self.runtime / 'shared-proxy.yaml').write_text(
-            'kind: ConfigMap\ndata:\n'
-            f'  TODO_TLS_HOSTNAME: {json.dumps(names[0])}\n'
-            f'  APP_TLS_HOSTNAMES: {json.dumps(" ".join(names))}\n')
-
     def request(self, new_key=False):
         output = self.directory / 'host.csr'
-        names = tls.request(output, new_key, kube_runtime_dir=self.runtime)
+        names = tls.request(output, new_key)
         return output, names
 
     def sign(self, request, days=365, ca=None):
@@ -125,8 +121,8 @@ class TlsTest(unittest.TestCase):
         app_ca.sign(ca or self.ca, request, output, days, passphrase_file=self.passphrase)
         return output
 
-    def install(self, certificate, ca=None):
-        return tls.install(certificate, ca or self.ca / 'ca.crt', kube_runtime_dir=self.runtime)
+    def install(self, certificate, ca=None, hostnames=None):
+        return tls.install(certificate, ca or self.ca / 'ca.crt', hostnames)
 
     def local_mode(self):
         """What the demo CA leaves in the volume: its own CA key and certificate, and a leaf."""
@@ -151,15 +147,6 @@ class RequestTests(TlsTest):
         self.assertEqual(self.podman.file(tls.REQUEST_KEY), key)
         self.request(new_key=True)
         self.assertNotEqual(self.podman.file(tls.REQUEST_KEY), key)
-
-    def test_the_hostnames_come_from_the_installed_proxy_yaml(self):
-        self.write_runtime(['todo.example.test', 'todo.example.test notes.example.test'.split()[1]])
-        self.assertEqual(tls.installed_hostnames(self.runtime), NAMES)
-        (self.runtime / 'shared-proxy.yaml').write_text('APP_TLS_HOSTNAMES: "a.test"\n')
-        with self.assertRaisesRegex(tls.TlsError, 'no TODO_TLS_HOSTNAME'):
-            tls.installed_hostnames(self.runtime)
-        with self.assertRaisesRegex(tls.TlsError, 'install the stack first'):
-            tls.installed_hostnames(self.directory / 'missing')
 
     def test_a_host_without_the_volume_or_with_an_old_proxy_image_is_refused(self):
         self.podman.volume_exists = False
@@ -246,10 +233,10 @@ class InstallTests(TlsTest):
         self.assertEqual(self.podman.file('server.key'), key)
         self.assertEqual(self.podman.file('server.crt'), renewal.read_text())
 
-    def assert_refused(self, message, certificate, ca=None):
+    def assert_refused(self, message, certificate, ca=None, hostnames=None):
         before = {path.name: path.read_bytes() for path in self.volume.iterdir()}
         with self.assertRaisesRegex(tls.TlsError, message):
-            self.install(certificate, ca)
+            self.install(certificate, ca, hostnames)
         self.assertEqual({path.name: path.read_bytes() for path in self.volume.iterdir()}, before)
 
     def test_a_certificate_that_does_not_fit_changes_nothing(self):
@@ -263,9 +250,8 @@ class InstallTests(TlsTest):
                  capture_output=True, check=True)
         self.assert_refused('neither the waiting request', self.sign(other))
         # A certificate that misses a hostname nginx serves.
-        self.write_runtime(NAMES + ['extra.example.test'])
-        self.assert_refused('not valid for extra.example.test', self.sign(request))
-        self.write_runtime(NAMES)
+        self.assert_refused('not valid for extra.example.test', self.sign(request),
+                            hostnames=NAMES + ['extra.example.test'])
         # A certificate from another CA, and a CA file that is not a root.
         second = self.directory / 'second-ca'
         app_ca.init(second, ['example.test'], 'Another CA', passphrase_file=self.passphrase)
@@ -300,46 +286,48 @@ class CheckTests(TlsTest):
         self.install(self.sign(request, days=days))
 
     def test_a_host_without_a_certificate_reports_nothing(self):
-        self.assertEqual(tls.check(self.runtime), ([], []))
+        self.assertEqual(tls.check(), ([], []))
+        self.podman.volume_exists = False
+        self.assertEqual(tls.check(), ([], []))
 
     def test_a_certificate_far_from_its_end_is_fine(self):
         self.provided(365)
-        lines, problems = tls.check(self.runtime)
+        lines, problems = tls.check()
         self.assertEqual(problems, [])
-        self.assertIn(lines[0], ['nginx certificate (provided mode): valid 364 more days',
-                                 'nginx certificate (provided mode): valid 365 more days'])
-        self.assertFalse(tls.REQUEST_PATH.exists())
+        self.assertIn(lines, (['nginx certificate (provided mode): valid 364 more days'],
+                              ['nginx certificate (provided mode): valid 365 more days']))
 
-    def test_sixty_days_before_the_end_a_request_with_a_new_key_is_ready(self):
-        self.provided(50)
-        key = self.podman.file('server.key')
-        lines, problems = tls.check(self.runtime)
-        self.assertEqual(problems, [])
-        self.assertIn('A request for the next certificate is ready', lines[1])
-        names = app_ca.requested_names(tls.REQUEST_PATH)
-        self.assertEqual(names, NAMES)
-        self.assertNotEqual(self.podman.file(tls.REQUEST_KEY), key)
-        # The next night keeps the same request.
-        request = tls.REQUEST_PATH.read_text()
-        tls.check(self.runtime)
-        self.assertEqual(tls.REQUEST_PATH.read_text(), request)
-        # The signed request installs, with the new key.
-        self.install(self.sign(tls.REQUEST_PATH))
-        self.assertNotEqual(self.podman.file('server.key'), key)
-
-    def test_thirty_days_before_the_end_it_is_a_problem(self):
+    def test_thirty_days_before_the_end_it_is_a_problem_and_nothing_is_prepared(self):
         self.provided(20)
-        _lines, problems = tls.check(self.runtime)
+        before = sorted(path.name for path in self.volume.iterdir())
+        _lines, problems = tls.check()
         self.assertEqual(len(problems), 1)
-        self.assertRegex(problems[0], r'the nginx certificate expires in 1[89] days; install the next one')
+        self.assertRegex(problems[0], r'the nginx certificate expires in 1[89] days; run tls-request')
+        # The nightly look only reports: the CA step makes the next request.
+        self.assertEqual(sorted(path.name for path in self.volume.iterdir()), before)
+
+    def test_a_certificate_that_would_stop_nginx_is_a_problem(self):
+        self.provided(365)
+        (self.volume / 'server.key').unlink()
+        self.assertEqual(tls.check(), ([], ['the nginx certificate would stop nginx at its next start: '
+                                            'provided TLS mode, but server.key is missing; '
+                                            'run app_installer tls-install']))
 
     def test_a_local_demo_certificate_near_its_end_asks_for_a_restart(self):
         REAL_RUN(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-noenc', '-days', '10',
-                  '-keyout', 'server.key', '-out', 'server.crt', '-subj', '/CN=todo.example.test'],
+                  '-keyout', 'server.key', '-out', 'server.crt', '-subj', '/CN=todo.example.test',
+                  '-addext', 'subjectAltName=DNS:todo.example.test,DNS:notes.example.test'],
                  cwd=self.volume, capture_output=True, check=True)
-        lines, problems = tls.check(self.runtime)
+        REAL_RUN(['cp', 'server.crt', 'ca.crt'], cwd=self.volume, check=True)
+        lines, problems = tls.check()
         self.assertRegex(lines[0], r'nginx certificate \(local mode\): valid [89] more days')
         self.assertIn('restart shared-proxy.service', problems[0])
+
+    def test_without_recorded_hostnames_it_cannot_look(self):
+        self.provided(365)
+        self.record.unlink()
+        with self.assertRaisesRegex(tls.TlsError, 'records no public hostnames'):
+            tls.check()
 
 
 class StatusTests(TlsTest):
@@ -351,43 +339,43 @@ class StatusTests(TlsTest):
         self.assertEqual((current, problem), ('provided', ''))
         self.assertIn(days, (364, 365))
         self.assertEqual(tls.status(NAMES + ['extra.example.test'])[2],
-                         'server.crt is not valid for extra.example.test from ca.crt')
+                         'provided TLS mode, but server.crt is not valid for extra.example.test from ca.crt')
         (self.volume / 'server.key').unlink()
-        self.assertEqual(tls.status(NAMES), ('provided', None, 'server.key is missing'))
+        self.assertEqual(tls.status(NAMES),
+                         ('provided', None, 'provided TLS mode, but server.key is missing; run app_installer tls-install'))
+        (self.volume / tls.MODE_FILE).write_text('custom\n')
+        self.assertEqual(tls.status(NAMES)[1:], (None, 'unknown TLS mode in ./tls-mode: custom'))
 
     def test_the_recorded_hostnames_put_the_shared_one_first(self):
-        record = self.directory / 'target-values.json'
-        with patch.object(tls.target_render, 'record_path', return_value=record):
-            with self.assertRaisesRegex(tls.TlsError, 'records no public hostnames'):
-                tls.recorded_hostnames()
-            record.write_text(json.dumps({'TARGET_NOTES_HOSTNAME': 'notes.example.test',
-                                          'TARGET_EXTERNAL_HOSTNAME': 'todo.example.test'}))
-            self.assertEqual(tls.recorded_hostnames(), NAMES)
+        self.record.write_text(json.dumps({'TARGET_NOTES_HOSTNAME': 'notes.example.test',
+                                           'TARGET_EXTERNAL_HOSTNAME': 'todo.example.test'}))
+        self.assertEqual(tls.recorded_hostnames(), NAMES)
+        self.record.unlink()
+        with self.assertRaisesRegex(tls.TlsError, 'records no public hostnames'):
+            tls.recorded_hostnames()
 
 
 class CommandTests(TlsTest):
     def test_request_install_and_status_from_the_command_line(self):
         output = self.directory / 'cli.csr'
         with patch('sys.stdout') as stdout, patch('sys.stderr'):
-            self.assertEqual(cli.main(['tls-request', '--output', str(output),
-                                       '--kube-runtime-dir', str(self.runtime)]), 0)
+            self.assertEqual(cli.main(['tls-request', '--output', str(output)]), 0)
         result = json.loads(stdout.write.call_args_list[0].args[0])
         self.assertEqual(result['hostnames'], NAMES)
         certificate = self.sign(output)
         with patch('sys.stdout') as stdout:
             self.assertEqual(cli.main(['tls-install', '--certificate', str(certificate),
-                                       '--ca', str(self.ca / 'ca.crt'), '--kube-runtime-dir', str(self.runtime)]), 0)
+                                       '--ca', str(self.ca / 'ca.crt')]), 0)
         self.assertEqual(json.loads(stdout.write.call_args_list[0].args[0]), {'changed': True})
         with patch('sys.stdout'):
-            self.assertEqual(cli.main(['tls-status', '--kube-runtime-dir', str(self.runtime)]), 0)
+            self.assertEqual(cli.main(['tls-status']), 0)
 
     def test_a_refused_certificate_is_one_error_line_and_exit_1(self):
         self.request()
         stranger = self.directory / 'stranger.crt'
         stranger.write_text((self.ca / 'ca.crt').read_text())
         with patch('sys.stderr') as stderr:
-            self.assertEqual(cli.main(['tls-install', '--certificate', str(stranger), '--ca', str(self.ca / 'ca.crt'),
-                                       '--kube-runtime-dir', str(self.runtime)]), 1)
+            self.assertEqual(cli.main(['tls-install', '--certificate', str(stranger), '--ca', str(self.ca / 'ca.crt')]), 1)
         self.assertIn('app-installer: The certificate is not valid for todo.example.test',
                       ''.join(call.args[0] for call in stderr.write.call_args_list))
 

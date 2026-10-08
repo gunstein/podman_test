@@ -531,8 +531,7 @@ class RenewTlsTests(unittest.TestCase):
 
         for target, name, fake in ((app_dr.StandbyGroup, "_query", query),
                                    (app_dr.replication_tls, "renew", renew),
-                                   (app_dr.replication_tls, "server_days_left", lambda database: 824),
-                                   (app_dr.nginx_tls, "renew", lambda: ([], []))):
+                                   (app_dr.replication_tls, "server_days_left", lambda database: 824)):
             patcher = mock.patch.object(target, name, side_effect=fake)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -566,16 +565,6 @@ class RenewTlsTests(unittest.TestCase):
     def test_the_command_exits_0_when_everything_is_fine(self):
         with mock.patch("sys.stdout"):
             self.assertEqual(app_dr.main(["renew-tls"]), 0)
-
-    def test_the_nightly_run_also_prepares_nginxs_next_request(self):
-        app_dr.nginx_tls.renew.side_effect = lambda: (
-            ["nginx certificate (provided mode): valid 50 more days", "A request for the next certificate is ready"],
-            [])
-        with mock.patch("sys.stdout") as stdout:
-            self.assertEqual(app_dr.main(["renew-tls"]), 0)
-        printed = "".join(call.args[0] for call in stdout.write.call_args_list)
-        self.assertIn("todo: replication certificate kept", printed)
-        self.assertIn("A request for the next certificate is ready", printed)
 
 
 class ReadinessTests(unittest.TestCase):

@@ -52,10 +52,10 @@ def backup_command(args):
     return 0
 
 
-def tls_check(kube_runtime_dir=None):
+def tls_check():
     """tls.check(), with a failure to look reported as a problem rather than raised."""
     try:
-        return tls.check(kube_runtime_dir)
+        return tls.check()
     except (OSError, RuntimeError, ValueError) as error:
         return [], [f'cannot check the nginx certificate: {error}']
 
@@ -63,16 +63,16 @@ def tls_check(kube_runtime_dir=None):
 def tls_command(args):
     """tls-request | tls-install | tls-status: nginx's certificate in provided mode (tls.py)."""
     if args.command == 'tls-request':
-        names = tls.request(args.output, args.new_key, kube_runtime_dir=args.kube_runtime_dir)
+        names = tls.request(args.output, args.new_key)
         print(f'Have the CA sign {args.output} (app_ca.py sign, or sudo todo-ca-sign), then: '
               'python3 -m app_installer tls-install --certificate FILE --ca FILE', file=sys.stderr)
         print(json.dumps({'changed': True, 'request': str(args.output), 'hostnames': names}))
         return 0
     if args.command == 'tls-install':
-        changed = tls.install(args.certificate, args.ca, kube_runtime_dir=args.kube_runtime_dir)
+        changed = tls.install(args.certificate, args.ca)
         print(json.dumps({'changed': changed}))
         return 0
-    lines, problems = tls_check(args.kube_runtime_dir)
+    lines, problems = tls_check()
     print('\n'.join(lines or ['nginx has no certificate yet']))
     for problem in problems:
         print(f'ERROR: {problem}', file=sys.stderr)
@@ -122,9 +122,7 @@ def main(argv=None):
     tls_install.add_argument('--certificate', type=Path, required=True,
                              help='the server certificate, then any intermediate CAs (PEM)')
     tls_install.add_argument('--ca', type=Path, required=True, help="the organisation's root CA (PEM)")
-    tls_status = subcommands.add_parser('tls-status', help="nginx's TLS mode and how long its certificate lasts")
-    for command in (tls_request, tls_install, tls_status):
-        command.add_argument('--kube-runtime-dir', type=Path, help='where the installed Kube YAML is')
+    subcommands.add_parser('tls-status', help="nginx's TLS mode and how long its certificate lasts")
     down = subcommands.add_parser('down')
     down.add_argument('--rendered-manifest-dir', type=Path,
                       default=Path(__file__).resolve().parents[3] / 'generated/dev')

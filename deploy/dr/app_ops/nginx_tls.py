@@ -12,8 +12,8 @@
       standby has none would fail over to a new demo CA.
 
 Running nginx-tls-request again keeps each host's waiting key, so a lost CSR
-costs nothing. Renewal is the same two commands; app_dr.py renew-tls
-prepares the keys 60 days ahead, and app_dr.py check fails below 30 days.
+costs nothing. Renewal is the same two commands; app_dr.py check fails
+below 30 days.
 """
 import json
 from pathlib import Path

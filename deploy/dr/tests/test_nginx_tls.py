@@ -18,7 +18,7 @@ sys.path[:0] = [str(HERE.parents[1]), str(HERE.parents[2] / 'installer'), str(HE
 import dr_target  # noqa: E402
 from app_dr_host import cli, nginx_tls, promoted  # noqa: E402
 from app_installer import target_render, tls  # noqa: E402
-from test_tls import REAL_RUN, FakePodman, app_ca  # noqa: E402
+from test_tls import REAL_RUN, ROOT, FakePodman, app_ca  # noqa: E402
 
 RECORD = {'TARGET_EXTERNAL_HOSTNAME': 'todo.example.test', 'TARGET_NOTES_HOSTNAME': 'notes.example.test'}
 NAMES = ['todo.example.test', 'notes.example.test']
@@ -63,7 +63,7 @@ class NginxTlsTest(unittest.TestCase):
         for target, name, value in (
                 (target_render, 'record_path', lambda: record),
                 (nginx_tls, 'PAIR_MODE', self.directory / 'config/nginx-tls-mode'),
-                (tls, 'REQUEST_PATH', self.directory / 'config/nginx-tls-request.csr'),
+                (tls, 'ENTRYPOINT', str(ROOT / 'proxy/proxy-entrypoint.sh')),
                 (tls, 'KEY', 'rsa:2048'),
                 (nginx_tls.images, 'prepare_shared', lambda *args: self.loaded.append(args) or {'proxy': False})):
             patcher = patch.object(target, name, value)
@@ -127,7 +127,6 @@ class PairModeTests(NginxTlsTest):
 
     def test_a_local_pair_checks_nothing(self):
         self.assertEqual(nginx_tls.readiness(), ([], []))
-        self.assertEqual(nginx_tls.renew(), ([], []))
         nginx_tls.require_for_failover()
         self.assertEqual(self.podman.calls, [])
 
@@ -153,13 +152,9 @@ class PairModeTests(NginxTlsTest):
         with self.assertRaisesRegex(RuntimeError, 'not valid for other.example.test'):
             nginx_tls.require_for_failover()
 
-    def test_the_nightly_run_prepares_the_next_request_sixty_days_ahead(self):
-        self.install(days=40)
+    def test_thirty_days_before_the_end_the_check_fails(self):
         nginx_tls.set_mode('provided')
-        lines, problems = nginx_tls.renew()
-        self.assertEqual(problems, [])
-        self.assertIn('A request for the next certificate is ready', lines[1])
-        self.assertEqual(app_ca.requested_names(tls.REQUEST_PATH), NAMES)
+        self.install(days=40)
         _lines, problems = nginx_tls.readiness()
         self.assertEqual(problems, [])
         self.install(days=20)

@@ -31,17 +31,16 @@ and only then becomes server.key. nginx reads the pair only when it starts or
 reloads, and the reload comes after the switch.
 
 check() is the nightly look at the certificate (backup nightly, tls-status):
-60 days before a provided certificate expires it prepares a new request
-(REQUEST_PATH), and below 30 days it reports a problem, which fails the
-nightly unit.
+below 30 days a problem fails the nightly unit, in time for the CA step.
+Hostnames always come from this host's record (target-values.json), which
+every install writes.
 """
 import calendar
 import json
-import re
 import time
 from pathlib import Path
 
-from . import apps, settings, target_render
+from . import apps, target_render
 from .commands import exists, run
 
 VOLUME = apps.SHARED_RESOURCE_OWNER.names.resource('nginx-data')
@@ -56,10 +55,9 @@ REQUEST_KEY = 'request.key'
 # RSA, for the widest choice of CAs and clients.
 KEY = 'rsa:3072'
 REQUEST = 'request.csr'
-# Where check() leaves a new request for the CA step, next to the target values.
-REQUEST_PATH = Path.home() / settings.DR_CONFIG / 'nginx-tls-request.csr'
-REQUEST_DAYS = 60
 ALERT_DAYS = 30
+# The proxy image's entrypoint; its check role is status().
+ENTRYPOINT = '/usr/local/bin/proxy-entrypoint'
 # Seconds tls-install waits for nginx to serve the new certificate after a reload.
 SERVE_TIMEOUT = 10
 
@@ -125,37 +123,11 @@ def require_ready(volume=VOLUME, image=apps.PROXY_IMAGE):
                        '(install --refresh-images) or load it from a current offline bundle.')
 
 
-def installed_hostnames(kube_runtime_dir=None):
-    """The public hostnames nginx serves, as the installed shared-proxy.yaml gives them to it.
-
-    The first is TODO_TLS_HOSTNAME, the certificate's common name. Read from
-    the rendered file nginx runs, so a request always covers exactly what is
-    served; the file is plain enough that no YAML parser is needed.
-    """
-    path = Path(kube_runtime_dir or settings.QUADLET_DIR / settings.KUBE_RUNTIME) / 'shared-proxy.yaml'
-    try:
-        text = path.read_text()
-    except OSError as error:
-        raise TlsError(f'Cannot read {path}: install the stack first (install.sh).') from error
-    values = {}
-    for key in ('TODO_TLS_HOSTNAME', 'APP_TLS_HOSTNAMES'):
-        match = re.search(rf'^\s*{key}:\s*(".*")\s*$', text, re.M)
-        if not match:
-            raise TlsError(f'{path} has no {key}')
-        values[key] = json.loads(match[1]).split()
-    names = values['TODO_TLS_HOSTNAME'] + [name for name in values['APP_TLS_HOSTNAMES']
-                                           if name not in values['TODO_TLS_HOSTNAME']]
-    for name in names:
-        if not re.fullmatch(r'[A-Za-z0-9.-]+', name):
-            raise TlsError(f'Invalid hostname in {path}: {name!r}')
-    return names
-
-
 def recorded_hostnames():
     """The public hostnames this host recorded at install (target-values.json), the shared one first.
 
-    A DR standby runs no nginx and has no shared-proxy.yaml, but it records
-    the hostnames it will serve after a failover; so does an offline install.
+    The first is the certificate's common name. A DR standby runs no nginx,
+    but it records the hostnames it will serve after a failover.
     """
     names = target_render.hostnames(target_render.read_record())
     if apps.SHARED_RESOURCE_OWNER.name not in names:
@@ -174,7 +146,7 @@ def make_request(names, new_key=False, **where):
     return proxy('cat', REQUEST, **where).stdout
 
 
-def request(output, new_key=False, hostnames=None, kube_runtime_dir=None, **where):
+def request(output, new_key=False, hostnames=None, **where):
     """tls-request: write a CSR for this host's public hostnames to output; return the hostnames.
 
     The private key it belongs to stays in the TLS volume (request.key) until
@@ -183,7 +155,7 @@ def request(output, new_key=False, hostnames=None, kube_runtime_dir=None, **wher
     nothing; new_key starts over with a new key.
     """
     require_ready(**where)
-    names = list(hostnames or installed_hostnames(kube_runtime_dir))
+    names = list(hostnames or recorded_hostnames())
     output = Path(output)
     output.write_text(make_request(names, new_key, **where))
     output.chmod(0o644)
@@ -241,7 +213,7 @@ rm -f request.csr ca.key ca.srl
 """
 
 
-def install(certificate, ca, hostnames=None, kube_runtime_dir=None, **where):
+def install(certificate, ca, hostnames=None, **where):
     """tls-install: check a signed certificate and switch nginx to it; True if anything changed.
 
     certificate holds the server certificate first, then any intermediate
@@ -252,7 +224,7 @@ def install(certificate, ca, hostnames=None, kube_runtime_dir=None, **where):
     certificate for every hostname within SERVE_TIMEOUT seconds.
     """
     require_ready(**where)
-    names = list(hostnames or installed_hostnames(kube_runtime_dir))
+    names = list(hostnames or recorded_hostnames())
     chain, root = Path(certificate).read_text(), Path(ca).read_text()
     for path, text in ((certificate, chain), (ca, root)):
         if '-----BEGIN CERTIFICATE-----' not in text or 'PRIVATE KEY' in text:
@@ -297,74 +269,44 @@ def reload(names, expected):
                            'see journalctl --user -u shared-proxy.service')
 
 
-VERIFY = """
-set -u
-for file in server.crt server.key ca.crt; do
-    [ -s "$file" ] || { echo "$file is missing"; exit 1; }
-done
-[ "$(openssl x509 -in server.crt -noout -pubkey)" = "$(openssl pkey -in server.key -pubout)" ] ||
-    { echo 'server.key does not belong to server.crt'; exit 1; }
-for name in "$@"; do
-    openssl verify -no_check_time -CAfile ca.crt -untrusted server.crt -verify_hostname "$name" server.crt \
-        >/dev/null 2>&1 || { echo "server.crt is not valid for $name from ca.crt"; exit 1; }
-done
-openssl x509 -in server.crt -noout -enddate
-"""
-
-
 def status(names, **where):
     """How nginx would start with this volume: (mode, days left, problem or '').
 
-    In provided mode it is the entrypoint's own check, in one throwaway
-    container: the files are there, the key fits, and the certificate names
-    every one of names from ca.crt; then the days it has left. A volume
-    without a certificate is ('local', None, '').
+    It runs the entrypoint's own check (TODO_TLS_ROLE=check), the one nginx
+    runs before it serves: the files are there, the key fits, and the
+    certificate names every one of names from ca.crt. A volume without a
+    certificate is ('local', None, '').
     """
     if not exists('volume', where.get('volume', VOLUME)) or not present('server.crt', **where):
         return 'local', None, ''
-    current = mode(**where)
-    if current != PROVIDED:
-        days = days_until(proxy('openssl', 'x509', '-in', 'server.crt', '-noout', '-enddate', **where).stdout)
-        return current, days, ''
-    result = proxy('sh', '-c', VERIFY, 'verify', *names, allowed=(0, 1), **where)
+    result = proxy('env', 'TODO_TLS_ROLE=check', 'TODO_TLS_DIRECTORY=.', f'TODO_TLS_HOSTNAME={names[0]}',
+                   'APP_TLS_HOSTNAMES=' + ' '.join(names), ENTRYPOINT, allowed=(0, 1), **where)
+    output = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
     if result.returncode:
-        return current, None, result.stdout.strip() or 'the provided certificate does not fit'
-    return current, days_until(result.stdout), ''
+        errors = [line.removeprefix('ERROR: ') for line in result.stderr.splitlines() if line.startswith('ERROR: ')]
+        return output.get('mode', mode(**where)), None, (errors or ['the certificate does not fit'])[-1]
+    return output['mode'], days_until('notAfter=' + output['notAfter']), ''
 
 
-def check(kube_runtime_dir=None, hostnames=None, **where):
+def check(hostnames=None, **where):
     """The nightly look at nginx's certificate; return (lines, problems).
 
-    Provided mode: from REQUEST_DAYS before expiry a request is prepared,
-    with a new key unless a request already waits (so a renewal also
-    replaces the key), and copied to REQUEST_PATH for the CA step;
-    below ALERT_DAYS it is a problem.
-    Local mode: the entrypoint renews its demo certificate only when nginx
-    starts, so below ALERT_DAYS the advice is a restart.
+    Below ALERT_DAYS it is a problem: in provided mode the next certificate
+    needs the CA step (tls-request, sign, tls-install); in local mode the
+    entrypoint renews its demo certificate only when nginx starts.
     """
-    provided = exists('volume', where.get('volume', VOLUME)) and mode(**where) == PROVIDED
-    names = list(hostnames or installed_hostnames(kube_runtime_dir)) if provided else []
-    current, days, problem = status(names, **where)
+    if not exists('volume', where.get('volume', VOLUME)):
+        return [], []
+    current, days, problem = status(list(hostnames or recorded_hostnames()), **where)
     if problem:
         return [], [f'the nginx certificate would stop nginx at its next start: {problem}']
     if days is None:
         return [], []
     lines = [f'nginx certificate ({current} mode): valid {days} more days']
-    if current != PROVIDED:
-        if days < ALERT_DAYS:
-            return lines, [f'the nginx demo certificate expires in {days} days; '
-                           'systemctl --user restart shared-proxy.service renews it']
+    if days >= ALERT_DAYS:
         return lines, []
-    if days < REQUEST_DAYS:
-        if not present(REQUEST, **where):
-            require_ready(**where)
-            make_request(names, new_key=True, **where)
-        REQUEST_PATH.parent.mkdir(parents=True, exist_ok=True)
-        REQUEST_PATH.write_text(proxy('cat', REQUEST, **where).stdout)
-        lines.append(f'A request for the next certificate is ready: {REQUEST_PATH}. Have the CA sign it '
-                     '(app_ca.py sign, or sudo todo-ca-sign), then: python3 -m app_installer tls-install '
-                     '--certificate FILE --ca FILE')
-    if days < ALERT_DAYS:
-        return lines, [f'the nginx certificate expires in {days} days; install the next one '
-                       f'(the request is {REQUEST_PATH})']
-    return lines, []
+    if current == PROVIDED:
+        return lines, [f'the nginx certificate expires in {days} days; run tls-request, have the CA sign '
+                       'the request (app_ca.py sign, or sudo todo-ca-sign), then tls-install']
+    return lines, [f'the nginx demo certificate expires in {days} days; '
+                   'systemctl --user restart shared-proxy.service renews it']

@@ -9,9 +9,8 @@ Installed as /opt/todo/bin/app_dr.py on both DR hosts and run there:
                             role, and could this host take over?
                             (todo-dr-check.timer)
   app_dr.py renew-tls       renew each primary's replication certificate once
-                            fewer than 30 days are left, and prepare the next
-                            request for nginx's certificate from your CA 60
-                            days ahead (todo-replication-tls.timer)
+                            fewer than 30 days are left
+                            (todo-replication-tls.timer)
   app_dr.py preflight ...   read-only: may the group be promoted now? (standby)
   app_dr.py promote ...     preflight, then promote every database (standby)
 
@@ -534,8 +533,6 @@ def main(arguments: Optional[Sequence[str]] = None):
             return 1 if problems else 0
         if args.command == 'renew-tls':
             lines, problems = renew_tls()
-            nginx_lines, nginx_problems = guarded(nginx_tls.renew)
-            lines, problems = lines + nginx_lines, problems + nginx_problems
             print('\n'.join(lines))
             for problem in problems:
                 print(f'ERROR: {problem}', file=sys.stderr)

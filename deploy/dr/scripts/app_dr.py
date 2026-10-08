@@ -9,7 +9,9 @@ Installed as /opt/todo/bin/app_dr.py on both DR hosts and run there:
                             role, and could this host take over?
                             (todo-dr-check.timer)
   app_dr.py renew-tls       renew each primary's replication certificate once
-                            fewer than 30 days are left (todo-replication-tls.timer)
+                            fewer than 30 days are left, and prepare the next
+                            request for nginx's certificate from your CA 60
+                            days ahead (todo-replication-tls.timer)
   app_dr.py preflight ...   read-only: may the group be promoted now? (standby)
   app_dr.py promote ...     preflight, then promote every database (standby)
 
@@ -38,7 +40,7 @@ from typing import Callable, List, Optional, Sequence
 # bin. In a checkout, set PYTHONPATH=deploy/installer:deploy/dr instead.
 # deploy/dr/README.md ("Where DR finds the installer") has the whole rule.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from app_dr_host import replication, replication_tls, transfer  # noqa: E402
+from app_dr_host import nginx_tls, replication, replication_tls, transfer  # noqa: E402
 from app_installer import apps, quadlet, settings  # noqa: E402
 from app_installer.commands import run  # noqa: E402
 
@@ -477,6 +479,14 @@ def readiness(config: Config, exists: Optional[Callable[[str], bool]] = None):
             f'all {len(names)} DR secrets'], []
 
 
+def guarded(look):
+    """look() for nginx's certificate (nginx_tls), with a failure to look reported as a problem."""
+    try:
+        return look()
+    except (OSError, RuntimeError, ValueError) as error:
+        return [], [f'cannot check the nginx certificate: {error}']
+
+
 def parser():
     """Command-line arguments; see the module docstring."""
     result = argparse.ArgumentParser(description='Inspect and safely promote the complete local database group.')
@@ -516,12 +526,16 @@ def main(arguments: Optional[Sequence[str]] = None):
             except RuntimeError as error:  # unreadable settings, or Podman not answering
                 ready, missing = [], [str(error)]
             lines, problems = lines + ready, problems + missing
+            nginx_lines, nginx_problems = guarded(nginx_tls.readiness)
+            lines, problems = lines + nginx_lines, problems + nginx_problems
             print('\n'.join(lines))
             for problem in problems:
                 print(f'ERROR: {problem}', file=sys.stderr)
             return 1 if problems else 0
         if args.command == 'renew-tls':
             lines, problems = renew_tls()
+            nginx_lines, nginx_problems = guarded(nginx_tls.renew)
+            lines, problems = lines + nginx_lines, problems + nginx_problems
             print('\n'.join(lines))
             for problem in problems:
                 print(f'ERROR: {problem}', file=sys.stderr)

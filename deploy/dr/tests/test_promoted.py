@@ -85,6 +85,8 @@ class PromotedHost:
             patch.object(promoted.secrets, 'read', lambda name: 'admin-password'),
             patch.object(promoted.time, 'sleep', lambda seconds: None),
             patch.object(target_render, 'record_path', return_value=self.record(directory)),
+            # A pair in local mode, whatever the machine running the tests holds (test_nginx_tls has provided).
+            patch.object(promoted.nginx_tls, 'PAIR_MODE', Path(directory) / 'nginx-tls-mode'),
         ]
 
     @staticmethod

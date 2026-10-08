@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import failover, inventory, quarantine, recovery, standby
+from . import failover, inventory, nginx_tls, quarantine, recovery, standby
 from .transport import Host
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -14,7 +14,7 @@ RECOVERY = ('current_primary', 'rebuild_standby')
 COMMANDS = {
     'install-quarantine-tool': INITIAL, 'preflight-standby': INITIAL, 'sync-standby-secrets': INITIAL,
     'bootstrap-standby': INITIAL, 'replication-status': INITIAL, 'install-dr-tool': INITIAL,
-    'reseed-standby': INITIAL,
+    'reseed-standby': INITIAL, 'nginx-tls-request': INITIAL, 'nginx-tls-install': INITIAL,
     'failover': RECOVERY, 'deploy-promoted-application': RECOVERY, 'configure-backup': RECOVERY, 'preflight-standby-rebuild': RECOVERY,
     'rebuild-standby': RECOVERY, 'cluster-status': RECOVERY,
 }
@@ -35,6 +35,12 @@ def parser():
             command.add_argument('--confirm-promotion', required=True, help='exactly "<this host>"')
         if name == 'reseed-standby':
             command.add_argument('--confirm-reseed', required=True, help='exactly "<standby host>"')
+        if name == 'nginx-tls-request':
+            command.add_argument('--output', type=Path, required=True, help='where <host>.csr is written')
+        if name == 'nginx-tls-install':
+            command.add_argument('--certificates', type=Path, required=True,
+                                 help='a directory holding <host>.crt for both hosts')
+            command.add_argument('--ca', type=Path, required=True, help="your CA's root certificate (PEM)")
         if name in ('preflight-standby-rebuild', 'rebuild-standby'):
             command.add_argument('--confirm-fenced', required=True, help='exactly "<rebuild host> is fenced"')
             command.add_argument('--confirm-reseed', required=True, help='exactly "<rebuild host>"')
@@ -53,6 +59,10 @@ def dispatch(args, controller, hosts):
         return function[args.command](root, controller, hosts['primary'], hosts['standby'])
     if args.command == 'install-dr-tool':
         return standby.install_dr_tools(root, controller, hosts['primary'], hosts['standby'])
+    if args.command == 'nginx-tls-request':
+        return nginx_tls.request(root, controller, hosts['primary'], hosts['standby'], args.output)
+    if args.command == 'nginx-tls-install':
+        return nginx_tls.install(root, controller, hosts['primary'], hosts['standby'], args.certificates, args.ca)
     if args.command == 'reseed-standby':
         return recovery.reseed_standby(root, controller, hosts['primary'], hosts['standby'], args.confirm_reseed)
     current, rebuild = hosts['current_primary'], hosts['rebuild_standby']

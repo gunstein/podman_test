@@ -56,8 +56,10 @@ not. Inspect `python3 /opt/todo/bin/app_dr.py status` and
 
 ## 4. Send users to Trondheim
 
-Have the DNS owner point the public names at Trondheim's address. Clients
-must trust Trondheim's CA (fingerprint in the JSON; the file is
+Have the DNS owner point the public names at Trondheim's address. If the
+JSON says `"client_trust": "unchanged"`, the pair uses certificates from your
+CA and clients need nothing new. If it says `"required"` (the demo CA),
+clients must trust Trondheim's CA (fingerprint in the JSON; the file is
 `~/.config/todo/todo-nginx-root.crt`). Log in to each app in a browser:
 `failover` checks the login page, not a real login.
 

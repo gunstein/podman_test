@@ -1,0 +1,141 @@
+"""nginx's certificate from the organisation's CA (provided mode) on both hosts of a DR pair.
+
+A single host gets provided mode from the installer (app_installer.tls,
+docs/TLS.md). A DR pair needs more, because the standby runs only its
+databases: it has no nginx, and no TLS volume, until a failover starts the
+application tier there. Started then without a certificate, nginx would make
+a new demo CA, and every client would have to trust it during the incident.
+So each host gets its own certificate, for the same public hostnames, before
+it is needed:
+
+  request   prepare the TLS volume and the proxy image if the host has none
+            (a standby), make a key in the volume, and return the CSR
+  install   check and install the signed certificate (app_installer.tls)
+  set_mode  record the pair's mode on this host (PAIR_MODE): once both hosts
+            hold their certificate, app-ops sets provided on both
+
+With the pair in provided mode, app_dr.py check (both hosts, every 15
+minutes) requires a certificate that fits this host's recorded hostnames,
+deploy-promoted refuses to start nginx without one, and failover needs no
+new client trust. The hostnames come from the host's record
+(target-values.json), which a standby writes when it is bootstrapped.
+"""
+from pathlib import Path
+
+from app_installer import images, settings, target_render, tls
+from app_installer.commands import exists, run
+
+# The pair's nginx TLS mode on this host: 'provided' once app-ops installed both hosts' certificates.
+PAIR_MODE = Path.home() / settings.DR_CONFIG / 'nginx-tls-mode'
+
+
+def pair_mode():
+    """'provided' if app-ops recorded that this pair serves the organisation's certificates, else 'local'."""
+    try:
+        return PAIR_MODE.read_text().strip() or 'local'
+    except FileNotFoundError:
+        return 'local'
+
+
+def set_mode(mode):
+    """Record the pair's mode on this host; True if it changed."""
+    if mode not in ('local', tls.PROVIDED):
+        raise ValueError(f'Unknown nginx TLS mode: {mode}')
+    if pair_mode() == mode:
+        return False
+    PAIR_MODE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    PAIR_MODE.write_text(mode + '\n')
+    return True
+
+
+def volume_claim(target):
+    """The bundle's PersistentVolumeClaim for nginx's TLS volume, as YAML (the same as replication.data_claim)."""
+    import yaml  # a DR-only dependency, as in replication.data_claim
+    claims = [document for document in yaml.safe_load_all(target.manifests['shared-proxy.yaml'].decode())
+              if isinstance(document, dict) and document.get('kind') == 'PersistentVolumeClaim'
+              and document.get('metadata', {}).get('name') == tls.VOLUME]
+    if len(claims) != 1:
+        raise ValueError(f'shared-proxy.yaml must define exactly one claim {tls.VOLUME}')
+    return yaml.safe_dump(claims[0])
+
+
+def prepare(project_root, bundle_dir, node_address):
+    """Give a host without nginx (a standby) the proxy image and the TLS volume; True if anything changed.
+
+    The image comes from the offline bundle, like every image a failover
+    starts. The volume is created from the bundle's own claim, so it is
+    exactly the one nginx will use after a failover, owned by the nginx
+    user (volume.podman.io/uid).
+    """
+    changed = any(images.prepare_shared(bundle_dir, 'offline', bundle_dir).values())
+    if not exists('volume', tls.VOLUME):
+        target = target_render.load_on_host(project_root, node_address)
+        run('podman', 'kube', 'play', '-', input=volume_claim(target))
+        changed = True
+    return changed
+
+
+def request(project_root, bundle_dir, node_address):
+    """A CSR for this host's recorded hostnames; the key waits in the TLS volume. Returns (csr, hostnames)."""
+    prepare(project_root, bundle_dir, node_address)
+    tls.require_ready()
+    names = tls.recorded_hostnames()
+    return tls.make_request(names), names
+
+
+def install(project_root, bundle_dir, node_address, certificate, ca):
+    """Check and install this host's signed certificate (tls.install); True if anything changed.
+
+    A running nginx (the primary) reloads; a standby's nginx reads it at
+    its first start, after a failover.
+    """
+    prepare(project_root, bundle_dir, node_address)
+    return tls.install(certificate, ca, hostnames=tls.recorded_hostnames())
+
+
+def fitting():
+    """(days left, '') if this host holds a certificate from your CA that fits its recorded hostnames, else (None, why)."""
+    current, days, problem = tls.status(tls.recorded_hostnames())
+    if problem or current != tls.PROVIDED or days is None:
+        return None, problem or 'this host has no certificate from your CA'
+    return days, ''
+
+
+def readiness():
+    """Could nginx start here with the organisation's certificate? Returns (lines, problems), like app_dr.check.
+
+    Only for a pair in provided mode: then this host must hold a certificate
+    that fits its recorded hostnames, with at least tls.ALERT_DAYS left.
+    """
+    if pair_mode() != tls.PROVIDED:
+        return [], []
+    days, problem = fitting()
+    if days is None:
+        return [], [f'nginx could not start here with your CA\'s certificate: {problem}; '
+                    'install it with app-ops nginx-tls-request and nginx-tls-install']
+    if days < tls.ALERT_DAYS:
+        return [], [f'the nginx certificate on this host expires in {days} days; '
+                    'renew it with app-ops nginx-tls-request and nginx-tls-install']
+    return [f'nginx certificate from your CA: valid {days} more days'], []
+
+
+def renew():
+    """The nightly look (renew-tls): prepare the next request 60 days ahead; (lines, problems).
+
+    Only for a pair in provided mode, on both hosts; app-ops nginx-tls-request
+    then collects the waiting requests.
+    """
+    if pair_mode() != tls.PROVIDED:
+        return [], []
+    return tls.check(hostnames=tls.recorded_hostnames())
+
+
+def require_for_failover():
+    """Raise unless a pair in provided mode has a fitting certificate here; deploy-promoted calls it first."""
+    if pair_mode() != tls.PROVIDED:
+        return
+    days, problem = fitting()
+    if days is None:
+        raise RuntimeError('This pair serves certificates from your CA, but this host has none that fits '
+                           f'({problem}). Starting nginx would make a new demo CA that '
+                           'no client trusts; install this host\'s certificate first (app-ops nginx-tls-install).')

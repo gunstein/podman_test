@@ -26,9 +26,9 @@ LOGIN_FORM = '<form id="kc-form-login"><input id="username" name="username"></fo
 class FailoverWorld(World):
     """The promoted host runs locally, so the fake answers its identity; record state and failures are set."""
 
-    def __init__(self, record=None, fail=None, hostnames=None):
+    def __init__(self, record=None, fail=None, hostnames=None, tls_mode=None):
         super().__init__()
-        self.record, self.fail = record, fail
+        self.record, self.fail, self.tls_mode = record, fail, tls_mode
         # The public hostnames the promoted host recorded as a standby.
         self.hostnames = hostnames or {"TARGET_EXTERNAL_HOSTNAME": "todo.test", "TARGET_NOTES_HOSTNAME": "notes.test"}
 
@@ -58,7 +58,8 @@ class FailoverWorld(World):
                                           f"connect-src {sources}; frame-ancestors 'none'\n", 0
             return ("https", hostname, address), "ready", 0
         if command[:3] == ["podman", "exec", "nginx"]:
-            return ("ca",), "sha256 Fingerprint=AA:BB\n", 0
+            mode = f"{self.tls_mode}\n" if self.tls_mode else ""
+            return ("ca",), mode + "sha256 Fingerprint=AA:BB\n", 0
         return super().answer(host, command, stdin)
 
 
@@ -93,6 +94,15 @@ class FailoverTests(unittest.TestCase):
         self.assertEqual(report["users"]["ca_sha256"], "AA:BB")
         self.assertIn("todo.test and notes.test at 192.0.2.11", report["users"]["next"])
         self.assertIn("checks the login page, not a login", report["users"]["next"])
+        self.assertEqual(report["users"]["client_trust"], "required")
+        self.assertIn("Have clients trust this host's CA, SHA-256 AA:BB", report["users"]["next"])
+
+    def test_with_certificates_from_your_ca_clients_need_nothing_new(self):
+        report = self.run_failover(FailoverWorld(tls_mode="provided"))
+        self.assertEqual(report["users"]["client_trust"], "unchanged")
+        self.assertEqual(report["users"]["ca_sha256"], "AA:BB")
+        self.assertIn("Clients already trust your CA (provided mode)", report["users"]["next"])
+        self.assertNotIn("Have clients trust", report["users"]["next"])
 
     def test_the_checks_use_the_public_hostnames_the_host_recorded(self):
         world = FailoverWorld(hostnames={"TARGET_EXTERNAL_HOSTNAME": "shop.example.org",

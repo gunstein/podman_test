@@ -45,7 +45,8 @@ class PVCStorageTests(unittest.TestCase):
                 if "persistentVolumeClaim" in volume:
                     claim = volume["persistentVolumeClaim"]["claimName"]
                     mount = mounts[volume["name"]]
-                    self.assertFalse(mount.get("readOnly", False))
+                    # nginx serves its TLS volume read-only; only its init container writes it.
+                    self.assertEqual(mount.get("readOnly", False), claim == "todo-nginx-data")
                     resolved[claim] = mount["mountPath"]
             self.assertEqual(resolved, {name: path for name, (path, uid) in expected.items()})
             for name, (_path, uid) in expected.items():
@@ -54,6 +55,18 @@ class PVCStorageTests(unittest.TestCase):
                 })
                 self.assertEqual(container["securityContext"]["runAsUser"], uid)
                 self.assertEqual(container["securityContext"]["runAsGroup"], uid)
+
+    def test_only_the_nginx_tls_init_container_writes_the_tls_volume(self):
+        pod = next(d for d in yaml.safe_load_all((RUNTIME / "shared-proxy.yaml").read_text()) if d["kind"] == "Pod")
+        roles = {}
+        for container in pod["spec"]["initContainers"] + pod["spec"]["containers"]:
+            mount = next(m for m in container["volumeMounts"] if m["name"] == "tls-data")
+            role = next(e["value"] for e in container["env"] if e["name"] == "TODO_TLS_ROLE")
+            roles[container["name"]] = (role, mount.get("readOnly", False))
+            self.assertEqual(container["securityContext"]["runAsUser"], 101)
+        self.assertEqual(roles, {"nginx-tls": ("provision", False), "nginx": ("serve", True)})
+        self.assertEqual(pod["spec"]["initContainers"][0]["args"], ["true"])
+        self.assertEqual(pod["spec"]["initContainers"][0]["image"], pod["spec"]["containers"][0]["image"])
 
     def test_no_volume_units_are_installed_or_required(self):
         for path in (ROOT / "deploy/quadlet").glob("*.kube.j2"):

@@ -57,9 +57,20 @@ fi
 cmp "$work_directory/tls-2" "$work_directory/tls-3"
 cat "$work_directory/tls-3"
 
-# Provided mode on the same volume: a request made in the volume, signed by the
-# offline CA tool, installed by the installer; nginx then starts with exactly
-# that certificate and the demo CA is gone.
+# nginx itself, as in the pod: TODO_TLS_ROLE=serve with the volume read-only.
+serve_read_only() {
+  podman run --rm --env TODO_TLS_ROLE=serve \
+    --env TODO_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
+    --volume "$volume:/var/lib/todo-tls:ro" \
+    --volume "$work_directory/nginx-config:/etc/todo-nginx:ro,Z" \
+    "$image" nginx -t -c /etc/todo-nginx/nginx.conf
+}
+serve_read_only
+
+# Provided mode on the same volume, with the CA on this same host: a request
+# made in the volume, signed by app_ca.py from its own directory, installed by
+# the installer; nginx then starts with exactly that certificate, read-only,
+# and the demo CA is gone.
 printf 'smoke test passphrase\n' > "$work_directory/passphrase"
 python3 "$project_root/deploy/scripts/app_ca.py" init --directory "$work_directory/ca" \
   --domain todo.test --domain notes.test --passphrase-file "$work_directory/passphrase"
@@ -98,4 +109,5 @@ podman run --rm --volume "$volume:/var/lib/todo-tls:ro" --entrypoint sh "$image"
   cat /var/lib/todo-tls/server.crt
 ' > "$work_directory/provided.crt"
 cmp "$work_directory/provided.crt" "$work_directory/host.crt"
+serve_read_only
 echo 'Provided TLS mode: installed and served as issued'

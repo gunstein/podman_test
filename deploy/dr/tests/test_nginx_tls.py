@@ -1,6 +1,6 @@
 """nginx_tls: each DR host's nginx certificate from the organisation's CA, with real openssl.
 
-The Podman fake and the offline CA come from the installer's tests
+The Podman fake and the CA come from the installer's tests
 (test_tls.FakePodman, deploy/scripts/app_ca.py): every openssl step runs here
 against a directory that plays the TLS volume. The standby's TLS volume is
 created from the real bundle's claim (dr_target).

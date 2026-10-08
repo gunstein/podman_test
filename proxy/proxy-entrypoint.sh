@@ -1,16 +1,30 @@
 #!/bin/sh
-# Entry point of the nginx container. It writes Podman's DNS server as nginx's
+# Entry point of the proxy image. It writes Podman's DNS server as nginx's
 # resolver, makes sure the persistent TLS volume holds a certificate for every
-# public hostname, then runs nginx. The volume's tls-mode file says how:
-#   local (no file): it creates the demo CA (10 years) and one leaf certificate
-#     (397 days), and renews either when it is missing, expires within 30 days
-#     or no longer fits.
-#   provided: app_installer tls-install put a certificate from the
-#     organisation's CA here. It is only checked, never issued or replaced,
-#     and a missing or wrong file stops nginx: never a silent demo CA.
+# public hostname, then runs the command it was given. The volume's tls-mode
+# file says how the certificate gets there:
+#   local (no file): the demo CA (10 years) and one leaf certificate (397 days)
+#     are created here, and either is renewed when it is missing, expires
+#     within 30 days or no longer fits.
+#   provided: app_installer tls-install put a certificate from a separate CA
+#     process here. It is only checked, never issued or replaced, and a
+#     missing or wrong file stops the start: never a silent demo CA.
+# TODO_TLS_ROLE says what this container may do with the volume:
+#   provision (the default): it may write. The shared-proxy pod runs this
+#     role in its init container, nginx-tls, which then runs `true`.
+#   serve: nginx itself, with the volume mounted read-only. It never writes
+#     there; it only checks that the files it is about to serve fit.
 set -efu
 
 tls_directory=${TODO_TLS_DIRECTORY:-/var/lib/todo-tls}
+tls_role=${TODO_TLS_ROLE:-provision}
+case "$tls_role" in
+    provision|serve) ;;
+    *)
+        echo "ERROR: invalid TODO_TLS_ROLE: $tls_role" >&2
+        exit 1
+        ;;
+esac
 tls_hostname=${TODO_TLS_HOSTNAME:-localhost}
 
 case "$tls_hostname" in
@@ -45,39 +59,49 @@ awk '$1 == "nameserver" {
     print "resolver_timeout 2s;"
 }' /etc/resolv.conf > /tmp/podman-resolver.conf
 
-umask 077
-mkdir -p "$tls_directory"
+# Check the files a start would serve, without writing anything: they exist,
+# the key belongs to the certificate, and the certificate is valid for every
+# hostname from ca.crt (any intermediates follow it in server.crt).
+check_served() {
+    for file in server.crt server.key ca.crt; do
+        if [ ! -s "$tls_directory/$file" ]; then
+            echo "ERROR: $1 TLS mode, but $file is missing; $2" >&2
+            exit 1
+        fi
+    done
+    if [ "$(openssl x509 -in "$tls_directory/server.crt" -noout -pubkey)" != \
+        "$(openssl pkey -in "$tls_directory/server.key" -pubout)" ]; then
+        echo "ERROR: $1 TLS mode, but server.key does not belong to server.crt" >&2
+        exit 1
+    fi
+    for name in $tls_hostname $tls_hostnames; do
+        if ! openssl verify -no_check_time -CAfile "$tls_directory/ca.crt" \
+            -untrusted "$tls_directory/server.crt" -verify_hostname "$name" \
+            "$tls_directory/server.crt" >/dev/null 2>&1; then
+            echo "ERROR: $1 TLS mode, but server.crt is not valid for $name from ca.crt" >&2
+            exit 1
+        fi
+    done
+    # An expired certificate still starts nginx: browsers then name the cause.
+    if ! openssl x509 -in "$tls_directory/server.crt" -noout -checkend 0 >/dev/null 2>&1; then
+        echo "WARNING: the $1 TLS certificate has expired; $2" >&2
+    fi
+}
 
 tls_mode=local
 if [ -s "$tls_directory/tls-mode" ]; then
     tls_mode=$(cat "$tls_directory/tls-mode")
 fi
 case "$tls_mode" in
-    local) ;;
+    local)
+        if [ "$tls_role" = serve ]; then
+            # The init container (provision) issued or renewed the demo certificate.
+            check_served local 'the nginx-tls init container provisions it'
+            exec "$@"
+        fi
+        ;;
     provided)
-        for file in server.crt server.key ca.crt; do
-            if [ ! -s "$tls_directory/$file" ]; then
-                echo "ERROR: provided TLS mode, but $file is missing; run app_installer tls-install" >&2
-                exit 1
-            fi
-        done
-        if [ "$(openssl x509 -in "$tls_directory/server.crt" -noout -pubkey)" != \
-            "$(openssl pkey -in "$tls_directory/server.key" -pubout)" ]; then
-            echo "ERROR: provided TLS mode, but server.key does not belong to server.crt" >&2
-            exit 1
-        fi
-        for name in $tls_hostname $tls_hostnames; do
-            if ! openssl verify -no_check_time -CAfile "$tls_directory/ca.crt" \
-                -untrusted "$tls_directory/server.crt" -verify_hostname "$name" \
-                "$tls_directory/server.crt" >/dev/null 2>&1; then
-                echo "ERROR: provided TLS mode, but server.crt is not valid for $name from ca.crt" >&2
-                exit 1
-            fi
-        done
-        # An expired certificate still starts nginx: browsers then name the cause.
-        if ! openssl x509 -in "$tls_directory/server.crt" -noout -checkend 0 >/dev/null 2>&1; then
-            echo "WARNING: the provided TLS certificate has expired; install the next one" >&2
-        fi
+        check_served provided 'run app_installer tls-install'
         exec "$@"
         ;;
     *)
@@ -85,6 +109,10 @@ case "$tls_mode" in
         exit 1
         ;;
 esac
+
+# Only local mode in the provision role writes the volume, from here on.
+umask 077
+mkdir -p "$tls_directory"
 
 if [ ! -s "$tls_directory/ca.crt" ] || [ ! -s "$tls_directory/ca.key" ] || \
     ! openssl x509 -in "$tls_directory/ca.crt" -noout -checkend 2592000 >/dev/null 2>&1; then

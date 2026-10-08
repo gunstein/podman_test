@@ -26,9 +26,12 @@ class EntrypointTests(unittest.TestCase):
         self.volume = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.volume)
 
-    def start(self, names=NAMES):
+    def start(self, names=NAMES, role=None):
         environment = {**os.environ, 'TODO_TLS_DIRECTORY': str(self.volume),
                        'TODO_TLS_HOSTNAME': names[0], 'APP_TLS_HOSTNAMES': ' '.join(names)}
+        environment.pop('TODO_TLS_ROLE', None)
+        if role:
+            environment['TODO_TLS_ROLE'] = role
         return subprocess.run(['sh', SCRIPT, 'true'], env=environment, capture_output=True, text=True, check=False)
 
     def provided(self, names=NAMES, days=365, other_key=False):
@@ -80,6 +83,40 @@ class EntrypointTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertIn(message, result.stderr)
                 self.assertFalse((self.volume / 'ca.key').exists())
+
+    def snapshot(self):
+        return {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in self.volume.iterdir()}
+
+    def test_nginx_serves_a_read_only_volume_the_init_container_provisioned(self):
+        # The pod: nginx-tls (provision) writes the demo certificate, then nginx (serve) only reads it.
+        self.assertEqual(self.start(role='provision').returncode, 0)
+        before = self.snapshot()
+        os.chmod(self.volume, 0o555)
+        self.addCleanup(os.chmod, self.volume, 0o700)
+        result = self.start(role='serve')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_nginx_never_issues_a_certificate_itself(self):
+        result = self.start(role='serve')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('local TLS mode, but server.crt is missing', result.stderr)
+        self.assertEqual(list(self.volume.iterdir()), [])
+
+    def test_nginx_serves_a_provided_certificate_read_only_and_checks_it(self):
+        self.provided()
+        before = self.snapshot()
+        self.assertEqual(self.start(role='serve').returncode, 0)
+        self.assertEqual(self.snapshot(), before)
+        result = self.start(NAMES + ('extra.example.test',), role='serve')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('not valid for extra.example.test', result.stderr)
+
+    def test_an_unknown_role_stops_before_anything(self):
+        result = self.start(role='admin')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('invalid TODO_TLS_ROLE', result.stderr)
+        self.assertEqual(list(self.volume.iterdir()), [])
 
     def test_an_unknown_mode_stops_nginx(self):
         (self.volume / 'tls-mode').write_text('custom\n')

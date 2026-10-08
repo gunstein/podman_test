@@ -175,8 +175,9 @@ without PITR (backlog D2).
 By default nginx makes its own demo CA when it first starts, so after a
 failover the promoted host serves a new CA and every client must trust it
 before users can work. In provided mode
-([TLS.md](../../docs/TLS.md#provided-mode-the-organisations-own-ca)) both
-hosts hold a certificate from your offline CA for the same public hostnames,
+([TLS.md](../../docs/TLS.md#provided-mode-a-separate-ca-process)) both
+hosts hold a certificate from your CA (`app_ca.py`, which may run on either
+host from its own storage, or your organisation's PKI) for the same public hostnames,
 issued before it is needed, and clients trust that CA once. The standby,
 which runs no nginx, keeps its certificate in the same TLS volume nginx will
 use after a failover.
@@ -185,7 +186,7 @@ use after a failover.
 # On the controller: a CSR from each host (each key stays in its TLS volume).
 python3 -m app_ops --inventory initial.yaml nginx-tls-request --output ~/nginx-requests
 #   -> ~/nginx-requests/todo-primary.csr, ~/nginx-requests/todo-standby.csr
-# On the CA machine, for each host:
+# With the CA (app_ca.py sign, or sudo todo-ca-sign in v1), for each host:
 python3 deploy/scripts/app_ca.py sign --directory /media/ca-usb/todo-ca \
   --request todo-standby.csr --output todo-standby.crt
 # Back on the controller, with both <host>.crt in one directory:

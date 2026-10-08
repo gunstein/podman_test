@@ -64,8 +64,8 @@ def tls_command(args):
     """tls-request | tls-install | tls-status: nginx's certificate in provided mode (tls.py)."""
     if args.command == 'tls-request':
         names = tls.request(args.output, args.new_key, kube_runtime_dir=args.kube_runtime_dir)
-        print(f'Have the CA sign {args.output}, then: python3 -m app_installer tls-install '
-              '--certificate FILE --ca FILE', file=sys.stderr)
+        print(f'Have the CA sign {args.output} (app_ca.py sign, or sudo todo-ca-sign), then: '
+              'python3 -m app_installer tls-install --certificate FILE --ca FILE', file=sys.stderr)
         print(json.dumps({'changed': True, 'request': str(args.output), 'hostnames': names}))
         return 0
     if args.command == 'tls-install':

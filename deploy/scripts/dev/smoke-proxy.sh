@@ -56,3 +56,46 @@ if cmp -s "$work_directory/tls-1" "$work_directory/tls-2"; then
 fi
 cmp "$work_directory/tls-2" "$work_directory/tls-3"
 cat "$work_directory/tls-3"
+
+# Provided mode on the same volume: a request made in the volume, signed by the
+# offline CA tool, installed by the installer; nginx then starts with exactly
+# that certificate and the demo CA is gone.
+printf 'smoke test passphrase\n' > "$work_directory/passphrase"
+python3 "$project_root/deploy/scripts/app_ca.py" init --directory "$work_directory/ca" \
+  --domain todo.test --domain notes.test --passphrase-file "$work_directory/passphrase"
+tls() {
+  PYTHONPATH="$project_root/deploy/installer" python3 - "$work_directory" "$volume" "$image" "$@" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+from app_installer import tls
+
+work, volume, image, step = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
+where = {'volume': volume, 'image': image, 'kube_runtime_dir': work}
+if step == 'request':
+    print(json.dumps(tls.request(work / 'host.csr', **where)))
+else:
+    print(json.dumps(tls.install(work / 'host.crt', work / 'ca/ca.crt', **where)))
+PY
+}
+tls request
+python3 "$project_root/deploy/scripts/app_ca.py" sign --directory "$work_directory/ca" \
+  --request "$work_directory/host.csr" --output "$work_directory/host.crt" \
+  --passphrase-file "$work_directory/passphrase"
+test "$(tls install)" = true
+test "$(tls install)" = false
+podman run --rm \
+  --env TODO_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
+  --volume "$volume:/var/lib/todo-tls" \
+  --volume "$work_directory/nginx-config:/etc/todo-nginx:ro,Z" \
+  "$image" nginx -t -c /etc/todo-nginx/nginx.conf
+podman run --rm --volume "$volume:/var/lib/todo-tls:ro" --entrypoint sh "$image" -ec '
+  test "$(cat /var/lib/todo-tls/tls-mode)" = provided
+  test ! -e /var/lib/todo-tls/ca.key
+  test ! -e /var/lib/todo-tls/request.key
+  test "$(stat -c "%a" /var/lib/todo-tls/server.key)" = 600
+  cat /var/lib/todo-tls/server.crt
+' > "$work_directory/provided.crt"
+cmp "$work_directory/provided.crt" "$work_directory/host.crt"
+echo 'Provided TLS mode: installed and served as issued'

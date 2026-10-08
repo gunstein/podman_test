@@ -32,13 +32,12 @@ The host's openssl command does the certificate work; the Python standard
 library cannot create certificates. Private keys only pass through a 0700
 temporary directory and the database containers.
 """
-import calendar
 import secrets as random
 import tempfile
 import time
 from pathlib import Path
 
-from app_installer import apps, secrets
+from app_installer import apps, secrets, tls
 from app_installer.commands import exists, run
 
 DATA = '/var/lib/postgresql/data'
@@ -166,10 +165,7 @@ def install_server_tls(database, node_address):
 
 def days_left(certificate):
     """Whole days until the certificate file expires; negative once it has expired."""
-    end = openssl('x509', '-in', str(certificate), '-noout', '-enddate').stdout.strip()
-    # openssl prints notAfter=Oct  7 12:00:00 2028 GMT, always in English and in UTC.
-    expires = calendar.timegm(time.strptime(end.split('=', 1)[1], '%b %d %H:%M:%S %Y %Z'))
-    return int((expires - time.time()) // 86400)
+    return tls.days_until(openssl('x509', '-in', str(certificate), '-noout', '-enddate').stdout)
 
 
 def certificate_address(certificate):

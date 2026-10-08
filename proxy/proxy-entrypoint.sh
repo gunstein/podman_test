@@ -1,12 +1,16 @@
 #!/bin/sh
-# Entry point of the nginx container. In the persistent TLS volume it creates
-# the demo CA (10 years) and one leaf certificate for every public hostname
-# (397 days), and renews either when it is missing, expires within 30 days or
-# no longer fits; it writes Podman's DNS server as nginx's resolver; then it
-# runs nginx.
+# Entry point of the nginx container. It writes Podman's DNS server as nginx's
+# resolver, makes sure the persistent TLS volume holds a certificate for every
+# public hostname, then runs nginx. The volume's tls-mode file says how:
+#   local (no file): it creates the demo CA (10 years) and one leaf certificate
+#     (397 days), and renews either when it is missing, expires within 30 days
+#     or no longer fits.
+#   provided: app_installer tls-install put a certificate from the
+#     organisation's CA here. It is only checked, never issued or replaced,
+#     and a missing or wrong file stops nginx: never a silent demo CA.
 set -efu
 
-tls_directory=/var/lib/todo-tls
+tls_directory=${TODO_TLS_DIRECTORY:-/var/lib/todo-tls}
 tls_hostname=${TODO_TLS_HOSTNAME:-localhost}
 
 case "$tls_hostname" in
@@ -43,6 +47,44 @@ awk '$1 == "nameserver" {
 
 umask 077
 mkdir -p "$tls_directory"
+
+tls_mode=local
+if [ -s "$tls_directory/tls-mode" ]; then
+    tls_mode=$(cat "$tls_directory/tls-mode")
+fi
+case "$tls_mode" in
+    local) ;;
+    provided)
+        for file in server.crt server.key ca.crt; do
+            if [ ! -s "$tls_directory/$file" ]; then
+                echo "ERROR: provided TLS mode, but $file is missing; run app_installer tls-install" >&2
+                exit 1
+            fi
+        done
+        if [ "$(openssl x509 -in "$tls_directory/server.crt" -noout -pubkey)" != \
+            "$(openssl pkey -in "$tls_directory/server.key" -pubout)" ]; then
+            echo "ERROR: provided TLS mode, but server.key does not belong to server.crt" >&2
+            exit 1
+        fi
+        for name in $tls_hostname $tls_hostnames; do
+            if ! openssl verify -no_check_time -CAfile "$tls_directory/ca.crt" \
+                -untrusted "$tls_directory/server.crt" -verify_hostname "$name" \
+                "$tls_directory/server.crt" >/dev/null 2>&1; then
+                echo "ERROR: provided TLS mode, but server.crt is not valid for $name from ca.crt" >&2
+                exit 1
+            fi
+        done
+        # An expired certificate still starts nginx: browsers then name the cause.
+        if ! openssl x509 -in "$tls_directory/server.crt" -noout -checkend 0 >/dev/null 2>&1; then
+            echo "WARNING: the provided TLS certificate has expired; install the next one" >&2
+        fi
+        exec "$@"
+        ;;
+    *)
+        echo "ERROR: unknown TLS mode in $tls_directory/tls-mode: $tls_mode" >&2
+        exit 1
+        ;;
+esac
 
 if [ ! -s "$tls_directory/ca.crt" ] || [ ! -s "$tls_directory/ca.key" ] || \
     ! openssl x509 -in "$tls_directory/ca.crt" -noout -checkend 2592000 >/dev/null 2>&1; then

@@ -3,14 +3,38 @@
 Four certificates, four different stories. See when each expires:
 
 ```bash
-# nginx: the leaf users see, and the demo CA that signed it
+# nginx: its TLS mode (local or provided) and how many days are left
+PYTHONPATH=deploy/installer python3 -m app_installer tls-status
+# nginx: the leaf users see, and the CA that signed it
 podman exec nginx openssl x509 -in /var/lib/todo-tls/server.crt -noout -enddate
 podman exec nginx openssl x509 -in /var/lib/todo-tls/ca.crt -noout -enddate
 # replication: the primary's server certificates and the replication CA, in days
 python3 /opt/todo/bin/app_dr.py check | grep -i 'certificate\|Replication CA'
 ```
 
-## nginx leaf (397 days)
+## nginx certificate from your own CA (provided mode)
+
+Set up as in [TLS.md](../TLS.md#provided-mode-the-organisations-own-ca). The
+nightly backup run checks it: 60 days before the end it prepares
+`~/.config/todo/nginx-tls-request.csr` (a new key waits in the TLS volume),
+and below 30 days it fails with `the nginx certificate expires in N days`.
+Take the request to the CA machine, sign it, and install the result:
+
+```bash
+python3 deploy/scripts/app_ca.py sign --directory /media/ca-usb/todo-ca \
+  --request nginx-tls-request.csr --output host.crt          # on the CA machine
+PYTHONPATH=deploy/installer python3 -m app_installer tls-install \
+  --certificate ~/host.crt --ca ~/ca.crt                      # on the host
+```
+
+| Message | Meaning | Do |
+|---|---|---|
+| `tls-install`: `belongs to neither the waiting request ... nor the installed key` | It was signed from another host's request, or from an older one replaced with `--new-key` | Sign the request this host made last |
+| `tls-install`: `not valid for NAME from this CA` | It misses a hostname nginx serves, is expired, or came from another CA | Check `--ca`; make a new request (`tls-request`) and sign it |
+| nginx does not start: `ERROR: provided TLS mode, but ...` in `journalctl --user -u shared-proxy.service` | A file in the TLS volume is missing or does not fit, often after a new hostname was added | `tls-request`, sign, `tls-install`; nginx never falls back to the demo CA |
+| `does not know provided TLS mode` | The proxy image predates provided mode | Rebuild it (`install --refresh-images`) or load it from a current offline bundle |
+
+## nginx leaf (397 days, local mode)
 
 **You notice it** when browsers warn about an expired certificate. nginx
 renews its leaf **when it starts** if less than 30 days are left, signed by
@@ -22,8 +46,10 @@ podman exec nginx openssl x509 -in /var/lib/todo-tls/server.crt -noout -enddate
 ```
 
 A running nginx never renews by itself: a host that runs for over a year
-without a restart lets it expire (backlog U2 adds a warning). Tested in
-acceptance: every start of nginx checks and renews.
+without a restart would let it expire. On a single host the nightly backup run
+fails below 30 days with `the nginx demo certificate expires in N days`; the
+restart above renews it. Tested in acceptance: every start of nginx checks
+and renews.
 
 ## nginx demo CA (10 years)
 

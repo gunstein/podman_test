@@ -3,8 +3,8 @@
 FakePodman runs what tls.py starts in a throwaway proxy container (podman
 run ... /bin/sh -c ...) as a local process in a temporary directory that
 plays the TLS volume, so every openssl step is real. Certificates come from
-the offline CA tool, deploy/scripts/app_ca.py, the way an administrator
-would issue them.
+the CA tool, deploy/scripts/app_ca.py, run on this same host from its own
+directory, apart from the directory that plays the TLS volume.
 """
 import importlib.util
 import json
@@ -190,6 +190,52 @@ class InstallTests(TlsTest):
         self.assertEqual(oct((self.volume / 'ca.crt').stat().st_mode & 0o777), '0o644')
         # Installing the same files again changes nothing.
         self.assertFalse(self.install(certificate))
+
+    def test_the_whole_lifecycle_runs_with_the_ca_on_the_same_host_and_keeps_both_keys_apart(self):
+        # The CA directory and the TLS volume are two directories of this one host.
+        self.local_mode()
+        request, _ = self.request()
+        server_key = self.podman.file(tls.REQUEST_KEY)
+        self.assertTrue(self.install(self.sign(request)))
+        ca_key = (self.ca / 'ca.key').read_text()
+        volume = {path.name: path.read_text() for path in self.volume.iterdir()}
+        # nginx's key stayed in the volume; the CA key never went there, nor did any encrypted key.
+        self.assertEqual(volume['server.key'], server_key)
+        self.assertNotIn(ca_key, volume.values())
+        self.assertFalse(any('ENCRYPTED PRIVATE KEY' in text for text in volume.values()))
+        self.assertFalse((self.volume / 'ca.key').exists())
+        # And the CA directory never received nginx's key: only its own state.
+        self.assertEqual(sorted(path.name for path in self.ca.iterdir()), ['ca.crt', 'ca.key', 'issued.log'])
+        self.assertFalse(any(server_key in path.read_text() for path in self.ca.iterdir()))
+        # Outside the volume only the public request exists.
+        self.assertNotIn('PRIVATE KEY', request.read_text())
+
+    def test_a_renewal_keeps_the_active_key_and_certificate_until_the_new_ones_are_valid(self):
+        request, _ = self.request()
+        first = self.sign(request)
+        self.install(first)
+        active = (self.podman.file('server.key'), self.podman.file('server.crt'))
+        # 1-2: a new key and request wait beside the active pair, which nginx keeps serving.
+        renewal, _ = self.request(new_key=True)
+        pending = self.podman.file(tls.REQUEST_KEY)
+        self.assertNotEqual(pending, active[0])
+        self.assertEqual((self.podman.file('server.key'), self.podman.file('server.crt')), active)
+        # A certificate that does not fit the pending or the active key changes nothing.
+        stranger = self.directory / 'stranger.csr'
+        REAL_RUN(['openssl', 'req', '-new', '-newkey', 'rsa:2048', '-noenc', '-keyout', str(self.directory / 's.key'),
+                  '-subj', '/CN=todo.example.test',
+                  '-addext', 'subjectAltName=DNS:todo.example.test,DNS:notes.example.test', '-out', str(stranger)],
+                 capture_output=True, check=True)
+        with self.assertRaisesRegex(tls.TlsError, 'neither the waiting request'):
+            self.install(self.sign(stranger))
+        self.assertEqual((self.podman.file('server.key'), self.podman.file('server.crt')), active)
+        self.assertEqual(self.podman.file(tls.REQUEST_KEY), pending)
+        # 3-5: the signed renewal is checked, then the pending key becomes the active one.
+        second = self.sign(renewal)
+        self.assertTrue(self.install(second))
+        self.assertEqual(self.podman.file('server.key'), pending)
+        self.assertEqual(self.podman.file('server.crt'), second.read_text())
+        self.assertFalse((self.volume / tls.REQUEST_KEY).exists())
 
     def test_a_renewal_for_the_same_key_is_accepted(self):
         request, _ = self.request()

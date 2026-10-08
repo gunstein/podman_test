@@ -14,15 +14,15 @@ python3 /opt/todo/bin/app_dr.py check | grep -i 'certificate\|Replication CA'
 
 ## nginx certificate from your own CA (provided mode)
 
-Set up as in [TLS.md](../TLS.md#provided-mode-the-organisations-own-ca). The
+Set up as in [TLS.md](../TLS.md#provided-mode-a-separate-ca-process). The
 nightly backup run checks it: 60 days before the end it prepares
 `~/.config/todo/nginx-tls-request.csr` (a new key waits in the TLS volume),
 and below 30 days it fails with `the nginx certificate expires in N days`.
-Take the request to the CA machine, sign it, and install the result:
+Have the CA sign the request (`app_ca.py sign`, or `sudo todo-ca-sign` in v1), and install the result:
 
 ```bash
 python3 deploy/scripts/app_ca.py sign --directory /media/ca-usb/todo-ca \
-  --request nginx-tls-request.csr --output host.crt          # on the CA machine
+  --request nginx-tls-request.csr --output host.crt          # the CA, from its own storage
 PYTHONPATH=deploy/installer python3 -m app_installer tls-install \
   --certificate ~/host.crt --ca ~/ca.crt                      # on the host
 ```
@@ -40,7 +40,7 @@ request 60 days ahead, then
 
 ```bash
 python3 -m app_ops --inventory initial.yaml nginx-tls-request --output ~/nginx-requests
-# sign todo-primary.csr and todo-standby.csr on the CA machine, then:
+# sign todo-primary.csr and todo-standby.csr with the CA, then:
 python3 -m app_ops --inventory initial.yaml nginx-tls-install --certificates ~/nginx-signed --ca ~/ca.crt
 ```
 

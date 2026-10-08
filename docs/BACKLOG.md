@@ -133,7 +133,10 @@ attention above 30 minutes (G3).
   nginx without one, so `failover` needs no client trust step
   (`client_trust: unchanged`). Step 3, acceptance, remains: the guide does
   not run provided mode yet (tests/test_acceptance_guide.py lists the two
-  commands as not yet in it).
+  commands as not yet in it). Since 2026-10-08 the CA may run on the same
+  host as Podman, from its own storage (docs/TLS.md, "Two security
+  levels"); an administrator machine is no longer required. What is left
+  before v1 is T7.
   The promoted host creates its own
   CA, so after a failover every client must trust a new CA before users stop
   seeing certificate errors (`failover` prints its fingerprint; acceptance
@@ -171,6 +174,28 @@ attention above 30 minutes (G3).
     `nameConstraints` to the registered app names, keep its key in Podman
     secrets on the two hosts only, and plan how to replace it if a host is
     compromised.
+- **T7. The CA under root before v1.** *[new]* Provided mode runs with
+  the CA on the same host (`app_ca.py`), owned by the Podman user in
+  development. Before v1:
+  - Move it to root: `/var/lib/todo-ca` root 0700, and the Podman user may
+    run only `sudo todo-ca-sign` (CSR in, certificate out, no arguments).
+    The wrapper and `app_ca.py sign-stdin` exist and are tested; the
+    installation (root-owned copies, sudoers line, `init` as root) is the
+    manual list in docs/TLS.md. Make it one reviewed installer step, and
+    check the sudoers rule in the preflight.
+  - Decide where the passphrase lives: typed at each signing (strongest,
+    no unattended signing), or `/etc/todo-ca/passphrase` root 0400 (then the
+    encryption protects only copies and backups of the CA directory).
+  - A DR pair: decide which host holds the CA and how it is backed up. A CA
+    only on the primary is lost with Oslo; the standby's next renewal then
+    needs a new CA, and every client must trust it.
+  - Full root compromise of the host is CA compromise; that stays the
+    accepted limit of a same-host CA (docs/TLS.md). A CA on a separate
+    machine or an organisational PKI removes it without code changes.
+  - The switch from the pending to the active pair is a sequence of
+    renames, not one atomic step. nginx reads the pair only at start and at
+    the reload that follows the switch, and a start in between fails closed
+    and is restarted; a single symlink swap would close even that window.
 - **T6. Planned switchover and switchback.** *[new]* Today roles change only
   through a disaster promotion: fence, promote, then rebuild the old primary
   with a full copy of every database. For maintenance at one site, switch in a

@@ -1,11 +1,14 @@
-"""nginx's TLS certificate: the local demo CA, or a certificate the organisation's CA issued.
+"""nginx's TLS certificate: the local demo CA, or a certificate a separate CA process issued.
 
 Two modes, chosen per host and stored in the TLS volume itself (tls-mode):
 
-  local     the default. proxy-entrypoint.sh creates a demo CA and a server
-            certificate in the volume when nginx starts. Nothing here.
-  provided  the organisation's own CA (docs/TLS.md) signs a request made on
-            this host, and nginx only uses what it was given:
+  local     the default. The shared-proxy pod's init container (nginx-tls,
+            proxy-entrypoint.sh) creates a demo CA and a server certificate
+            in the volume. Nothing here.
+  provided  a CA process outside nginx's security domain signs a request
+            made on this host, and nginx only uses what it was given. That
+            CA (deploy/scripts/app_ca.py, docs/TLS.md) may run on this same
+            host, from its own storage: its key never enters the volume.
               tls-request  a new private key in the volume and a certificate
                            signing request (CSR) for every public hostname;
                            only the CSR leaves the host
@@ -19,7 +22,13 @@ Two modes, chosen per host and stored in the TLS volume itself (tls-mode):
 Every openssl command runs in a throwaway container of the proxy image, with
 the TLS volume mounted and no network, as the nginx user that owns the
 volume. The host needs no openssl, and the private key never leaves the
-volume, not even into a temporary file on the host.
+volume, not even into a temporary file on the host. Only these containers and
+the init container write the volume; nginx mounts it read-only.
+
+A renewal never touches the active pair (server.key, server.crt): the new
+key waits as request.key until its signed certificate passed every check,
+and only then becomes server.key. nginx reads the pair only when it starts or
+reloads, and the reload comes after the switch.
 
 check() is the nightly look at the certificate (backup nightly, tls-status):
 60 days before a provided certificate expires it prepares a new request
@@ -47,7 +56,7 @@ REQUEST_KEY = 'request.key'
 # RSA, for the widest choice of CAs and clients.
 KEY = 'rsa:3072'
 REQUEST = 'request.csr'
-# Where check() leaves a new request for the administrator, next to the target values.
+# Where check() leaves a new request for the CA step, next to the target values.
 REQUEST_PATH = Path.home() / settings.DR_CONFIG / 'nginx-tls-request.csr'
 REQUEST_DAYS = 60
 ALERT_DAYS = 30
@@ -328,7 +337,7 @@ def check(kube_runtime_dir=None, hostnames=None, **where):
 
     Provided mode: from REQUEST_DAYS before expiry a request is prepared,
     with a new key unless a request already waits (so a renewal also
-    replaces the key), and copied to REQUEST_PATH for the administrator;
+    replaces the key), and copied to REQUEST_PATH for the CA step;
     below ALERT_DAYS it is a problem.
     Local mode: the entrypoint renews its demo certificate only when nginx
     starts, so below ALERT_DAYS the advice is a restart.
@@ -352,8 +361,9 @@ def check(kube_runtime_dir=None, hostnames=None, **where):
             make_request(names, new_key=True, **where)
         REQUEST_PATH.parent.mkdir(parents=True, exist_ok=True)
         REQUEST_PATH.write_text(proxy('cat', REQUEST, **where).stdout)
-        lines.append(f'A request for the next certificate is ready: {REQUEST_PATH}. Have the CA sign it, '
-                     'then: python3 -m app_installer tls-install --certificate FILE --ca FILE')
+        lines.append(f'A request for the next certificate is ready: {REQUEST_PATH}. Have the CA sign it '
+                     '(app_ca.py sign, or sudo todo-ca-sign), then: python3 -m app_installer tls-install '
+                     '--certificate FILE --ca FILE')
     if days < ALERT_DAYS:
         return lines, [f'the nginx certificate expires in {days} days; install the next one '
                        f'(the request is {REQUEST_PATH})']

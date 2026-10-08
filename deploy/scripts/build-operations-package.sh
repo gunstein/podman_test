@@ -27,10 +27,10 @@ PYTHONPATH="$project_root/deploy/installer${PYTHONPATH:+:$PYTHONPATH}" python3 -
   "$project_root" "$project_root/deploy/environments/prod/values.yaml" "$package_directory"
 cp "$project_root/deploy/runtime/README.md" "$package_directory/deploy/runtime/"
 cp "$project_root/docs/history/RESULTS.md" "$package_directory/deploy/runtime/"
-# app_ca.py runs on the administrator's machine, never on a host (docs/TLS.md, provided mode).
+# app_ca.py and todo-ca-sign: the CA for provided TLS mode, from its own storage (docs/TLS.md).
 cp "$project_root/deploy/scripts/trust-files.sh" \
   "$project_root/deploy/scripts/wait-ready.sh" "$project_root/deploy/scripts/app_ca.py" \
-  "$package_directory/deploy/scripts/"
+  "$project_root/deploy/scripts/todo-ca-sign" "$package_directory/deploy/scripts/"
 cp "$project_root/deploy/offline/FAPOLICYD.md" "$project_root/deploy/offline/README.md" \
   "$package_directory/deploy/offline/"
 cp "$project_root/deploy/quadlet/README.md" "$package_directory/deploy/quadlet/"

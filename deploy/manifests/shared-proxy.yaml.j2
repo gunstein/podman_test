@@ -118,9 +118,39 @@ metadata:
     app.kubernetes.io/name: shared-proxy
     app.kubernetes.io/component: proxy
   annotations:
+    io.podman.annotations.pids-limit/nginx-tls: "128"
     io.podman.annotations.pids-limit/nginx: "128"
 spec:
   restartPolicy: Never
+  # nginx-tls is the only container that writes the TLS volume: on every pod
+  # start it issues or renews the demo certificate (local mode) or checks the
+  # provided one, then exits. nginx mounts the volume read-only
+  # (proxy-entrypoint.sh, TODO_TLS_ROLE). tls-request and tls-install write
+  # through their own throwaway containers (app_installer.tls), never nginx.
+  initContainers:
+    - name: nginx-tls
+      image: {{ image | tojson }}
+      imagePullPolicy: Never
+      args: ["true"]
+      envFrom:
+        - configMapRef:
+            name: shared-nginx-env
+            optional: false
+      env:
+        - name: TODO_TLS_ROLE
+          value: provision
+      volumeMounts:
+        - name: tls-data
+          mountPath: /var/lib/todo-tls
+      resources:
+        limits:
+          memory: "64Mi"
+      securityContext:
+        runAsUser: 101
+        runAsGroup: 101
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
   containers:
     - name: nginx
       image: {{ image | tojson }}
@@ -135,12 +165,16 @@ spec:
         - configMapRef:
             name: shared-nginx-env
             optional: false
+      env:
+        - name: TODO_TLS_ROLE
+          value: serve
       volumeMounts:
         - name: nginx-config
           mountPath: /etc/todo-nginx
           readOnly: true
         - name: tls-data
           mountPath: /var/lib/todo-tls
+          readOnly: true
       livenessProbe:
         exec:
           command: [nginx, -t, -c, /etc/todo-nginx/nginx.conf]

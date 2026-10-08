@@ -8,17 +8,18 @@ Reverse-proxy choice and certificate authority choice are separate decisions.
 nginx never acts as a CA in provided mode.
 
 nginx has two TLS modes, chosen per host and stored in the TLS volume itself
-(`tls-mode`): **local**, the default, where nginx makes its own demo CA (below),
-and **provided**, where the organisation's own CA issues the certificate and
-nginx only uses it ([provided mode](#provided-mode-the-organisations-own-ca)).
+(`tls-mode`): **local**, the default, where the pod makes its own demo CA (below),
+and **provided**, where a separate CA process, which may run on the same host,
+issues the certificate and nginx only uses it
+([provided mode](#provided-mode-a-separate-ca-process)).
 A single host uses the installer's commands below; a DR pair uses app-ops,
 which gives both hosts their certificate before a failover needs it
 ([DR README](../deploy/dr/README.md#nginx-certificates-from-your-ca)).
 
 ## Current offline lab mode (local)
 
-The container entrypoint uses the image's OpenSSL package on first start to
-create:
+The pod's init container, `nginx-tls`, uses the image's OpenSSL package on
+first start to create:
 
 - a local demo CA;
 - one server key and SAN certificate covering `todo.test` and `notes.test`
@@ -28,8 +29,8 @@ create:
 The files persist in the host-local `todo-nginx-data` Podman volume. The CA
 private key and server private key never need to leave that volume. A hostname
 addition causes a new leaf certificate from the same local CA. Both nginx
-server blocks use that same leaf and key; there are no separate per-app CAs. A container restart
-renews an expiring leaf certificate. Missing CA state causes a completely new
+server blocks use that same leaf and key; there are no separate per-app CAs. A pod restart
+renews an expiring leaf certificate (the init container runs at every start). Missing CA state causes a completely new
 trust root.
 
 Clean deployment and application recovery require `io.todo.proxy=nginx` on
@@ -88,118 +89,216 @@ lab's CA-trust assertion, while `deploy/scripts/dev/run-e2e.sh` uses
 `E2E_IGNORE_HTTPS_ERRORS=true` only to exercise the browser application flows.
 Do not interpret the Playwright setting as proof of certificate trust.
 
-## Recommended moderate-deployment mode
+## Provided mode: a separate CA process
 
-Use an organizational certificate source with this trust shape:
-
-```text
-offline root CA
-      |
-issuing CA
-      |
-      +-- certificate A + private key A -- node A
-      +-- certificate B + private key B -- node B
-```
-
-Both leaf certificates contain the stable service DNS name, such as
-`todo.test` and `notes.test` in one SAN certificate, while each node has a different private key. Clients trust the
-root before an incident. Failover then changes only the active service address;
-it does not issue a certificate or modify client trust.
-
-The root private key must remain offline. The issuing CA and its database,
-serial state, policy, renewal process, revocation data, protected backup and
-audit trail are separate security responsibilities. Do not copy either CA
-private key to an application node.
-
-The deployment tooling should consume already issued artifacts:
-
-- install the public certificate/full chain as a normal reviewed file;
-- deliver the node-specific private key through a controlled deployment process
-  into a Podman secret; and
-- recreate or reload nginx in a controlled rotation and verify HTTPS before
-  retiring the previous certificate.
-
-Node-specific TLS keys require a per-host provisioning process; never reuse one
-leaf private key merely to make distribution easier.
-
-## Provided mode: the organisation's own CA
-
-For a host without a central PKI: one small offline CA, kept on encrypted
-storage that is offline between uses, signs a certificate for each host about
-once a year. Each host makes its own private key, which never leaves its TLS
-volume; only a certificate signing request (CSR) goes to the CA, and only the
-signed certificate comes back. Clients trust the CA once.
+**Provided** means that nginx's certificate comes from a CA process outside
+nginx's security domain; nginx only uses it. It does not mean a CA on another
+machine. In the first version that CA runs on the same host as Podman and
+nginx, as `deploy/scripts/app_ca.py`, with its own storage:
 
 ```text
-offline root CA (deploy/scripts/app_ca.py, 20 years, name constraints:
-     |           only names in your domains)
-     +-- certificate for host A (1 year) -- key made on host A
-     +-- certificate for host B (1 year) -- key made on host B
+                     one host
+  CA storage (not Podman)            nginx TLS volume (todo-nginx-data)
+  ├── ca.key  (encrypted)            ├── server.key   active key
+  ├── ca.crt                         ├── server.crt   active certificate (+ chain)
+  └── issued.log                     ├── ca.crt       the root clients trust
+          ▲                          ├── request.key  pending key (renewal)
+          │ CSR in,                  ├── request.csr  pending request
+          │ certificate out          └── tls-mode     provided
+          │                                 │
+  app_ca.py sign  ◄── request.csr ──  tls-request    (writes, throwaway container)
+  (or sudo todo-ca-sign in v1)  ──►   tls-install    (checks, then switches)
+                                            │
+                                     nginx-tls init container  (RW: checks at start)
+                                     nginx                     (RO: serves)
 ```
 
-**Once, on the administrator's machine** (Python 3 and openssl; openssl asks
-for the CA key's passphrase):
+Two private keys, two homes, never mixed:
+
+| Key | Lives in | Made by | Used by | Leaves its home |
+|---|---|---|---|---|
+| `ca.key` | CA storage (`/var/lib/todo-ca` in v1) | `app_ca.py init` | `app_ca.py` signing only | never: not a volume, never mounted, never in the TLS volume |
+| `server.key` | the TLS volume | `tls-request`, in a throwaway container | nginx | never: the CA receives only the CSR |
+
+### Commands
 
 ```bash
-python3 deploy/scripts/app_ca.py init --directory /media/ca-usb/todo-ca   --domain todo.example.org --domain notes.example.org
-```
+# Once: the CA (development: a directory of the Podman user; v1: see below).
+python3 deploy/scripts/app_ca.py init --directory ~/.local/share/todo-ca \
+  --domain todo.example.org --domain notes.example.org
 
-`--domain` limits what the CA can ever sign (X.509 name constraints): a
-stolen CA key cannot issue a certificate for anyone else's site. Give every
-client `ca.crt` (never `ca.key`), and keep a second copy of the directory in
-another place.
-
-**On the host, after a normal install** (the hostnames come from the
-installed `shared-proxy.yaml`):
-
-```bash
+# For each certificate (first time and every renewal):
 cd ~/todo-offline-m12
 PYTHONPATH=deploy/installer python3 -m app_installer tls-request --output ~/host.csr
+python3 deploy/scripts/app_ca.py sign --directory ~/.local/share/todo-ca \
+  --request ~/host.csr --output ~/host.crt
+PYTHONPATH=deploy/installer python3 -m app_installer tls-install \
+  --certificate ~/host.crt --ca ~/.local/share/todo-ca/ca.crt
 ```
 
-**On the administrator's machine**, sign it (at most 825 days, the most Apple
-clients accept; 365 by default). The tool refuses any name outside the CA's
-domains, and appends every certificate it issues to `issued.log`:
+openssl asks for the CA key's passphrase. `--passphrase-file FILE` reads it
+from a file instead, which must not be inside the CA directory (refused):
+next to `ca.key` it would protect nothing.
 
-```bash
-python3 deploy/scripts/app_ca.py sign --directory /media/ca-usb/todo-ca   --request host.csr --output host.crt
+- **`init`** makes `ca.key` (RSA 3072, encrypted with AES-256), `ca.crt` (20
+  years, `CA:TRUE, pathlen:0`, X.509 name constraints for the given domains)
+  and an empty `issued.log`: directory 0700, `ca.key` and `issued.log` 0600,
+  `ca.crt` 0644. It refuses a directory that already holds a CA.
+- **`sign`** refuses, before the CA key is used: a CA directory or key that
+  others can read or that another user owns, a passphrase file inside it, a
+  CSR whose own signature does not verify, any name that is not a plain DNS
+  name inside the CA's domains (no wildcards, no IP addresses, at most 20
+  names), a key below RSA 2048 or EC 256 bits, and more than 825 days. The
+  subject (`CN=` the first name) and every extension (server use only,
+  `CA:FALSE`) are set by the CA; nothing but the public key and the DNS
+  names comes from the CSR. Every certificate is appended to `issued.log`
+  with its serial, expiry, names and the signing uid. Even a certificate
+  signed around the tool fails for names outside the domains: clients
+  enforce the name constraints.
+- **`tls-request`** makes a new key in the TLS volume and a CSR for every
+  public hostname nginx serves; only the CSR leaves the volume.
+- **`tls-install`** checks everything before the volume changes: the CA file
+  is a self-signed root, the certificate chains to it (intermediates may
+  follow it in the same file), is valid now for TLS servers, names every
+  hostname, and belongs to the waiting key or the active one. Then it
+  switches the volume to provided mode, removes the demo CA, reloads nginx
+  (no restart) and waits until nginx serves the new certificate for every
+  hostname. Every openssl step runs in a throwaway container of the proxy
+  image with no network, so the host needs no openssl for this part.
+
+From then on nothing issues a certificate in the pod: a missing file, a key
+that does not match, or a hostname the certificate does not name stops the
+pod with an `ERROR:` line in `journalctl --user -u shared-proxy.service`. It
+never falls back to the demo CA. An expired certificate still starts, with a
+warning, so browsers can name the cause. A new public hostname therefore
+needs a new certificate first: `tls-request`, sign, `tls-install`, then
+install with the new hostname.
+
+### Renewal
+
+```text
+active:  server.key + server.crt     nginx keeps serving these
+pending: request.key + request.csr   until the signed certificate passed every check
 ```
 
-**Back on the host**:
+1. `tls-request` makes a new `request.key` and `request.csr`; the active pair
+   is untouched. Every night the single host's backup run (`todo-backup.timer`)
+   does this by itself 60 days before the certificate ends and copies the CSR
+   to `~/.config/todo/nginx-tls-request.csr`; below 30 days the run fails, so
+   it shows in `systemctl --user --failed`.
+2. The CA signs the CSR (`app_ca.py sign`, or `sudo todo-ca-sign` in v1).
+3. `tls-install` checks the certificate against the pending key. A
+   certificate that fits neither key, misses a hostname or chains to another
+   CA changes nothing, and the pending key keeps waiting.
+4. Only then `request.key` becomes `server.key` and the new certificate
+   `server.crt`, nginx reloads, and `tls-install` waits until it serves the
+   new fingerprint for every hostname.
 
-```bash
-PYTHONPATH=deploy/installer python3 -m app_installer tls-install   --certificate ~/host.crt --ca ~/ca.crt
-```
+nginx reads the pair only when it starts or reloads; the reload comes after
+the switch, and a start in between fails closed (the init container finds a
+key that does not fit) and is restarted by systemd. `tls-status` shows the
+mode and the days left at any time.
 
-`tls-install` changes nothing until the certificate passes every check: the
-CA file is a self-signed root, the certificate chains to it (intermediates
-may follow the certificate in the same file), is valid now for TLS servers,
-names every public hostname nginx serves, and belongs to the key waiting in
-the volume. Then it switches the volume to provided mode, removes the demo CA
-and its key, reloads nginx (no restart) and waits until nginx serves the new
-certificate for every hostname. Every openssl step runs in a throwaway
-container of the proxy image with no network, so the host needs no openssl.
-
-From then on nginx's entrypoint only checks what it was given and never
-issues anything: a missing file, a key that does not match, or a hostname the
-certificate does not name stops nginx with an `ERROR:` line in
-`journalctl --user -u shared-proxy.service`. It never falls back to the demo
-CA. An expired certificate still starts, with a warning, so browsers can name
-the cause. A new public hostname therefore needs a new certificate first:
-`tls-request`, sign, `tls-install`, then install with the new hostname.
-
-**Renewal.** Every night the single host's backup run (`todo-backup.timer`)
-also looks at the certificate. 60 days before it expires it makes a new key
-and request in the volume and copies the request to
-`~/.config/todo/nginx-tls-request.csr`; below 30 days the run fails, so it
-shows in `systemctl --user --failed`. Sign that request and `tls-install` the
-result, as above. `tls-status` shows the mode and the days left at any time.
 The CA itself is not renewed automatically: issue a new CA well before its 20
 years end, and give clients the new `ca.crt` before switching hosts to it.
-
 Going back to local mode is deliberate, not a fallback: `uninstall
 --remove-data` removes the TLS volume, and the next install starts a new demo
 CA.
+
+### Two security levels
+
+**Development and the first implementation: one Unix user.** The user that
+runs rootless Podman also owns the CA directory and runs `app_ca.py`. Simple,
+and the two keys still never mix (the CA key is encrypted, outside every
+volume, never mounted), but weaker: anyone who becomes that user, through
+Podman or a container escape to it, can read `ca.key` and try its passphrase,
+or wait for the operator to type it.
+
+**v1: root owns the CA.** Before v1 the CA moves to root:
+
+```text
+Podman user                         root
+├── rootless Podman                 └── /var/lib/todo-ca        root:root 0700
+├── the TLS volume                      ├── ca.key              root:root 0600
+├── cannot read ca.key                  ├── ca.crt              root:root 0644
+└── may run only:                       └── issued.log          root:root 0600
+    sudo todo-ca-sign < host.csr > host.crt
+```
+
+`deploy/scripts/todo-ca-sign` is the whole interface: a CSR on stdin, the
+certificate on stdout, no arguments. It runs `app_ca.py sign-stdin` with a
+fixed directory (`/var/lib/todo-ca`), a fixed optional passphrase file
+(`/etc/todo-ca/passphrase`, root 0400, outside the CA directory; without it
+openssl asks on the terminal) and the fixed 365-day validity. The caller
+chooses no CA key, no openssl command, no config file, no extension and no
+output path, so it cannot overwrite a root file or sign anything the CA's
+checks refuse. Setup, as root:
+
+```bash
+install -d -m 0755 /usr/local/lib/todo-ca
+install -m 0644 deploy/scripts/app_ca.py /usr/local/lib/todo-ca/app_ca.py
+install -m 0755 deploy/scripts/todo-ca-sign /usr/local/sbin/todo-ca-sign
+python3 /usr/local/lib/todo-ca/app_ca.py init --directory /var/lib/todo-ca \
+  --domain todo.example.org --domain notes.example.org
+# sudoers (visudo -f /etc/sudoers.d/todo-ca): "" allows no arguments at all.
+#   podman ALL=(root) NOPASSWD: /usr/local/sbin/todo-ca-sign ""
+```
+
+Then the Podman user signs with
+`sudo todo-ca-sign < ~/host.csr > ~/host.crt` and installs with
+`--ca /var/lib/todo-ca/ca.crt`, or a copy of it (the certificate is public).
+Each signing is in `issued.log` with the uid that ran it.
+
+**The limit of one host.** Full root compromise of the host means the CA must
+be assumed compromised: root reads `ca.key` and can watch the passphrase
+being used. That is the accepted price of a CA on the same machine as the
+workload; the name constraints still limit what a stolen CA key can sign
+for. In v1, a compromise of nginx, of a container or of the Podman user alone
+does not give `ca.key`: the user can only ask `todo-ca-sign` for
+certificates the CA's policy allows, and each one is logged. A CA on a
+separate machine, or an organisational PKI, removes that limit; provided
+mode works with either unchanged, as only the signing step differs.
+
+### Why a TLS volume, not a Podman secret
+
+nginx's key is made on the host, persists across restarts, is replaced at
+each renewal while the old one keeps serving, and must be switched without
+recreating the container. A volume fits that lifecycle; a Podman secret fits
+credentials delivered from outside that do not change in place. So each
+secret stays where its lifecycle puts it:
+
+| What | Where |
+|---|---|
+| database and application credentials | Podman secrets |
+| a signing certificate delivered as a file (for example `signing-cert.pfx`) | Podman secret / file secret |
+| nginx's locally made `server.key` | the TLS volume |
+| the CA's `ca.key` | CA storage, outside Podman |
+
+### nginx reads the volume read-only
+
+The shared-proxy pod has an init container, `nginx-tls` (the same image,
+`TODO_TLS_ROLE=provision`), which mounts the TLS volume read-write. On every
+pod start it issues or renews the demo certificate in local mode, or checks
+the provided one, then exits. nginx itself runs with `TODO_TLS_ROLE=serve`
+and the volume mounted read-only: it only checks that the files it is about
+to serve fit, and never writes them. `tls-request` and `tls-install` write
+through their own throwaway containers. So a compromised nginx can read its
+own key but cannot replace it or the CA certificate beside it.
+
+```text
+tls-request, tls-install   RW   (throwaway containers, no network)
+nginx-tls init container   RW   (local: issue/renew demo; provided: check)
+nginx                      RO   (serve)
+```
+
+### With an organisational PKI
+
+If your organisation has a CA (for example an offline root with an issuing
+CA), use it instead of `app_ca.py`: give it the CSR from `tls-request` and
+install what it returns, with its root as `--ca`. Each node still gets its
+own key for the same service names, so a failover changes only the address
+clients reach, not what they trust. Never reuse one node's key on another to
+make distribution easier.
 
 ## Proxy contract
 

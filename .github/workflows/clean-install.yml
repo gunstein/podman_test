@@ -204,6 +204,27 @@ jobs:
         run: deploy/scripts/dev/dev-down.sh
 
 
+  keycloak-pfx-spike:
+    # BACKLOG X1 step 2, before any installer work: Keycloak signs a realm's
+    # tokens with a key from a password-protected PFX that podman kube play
+    # mounts from a Kube file secret. Its own Keycloak, in its own pod; the
+    # RESULT lines in the log are the findings.
+    name: Keycloak PFX spike
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Keycloak signs with a key from a PFX file secret
+        run: |
+          podman --version
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          python deploy/scripts/dev/spike_keycloak_pfx.py
+
+
   postgres-version:
     runs-on: ubuntu-latest
     timeout-minutes: 5

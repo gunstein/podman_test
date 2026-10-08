@@ -499,7 +499,8 @@ the same whichever identity server reads the files.
   *[new]* Two parts, each with its own acceptance run: X1a on one host, X1b
   for DR. Start with a short CI spike that proves the Keycloak part
   (step 2) before building the rest; if it fails, fall back to signing in
-  the Notes backend.
+  the Notes backend. The spike is `deploy/scripts/dev/spike_keycloak_pfx.py`
+  (CI job "Keycloak PFX spike"); its RESULT lines answer step 2's questions.
   1. *Generation, in Python.* The installer, not a Bash script, makes the
      demo PKI before secrets are provisioned and the pods start, by running
      `openssl` (present on the hosts; the offline installer has only the

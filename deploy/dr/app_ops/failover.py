@@ -106,15 +106,29 @@ def login_page(host, hostnames):
                                f'does not allow {identity_origin}, so the browser cannot fetch the login token')
 
 
+# The TLS mode (provided, or nothing for local) and the fingerprint of the CA nginx serves from.
+CA_FACTS = ('cat /var/lib/todo-tls/tls-mode 2>/dev/null; '
+            'openssl x509 -in /var/lib/todo-tls/ca.crt -noout -fingerprint -sha256')
+
+
 def users(host, hostnames):
-    """What the operator must do so users reach this host: the names, the address and the CA to trust."""
-    fingerprint = host.run(['podman', 'exec', 'nginx', 'openssl', 'x509', '-in', '/var/lib/todo-tls/ca.crt',
-                            '-noout', '-fingerprint', '-sha256']).stdout.strip().split('=', 1)[-1]
+    """What the operator must do so users reach this host: the names, the address and, if needed, the CA to trust.
+
+    With certificates from the organisation's CA (provided mode) clients
+    already trust it, so a failover asks nothing of them; with the demo CA
+    they must trust this host's new one.
+    """
+    lines = host.run(['podman', 'exec', 'nginx', 'sh', '-c', CA_FACTS]).stdout.strip().splitlines()
+    fingerprint = lines[-1].split('=', 1)[-1] if lines else ''
+    provided = 'provided' in (line.strip() for line in lines[:-1])
     names = [hostnames[app.name] for app in apps.APPS]
+    trust = ('Clients already trust your CA (provided mode), SHA-256 {}: nothing to install on them.'
+             if provided else 'Have clients trust this host\'s CA, SHA-256 {}.').format(fingerprint)
     return {'hostnames': names, 'address': host.spec.address, 'ca_sha256': fingerprint,
-            'next': f'Point {" and ".join(names)} at {host.spec.address} (DNS or each client\'s hosts file), '
-                    f'and have clients trust this host\'s CA, SHA-256 {fingerprint}. Then confirm that a '
-                    'user can log in to each app in a browser: failover checks the login page, not a login.'}
+            'client_trust': 'unchanged' if provided else 'required',
+            'next': f'Point {" and ".join(names)} at {host.spec.address} (DNS or each client\'s hosts file). '
+                    f'{trust} Then confirm that a user can log in to each app in a browser: failover checks '
+                    'the login page, not a login.'}
 
 
 def failover(project_root, controller, current, old_primary, confirm_fenced, confirm_promotion, say=None):

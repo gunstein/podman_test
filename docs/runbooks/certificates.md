@@ -34,6 +34,20 @@ PYTHONPATH=deploy/installer python3 -m app_installer tls-install \
 | nginx does not start: `ERROR: provided TLS mode, but ...` in `journalctl --user -u shared-proxy.service` | A file in the TLS volume is missing or does not fit, often after a new hostname was added | `tls-request`, sign, `tls-install`; nginx never falls back to the demo CA |
 | `does not know provided TLS mode` | The proxy image predates provided mode | Rebuild it (`install --refresh-images`) or load it from a current offline bundle |
 
+**On a DR pair** both hosts have a certificate, and renewal goes through
+app-ops on the controller: the nightly `renew-tls` prepares each host's
+request 60 days ahead, then
+
+```bash
+python3 -m app_ops --inventory initial.yaml nginx-tls-request --output ~/nginx-requests
+# sign todo-primary.csr and todo-standby.csr on the CA machine, then:
+python3 -m app_ops --inventory initial.yaml nginx-tls-install --certificates ~/nginx-signed --ca ~/ca.crt
+```
+
+The DR check on each host fails below 30 days, and when the host's
+certificate does not fit its recorded hostnames
+([DR README](../../deploy/dr/README.md#nginx-certificates-from-your-ca)).
+
 ## nginx leaf (397 days, local mode)
 
 **You notice it** when browsers warn about an expired certificate. nginx

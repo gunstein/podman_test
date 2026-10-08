@@ -13,7 +13,7 @@ Everything DR lives here, apart from the single-host installer it builds on:
 | Where | What | Runs on |
 |---|---|---|
 | `app_ops/` | `python3 -m app_ops`: one command per DR operation, over SSH | the controller |
-| `app_dr_host/` | `python3 -m app_dr_host`: the building blocks app-ops runs on each host (replication, replication TLS, reseed, promoted deploy, secret transfer, pair checks) | each host, staged by app-ops |
+| `app_dr_host/` | `python3 -m app_dr_host`: the building blocks app-ops runs on each host (replication, replication TLS, nginx's certificate from your CA, reseed, promoted deploy, secret transfer, pair checks) | each host, staged by app-ops |
 | `scripts/` | `app_dr.py` (promotion), `app_backup.py` (backup and PITR), `app-quarantine.sh`, `bootstrap-ssh-key.sh` | the hosts (`/opt/todo/bin`), the controller for the last |
 
 ## Where DR finds the installer
@@ -104,6 +104,8 @@ python3 -m app_ops --inventory initial.yaml replication-status
 python3 -m app_ops --inventory initial.yaml install-dr-tool
 python3 -m app_ops --inventory initial.yaml install-quarantine-tool
 python3 -m app_ops --inventory initial.yaml reseed-standby --confirm-reseed todo-standby
+python3 -m app_ops --inventory initial.yaml nginx-tls-request --output ~/nginx-requests
+python3 -m app_ops --inventory initial.yaml nginx-tls-install --certificates ~/nginx-signed --ca ~/ca.crt
 python3 -m app_ops --inventory recovery.yaml failover \
   --confirm-primary-fenced "todo-primary is fenced" --confirm-promotion todo-standby
 python3 -m app_ops --inventory recovery.yaml deploy-promoted-application
@@ -133,6 +135,10 @@ the promoted host with the names it recorded. Each host fills in its own
 inventory address. See
 [Primary and standby](../offline/README.md#primary-and-standby).
 
+`nginx-tls-request` and `nginx-tls-install` give both hosts nginx certificates
+from your own CA instead of the demo CA
+([nginx certificates from your CA](#nginx-certificates-from-your-ca)).
+
 `sync-standby-secrets` and `preflight-standby-rebuild` can also be run on
 their own. Every command prints one JSON result: `changed`, or the status
 report. `deploy-promoted-application` must run on the promoted host itself,
@@ -147,7 +153,7 @@ run leaves its service failed: that is the alert, seen with
 | Timer | Installed by | Runs | What it does |
 |---|---|---|---|
 | `todo-dr-check.timer` | `install-dr-tool` on both hosts, `rebuild-standby` on the rebuilt one | every 15 minutes | `app_dr.py check`: each database's role, read live. A primary needs a standby streaming over TLS, slots that keep their WAL and, if archiving is on, a healthy archive; a standby must receive WAL. The group must not be split, and the disk under the home directory must be at least 10 % free. And the host must be ready to take over: its offline bundle is the revision of the operations package that ran `install-dr-tool`, every image archive the bundle lists is there, and it holds every DR secret, the replication CA included; it then prints `Ready to take over: ...`. |
-| `todo-replication-tls.timer` | `install-dr-tool` on both hosts, `rebuild-standby` on the rebuilt one | every night at 03:30 (+ up to 30 min), and at boot if a night was missed | `app_dr.py renew-tls`: on the primary, a new replication certificate for every database with fewer than 30 days left, for the same address and from the same replication CA, then a PostgreSQL reload (no restart; the standby needs nothing new). On a standby it does nothing. The DR check above also fails once a certificate has fewer than 25 days left, or the replication CA fewer than 180 (the CA is replaced by hand). |
+| `todo-replication-tls.timer` | `install-dr-tool` on both hosts, `rebuild-standby` on the rebuilt one | every night at 03:30 (+ up to 30 min), and at boot if a night was missed | `app_dr.py renew-tls`: on the primary, a new replication certificate for every database with fewer than 30 days left, for the same address and from the same replication CA, then a PostgreSQL reload (no restart; the standby needs nothing new). On a standby it does nothing. The DR check above also fails once a certificate has fewer than 25 days left, or the replication CA fewer than 180 (the CA is replaced by hand). For a pair with [nginx certificates from your CA](#nginx-certificates-from-your-ca), it also prepares each host's next nginx request 60 days ahead, and the DR check fails below 30 days or when a host's certificate does not fit. |
 | `todo-backup.timer` | `install.sh` on every server install; `configure-backup` (so `failover`) replaces its service on the current primary | every night at 02:30 (+ up to 30 min), and at boot if a night was missed | `app_backup.py nightly --keep-days 7`: a verified base backup of every database, then deletion of the backups older than 7 days (never the latest) and of the archived WAL older than the oldest kept backup (`pg_archivecleanup`). On a standby it does nothing. |
 
 The units are in `deploy/dr/systemd` and go to `~/.config/systemd/user` on the
@@ -163,6 +169,49 @@ a standby again, which is what it should report. WAL archiving, and so the
 nightly backup with the WAL archive, starts with `configure-backup` after a
 failover; until then a primary has the installer's nightly base backups
 without PITR (backlog D2).
+
+## nginx certificates from your CA
+
+By default nginx makes its own demo CA when it first starts, so after a
+failover the promoted host serves a new CA and every client must trust it
+before users can work. In provided mode
+([TLS.md](../../docs/TLS.md#provided-mode-the-organisations-own-ca)) both
+hosts hold a certificate from your offline CA for the same public hostnames,
+issued before it is needed, and clients trust that CA once. The standby,
+which runs no nginx, keeps its certificate in the same TLS volume nginx will
+use after a failover.
+
+```bash
+# On the controller: a CSR from each host (each key stays in its TLS volume).
+python3 -m app_ops --inventory initial.yaml nginx-tls-request --output ~/nginx-requests
+#   -> ~/nginx-requests/todo-primary.csr, ~/nginx-requests/todo-standby.csr
+# On the CA machine, for each host:
+python3 deploy/scripts/app_ca.py sign --directory /media/ca-usb/todo-ca \
+  --request todo-standby.csr --output todo-standby.crt
+# Back on the controller, with both <host>.crt in one directory:
+python3 -m app_ops --inventory initial.yaml nginx-tls-install --certificates ~/nginx-signed --ca ~/ca.crt
+```
+
+`nginx-tls-request` gives a standby its TLS volume (from the bundle's own
+claim) and the proxy image (from its offline bundle) first. The names
+come from each host's record, the ones the primary serves.
+`nginx-tls-install` needs both certificates before it changes anything,
+checks and installs the standby's, then the primary's (nginx reloads, no
+restart), and then sets the pair's mode to provided on both hosts
+(`~/.config/todo/nginx-tls-mode`). From then on:
+
+- `app_dr.py check` (every 15 minutes, both hosts) fails unless this host
+  holds a certificate from your CA that fits its recorded hostnames, with
+  at least 30 days left.
+- `todo-replication-tls.timer` (`app_dr.py renew-tls`) prepares each host's
+  next request 60 days before its certificate ends; run the same two
+  commands again to collect, sign and install them.
+- `deploy-promoted-application`, and so `failover`, refuse to start nginx
+  without that certificate: never a new demo CA by accident. `failover`
+  then reports `"client_trust": "unchanged"`: nothing to do on the clients.
+
+A host rebuilt as the standby keeps the certificate in its TLS volume. A
+new machine needs its own: run the two commands again for the pair.
 
 ## Operations package
 

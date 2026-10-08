@@ -32,7 +32,7 @@ import re
 import time
 from pathlib import Path
 
-from . import apps, settings
+from . import apps, settings, target_render
 from .commands import exists, run
 
 VOLUME = apps.SHARED_RESOURCE_OWNER.names.resource('nginx-data')
@@ -140,6 +140,19 @@ def installed_hostnames(kube_runtime_dir=None):
         if not re.fullmatch(r'[A-Za-z0-9.-]+', name):
             raise TlsError(f'Invalid hostname in {path}: {name!r}')
     return names
+
+
+def recorded_hostnames():
+    """The public hostnames this host recorded at install (target-values.json), the shared one first.
+
+    A DR standby runs no nginx and has no shared-proxy.yaml, but it records
+    the hostnames it will serve after a failover; so does an offline install.
+    """
+    names = target_render.hostnames(target_render.read_record())
+    if apps.SHARED_RESOURCE_OWNER.name not in names:
+        raise TlsError(f'{target_render.record_path()} records no public hostnames: install this host first.')
+    owner = names.pop(apps.SHARED_RESOURCE_OWNER.name)
+    return [owner] + [name for name in names.values() if name != owner]
 
 
 def make_request(names, new_key=False, **where):
@@ -275,7 +288,42 @@ def reload(names, expected):
                            'see journalctl --user -u shared-proxy.service')
 
 
-def check(kube_runtime_dir=None, **where):
+VERIFY = """
+set -u
+for file in server.crt server.key ca.crt; do
+    [ -s "$file" ] || { echo "$file is missing"; exit 1; }
+done
+[ "$(openssl x509 -in server.crt -noout -pubkey)" = "$(openssl pkey -in server.key -pubout)" ] ||
+    { echo 'server.key does not belong to server.crt'; exit 1; }
+for name in "$@"; do
+    openssl verify -no_check_time -CAfile ca.crt -untrusted server.crt -verify_hostname "$name" server.crt \
+        >/dev/null 2>&1 || { echo "server.crt is not valid for $name from ca.crt"; exit 1; }
+done
+openssl x509 -in server.crt -noout -enddate
+"""
+
+
+def status(names, **where):
+    """How nginx would start with this volume: (mode, days left, problem or '').
+
+    In provided mode it is the entrypoint's own check, in one throwaway
+    container: the files are there, the key fits, and the certificate names
+    every one of names from ca.crt; then the days it has left. A volume
+    without a certificate is ('local', None, '').
+    """
+    if not exists('volume', where.get('volume', VOLUME)) or not present('server.crt', **where):
+        return 'local', None, ''
+    current = mode(**where)
+    if current != PROVIDED:
+        days = days_until(proxy('openssl', 'x509', '-in', 'server.crt', '-noout', '-enddate', **where).stdout)
+        return current, days, ''
+    result = proxy('sh', '-c', VERIFY, 'verify', *names, allowed=(0, 1), **where)
+    if result.returncode:
+        return current, None, result.stdout.strip() or 'the provided certificate does not fit'
+    return current, days_until(result.stdout), ''
+
+
+def check(kube_runtime_dir=None, hostnames=None, **where):
     """The nightly look at nginx's certificate; return (lines, problems).
 
     Provided mode: from REQUEST_DAYS before expiry a request is prepared,
@@ -285,10 +333,13 @@ def check(kube_runtime_dir=None, **where):
     Local mode: the entrypoint renews its demo certificate only when nginx
     starts, so below ALERT_DAYS the advice is a restart.
     """
-    if not exists('volume', where.get('volume', VOLUME)) or not present('server.crt', **where):
+    provided = exists('volume', where.get('volume', VOLUME)) and mode(**where) == PROVIDED
+    names = list(hostnames or installed_hostnames(kube_runtime_dir)) if provided else []
+    current, days, problem = status(names, **where)
+    if problem:
+        return [], [f'the nginx certificate would stop nginx at its next start: {problem}']
+    if days is None:
         return [], []
-    current = mode(**where)
-    days = days_until(proxy('openssl', 'x509', '-in', 'server.crt', '-noout', '-enddate', **where).stdout)
     lines = [f'nginx certificate ({current} mode): valid {days} more days']
     if current != PROVIDED:
         if days < ALERT_DAYS:
@@ -298,7 +349,7 @@ def check(kube_runtime_dir=None, **where):
     if days < REQUEST_DAYS:
         if not present(REQUEST, **where):
             require_ready(**where)
-            make_request(installed_hostnames(kube_runtime_dir), new_key=True, **where)
+            make_request(names, new_key=True, **where)
         REQUEST_PATH.parent.mkdir(parents=True, exist_ok=True)
         REQUEST_PATH.write_text(proxy('cat', REQUEST, **where).stdout)
         lines.append(f'A request for the next certificate is ready: {REQUEST_PATH}. Have the CA sign it, '

@@ -296,6 +296,29 @@ class CheckTests(TlsTest):
         self.assertIn('restart shared-proxy.service', problems[0])
 
 
+class StatusTests(TlsTest):
+    def test_status_is_the_entrypoints_check_with_the_days_left(self):
+        self.assertEqual(tls.status(NAMES), ('local', None, ''))
+        request, _ = self.request()
+        self.install(self.sign(request))
+        current, days, problem = tls.status(NAMES)
+        self.assertEqual((current, problem), ('provided', ''))
+        self.assertIn(days, (364, 365))
+        self.assertEqual(tls.status(NAMES + ['extra.example.test'])[2],
+                         'server.crt is not valid for extra.example.test from ca.crt')
+        (self.volume / 'server.key').unlink()
+        self.assertEqual(tls.status(NAMES), ('provided', None, 'server.key is missing'))
+
+    def test_the_recorded_hostnames_put_the_shared_one_first(self):
+        record = self.directory / 'target-values.json'
+        with patch.object(tls.target_render, 'record_path', return_value=record):
+            with self.assertRaisesRegex(tls.TlsError, 'records no public hostnames'):
+                tls.recorded_hostnames()
+            record.write_text(json.dumps({'TARGET_NOTES_HOSTNAME': 'notes.example.test',
+                                          'TARGET_EXTERNAL_HOSTNAME': 'todo.example.test'}))
+            self.assertEqual(tls.recorded_hostnames(), NAMES)
+
+
 class CommandTests(TlsTest):
     def test_request_install_and_status_from_the_command_line(self):
         output = self.directory / 'cli.csr'

@@ -11,8 +11,9 @@ nginx has two TLS modes, chosen per host and stored in the TLS volume itself
 (`tls-mode`): **local**, the default, where nginx makes its own demo CA (below),
 and **provided**, where the organisation's own CA issues the certificate and
 nginx only uses it ([provided mode](#provided-mode-the-organisations-own-ca)).
-A single host can use provided mode now; DR hosts get it in a later step
-(backlog T4).
+A single host uses the installer's commands below; a DR pair uses app-ops,
+which gives both hosts their certificate before a failover needs it
+([DR README](../deploy/dr/README.md#nginx-certificates-from-your-ca)).
 
 ## Current offline lab mode (local)
 

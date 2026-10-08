@@ -335,8 +335,11 @@ class CheckHost:
         self.databases = {f"{name}-postgres": {**healthy, **changes} for name, changes in databases.items()}
         route_commands(test, self)
         tls = app_dr.replication_tls
-        for name, days in (("server_days_left", self.certificate_days), ("ca_days_left", lambda: ca_days)):
-            patcher = mock.patch.object(tls, name, side_effect=days)
+        for target, name, days in ((tls, "server_days_left", self.certificate_days),
+                                   (tls, "ca_days_left", lambda: ca_days),
+                                   # nginx's certificate: a pair in local mode unless a test says otherwise.
+                                   (app_dr.nginx_tls, "readiness", lambda: ([], []))):
+            patcher = mock.patch.object(target, name, side_effect=days)
             patcher.start()
             test.addCleanup(patcher.stop)
 
@@ -480,6 +483,23 @@ class CheckTests(unittest.TestCase):
         self.assertIn("ERROR: Cannot read valid DR configuration from /nonexistent/todo-dr.json",
                       "".join(call.args[0] for call in stderr.write.call_args_list))
 
+    def test_a_provided_pair_reports_this_hosts_nginx_certificate(self):
+        CheckHost(self, todo={}, notes={}, keycloak={})
+        app_dr.nginx_tls.readiness.side_effect = lambda: (
+            [], ["nginx could not start here with your CA's certificate: server.key is missing"])
+        with mock.patch.object(app_dr.shutil, "disk_usage", return_value=self.DISK), \
+                mock.patch("sys.stdout"), mock.patch("sys.stderr") as stderr:
+            self.assertEqual(app_dr.main(["--config", "/nonexistent/todo-dr.json", "check"]), 1)
+        self.assertIn("ERROR: nginx could not start here with your CA's certificate: server.key is missing",
+                      "".join(call.args[0] for call in stderr.write.call_args_list))
+        # A failure to look is a problem too, never a crash of the whole check.
+        app_dr.nginx_tls.readiness.side_effect = RuntimeError("podman image inspect failed")
+        with mock.patch.object(app_dr.shutil, "disk_usage", return_value=self.DISK), \
+                mock.patch("sys.stdout"), mock.patch("sys.stderr") as stderr:
+            self.assertEqual(app_dr.main(["--config", "/nonexistent/todo-dr.json", "check"]), 1)
+        self.assertIn("ERROR: cannot check the nginx certificate: podman image inspect failed",
+                      "".join(call.args[0] for call in stderr.write.call_args_list))
+
     def test_a_ready_host_passes_the_whole_check(self):
         CheckHost(self, todo={}, notes={}, keycloak={})
         with tempfile.TemporaryDirectory() as directory:
@@ -511,7 +531,8 @@ class RenewTlsTests(unittest.TestCase):
 
         for target, name, fake in ((app_dr.StandbyGroup, "_query", query),
                                    (app_dr.replication_tls, "renew", renew),
-                                   (app_dr.replication_tls, "server_days_left", lambda database: 824)):
+                                   (app_dr.replication_tls, "server_days_left", lambda database: 824),
+                                   (app_dr.nginx_tls, "renew", lambda: ([], []))):
             patcher = mock.patch.object(target, name, side_effect=fake)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -545,6 +566,16 @@ class RenewTlsTests(unittest.TestCase):
     def test_the_command_exits_0_when_everything_is_fine(self):
         with mock.patch("sys.stdout"):
             self.assertEqual(app_dr.main(["renew-tls"]), 0)
+
+    def test_the_nightly_run_also_prepares_nginxs_next_request(self):
+        app_dr.nginx_tls.renew.side_effect = lambda: (
+            ["nginx certificate (provided mode): valid 50 more days", "A request for the next certificate is ready"],
+            [])
+        with mock.patch("sys.stdout") as stdout:
+            self.assertEqual(app_dr.main(["renew-tls"]), 0)
+        printed = "".join(call.args[0] for call in stdout.write.call_args_list)
+        self.assertIn("todo: replication certificate kept", printed)
+        self.assertIn("A request for the next certificate is ready", printed)
 
 
 class ReadinessTests(unittest.TestCase):

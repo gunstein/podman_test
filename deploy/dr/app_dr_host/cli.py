@@ -2,7 +2,8 @@
 
 These are the building blocks app_ops runs on each host over SSH: replicate
 a database, publish the primaries, reseed the old primary or a standby, deploy the
-application on a promoted host, and the status and pair checks. The single
+application on a promoted host, nginx's certificate from the organisation's CA
+(nginx-tls), and the status and pair checks. The single
 host installer (app_installer) knows nothing about them. Errors print one
 "app-dr-host: ..." line on stderr and return 1.
 """
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from app_installer import apps, settings, target_render
 
-from . import pair, promoted, replication, transfer
+from . import nginx_tls, pair, promoted, replication, transfer
 
 
 def paths(parser):
@@ -90,6 +91,14 @@ def main(argv=None):
     values.add_argument('--project-root', type=Path, default=Path(__file__).resolve().parents[3])
     subcommands.add_parser('export-replication-secrets')
     subcommands.add_parser('import-replication-secrets')
+    certificate = subcommands.add_parser('nginx-tls')
+    certificate.add_argument('operation', choices=('request', 'install', 'mode'))
+    certificate.add_argument('--project-root', type=Path, default=Path(__file__).resolve().parents[3])
+    certificate.add_argument('--bundle-dir', type=Path)
+    certificate.add_argument('--node-address')
+    certificate.add_argument('--certificate', type=Path, help='install: the signed certificate on this host')
+    certificate.add_argument('--ca', type=Path, help="install: the organisation's root CA on this host")
+    certificate.add_argument('--mode', choices=('local', 'provided'), help="mode: the pair's nginx TLS mode")
     args = parser.parse_args(argv)
     try:
         if args.command == 'replicate-workload':
@@ -176,6 +185,22 @@ def main(argv=None):
         elif args.command == 'check-standby-pair':
             pair.check_pair(args.primary, args.standby)
             print(json.dumps({'changed': False}))
+        elif args.command == 'nginx-tls':
+            if args.operation == 'mode':
+                if not args.mode:
+                    raise ValueError('nginx-tls mode needs --mode')
+                print(json.dumps({'changed': nginx_tls.set_mode(args.mode)}))
+            else:
+                if not (args.bundle_dir and args.node_address):
+                    raise ValueError(f'nginx-tls {args.operation} needs --bundle-dir and --node-address')
+                where = (args.project_root, args.bundle_dir, args.node_address)
+                if args.operation == 'request':
+                    csr, names = nginx_tls.request(*where)
+                    print(json.dumps({'changed': True, 'request': csr, 'hostnames': names}))
+                else:
+                    if not (args.certificate and args.ca):
+                        raise ValueError('nginx-tls install needs --certificate and --ca')
+                    print(json.dumps({'changed': nginx_tls.install(*where, args.certificate, args.ca)}))
         elif args.command == 'export-replication-secrets':
             # Value-bearing stdout: callers must pipe it, never log or store it. Base64
             # keeps it opaque, so no caller parses or reformats the values on the way.

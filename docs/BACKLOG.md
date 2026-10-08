@@ -125,7 +125,15 @@ attention above 30 minutes (G3).
   only the CSR leaves), `tls-install` (every check before any change, no
   fallback to the demo CA) and the nightly expiry check (docs/TLS.md). The
   key lives in the TLS volume rather than a Podman secret: it is made there
-  and never leaves it. Steps 2 (DR) and 3 (acceptance) below remain.
+  and never leaves it. Step 2, DR, is done too: `app-ops nginx-tls-request`
+  and `nginx-tls-install` give both hosts their certificate (the standby its
+  TLS volume and proxy image first), the pair's mode is recorded on both,
+  `app_dr.py check` requires a fitting certificate, `renew-tls` prepares
+  the next requests, and `deploy-promoted-application` refuses to start
+  nginx without one, so `failover` needs no client trust step
+  (`client_trust: unchanged`). Step 3, acceptance, remains: the guide does
+  not run provided mode yet (tests/test_acceptance_guide.py lists the two
+  commands as not yet in it).
   The promoted host creates its own
   CA, so after a failover every client must trust a new CA before users stop
   seeing certificate errors (`failover` prints its fingerprint; acceptance
@@ -202,8 +210,10 @@ attention above 30 minutes (G3).
   - *nginx: partly done.* On a single host the nightly backup run checks
     the certificate: in local mode it fails below 30 days (a restart
     renews it), in provided mode it prepares a request 60 days ahead and
-    fails below 30 (T4). Open: local mode still renews only at a restart,
-    and DR hosts, whose nightly run is app_backup.py, check nothing yet.
+    fails below 30 (T4). A DR pair in provided mode is checked by
+    `app_dr.py check` and `renew-tls` on both hosts. Open: local mode
+    still renews only at a restart, and a DR pair in local mode checks
+    nothing.
 - **U3. Time synchronisation.** *[new]* Token expiry, TLS and log timestamps
   depend on correct clocks on both hosts. Check that chrony (or another time
   service) is active in the preflight and in acceptance phase 1, and document

@@ -71,6 +71,12 @@ promoted server: leaf certificate + private key
 client:          public CA root used to verify that leaf certificate
 ```
 
+With [nginx certificates from your CA](README.md#nginx-certificates-from-your-ca)
+the promoted host already holds its own certificate for the same names, and
+clients already trust your CA: `failover` reports `"client_trust": "unchanged"`
+and `deploy-promoted-application` refuses to start nginx without that
+certificate. The rest of this section is the default, local mode.
+
 When the promoted nginx container first starts, its entrypoint uses the image-packaged OpenSSL to create a local demo CA and a `todo.test` server certificate. The client can therefore receive the exact public root only
 after application recovery. This is simple, works offline and never copies the
 private demo CA key out of the TLS data volume. Its disadvantage is operational: manual

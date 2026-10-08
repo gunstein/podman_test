@@ -16,7 +16,7 @@ from app_installer import (
 )
 from app_installer.commands import exists, run
 
-from . import replication, transfer
+from . import nginx_tls, replication, transfer
 
 CA_CERTIFICATE = '/var/lib/todo-tls/ca.crt'
 DISCOVERY = '/auth/realms/todo/.well-known/openid-configuration'
@@ -79,11 +79,14 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
 
     In order, each step refusing before the next can run: check the host's
     identity and the bundle's port, require the promoted group record and
-    every credential it needs, load missing images, install the apps,
+    every credential it needs, load missing images, require for a pair in
+    provided mode this host's own certificate from the organisation's CA
+    (nginx_tls), install the apps,
     Keycloak and nginx (stopping the tier first if anything changed), start
     them, wait for each app and the expected issuer, correct the Keycloak
     clients, record the hostnames, and save the nginx CA certificate as
-    config_dir/todo-nginx-root.crt for the operator to hand to clients.
+    config_dir/todo-nginx-root.crt (the demo CA for the operator to hand to
+    clients, or the organisation's root they already trust).
 
     The application files are the operations package's (project_root),
     filled in with this host's address and the public hostnames it recorded
@@ -101,6 +104,9 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
     if missing:
         raise RuntimeError('Credentials required by the promoted group are missing: ' + ', '.join(missing))
     images_changed = images.prepare_offline_group(bundle_dir)
+    # A pair in provided mode never starts nginx here with a new demo CA. Checked with
+    # the proxy image just loaded, before any workload changes.
+    nginx_tls.require_for_failover()
     workloads_changed = install_workloads(project_root, quadlet_dir, target, node_address, service_port)
     if images_changed or workloads_changed:
         run('systemctl', '--user', 'stop', *apps.services(databases=False), allowed=(0, 5))

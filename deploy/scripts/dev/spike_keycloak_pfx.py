@@ -7,8 +7,9 @@ installer work depends on, with the same Podman mechanics:
   1. A PKCS#12 file (.pfx) under a random password, from a demo CA, made with
      openssl, as an organisation would deliver it.
   2. The PFX as a Kube secret built from the file's bytes (base64), mounted as
-     a file by podman kube play: does it arrive byte for byte, and can
-     Keycloak's user (1000, group 0) read it?
+     a file by podman kube play, in the realm's directory where Keycloak
+     requires it: does it arrive byte for byte, and can Keycloak's user
+     (1000, group 0) read it?
   3. Keycloak's java-keystore key provider, through the admin API: with the
      password from Keycloak's file vault (a second file secret, so the
      password never crosses the API), else as a plain value.
@@ -42,7 +43,9 @@ ALIAS = 'todo-signing'
 PFX_SECRET = 'keycloak-pfx-spike-signing'
 VAULT_SECRET = 'keycloak-pfx-spike-vault'
 ADMIN_SECRET = 'keycloak-pfx-spike-admin'
-SIGNING_DIR = '/opt/keycloak/conf/signing'
+# Keycloak 26 loads a realm's keystore only from that realm's directory under
+# /opt/keycloak/data (first CI run: "is not under the realm directory").
+SIGNING_DIR = f'/opt/keycloak/data/{REALM}'
 VAULT_DIR = '/opt/keycloak/vault'
 # The file vault's name for ${vault.signing-password} in this realm: <realm>_<key>.
 VAULT_KEY = 'signing-password'

@@ -501,6 +501,17 @@ the same whichever identity server reads the files.
   (step 2) before building the rest; if it fails, fall back to signing in
   the Notes backend. The spike is `deploy/scripts/dev/spike_keycloak_pfx.py`
   (CI job "Keycloak PFX spike"); its RESULT lines answer step 2's questions.
+  *Spike passed (2026-10-08, Keycloak 26.7.1, Podman 5.7):* the PFX
+  (OpenSSL 3 default, AES-256/PBKDF2) arrives byte for byte from a Kube
+  file secret, `defaultMode: 0440` gives owner 0:0 mode 0440, readable by
+  Keycloak's uid 1000 in group 0. Keycloak loads a keystore only from the
+  realm's own directory: mount it at `/opt/keycloak/data/todo`, anywhere
+  else is refused ("not under the realm directory"). The password can come
+  from Keycloak's file vault (`KC_VAULT=file`, a second file secret named
+  `<realm>_<key>`, `keystorePassword: ${vault.<key>}`), so it never crosses
+  the admin API, which returns only the expression. Tokens are then signed
+  with the PFX key (kid, JWKS `x5c`, openssl verifies), and a wrong
+  password or missing file fails adding the key with HTTP 400.
   1. *Generation, in Python.* The installer, not a Bash script, makes the
      demo PKI before secrets are provisioned and the pods start, by running
      `openssl` (present on the hosts; the offline installer has only the

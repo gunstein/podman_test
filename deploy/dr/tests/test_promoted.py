@@ -22,10 +22,12 @@ class PromotedHost:
     """Records every step of promoted.deploy in order and answers like a healthy host."""
 
     def __init__(self, hostname='todo-standby', address='192.0.2.11', missing_secrets=(), workloads_changed=False,
-                 images_changed=False, issuers=(ISSUER,), reads=None, promoted=True, legacy=False):
+                 images_changed=False, issuers=(ISSUER,), reads=None, promoted=True, legacy=False,
+                 tls_changed=False):
         self.hostname, self.address = hostname, address
         self.missing_secrets = set(missing_secrets)
         self.workloads_changed, self.images_changed = workloads_changed, images_changed
+        self.tls_changed = tls_changed
         self.issuers = list(issuers)
         self.reads = reads or {}
         self.promoted, self.legacy = promoted, legacy
@@ -87,6 +89,9 @@ class PromotedHost:
             patch.object(target_render, 'record_path', return_value=self.record(directory)),
             # A pair in local mode, whatever the machine running the tests holds (test_nginx_tls has provided).
             patch.object(promoted.nginx_tls, 'PAIR_MODE', Path(directory) / 'nginx-tls-mode'),
+            # nginx's TLS secrets on this host (test_nginx_tls_secrets.py runs the real ones).
+            patch.object(promoted.nginx_tls, 'provision',
+                         lambda hostnames: (self.steps.append(('tls', *hostnames.values())), self.tls_changed)[1]),
         ]
 
     @staticmethod
@@ -129,7 +134,7 @@ class PromotedDeployTests(unittest.TestCase):
             self.assertLess(self.index(host, ('request', promoted.DISCOVERY, None)), self.index(host, ('clients',)))
 
     def test_any_image_or_workload_change_stops_the_whole_tier_once_before_starting(self):
-        for changes in ({'workloads_changed': True}, {'images_changed': True}):
+        for changes in ({'workloads_changed': True}, {'images_changed': True}, {'tls_changed': True}):
             with self.subTest(**changes), tempfile.TemporaryDirectory() as directory:
                 host = PromotedHost(**changes)
                 self.assertTrue(self.deploy(host, directory))
@@ -171,6 +176,18 @@ class PromotedDeployTests(unittest.TestCase):
             self.assertEqual(installs, [('application', app.name) for app in apps.APPS]
                              + [('keycloak', apps.SHARED_RESOURCE_OWNER.name),
                                 ('shared-proxy', apps.SHARED_RESOURCE_OWNER.name)])
+
+    def test_nginx_gets_its_tls_secrets_for_the_recorded_hostnames_before_it_is_installed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            record = PromotedHost.record(directory)
+            record.parent.mkdir(parents=True)
+            record.write_text(json.dumps({'TARGET_EXTERNAL_HOSTNAME': 'shop.example.org',
+                                          'TARGET_NOTES_HOSTNAME': 'notes.example.org'}))
+            host = PromotedHost(issuers=['https://shop.example.org:8443/auth/realms/todo'])
+            self.deploy(host, directory)
+            tls = ('tls', 'shop.example.org', 'notes.example.org')
+            self.assertLess(self.index(host, ('images',)), self.index(host, tls))
+            self.assertLess(self.index(host, tls), self.index(host, ('install', 'application', 'todo')))
 
     def test_a_failed_public_read_or_foreign_issuer_stops_the_deployment(self):
         with tempfile.TemporaryDirectory() as directory:

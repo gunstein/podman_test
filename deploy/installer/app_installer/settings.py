@@ -56,6 +56,11 @@ RPO_TARGET_SECONDS = 30
 # Dev mode (direct `podman kube play`/`down`, no Quadlet units) records what it
 # played here so `down` can find and remove it, independent of whatever
 # --rendered-manifest-dir or --quadlet-dir a later `down` call happens to pass.
+# Where nginx's TLS files live: "secret", Podman secrets (app_installer/tls_secrets.py),
+# or "volume", the TLS volume todo-nginx-data (app_installer/tls.py). To go back
+# to the volume, set "volume" and follow the steps at the top of
+# deploy/manifests/shared-proxy.yaml.j2 (docs/TLS.md, "Switching back").
+NGINX_TLS_STORAGE = "secret"
 DEV_STATE_FILE = Path.home() / ".config/containers/app-installer-dev.json"
 
 # Time limits in seconds, so a command that hangs stops the step with an error

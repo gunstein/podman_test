@@ -81,7 +81,8 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
     identity and the bundle's port, require the promoted group record and
     every credential it needs, load missing images, require for a pair in
     provided mode this host's own certificate from the organisation's CA
-    (nginx_tls), install the apps,
+    (nginx_tls), give nginx its TLS files as Podman secrets (a new demo CA
+    in local mode unless this host has one), install the apps,
     Keycloak and nginx (stopping the tier first if anything changed), start
     them, wait for each app and the expected issuer, correct the Keycloak
     clients, record the hostnames, and save the nginx CA certificate as
@@ -107,8 +108,10 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
     # A pair in provided mode never starts nginx here with a new demo CA. Checked with
     # the proxy image just loaded, before any workload changes.
     nginx_tls.require_for_failover()
+    # nginx's TLS files as Podman secrets on this host, before nginx starts.
+    tls_changed = nginx_tls.provision(hostnames)
     workloads_changed = install_workloads(project_root, quadlet_dir, target, node_address, service_port)
-    if images_changed or workloads_changed:
+    if images_changed or workloads_changed or tls_changed:
         run('systemctl', '--user', 'stop', *apps.services(databases=False), allowed=(0, 5))
     for service in [app.service for app in apps.APPS] + ['keycloak.service', 'shared-proxy.service']:
         quadlet.systemctl('start', service)
@@ -120,4 +123,4 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
     target_render.write_record(target.values)
     certificate = run('podman', 'exec', 'nginx', 'cat', CA_CERTIFICATE).stdout.strip() + '\n'
     certificate_changed = quadlet.write(config_dir / 'todo-nginx-root.crt', certificate.encode(), 0o644)
-    return images_changed or workloads_changed or clients_changed or certificate_changed
+    return images_changed or workloads_changed or tls_changed or clients_changed or certificate_changed

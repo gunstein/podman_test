@@ -1,4 +1,8 @@
-"""nginx_tls: each DR host's nginx certificate from the organisation's CA, with real openssl.
+"""nginx_tls: each DR host's nginx certificate from the organisation's CA in the TLS volume, with real openssl.
+
+These tests keep the volume storage working for going back to it: each sets
+settings.NGINX_TLS_STORAGE to "volume". Podman secrets, the default, are
+test_nginx_tls_secrets.py.
 
 The Podman fake and the CA come from the installer's tests
 (test_tls.FakePodman, deploy/scripts/app_ca.py): every openssl step runs here
@@ -17,8 +21,9 @@ HERE = Path(__file__).resolve()
 sys.path[:0] = [str(HERE.parents[1]), str(HERE.parents[2] / 'installer'), str(HERE.parents[2] / 'installer/tests')]
 import dr_target  # noqa: E402
 from app_dr_host import cli, nginx_tls, promoted  # noqa: E402
-from app_installer import target_render, tls  # noqa: E402
+from app_installer import settings, target_render, tls  # noqa: E402
 from test_tls import REAL_RUN, ROOT, FakePodman, app_ca  # noqa: E402
+from volume_mode import volume_bundle  # noqa: E402
 
 RECORD = {'TARGET_EXTERNAL_HOSTNAME': 'todo.example.test', 'TARGET_NOTES_HOSTNAME': 'notes.example.test'}
 NAMES = ['todo.example.test', 'notes.example.test']
@@ -65,13 +70,18 @@ class NginxTlsTest(unittest.TestCase):
                 (nginx_tls, 'PAIR_MODE', self.directory / 'config/nginx-tls-mode'),
                 (tls, 'ENTRYPOINT', str(ROOT / 'proxy/proxy-entrypoint.sh')),
                 (tls, 'KEY', 'rsa:2048'),
+                (settings, 'NGINX_TLS_STORAGE', 'volume'),
                 (nginx_tls.images, 'prepare_shared', lambda *args: self.loaded.append(args) or {'proxy': False})):
             patcher = patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
 
     def where(self):
-        return dr_target.bundle(), '/home/todo/todo-offline-m12', '192.0.2.11'
+        """The operations package's files as after going back to the volume, the bundle, the host's address."""
+        if not hasattr(self, 'bundle'):
+            self.bundle = volume_bundle(dr_target.bundle())
+            self.addCleanup(lambda: REAL_RUN(['rm', '-rf', str(self.bundle.parent)], check=True))
+        return self.bundle, '/home/todo/todo-offline-m12', '192.0.2.11'
 
     def certificate(self, days=365):
         csr, names = nginx_tls.request(*self.where())

@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# Validate the actual rendered proxy configuration and persistent TLS bootstrap.
+# Validate the actual rendered proxy configuration and nginx's TLS files, first in
+# the TLS volume (app_installer/tls.py), then as Podman secrets (tls_secrets.py).
 set -euo pipefail
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 work_directory=$(mktemp -d)
 image="localhost/todo-proxy-smoke:$$"
 volume="todo-proxy-smoke-$$"
+# The Podman secrets of this run only, never the host's own nginx secrets.
+secret_prefix="todo-proxy-smoke-$$-"
 cleanup() {
+  podman secret ls --format '{{.Name}}' | grep "^$secret_prefix" | xargs -r podman secret rm >/dev/null 2>&1 || true
   podman volume rm --force "$volume" >/dev/null 2>&1 || true
   podman image rm "$image" >/dev/null 2>&1 || true
   rm -rf "$work_directory"
@@ -116,3 +120,65 @@ podman run --rm --volume "$volume:/var/lib/todo-tls:ro" --entrypoint sh "$image"
 cmp "$work_directory/provided.crt" "$work_directory/host.crt"
 serve_read_only
 echo 'Provided TLS mode: installed and served as issued'
+
+# Podman secrets, the default: the same two modes with every file a secret,
+# made by the installer in throwaway containers of this image. nginx gets the
+# four files it serves (tls-mode, ca.crt, server.crt, server.key) read-only,
+# here as --secret mounts where the pod mounts its Kube secret.
+secrets_step() {
+  PYTHONPATH="$project_root/deploy/installer" python3 - "$work_directory" "$image" "$secret_prefix" "$@" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+from app_installer import apps, tls_secrets
+
+work, image, prefix, step = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
+apps.PROXY_IMAGE = image
+tls_secrets.FILES = {name: prefix + secret for name, secret in tls_secrets.FILES.items()}
+tls_secrets.KUBE_SECRET = prefix + 'kube-tls'
+names = ['todo.test', 'notes.test']
+if step == 'provision':
+    print(json.dumps(tls_secrets.provision(names)))
+elif step == 'mounts':
+    # What the pod's Kube secret volume would hold, as --secret mounts.
+    print(' '.join(f'--secret={tls_secrets.FILES[name]},type=mount,target=/var/lib/todo-tls/{name},'
+                   'uid=101,gid=101,mode=0444' for name in tls_secrets.SERVED))
+elif step == 'request':
+    print(json.dumps(tls_secrets.request(work / 'secret-host.csr', hostnames=names)))
+elif step == 'install':
+    print(json.dumps(tls_secrets.install(work / 'secret-host.crt', work / 'ca/ca.crt', hostnames=names)))
+elif step == 'status':
+    current, days, problem = tls_secrets.status(names)
+    print(current, days is not None, problem or 'fits')
+else:
+    print(' '.join(sorted(name for name in tls_secrets.FILES if tls_secrets.has(name))))
+PY
+}
+serve_secrets() {
+  # shellcheck disable=SC2046 # one --secret option per word
+  podman run --rm --env TODO_TLS_ROLE=serve \
+    --env TODO_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
+    $(secrets_step mounts) \
+    --volume "$work_directory/nginx-config:/etc/todo-nginx:ro,Z" \
+    "$image" nginx -t -c /etc/todo-nginx/nginx.conf
+}
+test "$(secrets_step provision)" = true
+test "$(secrets_step provision)" = false
+test "$(secrets_step status)" = 'local True fits'
+test "$(secrets_step present)" = 'ca.crt ca.key server.crt server.key tls-mode'
+serve_secrets
+secrets_step request
+python3 "$project_root/deploy/scripts/app_ca.py" sign --directory "$work_directory/ca" \
+  --request "$work_directory/secret-host.csr" --output "$work_directory/secret-host.crt" \
+  --passphrase-file "$work_directory/passphrase"
+test "$(secrets_step install)" = true
+test "$(secrets_step install)" = false
+test "$(secrets_step status)" = 'provided True fits'
+# The demo CA's key and the waiting key are gone; nginx serves the issued certificate.
+test "$(secrets_step present)" = 'ca.crt server.crt server.key tls-mode'
+test "$(podman secret inspect --showsecret --format '{{.SecretData}}' "${secret_prefix}todo-proxy-tls-cert" \
+  | openssl x509 -noout -fingerprint -sha256)" = \
+  "$(openssl x509 -in "$work_directory/secret-host.crt" -noout -fingerprint -sha256)"
+serve_secrets
+echo 'Podman secrets: local and provided TLS mode served as made and issued'

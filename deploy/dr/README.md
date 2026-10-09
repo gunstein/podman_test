@@ -179,11 +179,11 @@ before users can work. In provided mode
 hosts hold a certificate from your CA (`app_ca.py`, which may run on either
 host from its own storage, or your organisation's PKI) for the same public hostnames,
 issued before it is needed, and clients trust that CA once. The standby,
-which runs no nginx, keeps its certificate in the same TLS volume nginx will
-use after a failover.
+which runs no nginx, keeps its key and certificate as Podman secrets on that
+host (with the TLS volume: in the volume), which nginx gets after a failover.
 
 ```bash
-# On the controller: a CSR from each host (each key stays in its TLS volume).
+# On the controller: a CSR from each host (each key stays in that host's Podman secrets).
 python3 -m app_ops --inventory initial.yaml nginx-tls-request --output ~/nginx-requests
 #   -> ~/nginx-requests/todo-primary.csr, ~/nginx-requests/todo-standby.csr
 # With the CA (app_ca.py sign, or sudo todo-ca-sign in v1), for each host:
@@ -193,12 +193,13 @@ python3 deploy/scripts/app_ca.py sign --directory /media/ca-usb/todo-ca \
 python3 -m app_ops --inventory initial.yaml nginx-tls-install --certificates ~/nginx-signed --ca ~/ca.crt
 ```
 
-`nginx-tls-request` gives a standby its TLS volume (from the bundle's own
-claim) and the proxy image (from its offline bundle) first. The names
-come from each host's record, the ones the primary serves.
-`nginx-tls-install` needs both certificates before it changes anything,
-checks and installs the standby's, then the primary's (nginx reloads, no
-restart), and then sets the pair's mode to provided on both hosts
+`nginx-tls-request` gives a standby the proxy image (from its offline
+bundle) first; every openssl step runs in it. With the TLS volume it also
+creates the volume from the bundle's own claim. The names come from each
+host's record, the ones the primary serves. `nginx-tls-install` needs both
+certificates before it changes anything, checks and installs the
+standby's, then the primary's (nginx restarts, a few seconds; with the TLS
+volume it reloads), and then sets the pair's mode to provided on both hosts
 (`~/.config/todo/nginx-tls-mode`). From then on:
 
 - `app_dr.py check` (every 15 minutes, both hosts) fails unless this host
@@ -211,8 +212,11 @@ restart), and then sets the pair's mode to provided on both hosts
   without that certificate: never a new demo CA by accident. `failover`
   then reports `"client_trust": "unchanged"`: nothing to do on the clients.
 
-A host rebuilt as the standby keeps the certificate in its TLS volume. A
-new machine needs its own: run the two commands again for the pair.
+A host rebuilt as the standby keeps its certificate in its Podman secrets
+(or TLS volume). A new machine needs its own: run the two commands again for
+the pair. The nginx secrets are never in the DR secret copy: each host makes
+its own key. In local mode `deploy-promoted-application` gives the promoted
+host its own demo CA as Podman secrets before nginx starts, unless it has one.
 
 ## Operations package
 

@@ -1,7 +1,19 @@
 """Single-host orchestration; shared workload functions also serve app-ops DR."""
 from pathlib import Path
 
-from . import apps, backup, images, keycloak, quadlet, secrets, settings, target_render, workloads
+from . import (
+    apps,
+    backup,
+    images,
+    keycloak,
+    quadlet,
+    secrets,
+    settings,
+    target_render,
+    tls_secrets,
+    tls_store,
+    workloads,
+)
 from .commands import exists, run
 
 LEGACY = tuple(app.names.resource(component) for app in apps.APPS
@@ -136,8 +148,10 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
 
     Steps: check the host, render the Kube YAML (build mode) or use the
     bundle's (offline mode), create missing passwords, build or load
-    images, and write the Quadlet units. In server mode, only services
-    whose definition or image changed are restarted, then everything is
+    images, give nginx its TLS files as Podman secrets (tls_secrets, when
+    settings.NGINX_TLS_STORAGE is "secret"), and write the Quadlet units.
+    In server mode, only services whose definition, image or TLS secret
+    changed are restarted, then everything is
     started in dependency order. Roles are set up once the database is
     healthy, and again after the app starts, so the tables its migrations
     created get their grants. Finally Keycloak is configured and every unit
@@ -192,6 +206,10 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     shared_images = images.prepare_shared(root, deployment_mode, bundle_directory, refresh_images)
     images_changed = any(shared_images.values()) or any(
         any(changes.values()) for changes in image_changes.values())
+    hostnames = app_hostnames(root, mode, target, applications)
+    # nginx's TLS files as Podman secrets, before nginx starts (tls_secrets);
+    # with the TLS volume, the shared-proxy pod's init container makes them.
+    tls_changed = tls_store.secret_storage() and tls_secrets.provision(tls_secrets.ordered(hostnames))
     if mode == 'dev':
         from .kube_play import up
         for app in applications:
@@ -199,11 +217,9 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
             secrets.create_kube(secrets.application_secret_mapping(app))
         secrets.create_kube(secrets.postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
         secrets.create_kube(secrets.keycloak_secret_mapping())
-        changed = up(rendered, applications, settings.DEV_STATE_FILE, images_changed)
-        configured = keycloak.configure(
-            secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
-            clients(applications, app_hostnames(root, mode, target, applications)))
-        return changed or configured
+        changed = up(rendered, applications, settings.DEV_STATE_FILE, images_changed or tls_changed)
+        configured = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(applications, hostnames))
+        return changed or configured or tls_changed
     arguments = (root, directory, runtime, rendered)
     changed = False
     # postgres is the one image shared by every database (images.shared_images), so a
@@ -240,7 +256,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     proxy_changed = workloads.install_shared_proxy(
         *arguments, publish_address, service_port, applications=applications, target=target)
     changed = proxy_changed or changed
-    if proxy_changed or shared_images['proxy']:
+    if proxy_changed or shared_images['proxy'] or tls_changed:
         restart.add('shared-proxy')
     selected_services = services(applications)
     for service in selected_services:
@@ -259,7 +275,6 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         quadlet.systemctl('start', app.service)
         setup_roles(app)
     quadlet.systemctl('start', 'shared-proxy.service')
-    hostnames = app_hostnames(root, mode, target, applications)
     configured = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(applications, hostnames))
     for service in selected_services:
         source = quadlet.systemctl('show', service + '.service', '--property=SourcePath',
@@ -272,4 +287,4 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     # Every server install backs itself up every night, so a single host can at
     # least go back to last night (backup.py).
     backups_changed = backup.install_timer(Path(__file__).resolve().parents[1])
-    return changed or images_changed or configured or backups_changed
+    return changed or images_changed or tls_changed or configured or backups_changed

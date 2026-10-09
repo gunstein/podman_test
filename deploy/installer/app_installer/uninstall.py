@@ -2,14 +2,17 @@
 import shutil
 from pathlib import Path
 
-from . import apps, backup, install, secrets, settings, target_render
+from . import apps, backup, install, secrets, settings, target_render, tls_secrets
 from .commands import exists, run
 from .quadlet import systemctl
 
 SHARED = apps.SHARED_RESOURCE_OWNER
 # caddy-data is a retired Caddy-based proxy's volume name; kept here so a host
 # still carrying it from before the nginx migration gets it cleaned up too.
-TLS_VOLUMES = (SHARED.names.resource('nginx-data'), SHARED.names.resource('caddy-data'))
+# podman kube play keeps a secret volume's files in a named volume called after
+# the Kube secret, and it stays after kube down: nginx's key is in it too.
+TLS_VOLUMES = (SHARED.names.resource('nginx-data'), SHARED.names.resource('caddy-data'),
+               apps.PROXY_KUBE_TLS_SECRET)
 QUADLET_FILES = (apps.NETWORK + '.network',
                  *(app.database.volume(purpose) + '.volume' for app in apps.APPS
                    for purpose in ('data', 'backup')),
@@ -30,8 +33,10 @@ MAPPINGS = {name: fields for app in apps.APPS
                                  **secrets.application_secret_mapping(app)}.items()}
 MAPPINGS.update(secrets.postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
 MAPPINGS.update(secrets.keycloak_secret_mapping())
+# nginx's TLS secrets (tls_secrets.py) go with the data, as the TLS volume does.
 SECRETS = tuple(dict.fromkeys([*MAPPINGS, *(source for fields in MAPPINGS.values()
-                                          for source in fields.values())]))
+                                          for source in fields.values()),
+                               *tls_secrets.secret_names()]))
 
 
 def remove(kind, name):
@@ -89,9 +94,10 @@ def uninstall(remove_data=False, quadlet_dir=None):
         changed = remove('volume', apps.KEYCLOAK_DATABASE.volume('data')) or changed
         for name in SECRETS:
             changed = remove('secret', name) or changed
-        # todo-nginx-data holds the demo CA and leaf-key state; docs/ARCHITECTURE.md
-        # lists it with the database volumes as surviving local app recreation, so
-        # it is only removed alongside them, not on a plain uninstall.
+        # nginx's CA and leaf are Podman secrets (in SECRETS above) or, with the TLS
+        # volume, in todo-nginx-data; docs/ARCHITECTURE.md lists both with the
+        # database volumes as surviving local app recreation, so they are only
+        # removed alongside them, not on a plain uninstall.
         for name in TLS_VOLUMES:
             changed = remove('volume', name) or changed
         # The public hostnames go with the data they were installed for; a plain

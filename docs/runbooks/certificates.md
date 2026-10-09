@@ -16,8 +16,8 @@ python3 /opt/todo/bin/app_dr.py check | grep -i 'certificate\|Replication CA'
 
 Set up as in [TLS.md](../TLS.md#provided-mode-a-separate-ca-process). The
 nightly backup run checks it: below 30 days it fails with `the nginx
-certificate expires in N days`. Make a request (a new key waits in the TLS
-volume), have the CA sign it (`app_ca.py sign`, or `sudo todo-ca-sign` in
+certificate expires in N days`. Make a request (a new key waits in a Podman
+secret, or in the TLS volume), have the CA sign it (`app_ca.py sign`, or `sudo todo-ca-sign` in
 v1), and install the result:
 
 ```bash
@@ -33,7 +33,7 @@ PYTHONPATH=deploy/installer python3 -m app_installer tls-install \
 |---|---|---|
 | `tls-install`: `belongs to neither the waiting request ... nor the installed key` | It was signed from another host's request, or from an older one replaced with `--new-key` | Sign the request this host made last |
 | `tls-install`: `not valid for NAME from this CA` | It misses a hostname nginx serves, is expired, or came from another CA | Check `--ca`; make a new request (`tls-request`) and sign it |
-| nginx does not start: `ERROR: provided TLS mode, but ...` in `journalctl --user -u shared-proxy.service` | A file in the TLS volume is missing or does not fit, often after a new hostname was added | `tls-request`, sign, `tls-install`; nginx never falls back to the demo CA |
+| nginx does not start, or `install` stops: `provided TLS mode, but ...` (in `journalctl --user -u shared-proxy.service` for nginx) | One of nginx's TLS files (a `todo-proxy-*` secret, or a file in the TLS volume) is missing or does not fit, often after a new hostname was added | `tls-request`, sign, `tls-install`; nginx never falls back to the demo CA |
 | `does not know provided TLS mode` | The proxy image predates provided mode | Rebuild it (`install --refresh-images`) or load it from a current offline bundle |
 
 **On a DR pair** both hosts have a certificate, and renewal goes through
@@ -51,24 +51,28 @@ certificate does not fit its recorded hostnames
 
 ## nginx leaf (397 days, local mode)
 
-**You notice it** when browsers warn about an expired certificate. nginx
-renews its leaf **when it starts** if less than 30 days are left, signed by
-the same CA, so clients that trust the CA need nothing new:
+**You notice it** when browsers warn about an expired certificate. With
+Podman secrets (the default) the installer renews the leaf if less than 30
+days are left, signed by the same CA, so clients that trust the CA need
+nothing new: every `install` does, and so does `tls-renew`, which then
+restarts nginx. It touches only nginx's secrets, so it also runs on a DR
+host, where `install` refuses:
 
 ```bash
-systemctl --user restart shared-proxy.service
+PYTHONPATH=deploy/installer python3 -m app_installer tls-renew
 podman exec nginx openssl x509 -in /var/lib/todo-tls/server.crt -noout -enddate
 ```
 
-A running nginx never renews by itself: a host that runs for over a year
-without a restart would let it expire. On a single host the nightly backup run
-fails below 30 days with `the nginx demo certificate expires in N days`; the
-restart above renews it. Tested in acceptance: every start of nginx checks
-and renews.
+A restart alone renews nothing: nginx's files are a read-only secret. On a
+single host the nightly backup run fails below 30 days with `the nginx demo
+certificate expires in N days; python3 -m app_installer tls-renew renews it`.
+With the TLS volume, the init container renews the leaf at every pod start
+instead: `systemctl --user restart shared-proxy.service`.
 
 ## nginx demo CA (10 years)
 
-The same start renews the CA when less than 30 days are left. That is a
+The same `install` or `tls-renew` (with the TLS volume: the same pod start)
+replaces the CA when less than 30 days are left. That is a
 **new** CA: every client must trust it again, exactly as after a failover.
 Plan it, do not let it happen by accident. Production should use its own CA
 or a public one instead ([TLS.md](../TLS.md), backlog T4).

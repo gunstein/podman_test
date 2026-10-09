@@ -20,7 +20,10 @@ Current architecture and workflow:
   deploy/installer/app_installer/apps.py owns per-app installer names.
   DR/backup/rebuild act on one group of three databases (todo, notes,
   keycloak; apps.REPLICATED_DATABASES), never on a partial group.
-  shared-proxy.service owns nginx and persistent TLS volume todo-nginx-data.
+  shared-proxy.service owns nginx, which reads its TLS files read-only from
+  Podman secrets the installer makes (tls_secrets.py, the worked example of
+  files as Podman secrets); the TLS volume todo-nginx-data (tls.py) is kept,
+  commented out in shared-proxy.yaml.j2, for going back (settings.NGINX_TLS_STORAGE).
 - Legacy runtime/transition files are retired from the active tree; Git
   history and quadlet-reference-v1 preserve them. See PROJECT.md#acceptance
   for the current acceptance verdict, its scope and every historical run

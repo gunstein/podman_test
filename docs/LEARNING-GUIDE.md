@@ -55,7 +55,9 @@ Read `app.yaml`, `keycloak.yaml`, `postgres.yaml` and their `.kube` units in
 the installed `~/.config/containers/systemd/todo-kube-runtime/` (or a
 temporary render as above); Notes and Keycloak's database use the same templates with
 `notes-` and `keycloak-` prefixed files. A seventh unit, `shared-proxy.service`,
-owns container `nginx` and TLS volume `todo-nginx-data`. It routes over DNS to
+owns container `nginx`, which reads its certificate read-only from a Podman
+secret the installer made ([TLS](TLS.md#nginxs-tls-files-as-podman-secrets),
+a worked example of files as Podman secrets). It routes over DNS to
 `todo-app:8080`/`notes-app:8080` (frontends), `todo-app:8000`/`notes-app:8000`
 (backends) and `keycloak:8080`.
 Frontend/backend share pod loopback, but frontend does not terminate TLS.

@@ -1,11 +1,22 @@
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: todo-nginx-data
-  annotations:
-    volume.podman.io/uid: "101"
-    volume.podman.io/gid: "101"
----
+# nginx's TLS files come from Podman secrets: the Kube secret
+# {{ tls_secret }}, which the installer makes (app_installer/tls_secrets.py),
+# is mounted read-only at /var/lib/todo-tls, one file per data key.
+#
+# The TLS volume todo-nginx-data is kept for going back (app_installer/tls.py,
+# docs/TLS.md "Switching back"). Its three parts are commented out with "#~ ":
+# this claim, the pod's nginx-tls init container and the tls-data claim at the
+# end. To use the volume again: remove "#~ " from those lines, delete the lines
+# between "# BEGIN secret" and "# END secret", and set
+# settings.NGINX_TLS_STORAGE = "volume". tests/test_proxy_configuration.py
+# checks that the result is a valid volume manifest.
+#~ apiVersion: v1
+#~ kind: PersistentVolumeClaim
+#~ metadata:
+#~   name: todo-nginx-data
+#~   annotations:
+#~     volume.podman.io/uid: "101"
+#~     volume.podman.io/gid: "101"
+#~ ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -118,39 +129,39 @@ metadata:
     app.kubernetes.io/name: shared-proxy
     app.kubernetes.io/component: proxy
   annotations:
-    io.podman.annotations.pids-limit/nginx-tls: "128"
+#~     io.podman.annotations.pids-limit/nginx-tls: "128"
     io.podman.annotations.pids-limit/nginx: "128"
 spec:
   restartPolicy: Never
-  # nginx-tls is the only container that writes the TLS volume: on every pod
-  # start it issues or renews the demo certificate (local mode) or checks the
-  # provided one, then exits. nginx mounts the volume read-only
-  # (proxy-entrypoint.sh, TODO_TLS_ROLE). tls-request and tls-install write
-  # through their own throwaway containers (app_installer.tls), never nginx.
-  initContainers:
-    - name: nginx-tls
-      image: {{ image | tojson }}
-      imagePullPolicy: Never
-      args: ["true"]
-      envFrom:
-        - configMapRef:
-            name: shared-nginx-env
-            optional: false
-      env:
-        - name: TODO_TLS_ROLE
-          value: provision
-      volumeMounts:
-        - name: tls-data
-          mountPath: /var/lib/todo-tls
-      resources:
-        limits:
-          memory: "64Mi"
-      securityContext:
-        runAsUser: 101
-        runAsGroup: 101
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop: [ALL]
+#~   # nginx-tls is the only container that writes the TLS volume: on every pod
+#~   # start it issues or renews the demo certificate (local mode) or checks the
+#~   # provided one, then exits. nginx mounts the volume read-only
+#~   # (proxy-entrypoint.sh, TODO_TLS_ROLE). tls-request and tls-install write
+#~   # through their own throwaway containers (app_installer.tls), never nginx.
+#~   initContainers:
+#~     - name: nginx-tls
+#~       image: {{ image | tojson }}
+#~       imagePullPolicy: Never
+#~       args: ["true"]
+#~       envFrom:
+#~         - configMapRef:
+#~             name: shared-nginx-env
+#~             optional: false
+#~       env:
+#~         - name: TODO_TLS_ROLE
+#~           value: provision
+#~       volumeMounts:
+#~         - name: tls-data
+#~           mountPath: /var/lib/todo-tls
+#~       resources:
+#~         limits:
+#~           memory: "64Mi"
+#~       securityContext:
+#~         runAsUser: 101
+#~         runAsGroup: 101
+#~         allowPrivilegeEscalation: false
+#~         capabilities:
+#~           drop: [ALL]
   containers:
     - name: nginx
       image: {{ image | tojson }}
@@ -197,6 +208,15 @@ spec:
         name: shared-nginx-config
         optional: false
         defaultMode: 0444
+    # BEGIN secret
+    # The files nginx serves: tls-mode, ca.crt, server.crt and server.key, never
+    # a CA key. Podman mounts them as root; 0444 lets nginx (user 101) read them.
     - name: tls-data
-      persistentVolumeClaim:
-        claimName: todo-nginx-data
+      secret:
+        secretName: {{ tls_secret | tojson }}
+        optional: false
+        defaultMode: 0444
+    # END secret
+#~     - name: tls-data
+#~       persistentVolumeClaim:
+#~         claimName: todo-nginx-data

@@ -29,7 +29,12 @@ python3 -m app_installer uninstall
 
 Map `todo.test` and `notes.test` to the serving host (both to `127.0.0.1` for
 direct development) and trust the proxy CA as described in [TLS](../../docs/TLS.md).
-Both hosts use one SAN certificate and HTTPS port 8443.
+Both hosts use one SAN certificate and HTTPS port 8443. The installer keeps
+nginx's CA and certificate as Podman secrets (`tls_secrets.py`) and makes them
+with the OpenSSL in the proxy image, so the host needs none; `tls_store.py`
+chooses between those secrets and the earlier TLS volume (`tls.py`).
+`python3 -m app_installer tls-renew` renews nginx's demo certificate and
+restarts nginx, also on a DR host.
 
 Server and dev are alternative lifecycle owners. Use separate Podman user stores;
 do not run dev cleanup against a server deployment. `dev-up.sh` and `dev-down.sh`

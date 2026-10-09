@@ -95,6 +95,21 @@ PROXY_ARCHIVE = SHARED_RESOURCE_OWNER.names.image_archive("proxy")
 KEYCLOAK_DATABASE = stack.Database(name="keycloak", replication_port=5434)
 KEYCLOAK_KUBE_ADMIN_SECRET = "keycloak-kube-admin-secret"
 KEYCLOAK_ADMIN_SECRET = "keycloak-admin-password"
+# nginx's TLS files as Podman secrets on this host (tls_secrets.py), one secret
+# per file: {file name: raw secret}. Host-local: the DR copy never carries them.
+PROXY_TLS_SECRETS = {name: SHARED_RESOURCE_OWNER.names.resource(component) for name, component in (
+    ("tls-mode", "proxy-tls-mode"),           # local or provided
+    ("ca.crt", "proxy-ca-cert"),              # the root clients trust
+    ("server.crt", "proxy-tls-cert"),         # nginx's certificate (+ chain)
+    ("server.key", "proxy-tls-key"),          # its private key
+    ("ca.key", "proxy-ca-key"),               # the demo CA's key, local mode only
+    ("request.key", "proxy-tls-request-key"),  # a key waiting for its certificate
+    ("incoming.crt", "proxy-tls-incoming"),   # tls-install's certificate while it is checked
+    ("incoming-ca.crt", "proxy-tls-incoming-ca"),
+)}
+# The Kube secret nginx mounts at /var/lib/todo-tls: tls-mode, ca.crt, server.crt
+# and server.key, made from the raw secrets above; never a CA or waiting key.
+PROXY_KUBE_TLS_SECRET = SHARED_RESOURCE_OWNER.names.kube_secret("proxy-tls")
 # The replication CA (key, certificate), shared by both hosts; see replication_tls.py.
 REPLICATION_CA_SECRETS = ("replication-ca-key", "replication-ca-cert")
 # The DR group: every app's database, then Keycloak's. Bootstrap, promotion,

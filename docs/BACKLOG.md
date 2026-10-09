@@ -121,11 +121,13 @@ attention above 30 minutes (G3).
   quarantine covers the return only when the hypervisor is reachable.
 - **T4. One CA for both sites.** *[step 1 of 3 done]* Step 1, provided mode on a
   single host, is done: `deploy/scripts/app_ca.py` (an offline CA with name
-  constraints), `app_installer tls-request` (key made in the TLS volume,
+  constraints), `app_installer tls-request` (key made on the host,
   only the CSR leaves), `tls-install` (every check before any change, no
-  fallback to the demo CA) and the nightly expiry check (docs/TLS.md). The
-  key lives in the TLS volume rather than a Podman secret: it is made there
-  and never leaves it. Step 2, DR, is done too: `app-ops nginx-tls-request`
+  fallback to the demo CA) and the nightly expiry check (docs/TLS.md). Since
+  2026-10-09 the key and certificates are Podman secrets by owner's decision,
+  as the worked example of files as Podman secrets (docs/TLS.md); the TLS
+  volume stays, commented out, for going back, at the price of a restart
+  instead of a reload when a certificate changes. Step 2, DR, is done too: `app-ops nginx-tls-request`
   and `nginx-tls-install` give both hosts their certificate (the standby its
   TLS volume and proxy image first), the pair's mode is recorded on both,
   `app_dr.py check` requires a fitting certificate, `renew-tls` prepares

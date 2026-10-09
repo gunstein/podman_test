@@ -63,8 +63,8 @@ fresh rendering; see [offline delivery](../offline/README.md#target-values).
 
 All seven `.kube` units use `--no-pod-prefix`, so the grouped containers keep
 the stable names `todo-backend` and `todo-frontend` while one
-`todo-app.service` owns their shared lifecycle. The separate `shared-proxy.service` owns container `nginx`, terminates TLS using
-`todo-nginx-data`, and routes to `todo-app:8080` (frontend), `todo-app:8000`
+`todo-app.service` owns their shared lifecycle. The separate `shared-proxy.service` owns container `nginx`, terminates TLS with the
+files of the Podman secret `todo-kube-proxy-tls-secret`, and routes to `todo-app:8080` (frontend), `todo-app:8000`
 (backend), the corresponding `notes-app` ports, and `keycloak:8080`. The frontend is HTTP-only; no TLS material
 belongs in `todo-frontend`. App containers share loopback, but the proxy does not.
 

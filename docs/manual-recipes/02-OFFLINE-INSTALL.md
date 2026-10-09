@@ -184,5 +184,5 @@ issuer must be `https://todo.test:8443/auth/realms/todo`. Check the client mappi
 CA trust and user profile; do not disable certificate verification.
 
 On the VM, `podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf` should
-report success. `nginx` belongs to `shared-proxy.service`; its CA persists in
-`todo-nginx-data`. `todo-frontend` only serves HTTP static files.
+report success. `nginx` belongs to `shared-proxy.service`; its CA and
+certificate persist as Podman secrets (`podman secret ls --filter name=todo-proxy`). `todo-frontend` only serves HTTP static files.

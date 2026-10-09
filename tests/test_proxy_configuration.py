@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import sys
 import unittest
 
 from tests.runtime_fixture import RUNTIME
@@ -90,11 +91,45 @@ class ProxyConfigurationTests(unittest.TestCase):
         self.assertIn("drop: [ALL]", app)
         self.assertIn('args: [nginx, -c, /etc/todo-nginx/nginx.conf, -g, "daemon off;"]', app)
         
-    def test_tls_private_state_uses_dedicated_kube_volume(self):
-        app = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
+    def test_nginx_serves_its_tls_files_read_only_from_a_kube_secret(self):
+        import yaml
+        from app_installer import apps, tls_secrets
+        docs = list(yaml.safe_load_all((RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")))
+        self.assertEqual([doc["kind"] for doc in docs], ["ConfigMap", "ConfigMap", "Pod"])
+        pod = next(doc for doc in docs if doc["kind"] == "Pod")
+        # Nothing in the pod writes TLS files: no init container, nginx only serves.
+        self.assertNotIn("initContainers", pod["spec"])
+        nginx = pod["spec"]["containers"][0]
+        self.assertEqual(nginx["env"], [{"name": "TODO_TLS_ROLE", "value": "serve"}])
+        mount = next(m for m in nginx["volumeMounts"] if m["name"] == "tls-data")
+        self.assertEqual(mount, {"name": "tls-data", "mountPath": "/var/lib/todo-tls", "readOnly": True})
+        volume = next(v for v in pod["spec"]["volumes"] if v["name"] == "tls-data")
+        self.assertEqual(volume, {"name": "tls-data", "secret": {
+            "secretName": apps.PROXY_KUBE_TLS_SECRET, "optional": False, "defaultMode": 0o444}})
+        # The Kube secret's keys are the files nginx's entrypoint checks; no CA or waiting key.
+        self.assertEqual(tls_secrets.SERVED, ("tls-mode", "ca.crt", "server.crt", "server.key"))
 
-        self.assertIn("claimName: todo-nginx-data", app)
-        self.assertIn("mountPath: /var/lib/todo-tls", app)
+    def test_going_back_to_the_tls_volume_gives_the_volume_manifest_again(self):
+        import subprocess
+
+        import yaml
+        sys.path.insert(0, str(ROOT / "deploy/installer/tests"))
+        from volume_mode import volume_manifest
+        template = read("deploy/manifests/shared-proxy.yaml.j2")
+        # The volume's three parts are kept, commented out with "#~ ".
+        for line in ("#~ kind: PersistentVolumeClaim", "#~   initContainers:",
+                     "#~         claimName: todo-nginx-data"):
+            self.assertIn(line, template)
+        # Following the steps at the top gives the template before the secrets, apart from its comments.
+        before = subprocess.run(["git", "show", "8d0e699:deploy/manifests/shared-proxy.yaml.j2"], cwd=ROOT,
+                                capture_output=True, text=True, check=False)
+        if before.returncode == 0:
+            def code(text):
+                return [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+            self.assertEqual(code(volume_manifest(template)), code(before.stdout))
+        docs = list(yaml.safe_load_all(volume_manifest((RUNTIME / "shared-proxy.yaml").read_text())))
+        self.assertEqual([doc["kind"] for doc in docs], ["PersistentVolumeClaim", "ConfigMap", "ConfigMap", "Pod"])
+        self.assertEqual(docs[-1]["spec"]["initContainers"][0]["name"], "nginx-tls")
 
     def test_promoted_proxy_uses_stable_hostname_and_kube_publish(self):
         template = read(

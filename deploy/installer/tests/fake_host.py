@@ -21,10 +21,54 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from app_installer import secrets
+from app_installer import secrets, tls_secrets
 
 # What `podman image inspect` shows for the proxy image the installer checks.
-PROXY_LABELS = '[{"Labels":{"io.todo.proxy":"nginx"}}]'
+PROXY_LABELS = '[{"Labels":{"io.todo.proxy":"nginx","io.todo.proxy.tls":"local provided"}}]'
+# The real subprocess.run, kept before a fake replaces it: what a throwaway
+# proxy container would run (tls_secrets.proxy) runs here instead.
+REAL_RUN = subprocess.run
+# The repository's entrypoint, for tls_secrets.status (patch tls_secrets.ENTRYPOINT with it).
+ENTRYPOINT = str(Path(__file__).resolve().parents[3] / 'proxy/proxy-entrypoint.sh')
+
+
+# RSA keys made once for all tests: a new key per step would only make them slower.
+# Each host hands them out in turn (FakeHost.new_key), so its keys differ.
+KEY_POOL = []
+
+
+def pooled_key(index):
+    """The index-th key of KEY_POOL, made with this machine's openssl when first needed."""
+    while len(KEY_POOL) <= index % 4:
+        KEY_POOL.append(REAL_RUN(['openssl', 'genpkey', '-algorithm', 'RSA', '-pkeyopt', 'rsa_keygen_bits:2048'],
+                                 text=True, capture_output=True, check=True).stdout)
+    return KEY_POOL[index % 4]
+
+
+def proxy_container(argv, input, secrets_by_name):
+    """Run `podman run ... --secret NAME,...,target=FILE ... --entrypoint /bin/sh IMAGE -c ...` here.
+
+    Each --secret becomes a file in a temporary directory that stands in for
+    tls_secrets.MOUNT, holding the secret's value as Podman would mount it;
+    the tmpfs /work is another temporary directory, the working directory.
+    The shell and openssl are this machine's. Returns (exit code, stdout, stderr);
+    a secret that does not exist is exit 125, as with Podman.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        mount, work = Path(directory) / 'mount', Path(directory) / 'work'
+        mount.mkdir()
+        work.mkdir()
+        for index, word in enumerate(argv):
+            if word == '--secret':
+                name, *options = argv[index + 1].split(',')
+                target = dict(option.split('=', 1) for option in options)['target']
+                if name not in secrets_by_name:
+                    return 125, '', f'Error: {name}: no such secret'
+                (mount / Path(target).name).write_text(secrets_by_name[name])
+        script = [word.replace(tls_secrets.MOUNT, str(mount))
+                  for word in argv[argv.index('--entrypoint') + 3:]]  # after /bin/sh and the image
+        result = REAL_RUN(['sh', *script], cwd=work, input=input, text=True, capture_output=True, check=False)
+        return result.returncode, result.stdout, result.stderr
 
 
 class FakeHost:
@@ -40,6 +84,10 @@ class FakeHost:
     def __init__(self, *, password='fixture-password\n', images_present=True,
                  unit_directory=None, source=None):
         self.secrets = {name: password for name in secrets.installed_names()}
+        self.volumes = set()
+        # The files of the TLS volume todo-nginx-data, if a test gives it some ({name: text}).
+        self.volume_files = {}
+        self.keys_made = 0
         self.images = None if images_present else set()
         self.unit_directory = unit_directory
         self.source = source
@@ -55,7 +103,10 @@ class FakeHost:
         self.units = self.home / '.config/systemd/user'
         self._patchers = [mock.patch('app_installer.commands.subprocess.run', side_effect=self._run),
                           mock.patch('app_installer.target_render.record_path', return_value=self.record),
-                          mock.patch('app_installer.settings.SYSTEMD_USER_DIR', self.units)]
+                          mock.patch('app_installer.settings.SYSTEMD_USER_DIR', self.units),
+                          # nginx's demo CA and leaf (tls_secrets): smaller keys only to keep the tests fast.
+                          mock.patch('app_installer.tls_secrets.KEY_BITS', 2048),
+                          mock.patch('app_installer.tls_secrets.ENTRYPOINT', ENTRYPOINT)]
         for patcher in self._patchers:
             patcher.start()
         return self
@@ -68,6 +119,11 @@ class FakeHost:
     def _run(self, argv, input=None, **_):
         argv = list(argv)
         self.calls.append(argv)
+        if argv[:2] == ['podman', 'run'] and '--tmpfs' in argv and 'genpkey' in argv:
+            self.keys_made += 1
+            return subprocess.CompletedProcess(argv, 0, pooled_key(self.keys_made), '')
+        if argv[:2] == ['podman', 'run'] and '--tmpfs' in argv:  # tls_secrets.proxy
+            return subprocess.CompletedProcess(argv, *proxy_container(argv, input, self.secrets))
         rc, stdout = self.answer(argv, input)
         return subprocess.CompletedProcess(argv, rc, stdout, '')
 
@@ -83,8 +139,28 @@ class FakeHost:
             name = argv[-1]
             return (0, self.secrets[name]) if name in self.secrets else (125, '')
         if argv[:3] == ['podman', 'secret', 'create']:
-            self.secrets[argv[3]] = input
+            # As Podman 4.9: --replace needs an existing secret, a new name must not exist.
+            replace = '--replace' in argv
+            name = [word for word in argv[3:] if not word.startswith('--')][0]
+            if replace != (name in self.secrets):
+                return 125, ''
+            self.secrets[name] = input
             return 0, ''
+        if argv[:3] == ['podman', 'secret', 'rm']:
+            return (0, self.secrets.pop(argv[3]) and '') if argv[3] in self.secrets else (1, '')
+        if argv[:3] == ['podman', 'volume', 'exists']:
+            return int(argv[3] not in self.volumes), ''
+        if argv[:2] == ['podman', 'run'] and '--volume' in argv and \
+                argv[argv.index('--volume') + 1].startswith('todo-nginx-data:'):
+            # tls.py's throwaway containers on the TLS volume: only test -s and cat.
+            program = argv[argv.index('--entrypoint') + 1]
+            words = [program, *argv[argv.index('--entrypoint') + 3:]] if program == 'cat' else \
+                argv[argv.index('tls') + 1:]
+            text = self.volume_files.get(Path(words[-1]).name)
+            if words[0] == 'test':
+                return int(not text), ''
+            if words[0] == 'cat':
+                return (0, text) if text is not None else (1, '')
         if argv[:3] == ['podman', 'image', 'exists']:
             return int(self.images is not None and argv[3] not in self.images), ''
         if argv[:3] == ['podman', 'image', 'inspect']:

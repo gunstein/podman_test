@@ -1,4 +1,8 @@
-"""tls.py: nginx's certificate in provided mode, with real openssl and a Podman that runs it here.
+"""tls.py: nginx's certificate in the TLS volume, with real openssl and a Podman that runs it here.
+
+These tests keep the volume storage working for going back to it: each
+sets settings.NGINX_TLS_STORAGE to "volume". Podman secrets, the default,
+are test_tls_secrets.py.
 
 FakePodman runs what tls.py starts in a throwaway proxy container (podman
 run ... /bin/sh -c ...) as a local process in a temporary directory that
@@ -18,7 +22,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import apps, cli, tls  # noqa: E402
+from app_installer import apps, cli, tls, tls_store  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location('app_ca', ROOT / 'deploy/scripts/app_ca.py')
@@ -106,7 +110,8 @@ class TlsTest(unittest.TestCase):
         self.podman = FakePodman(self, self.volume)
         for target, name, value in ((tls, 'KEY', 'rsa:2048'),  # a smaller key only to keep the tests fast
                                     (tls, 'ENTRYPOINT', str(ROOT / 'proxy/proxy-entrypoint.sh')),
-                                    (tls.target_render, 'record_path', lambda: self.record)):
+                                    (tls.target_render, 'record_path', lambda: self.record),
+                                    (tls_store.settings, 'NGINX_TLS_STORAGE', 'volume')):
             patcher = patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)

@@ -462,7 +462,8 @@ marker in each app through the UI and record both IDs/titles for replication and
 reboot checks.
 
 Reboot the VM. Repeat the seven-service and nginx configuration checks above;
-verify both markers and unchanged TLS CA fingerprint in `todo-nginx-data`.
+verify both markers and unchanged TLS CA fingerprint (the secret
+`todo-proxy-ca-cert`, as nginx serves it from `/var/lib/todo-tls/ca.crt`).
 
 The install turned on the nightly backup (`todo-backup.timer`). Start
 `todo-backup.service` once and require a verified base backup of todo, notes

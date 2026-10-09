@@ -209,5 +209,12 @@ and its principles are in the [backlog](docs/BACKLOG.md), with a one-page
 [target picture](docs/TARGET-PICTURE.md). Off-host backup, automatic HA and
 other IdP adapters are not demonstrated production features.
 
+nginx's TLS files are now Podman secrets that the installer makes
+(`tls_secrets.py`, [TLS](docs/TLS.md#nginxs-tls-files-as-podman-secrets)), in
+local and provided mode and on the DR pair; the TLS volume `todo-nginx-data`
+stays, commented out in `shared-proxy.yaml.j2`, for going back. The verdict
+above predates this change and the provided mode before it: unit tests, the
+proxy smoke test and CI's full stack cover it, and it needs a new acceptance run.
+
 The [Development journal](docs/history/DEVELOPMENT-JOURNAL.md) preserves earlier
 checkpoints; historical next steps are not current instructions.

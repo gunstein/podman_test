@@ -9,6 +9,8 @@ settings, and only truly static structure lives in the .j2 files themselves.
 import re
 from pathlib import Path
 
+from . import apps
+
 # shared-proxy.yaml.j2 interpolates hostnames raw into the nginx.conf literal
 # block scalar (plain text, not a YAML value, so | tojson does not apply
 # there). Validate every hostname that reaches it - both the operator-supplied
@@ -97,4 +99,5 @@ def render_shared_proxy(project_root, applications, identity_app, hostnames, por
             validate_hostname(entry["hostname"])
     hostname = hostnames[identity_app.name]
     return _render(project_root, "shared-proxy.yaml.j2", applications=context, hostname=hostname,
-                   identity_origin=f"https://{hostname}:{int(port)}", image=image)
+                   identity_origin=f"https://{hostname}:{int(port)}", image=image,
+                   tls_secret=apps.PROXY_KUBE_TLS_SECRET)

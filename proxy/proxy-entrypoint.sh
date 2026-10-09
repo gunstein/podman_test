@@ -1,7 +1,9 @@
 #!/bin/sh
 # Entry point of the proxy image. It writes Podman's DNS server as nginx's
-# resolver, makes sure the persistent TLS volume holds a certificate for every
-# public hostname, then runs the command it was given. The volume's tls-mode
+# resolver, makes sure /var/lib/todo-tls holds a certificate for every public
+# hostname, then runs the command it was given. That directory is a Kube
+# secret the installer made (app_installer/tls_secrets.py, the default), which
+# nginx serves read-only, or the persistent TLS volume (app_installer/tls.py). The volume's tls-mode
 # file says how the certificate gets there:
 #   local (no file): the demo CA (10 years) and one leaf certificate (397 days)
 #     are created here, and either is renewed when it is missing, expires
@@ -92,13 +94,16 @@ check_served() {
     fi
 }
 
+# Who makes the files in local mode: the installer with Podman secrets
+# (app_installer/tls_secrets.py), the nginx-tls init container with the volume.
+local_hint='run app_installer tls-renew (Podman secrets), or restart the pod (the TLS volume)'
 tls_mode=local
 if [ -s "$tls_directory/tls-mode" ]; then
     tls_mode=$(cat "$tls_directory/tls-mode")
 fi
 if [ "$tls_role" = check ]; then
     case "$tls_mode" in
-        local) check_served local 'the nginx-tls init container provisions it' ;;
+        local) check_served local "$local_hint" ;;
         provided) check_served provided 'run app_installer tls-install' ;;
         *) echo "ERROR: unknown TLS mode in $tls_directory/tls-mode: $tls_mode" >&2; exit 1 ;;
     esac
@@ -110,7 +115,7 @@ case "$tls_mode" in
     local)
         if [ "$tls_role" = serve ]; then
             # The init container (provision) issued or renewed the demo certificate.
-            check_served local 'the nginx-tls init container provisions it'
+            check_served local "$local_hint"
             exec "$@"
         fi
         ;;

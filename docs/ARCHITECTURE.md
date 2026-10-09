@@ -96,7 +96,9 @@ one `.kube` unit and generated user service:
 `shared-proxy.service`, `todo-app.service`, `notes-app.service`,
 `keycloak.service`, `todo-postgres.service`, `notes-postgres.service`,
 `keycloak-postgres.service`. `apps.services()` returns this list. The proxy uses the operational container name `nginx`
-and the persistent TLS volume `todo-nginx-data`. It reaches the frontend/backend
+and reads its TLS files read-only from the Podman secret
+`todo-kube-proxy-tls-secret`, which the installer makes ([TLS](TLS.md); the
+earlier TLS volume `todo-nginx-data` is kept for going back). It reaches the frontend/backend
 at `<app>-app:8080`/`<app>-app:8000` and Keycloak at `keycloak:8080`.
 Loopback is shared only within a pod; it cannot connect the separate proxy to Todo.
 The units use `--no-pod-prefix` to preserve operational container names;
@@ -251,7 +253,7 @@ An adapter seam is not evidence that Duende or another provider already works.
 | Todo database data | todo-postgres-data | Survives app replacement; explicitly replaced only during approved reseed |
 | Notes database data | notes-postgres-data | Same lifecycle as Todo data, independent database |
 | Keycloak database data | keycloak-postgres-data | Same lifecycle; holds the shared realm |
-| nginx CA and leaf-key state | todo-nginx-data | Survives local app recreation; promotion may create a new demo CA |
+| nginx CA and leaf-key state | Host-local Podman secrets `todo-proxy-*` and `todo-kube-proxy-tls-secret` (or the TLS volume todo-nginx-data) | Survives local app recreation; removed only with `--remove-data`; promotion may create a new demo CA |
 | Base backups and WAL | todo-postgres-backup, notes-postgres-backup, keycloak-postgres-backup | One per database; separate from live data; still on the same VM |
 | Runtime credentials | Host-local Podman secrets | Provisioned and transferred separately from YAML |
 

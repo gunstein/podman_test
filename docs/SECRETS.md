@@ -49,6 +49,16 @@ variables, so its Quadlet maps Podman secrets to environment variables. This is
 an interface constraint, not the preferred default for new application code.
 
 Public certificates are not secrets. TLS private keys and CA private keys are.
+
+nginx's TLS files are the worked example of files as Podman secrets
+([TLS](TLS.md#nginxs-tls-files-as-podman-secrets)): one raw secret per file
+(`todo-proxy-*`), made in throwaway containers that print a key straight
+into `podman secret create NAME -`, mounted into other throwaway containers
+with `--secret NAME,type=mount,target=FILE`, and given to nginx as the Kube
+secret `todo-kube-proxy-tls-secret`, which `podman kube play` mounts as a
+read-only directory. They are host-local: the DR copy never carries them,
+and each host makes its own key. The demo CA's key and a waiting key are
+never in nginx's Kube secret.
 For an organization-PKI variant, deploy the public certificate as a reviewed
 configuration file and deliver the node's private key as a Podman secret. Do
 not copy an organization root private key to application hosts.

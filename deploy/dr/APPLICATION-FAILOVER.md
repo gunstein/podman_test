@@ -60,7 +60,9 @@ to `~/.config/todo/todo-nginx-root.crt`.
 
 Use the [client trust and browser checks](../../docs/ACCEPTANCE.md#client-trust-and-real-browser-verification)
 after failover. Replace the prior `todo.test` mapping and trust only the verified
-public CA of the serving host; the private CA key stays inside `todo-nginx-data`.
+public CA of the serving host; the private CA key stays in that host's Podman
+secret `todo-proxy-ca-key` (with the TLS volume: in `todo-nginx-data`) and never
+reaches nginx.
 
 ### Certificate lifecycle and DR alternatives
 
@@ -77,9 +79,9 @@ clients already trust your CA: `failover` reports `"client_trust": "unchanged"`
 and `deploy-promoted-application` refuses to start nginx without that
 certificate. The rest of this section is the default, local mode.
 
-When the promoted nginx container first starts, its entrypoint uses the image-packaged OpenSSL to create a local demo CA and a `todo.test` server certificate. The client can therefore receive the exact public root only
+When `deploy-promoted-application` runs, the installer uses the OpenSSL in the proxy image to create a local demo CA and a `todo.test` server certificate as Podman secrets on the promoted host, before nginx starts (with the TLS volume, the pod's init container does this at its first start). The client can therefore receive the exact public root only
 after application recovery. This is simple, works offline and never copies the
-private demo CA key out of the TLS data volume. Its disadvantage is operational: manual
+private demo CA key off the host that made it. Its disadvantage is operational: manual
 certificate distribution consumes failover time, requires a browser restart
 on some clients and does not scale beyond a small lab.
 

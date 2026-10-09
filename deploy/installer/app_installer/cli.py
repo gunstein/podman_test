@@ -4,7 +4,17 @@ import json
 import sys
 from pathlib import Path
 
-from . import apps, backup, install, kube_play, settings, target_render, tls, uninstall
+from . import (
+    apps,
+    backup,
+    install,
+    kube_play,
+    settings,
+    target_render,
+    tls_secrets,
+    tls_store,
+    uninstall,
+)
 
 try:  # Jinja2 renders on a build host; an offline host installs without it.
     from jinja2 import TemplateError
@@ -37,7 +47,7 @@ def backup_command(args):
         if args.keep_days < 1:
             raise ValueError('--keep-days must keep at least one day')
         lines, problems = backup.nightly(args.keep_days)
-        # The same nightly run looks at nginx's certificate (tls.check).
+        # The same nightly run looks at nginx's certificate (tls_store: secrets or volume).
         tls_lines, tls_problems = tls_check()
         lines, problems = lines + tls_lines, problems + tls_problems
         print('\n'.join(lines))
@@ -53,15 +63,22 @@ def backup_command(args):
 
 
 def tls_check():
-    """tls.check(), with a failure to look reported as a problem rather than raised."""
+    """check() of the TLS storage in use, with a failure to look reported as a problem rather than raised."""
     try:
-        return tls.check()
+        return tls_store.module().check()
     except (OSError, RuntimeError, ValueError) as error:
         return [], [f'cannot check the nginx certificate: {error}']
 
 
 def tls_command(args):
-    """tls-request | tls-install | tls-status: nginx's certificate in provided mode (tls.py)."""
+    """tls-request | tls-install | tls-status | tls-renew: nginx's certificate (tls_secrets.py or tls.py)."""
+    tls = tls_store.module()
+    if args.command == 'tls-renew':
+        if not tls_store.secret_storage():
+            raise ValueError('tls-renew is for Podman secrets; with the TLS volume, '
+                             'systemctl --user restart shared-proxy.service renews the demo certificate')
+        print(json.dumps({'changed': tls_secrets.renew()}))
+        return 0
     if args.command == 'tls-request':
         names = tls.request(args.output, args.new_key)
         print(f'Have the CA sign {args.output} (app_ca.py sign, or sudo todo-ca-sign), then: '
@@ -82,7 +99,9 @@ def tls_command(args):
 def main(argv=None):
     """Parse one subcommand, run it, and return the exit code.
 
-    install, uninstall, down, backup and the tls- commands serve a single host; replication-apps
+    install, uninstall, down, backup and the tls- commands serve a single host
+    (tls-request, tls-install, tls-status and tls-renew touch only nginx's
+    TLS files, so they also run on a DR host); replication-apps
     prints the DR group for the acceptance guide to compare with its table.
     The DR tools import the installer's functions instead, and their own
     commands live in app_dr_host (deploy/dr). Each command prints one JSON
@@ -123,6 +142,7 @@ def main(argv=None):
                              help='the server certificate, then any intermediate CAs (PEM)')
     tls_install.add_argument('--ca', type=Path, required=True, help="the organisation's root CA (PEM)")
     subcommands.add_parser('tls-status', help="nginx's TLS mode and how long its certificate lasts")
+    subcommands.add_parser('tls-renew', help="renew nginx's demo certificate if it is due, then restart nginx")
     down = subcommands.add_parser('down')
     down.add_argument('--rendered-manifest-dir', type=Path,
                       default=Path(__file__).resolve().parents[3] / 'generated/dev')
@@ -141,8 +161,8 @@ def main(argv=None):
             if not args.remove_data:
                 volumes = ', '.join(d.volume('data') for d in apps.REPLICATED_DATABASES)
                 tls_volumes = ', '.join(uninstall.TLS_VOLUMES)
-                print(f'Database volumes {volumes}, TLS volumes {tls_volumes} and database and '
-                      'Keycloak secrets were preserved. Use --remove-data to delete them permanently.',
+                print(f'Database volumes {volumes}, TLS volumes {tls_volumes} and database, Keycloak and '
+                      'nginx TLS secrets were preserved. Use --remove-data to delete them permanently.',
                       file=sys.stderr)
             print(json.dumps({'changed': changed}))
         elif args.command == 'backup':

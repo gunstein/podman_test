@@ -1,5 +1,6 @@
 """Protect PVC creation, operational consumers and non-destructive shutdown."""
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,9 @@ from unittest.mock import patch
 import yaml
 
 from tests.runtime_fixture import ROOT, RUNTIME
+
+sys.path.insert(0, str(ROOT / "deploy/installer/tests"))
+from volume_mode import volume_manifest  # noqa: E402
 
 VOLUMES = {"todo-postgres-data", "todo-postgres-backup", "todo-nginx-data",
            "notes-postgres-data", "notes-postgres-backup"}
@@ -18,20 +22,24 @@ class PVCStorageTests(unittest.TestCase):
         for path in RUNTIME.glob("*.yaml"):
             for delimiter in ("{{", "{%", "{#"):
                 self.assertNotIn(delimiter, path.read_text(), str(path))
-        for file, pod_name, expected in (
-            ("postgres.yaml", "todo-postgres", {
+        # nginx's TLS files are a Kube secret (test_proxy_configuration.py); its
+        # volume claim is checked as it is after going back to the volume.
+        proxy = (RUNTIME / "shared-proxy.yaml").read_text()
+        for text, pod_name, expected in (
+            ((RUNTIME / "postgres.yaml").read_text(), "todo-postgres", {
                 "todo-postgres-data": ("/var/lib/postgresql/data", 999),
                 "todo-postgres-backup": ("/var/lib/postgresql/backup", 999),
             }),
-            ("notes-postgres.yaml", "notes-postgres", {
+            ((RUNTIME / "notes-postgres.yaml").read_text(), "notes-postgres", {
                 "notes-postgres-data": ("/var/lib/postgresql/data", 999),
                 "notes-postgres-backup": ("/var/lib/postgresql/backup", 999),
             }),
-            ("shared-proxy.yaml", "shared-proxy", {
+            (proxy, "shared-proxy", {}),
+            (volume_manifest(proxy), "shared-proxy", {
                 "todo-nginx-data": ("/var/lib/todo-tls", 101),
             }),
         ):
-            docs = list(yaml.safe_load_all((RUNTIME / file).read_text()))
+            docs = list(yaml.safe_load_all(text))
             claims = {d["metadata"]["name"]: d for d in docs
                       if d["kind"] == "PersistentVolumeClaim"}
             self.assertEqual(set(claims), set(expected))
@@ -56,8 +64,9 @@ class PVCStorageTests(unittest.TestCase):
                 self.assertEqual(container["securityContext"]["runAsUser"], uid)
                 self.assertEqual(container["securityContext"]["runAsGroup"], uid)
 
-    def test_only_the_nginx_tls_init_container_writes_the_tls_volume(self):
-        pod = next(d for d in yaml.safe_load_all((RUNTIME / "shared-proxy.yaml").read_text()) if d["kind"] == "Pod")
+    def test_with_the_tls_volume_only_the_nginx_tls_init_container_writes_it(self):
+        text = volume_manifest((RUNTIME / "shared-proxy.yaml").read_text())
+        pod = next(d for d in yaml.safe_load_all(text) if d["kind"] == "Pod")
         roles = {}
         for container in pod["spec"]["initContainers"] + pod["spec"]["containers"]:
             mount = next(m for m in container["volumeMounts"] if m["name"] == "tls-data")
@@ -109,7 +118,8 @@ class PVCStorageTests(unittest.TestCase):
                 # like the database volumes, so it only goes with --remove-data too.
                 self.assertEqual(set(volumes),
                                  ({"todo-postgres-data", "notes-postgres-data", "keycloak-postgres-data",
-                                   "todo-nginx-data", "todo-caddy-data"} if remove_data else set()))
+                                   "todo-nginx-data", "todo-caddy-data", "todo-kube-proxy-tls-secret"}
+                                  if remove_data else set()))
                 for backup in ("todo-postgres-backup", "notes-postgres-backup", "keycloak-postgres-backup"):
                     self.assertNotIn(backup, volumes)
                 secrets = [argv[-1] for argv in commands if argv[:3] == ["podman", "secret", "rm"]]

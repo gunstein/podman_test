@@ -10,9 +10,9 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `ce02176` for the seven-pod, three-database
+**Current verdict: CLEAN PASS** on `3fba6a7` for the seven-pod, three-database
 topology in a full two-VM run without an agent (`acceptance.py run`,
-[record](docs/history/ACCEPTANCE-ce02176.md)),
+[record](docs/history/ACCEPTANCE-3fba6a7.md)),
 with nginx's TLS files as Podman secrets (local mode), replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 121 steps PASS
@@ -38,11 +38,18 @@ PITR, to a named point and to a time, rebuild of the old primary, a re-seed of t
 CI also runs the Todo API as `todo_app` and the whole stack with the browser
 tests on Podman 5.7. The single-host installer (`deploy/installer`) and DR
 (`deploy/dr`) are separate in the tree; the code clean-up since `24b32ee` (R5,
-S2, S3, S5) was accepted in run 27.
+S2, S3, an earlier S5) was accepted in run 27, the new S5's phase 1 in run
+2026-10-09-run-3.
 Final topology: VM 108 primary with application and backup, VM 107
 database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
+
+- `3fba6a7` run 2026-10-09-run-3: CLEAN PASS
+  ([record](docs/history/ACCEPTANCE-3fba6a7.md)), accepting S5 phase 1 (the
+  installer's workloads in one ordered table, every app's Kube YAML under its
+  own prefix, `install.install()` in named steps): 121 steps, failover
+  3 min 32 s, no deviations.
 
 - The one-VM quick acceptance (`ACCEPTANCE-QUICK.md`) is retired since run 46:
   the full run needs no agent and takes about 35 minutes, so every change gets

@@ -44,7 +44,7 @@ retired; runs before `f1f07b5` used its playbooks.
 
 The lab run of this procedure needs no agent: `acceptance.py run` runs every
 step of the agent guide in order and stops at the first failure; a person
-types their sudo password twice ([ACCEPTANCE-HUMAN.md](ACCEPTANCE-HUMAN.md)).
+types their sudo password once, at the start ([ACCEPTANCE-HUMAN.md](ACCEPTANCE-HUMAN.md)).
 
 | Location | Responsibility |
 |---|---|

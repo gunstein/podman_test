@@ -799,12 +799,12 @@ limited to 1.2 and 1.3.
   checking its fingerprint stay unprivileged, and the Chromium NSS import
   needs no root. Set it up once in Part A of ACCEPTANCE-AGENT.md; the
   readiness check (C1a) verifies it with `sudo -n -l`. Then the run needs no
-  prompt at all, and no broad root stays cached during it, which keeping
-  `sudo -v` alive for 40 minutes would do. One consequence: the time to the
-  second prompt counts in the failover time today, because a person acts
-  on the client in local mode. Without the wait, REPORT.md must say that the
-  measured failover leaves out the person's client step, or add a fixed
-  allowance for it.
+  prompt at all, and no broad root stays cached during it.
+  Interim, done 2026-10-09: `acceptance.py run` asks once, at the start
+  (`sudo -v`), renews the timestamp every minute (`sudo -n -v`) and drops it
+  at the end (`sudo -k`); the client trust runs with `sudo -n`. That removes
+  the waits (and the person's reaction time from the failover time), but
+  keeps broad root cached for the 40 minutes, which this item removes.
 
 ## Lab housekeeping (operator)
 

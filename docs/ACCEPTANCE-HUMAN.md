@@ -3,8 +3,8 @@
 One command runs the whole two-VM acceptance: the same steps, in the same
 order and with the same checks as an agent run under
 [ACCEPTANCE-AGENT.md](ACCEPTANCE-AGENT.md), and the same `REPORT.md`. You
-start it, type your sudo password twice, and read the verdict. It takes about
-40 minutes; you are needed only at the two sudo prompts.
+start it, type your sudo password once, right away, and read the verdict. It
+takes about 40 minutes; you are needed only at that one sudo prompt.
 
 ## Once, before the first run
 
@@ -30,12 +30,16 @@ What you see: one line per step, `STEP 03-5: PASS`. Long steps (the build,
 bootstrap, failover, rebuild, reseed) print `STARTED in the background` and
 then `waiting for ...` until they end.
 
-**Twice, it asks for your sudo password**, before `03-4a` and before `07-5`:
-the client must reach `todo.test` and `notes.test` at the serving VM (`.102`,
-then `.108` after the failover) and trust that VM's CA. It runs the lines of
-C9.4 in the agent guide, then checks that both names answer over trusted
-HTTPS. Type the password and wait. The time to the second prompt counts in
-the failover time, so answer it when it comes.
+**Once, at the start, it asks for your sudo password**, before the
+readiness check. The run needs root on the client for the client trust,
+before `03-4a` and before `07-5`: the client must reach `todo.test` and
+`notes.test` at the serving VM (`.102`, then `.108` after the failover) and
+trust that VM's CA. It runs the lines of C9.4 in the agent guide with that
+sudo access (`sudo -n`, never a prompt), then checks that both names answer
+over trusted HTTPS. Meanwhile it renews sudo's timestamp every minute
+(`sudo -n -v`); when the run ends, stops or you press Ctrl-C, it stops doing
+so and drops the timestamp (`sudo -k`). No one waits at the client, so the
+failover time has no person's reaction time in it.
 
 At the end it prints the verdict (`ALL STEPS PASS` or `NOT CLEAN`) and the
 failover time, and writes `REPORT.md` and `EVIDENCE.md` in
@@ -51,8 +55,10 @@ enough": a stop is a stop.
 - Send `EVIDENCE.md` (`python3 deploy/scripts/lab/acceptance.py --run <run ID> evidence`)
   for a diagnosis. Do not repair the VMs by hand.
 - If the stop was outside the product (the network, the Proxmox host, a typo
-  in the sudo password) and nothing was changed, the same command goes on:
-  a step that ran is never run again, and a failed step stays failed.
+  in the sudo password, sudo access that ran out: `a password is required` in
+  the client trust) and nothing was changed, the same command goes on: it asks
+  for the password once more, a step that ran is never run again, and a
+  failed step stays failed.
 - To start over, use a new run ID; the first steps roll both VMs back.
 
 If you press Ctrl-C, run the same command again: it goes on where it was, and

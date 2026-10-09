@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -246,7 +247,8 @@ echo "trust $IP"
                         patch.object(acceptance, "report", return_value=("# Report\n\n**ALL STEPS PASS**\n\n## Steps\n", True)),
                         patch.object(acceptance, "POLL_SECONDS", 0.05),
                         patch.object(acceptance, "CLIENT_TRUST", {"01-3-after": "192.168.0.102"}),
-                        patch.object(acceptance, "client_trust", return_value=True)):
+                        patch.object(acceptance, "client_trust", return_value=True),
+                        patch.object(acceptance, "sudo_kept", side_effect=contextlib.nullcontext)):
             self.mocks = getattr(self, "mocks", []) + [patcher.start()]
             self.addCleanup(patcher.stop)
         self.password = directory / "xdg/todo-acceptance/e2e-password"
@@ -267,6 +269,7 @@ echo "trust $IP"
         self.assertIn("STEP 01-3-after: PASS", output)
         acceptance.client_trust.assert_called_once()
         self.assertEqual(acceptance.client_trust.call_args.args[2], "192.168.0.102")
+        acceptance.sudo_kept.assert_called_once()
         self.assertFalse(self.password.exists(), "the password file is removed at the end")
         self.assertTrue((self.runs / "r1/EVIDENCE.md").exists())
         self.assertIn("ALL STEPS PASS", output)
@@ -283,15 +286,58 @@ echo "trust $IP"
         self.assertEqual(code, 1)
         self.assertIn("STOP: 01-1-first did not print one", output)
 
-    def test_a_dirty_checkout_or_a_failed_readiness_check_runs_nothing(self):
+    def test_a_dirty_checkout_a_refused_password_or_a_failed_readiness_check_runs_nothing(self):
         acceptance.checkout.return_value = ("abc123", False)
         self.assertEqual(self.run_all()[0], 1)
+        acceptance.sudo_kept.assert_not_called()
+        acceptance.checkout.return_value = ("abc123", True)
+        acceptance.sudo_kept.side_effect = acceptance.Refused("sudo did not accept the password")
+        code, output = self.run_all()
+        self.assertEqual(code, 1)
+        self.assertIn("STOP: sudo did not accept the password", output)
+        self.assertFalse((self.runs / "r1/logs/00-readiness.log").exists())
+        acceptance.sudo_kept.side_effect = contextlib.nullcontext
         acceptance.checkout.return_value = ("abc123", True)
         self.guide.write_text(self.GUIDE.replace('echo "READY for the agent run."; echo "exit=0"', 'echo "exit=1"'))
         code, output = self.run_all()
         self.assertEqual(code, 1)
         self.assertIn("STOP: the readiness check", output)
         self.assertFalse((self.runs / "r1/logs/01-1-first.log").exists())
+
+
+class SudoKeptTests(unittest.TestCase):
+    """One sudo prompt at the start; renewed without a prompt; dropped at the end, even after Ctrl-C."""
+
+    def kept(self, accepted=True, interrupt=False):
+        commands = []
+
+        def run(argv, **keywords):
+            commands.append(argv)
+            return subprocess.CompletedProcess(argv, 0 if accepted or argv != ["sudo", "-v"] else 1)
+
+        with patch.object(acceptance.subprocess, "run", side_effect=run), \
+                patch.object(acceptance, "SUDO_REFRESH_SECONDS", 0.01), contextlib.redirect_stdout(io.StringIO()):
+            try:
+                with acceptance.sudo_kept():
+                    time.sleep(0.1)
+                    if interrupt:
+                        raise KeyboardInterrupt
+            except KeyboardInterrupt:
+                pass
+        return commands
+
+    def test_it_asks_once_renews_without_a_prompt_and_drops_the_timestamp(self):
+        for interrupt in (False, True):
+            commands = self.kept(interrupt=interrupt)
+            self.assertEqual(commands[0], ["sudo", "-v"])
+            self.assertEqual(commands[-1], ["sudo", "-k"])
+            renewals = commands[1:-1]
+            self.assertTrue(renewals)
+            self.assertEqual({tuple(argv) for argv in renewals}, {("sudo", "-n", "-v")})
+
+    def test_a_refused_password_stops_before_anything_runs(self):
+        with self.assertRaisesRegex(acceptance.Refused, "did not accept"):
+            self.kept(accepted=False)
 
 
 class ClientTrustTests(unittest.TestCase):
@@ -322,6 +368,9 @@ class ClientTrustTests(unittest.TestCase):
         self.assertTrue(passed)
         script = commands[0][2]
         self.assertIn("IP=192.168.0.108", script)
+        # Every sudo, also in trust-serving-ca.sh, uses the cached timestamp and never prompts.
+        self.assertTrue(script.startswith("set -e\n" + acceptance.SUDO_NO_PROMPT))
+        self.assertNotIn("password", self.shown)
         self.assertIn('trust-serving-ca.sh "gunstein@$IP"', script)
         self.assertEqual([argv[-1] for argv in commands[1:]], ["https://todo.test:8443/ready",
                                                               "https://notes.test:8443/ready"])

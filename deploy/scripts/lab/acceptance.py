@@ -82,6 +82,7 @@ Commands:
   do    backup-nightly HOST              the nightly backup timer is on; one run backs up every database
 """
 import argparse
+import contextlib
 import datetime
 import ipaddress
 import json
@@ -90,6 +91,7 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -1441,11 +1443,12 @@ def run_line(run_directory, run_id, name, line, quiet=False):
 
 
 # acceptance.py run: the whole guide without an agent. A person starts it
-# and types their sudo password twice, for the client trust steps; it stops
-# at the first step that does not pass. It runs the same guide lines in the
-# same order as an agent run, so its report is the same report.
+# and types their sudo password once, at the start, for the client trust
+# steps; it stops at the first step that does not pass. It runs the same
+# guide lines in the same order as an agent run, so its report is the same report.
 CLIENT_TRUST = {'03-4a-browser-env': '192.168.0.102', '07-5': '192.168.0.108'}  # the step it comes before
 BACKGROUND_LIMIT = 2 * 3600
+SUDO_REFRESH_SECONDS = 60  # well inside sudo's default 15-minute timestamp_timeout
 HOSTS = Path('/etc/hosts')
 
 
@@ -1470,8 +1473,44 @@ def password_file():
     return path
 
 
+@contextlib.contextmanager
+def sudo_kept():
+    """Ask for the person's sudo password once, now, and keep sudo's timestamp valid until the block ends.
+
+    sudo -v is the only prompt of the run. A background thread renews the
+    timestamp (sudo -n -v, which never prompts) every SUDO_REFRESH_SECONDS;
+    at the end, a stop or Ctrl-C, the thread stops and sudo -k drops the
+    timestamp, so no root access stays cached after the run. Raises Refused
+    if sudo does not accept the password.
+    """
+    print('sudo asks for your password once, now; the run needs it for the client trust '
+          'before 03-4a and 07-5 and does not ask again.', flush=True)
+    if subprocess.run(['sudo', '-v']).returncode != 0:
+        raise Refused('sudo did not accept the password')
+    stop = threading.Event()
+
+    def refresh():
+        while not stop.wait(SUDO_REFRESH_SECONDS):
+            subprocess.run(['sudo', '-n', '-v'], capture_output=True)
+
+    thread = threading.Thread(target=refresh, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join()
+        subprocess.run(['sudo', '-k'])
+
+
+# Prepended to the client trust lines: every sudo in them, and in
+# trust-serving-ca.sh (export -f), uses the timestamp from sudo_kept and
+# fails instead of prompting if it has run out.
+SUDO_NO_PROMPT = 'sudo() { command sudo -n "$@"; }\nexport -f sudo\n'
+
+
 def client_trust(run_directory, text, address):
-    """The guide's C9.4 lines for address, run with the person's sudo; True if both names then answer over HTTPS.
+    """The guide's C9.4 lines for address, with the sudo access from sudo_kept; True if both names then answer.
 
     The output goes to operator/client-trust-<address>.log, not logs/: it is
     not a guide step, so the report must not count it.
@@ -1481,9 +1520,8 @@ def client_trust(run_directory, text, address):
         return True
     record.parent.mkdir(exist_ok=True)
     block = re.sub(r'^IP=\S+$', f'IP={address}', guide_block(text, 'trust-serving-ca.sh'), count=1, flags=re.M)
-    print(f'\nOPERATOR: the client must reach todo.test and notes.test at {address} and trust its CA.\n'
-          'Type your sudo password when sudo asks for it.', flush=True)
-    result = subprocess.run(['bash', '-c', 'set -e\n' + block], cwd=ROOT, text=True,
+    print(f'\nclient trust: todo.test and notes.test at {address}, and its CA', flush=True)
+    result = subprocess.run(['bash', '-c', 'set -e\n' + SUDO_NO_PROMPT + block], cwd=ROOT, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     hosts = HOSTS.read_text()
     answered = all(subprocess.run(['curl', '--silent', '--fail', '--max-time', '10', url],
@@ -1495,11 +1533,31 @@ def client_trust(run_directory, text, address):
                       + ('exit=0' if passed else 'exit=1') + '\n')
     print('\n'.join(line for line in result.stdout.splitlines() if not NOISE.match(line)))
     print(f'client trust for {address}: ' + ('done' if passed else f'FAILED, see {record}'), flush=True)
+    if 'a password is required' in result.stdout:
+        print('sudo access ran out; run the same command again: it asks for the password once more', flush=True)
     return passed
 
 
 def run_all(run_directory, run_id):
-    """Run the whole agent guide in order, unattended but for the client trust; 0 if every step passed.
+    """Run the whole agent guide in order, unattended after one sudo prompt; 0 if every step passed.
+
+    A clean checkout, then the sudo password (sudo_kept), then run_guide.
+    """
+    revision, clean = checkout()
+    if not clean:
+        print(f'STOP: the checkout {revision} is not clean')
+        return 1
+    print(f'Acceptance run {run_id} of {revision}; logs in {run_directory}/logs', flush=True)
+    try:
+        with sudo_kept():
+            return run_guide(run_directory, run_id)
+    except Refused as error:
+        print(f'STOP: {error}')
+        return 1
+
+
+def run_guide(run_directory, run_id):
+    """The steps of run_all; 0 if every step passed.
 
     Readiness first (the guide's C1a line), then the password file, then
     each next step through run_step, waiting while a background step runs,
@@ -1508,11 +1566,6 @@ def run_all(run_directory, run_id):
     interruption: a step that ran is never run again. At the end it removes
     the password file and writes REPORT.md and EVIDENCE.md.
     """
-    revision, clean = checkout()
-    if not clean:
-        print(f'STOP: the checkout {revision} is not clean')
-        return 1
-    print(f'Acceptance run {run_id} of {revision}; logs in {run_directory}/logs', flush=True)
     text = (ROOT / AGENT_GUIDE).read_text()
     (run_directory / 'logs').mkdir(parents=True, exist_ok=True)
     environment = {**os.environ, 'RUN': str(run_directory)}

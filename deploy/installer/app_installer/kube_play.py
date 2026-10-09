@@ -36,7 +36,7 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
     if present and not previous:
         raise RuntimeError('Existing development pods have no installer state. Run down before install.')
     if previous:
-        _tear_down(_recorded(previous))
+        _tear_down(previous['teardown'])
         state_file.unlink(missing_ok=True)
     if not exists('network', apps.NETWORK):
         run('podman', 'network', 'create', apps.NETWORK)
@@ -71,14 +71,6 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
     return True
 
 
-def _recorded(state):
-    """The manifests up recorded to tear down, in order.
-
-    A state file written before the YAML itself was recorded lists paths.
-    """
-    return state.get('teardown') or [Path(name) for name in state.get('manifests', ())]
-
-
 def _tear_down(manifests):
     """podman kube play --down for each manifest, in order; True if any ran.
 
@@ -108,7 +100,7 @@ def down(rendered_manifest_dir, applications=None, state_file=None):
     directory = Path(rendered_manifest_dir)
     state_file = Path(state_file or settings.DEV_STATE_FILE)
     if state_file.is_file():
-        torn_down = _tear_down(_recorded(json.loads(state_file.read_text())))
+        torn_down = _tear_down(json.loads(state_file.read_text())['teardown'])
     else:
         applications = apps.APPS if applications is None else tuple(applications)
         torn_down = _tear_down([directory / workload.yaml for workload in reversed(apps.workloads(applications))])

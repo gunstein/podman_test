@@ -41,8 +41,6 @@ from app_installer import apps, secrets, tls
 from app_installer.commands import exists, run
 
 DATA = '/var/lib/postgresql/data'
-# The standby's copy of the CA certificate, next to its passfile.
-STANDBY_CA_FILE = f'{DATA}/replication-ca.crt'
 CA_DAYS = 3650
 SERVER_DAYS = 825
 RENEW_SECONDS = 30 * 24 * 3600

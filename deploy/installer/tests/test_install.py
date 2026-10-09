@@ -203,21 +203,6 @@ class InstallTests(unittest.TestCase):
                                         input='kind: Pod # notes-app')
             self.assertFalse(state.exists())
 
-    def test_down_reads_a_state_file_that_lists_paths(self):
-        # State files written before the YAML was recorded list paths instead.
-        # down must still use those exact paths, not the directory it is given,
-        # rather than silently matching nothing in the wrong directory.
-        with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run:
-            root = Path(temp)
-            recorded = root / 'elsewhere' / 'shared-proxy.yaml'
-            recorded.parent.mkdir()
-            recorded.touch()
-            state = root / '.state.json'
-            state.write_text(json.dumps({'fingerprint': 'x', 'manifests': [str(recorded)]}))
-            self.assertTrue(kube_play.down(root / 'generated-dev', state_file=state))
-            run.assert_called_once_with('podman', 'kube', 'play', '--down', recorded)
-            self.assertFalse(state.exists())
-
     def test_down_reports_when_nothing_was_installed(self):
         with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run:
             root = Path(temp)

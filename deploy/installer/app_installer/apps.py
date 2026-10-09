@@ -62,6 +62,10 @@ class App:
         """The ConfigMap file, shared with the database pod (self.database.config_manifest)."""
         return self.names.manifest("config")
 
+    def kube_secret(self, component: str) -> str:
+        """The Kube secret a container of the app pod mounts, such as todo-kube-backend-secret."""
+        return self.names.kube_secret(component)
+
     def image(self, component: str) -> str:
         """The app's image for component "backend" or "frontend"."""
         return self.names.image(component)

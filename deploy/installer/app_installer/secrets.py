@@ -14,8 +14,8 @@ def postgres_secret_mapping(database: stack.Database):
 def application_secret_mapping(app: apps.App):
     """The same for the app pod: the migrator's and the backend's passwords."""
     return {
-        app.names.kube_secret("migrator"): {"database-password": app.database.secret("migrator")},
-        app.names.kube_secret("backend"): {"database-password": app.database.secret("app")},
+        app.kube_secret("migrator"): {"database-password": app.database.secret("migrator")},
+        app.kube_secret("backend"): {"database-password": app.database.secret("app")},
     }
 
 

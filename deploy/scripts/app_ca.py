@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """A small CA for nginx's certificates (provided TLS mode, docs/TLS.md).
 
 Provided mode means that a CA process outside nginx's security domain issues

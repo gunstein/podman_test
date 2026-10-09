@@ -32,6 +32,13 @@ def verify_package(test, archive, prefix):
     test.assertEqual(set(checksums), set(files) - {"SHA256SUMS"})
     for name, digest in checksums.items():
         test.assertEqual(hashlib.sha256(files[name]).hexdigest(), digest, name)
+    # fapolicyd takes a file with a shebang for a script and lets no one read an
+    # untrusted one, not even sha256sum when acceptance checks the package
+    # (run 2026-10-09-run-1, step 02-5). The package's Python is always run as
+    # `python3 FILE`, so none of it needs a shebang.
+    for name, content in files.items():
+        if name.endswith(".py"):
+            test.assertFalse(content.startswith(b"#!"), f"{name} starts with a shebang")
     for name in ("app", "keycloak", "postgres", "config", "shared-proxy"):
         from tests.runtime_fixture import RUNTIME
         test.assertEqual(files[f"generated/kube-runtime/{name}.yaml"], (RUNTIME / f"{name}.yaml").read_bytes())

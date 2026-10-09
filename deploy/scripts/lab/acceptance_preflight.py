@@ -11,6 +11,7 @@ Prints PASS/WARN/FAIL per check and exits 1 if anything FAILed.
 """
 import argparse
 import os
+import re
 import shutil
 import socket
 import stat
@@ -28,15 +29,26 @@ GUEST_EXEC_PRIVILEGES = ('VM.Monitor', 'VM.GuestAgent.Unrestricted')
 
 
 class Report:
-    """Prints one PASS/WARN/FAIL/INFO line per check and counts the FAILs."""
+    """Prints one PASS/WARN/FAIL/INFO line per check and keeps the FAILs, with their section."""
     def __init__(self):
-        self.failed = 0
+        self.section = ''
+        self.failures = []
+
+    @property
+    def failed(self):
+        return len(self.failures)
+
+    def heading(self, text):
+        """Start a section: the hosts' checks print the same names, so a FAIL needs its section."""
+        self.section = text
+        print('== ' + text)
 
     def line(self, level, name, detail=''):
-        """Print one result line; a FAIL is counted."""
+        """Print one result line; a FAIL is kept for the summary at the end."""
+        text = f'{level:4}  {name}' + (f': {detail}' if detail else '')
         if level == 'FAIL':
-            self.failed += 1
-        print(f'{level:4}  {name}' + (f': {detail}' if detail else ''))
+            self.failures.append((self.section, text))
+        print(text)
 
     def check(self, condition, name, detail='', level='FAIL'):
         """PASS if condition holds, otherwise level (FAIL or WARN); returns condition."""
@@ -66,9 +78,28 @@ def check_build_python(report):
                  'deactivate any virtualenv, or install python3-jinja2 and python3-yaml')
 
 
+def port_holder(port):
+    """What listens on a local port, with a hint what to do about it: ss names the process, and for
+    rootlessport (a rootless Podman container) podman ps names the container that publishes it."""
+    code, listening, _ = run(['ss', '-ltnpH', f'sport = :{port}'])
+    holders = sorted(set(re.findall(r'\(\("([^"]+)",pid=(\d+)', listening)))
+    if code != 0 or not holders:
+        return f'held by a process ss cannot name (try: ss -ltnp \'sport = :{port}\')'
+    text = 'held by ' + ', '.join(f'{name} (pid {pid})' for name, pid in holders)
+    names = {name for name, _ in holders}
+    if 'rootlessport' in names:
+        _, containers, _ = run(['podman', 'ps', '--format', '{{.Names}} {{.Ports}}'])
+        publishing = [line.split()[0] for line in containers.splitlines() if f':{port}->' in line]
+        text += (f', for the container {", ".join(publishing)}' if publishing else '')
+        text += '; a container is your own Podman stack on this machine (a dev or server install): stop it for the run'
+    if 'ssh' in names:
+        text += '; an ssh process is a tunnel left from an earlier run: end it'
+    return text
+
+
 def check_local(report, args):
     """The client/build host: clean checkout at the kickoff revision, and the tools the run needs."""
-    print('== Client/build host')
+    report.heading('Client/build host')
     code, head, _ = run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'])
     report.check(code == 0, 'Git checkout', head)
     code, dirty, _ = run(['git', '-C', str(ROOT), 'status', '--porcelain'])
@@ -98,7 +129,8 @@ def check_local(report, args):
             free = True
         except OSError:
             free = False
-    report.check(free, 'Local port 8080 free (SSH tunnel for test-user provisioning)')
+    report.check(free, 'Local port 8080 free (SSH tunnel for test-user provisioning)',
+                 '' if free else port_holder(8080))
     nssdb = [path for path in (Path.home() / '.pki/nssdb', Path.home() / '.local/share/pki/nssdb') if path.is_dir()]
     report.check(bool(nssdb), 'Chromium NSS database', str(nssdb[0]) if nssdb else
                  'none yet; created on first Chromium start', level='WARN')
@@ -114,7 +146,7 @@ def check_proxmox(report, args):
 
     Only GET requests: nothing in Proxmox changes.
     """
-    print('== Proxmox API (GET only)')
+    report.heading('Proxmox API (GET only)')
     env = Path(os.environ.get('PVE_ENV', Path.home() / '.config/todo-acceptance/pve.env'))
     if not report.check(env.is_file(), 'Token file', str(env)):
         return
@@ -205,7 +237,7 @@ echo "todo_state=$(podman ps -a --format '{{.Names}}' 2>/dev/null | grep -cE '^(
 def check_guest(report, args, address, hostname):
     """One VM over SSH: identity, security services, rootless Podman, sudo and leftover state."""
     # The running VM, which may differ from its clean snapshot; phase 1 checks again after rollback.
-    print(f'== {hostname} ({address}) over SSH, read-only (running state, not the snapshot)')
+    report.heading(f'{hostname} ({address}) over SSH, read-only (running state, not the snapshot)')
     code, out, error = _ssh(args, address)
     # SSH's stderr is only worth showing when it failed; on success it holds warnings, not the result.
     if not report.check(code == 0, 'Key-based SSH with verified host key',
@@ -273,6 +305,11 @@ def main(argv=None):
     check_guest(report, args, args.primary, args.primary_hostname)
     check_guest(report, args, args.standby, args.standby_hostname)
     print()
+    if report.failures:
+        # The summary comes last, so the tail of the log that a stop shows holds it.
+        print('Failed checks, by section:')
+        for section, text in report.failures:
+            print(f'  [{section}] {text}')
     print('READY for the agent run.' if not report.failed else
           f'NOT READY: {report.failed} check(s) failed. Fix them before starting the agent.')
     return 1 if report.failed else 0

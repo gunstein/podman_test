@@ -48,6 +48,10 @@ verdict is recorded in `docs/history/` from it.
 
 ## When it stops
 
+If the readiness check fails, it stops before any step and ends with
+`Failed checks, by section:`, which names each FAIL, the host it is on and,
+for a busy port 8080, what holds it.
+
 It stops at the first step that does not pass, prints that step's output and
 `STOP at <step>`, and runs nothing more. You do not judge whether it was "good
 enough": a stop is a stop.

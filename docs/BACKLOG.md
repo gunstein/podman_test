@@ -751,7 +751,11 @@ limited to 1.2 and 1.3.
   the Proxmox paths in `acceptance.py`, phases 1, 5, 6 and 9 and
   PROXMOX-QUARANTINE.md.
 
-- **P2. A readiness stop shows its FAIL lines.** *[new]* Found 2026-10-09
+- **P2. A readiness stop shows its FAIL lines.** *[done, awaiting acceptance]*
+  Done 2026-10-09: the readiness check ends with `Failed checks, by section:`,
+  every FAIL with its `== ...` heading, so the tail a stop shows holds them;
+  a busy port 8080 names its process and pid (`ss`), for `rootlessport` the
+  container, and what to do. Found 2026-10-09
   (run `2026-10-09-run-1`): when the C1a readiness check fails,
   `acceptance.py run` prints only `tail -n 20` of `logs/00-readiness.log`
   (ACCEPTANCE-AGENT.md, C1a), which is the end of the last host's section,

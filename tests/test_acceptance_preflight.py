@@ -168,6 +168,51 @@ class AcceptancePreflightTests(unittest.TestCase):
         self.assertNotIn("jinja2", acceptance_preflight.SSH_CHECKS)
 
 
+class ReadinessStopTests(unittest.TestCase):
+    """P2: a stop names every FAIL with its section, last, and what holds port 8080."""
+
+    def test_the_summary_lists_each_fail_with_its_section_at_the_end(self):
+        report = acceptance_preflight.Report()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report.heading("Client/build host")
+            report.check(False, "Local port 8080 free", "held by ssh (pid 7)")
+            report.heading("todo-standby (192.168.0.108) over SSH")
+            report.check(True, "Hostname")
+            report.check(False, "SELinux Enforcing", "Permissive")
+        self.assertEqual(report.failed, 2)
+        self.assertEqual(report.failures, [
+            ("Client/build host", "FAIL  Local port 8080 free: held by ssh (pid 7)"),
+            ("todo-standby (192.168.0.108) over SSH", "FAIL  SELinux Enforcing: Permissive")])
+        with patch.object(acceptance_preflight, "check_local"), patch.object(acceptance_preflight, "check_proxmox"), \
+                patch.object(acceptance_preflight, "check_guest"), \
+                patch.object(acceptance_preflight, "Report", return_value=report), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(acceptance_preflight.main([]), 1)
+        tail = output.getvalue().splitlines()[-4:]
+        self.assertEqual(tail, ["Failed checks, by section:",
+                                "  [Client/build host] FAIL  Local port 8080 free: held by ssh (pid 7)",
+                                "  [todo-standby (192.168.0.108) over SSH] FAIL  SELinux Enforcing: Permissive",
+                                "NOT READY: 2 check(s) failed. Fix them before starting the agent."])
+
+    def holder(self, listening, containers=""):
+        answers = {"ss": (0, listening, ""), "podman": (0, containers, "")}
+        with patch.object(acceptance_preflight, "run", side_effect=lambda argv, **_: answers[argv[0]]):
+            return acceptance_preflight.port_holder(8080)
+
+    def test_a_container_on_the_port_is_named_with_what_to_do(self):
+        text = self.holder('LISTEN 0 4096 0.0.0.0:8080 0.0.0.0:* users:(("rootlessport",pid=2048,fd=10))',
+                           "todo-frontend 0.0.0.0:8080->8080/tcp\nkeycloak 127.0.0.1:8443->8443/tcp")
+        self.assertIn("held by rootlessport (pid 2048), for the container todo-frontend", text)
+        self.assertIn("your own Podman stack", text)
+
+    def test_an_ssh_tunnel_or_an_unknown_holder_says_so(self):
+        text = self.holder('LISTEN 0 128 127.0.0.1:8080 0.0.0.0:* users:(("ssh",pid=99,fd=4))')
+        self.assertIn("held by ssh (pid 99)", text)
+        self.assertIn("tunnel left from an earlier run", text)
+        self.assertIn("ss cannot name", self.holder("LISTEN 0 128 127.0.0.1:8080 0.0.0.0:*"))
+
+
 if __name__ == "__main__":
     unittest.main()
 

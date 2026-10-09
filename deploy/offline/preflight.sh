@@ -112,6 +112,14 @@ then
     failed=1
 fi
 
+# Token expiry, TLS validity and log times need a right clock: a time service
+# such as chronyd, synchronised. A warning, since the install itself works.
+if command -v timedatectl >/dev/null 2>&1 && \
+    [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" != yes ]; then
+    echo "WARNING: the clock is not synchronised (timedatectl). Turn on a time service," >&2
+    echo "for example: sudo systemctl enable --now chronyd; then check chronyc tracking." >&2
+fi
+
 graph_root=$(podman info --format '{{.Store.GraphRoot}}')
 available_kib=$(df -Pk "$graph_root" | awk 'NR == 2 {print $4}')
 memory_kib=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)

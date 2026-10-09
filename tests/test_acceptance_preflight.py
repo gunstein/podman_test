@@ -137,12 +137,13 @@ class AcceptancePreflightTests(unittest.TestCase):
                           "podman volume rm", "tee ", ">"):
             self.assertNotIn(forbidden, acceptance_preflight.SSH_CHECKS.replace("2>/dev/null", ""))
 
-    def check_guest(self, pyyaml, stderr=""):
+    def check_guest(self, pyyaml, stderr="", synchronised="yes"):
         facts = {"hostname": "todo-primary", "client": "192.168.0.100", "selinux": "Enforcing",
                 "unit_sshd": "active", "unit_firewalld": "active", "unit_fapolicyd": "active",
                 "unit_qemu-guest-agent": "active", "linger": "yes", "rootless": "true",
                 "podman": "podman version 5.8.2", "pyyaml": pyyaml, "sudo": "ok",
-                "sudoers_file": "present", "mem_mib": "3457", "home_free": "16G", "todo_state": "0"}
+                "sudoers_file": "present", "mem_mib": "3457", "home_free": "16G", "todo_state": "0",
+                "ntp": "yes", "ntp_synchronized": synchronised}
         out = "\n".join(f"{key}={value}" for key, value in facts.items())
         args = argparse.Namespace(client_ip="192.168.0.100", user="gunstein")
         report = acceptance_preflight.Report()
@@ -166,6 +167,15 @@ class AcceptancePreflightTests(unittest.TestCase):
         self.assertIn("PASS  Python PyYAML installed (DR tools)\n", output)
         self.assertEqual(report.failed, 0, output)
         self.assertNotIn("jinja2", acceptance_preflight.SSH_CHECKS)
+
+
+    def test_an_unsynchronised_clock_warns_and_says_what_to_check(self):
+        report, output = self.check_guest("ok")
+        self.assertIn("PASS  Clock synchronised (NTP)\n", output)
+        report, output = self.check_guest("ok", synchronised="no")
+        self.assertIn("WARN  Clock synchronised (NTP): time service on, not synchronised; check chronyc tracking",
+                      output)
+        self.assertEqual(report.failed, 0)
 
 
 class ReadinessStopTests(unittest.TestCase):

@@ -106,7 +106,11 @@ installer does not add the extracted bundle to the trust database. Its Python
 sources need the exact-file trust described below before installation.
 
 The preflight script does not change host configuration. It checks Podman,
-rootless user namespaces, Quadlet, the user systemd manager and the ports.
+rootless user namespaces, Quadlet, the user systemd manager and the ports,
+and warns when the clock is not synchronised (`timedatectl`): token expiry,
+TLS validity and the two DR hosts' log times depend on it, so run a time
+service such as chronyd on every host (`sudo systemctl enable --now chronyd`,
+then `chronyc tracking`).
 
 ### Target values
 

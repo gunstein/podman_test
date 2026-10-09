@@ -228,6 +228,8 @@ echo "podman=$(podman --version 2>/dev/null)"
 echo "pyyaml=$(python3 -c 'import yaml' 2>/dev/null && echo ok || echo missing)"
 echo "sudo=$(sudo -n true 2>/dev/null && echo ok || echo password-required)"
 echo "sudoers_file=$(sudo -n test -e /etc/sudoers.d/90-todo-acceptance 2>/dev/null && echo present || echo missing)"
+echo "ntp=$(timedatectl show -p NTP --value 2>/dev/null)"
+echo "ntp_synchronized=$(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
 echo "mem_mib=$(free -m | awk '/^Mem:/ {print $2}')"
 echo "home_free=$(df -h --output=avail "$HOME" | tail -1 | tr -d ' ')"
 echo "todo_state=$(podman ps -a --format '{{.Names}}' 2>/dev/null | grep -cE '^(todo|notes|keycloak|nginx)') containers"
@@ -264,6 +266,12 @@ def check_guest(report, args, address, hostname):
     report.check(facts.get('sudo') == 'ok', 'Passwordless sudo in the running VM', facts.get('sudo', ''), level='WARN')
     report.line('INFO', 'Lab sudoers file', facts.get('sudoers_file', '') +
                 ' (what matters is that the clean snapshot contains it)')
+    # Token expiry, TLS validity and the two hosts' log times need a right clock (U3): chrony,
+    # or another time service, on and synchronised. A WARN: the run can go on, but say so.
+    synchronised = facts.get('ntp_synchronized') == 'yes'
+    report.check(synchronised, 'Clock synchronised (NTP)', '' if synchronised else
+                 f"time service {'on' if facts.get('ntp') == 'yes' else 'off'}, not synchronised; "
+                 'check chronyc tracking (sudo systemctl enable --now chronyd)', level='WARN')
     # A 4 GiB VM typically reports ~3450-3500 MiB to the guest OS (firmware/EFI
     # reservation); this only warns well below that, not on the documented lab spec.
     report.check(int(facts.get('mem_mib', '0') or 0) >= 3200, 'Memory', facts.get('mem_mib', '') + ' MiB', level='WARN')

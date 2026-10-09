@@ -276,7 +276,9 @@ attention above 30 minutes (G3).
     checked by `app_dr.py check` on both hosts. Open: local mode
     still renews only at a restart, and a DR pair in local mode checks
     nothing.
-- **U3. Time synchronisation.** *[new]* Token expiry, TLS and log timestamps
+- **U3. Time synchronisation.** *[new]* *[done 2026-10-09, awaiting acceptance]*
+  A WARN in the readiness check (`Clock synchronised (NTP)`) and in
+  `preflight.sh`; documented in deploy/offline/README.md. Token expiry, TLS and log timestamps
   depend on correct clocks on both hosts. Check that chrony (or another time
   service) is active in the preflight and in acceptance phase 1, and document
   it.

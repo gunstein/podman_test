@@ -49,7 +49,7 @@ class BundleContentTests(unittest.TestCase):
     def test_metadata_names_every_rendered_file(self):
         data = json.loads((self.bundle / 'bundle.json').read_text())
         self.assertEqual(data, self.metadata)
-        self.assertEqual((data['format'], data['format_version']), ('todo-offline-bundle', 3))
+        self.assertEqual((data['format'], data['format_version']), ('todo-offline-bundle', 4))
         self.assertEqual(data['applications'], ['todo', 'notes'])
         self.assertEqual(data['defaults'], {EXTERNAL_HOSTNAME: 'todo.test', 'TARGET_NOTES_HOSTNAME': 'notes.test'})
         manifests, units = install.offline_files(apps.APPS)
@@ -71,7 +71,7 @@ class BundleContentTests(unittest.TestCase):
                      'server_name ${TARGET_EXTERNAL_HOSTNAME};', 'server_name ${TARGET_NOTES_HOSTNAME};',
                      "connect-src 'self' https://${TARGET_EXTERNAL_HOSTNAME}:8443;"):
             self.assertIn(line, proxy)
-        for name in ('config.yaml', 'notes-config.yaml'):
+        for name in ('todo-config.yaml', 'notes-config.yaml'):
             self.assertIn('OIDC_ISSUER: "https://${TARGET_EXTERNAL_HOSTNAME}:8443/auth/realms/todo"',
                           (manifests / name).read_text())
         self.assertIn('KC_HOSTNAME: "https://${TARGET_EXTERNAL_HOSTNAME}:8443/auth"',
@@ -129,7 +129,7 @@ class OfflineInstallTests(unittest.TestCase):
     def test_the_target_values_reach_proxy_tls_oidc_and_keycloak(self):
         # The templates have few dollar expressions of their own; add the kinds a
         # Kube file may hold, so the test shows that they are installed untouched.
-        app = self.bundle / 'generated/target/manifests/app.yaml'
+        app = self.bundle / 'generated/target/manifests/todo-app.yaml'
         app.write_text(app.read_text() + '# cd $HOME; psql "password=${DATABASE_PASSWORD}" $$ ${target_lower}\n')
         with FakeHost(unit_directory=self.runtime) as host:
             changed, configure = self.install(host)
@@ -141,7 +141,7 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertIn(f'TODO_TLS_HOSTNAME: "{HOSTNAME}"', proxy)
         self.assertIn(f'APP_TLS_HOSTNAMES: "{HOSTNAME} notes.test"', proxy)
         self.assertIn(f'server_name {HOSTNAME};', proxy)
-        self.assertIn(f'OIDC_ISSUER: "https://{HOSTNAME}:8443/auth/realms/todo"', files['config.yaml'])
+        self.assertIn(f'OIDC_ISSUER: "https://{HOSTNAME}:8443/auth/realms/todo"', files['todo-config.yaml'])
         self.assertIn(f'OIDC_ISSUER: "https://{HOSTNAME}:8443/auth/realms/todo"', files['notes-config.yaml'])
         self.assertIn(f'KC_HOSTNAME: "https://{HOSTNAME}:8443/auth"', files['keycloak.yaml'])
         self.assertIn(f'PublishPort={ADDRESS}:8443:8443', files['shared-proxy.kube'])
@@ -149,10 +149,10 @@ class OfflineInstallTests(unittest.TestCase):
             ('todo-frontend', HOSTNAME), ('notes-frontend', 'notes.test')])
         # Every other dollar expression is installed exactly as the bundle has it.
         bundle_manifests = self.bundle / 'generated/target/manifests'
-        for name in ('app.yaml', 'notes-app.yaml', 'postgres.yaml', 'keycloak.yaml'):
+        for name in ('todo-app.yaml', 'notes-app.yaml', 'todo-postgres.yaml', 'keycloak.yaml'):
             expressions = dollar_expressions((bundle_manifests / name).read_text())
             self.assertEqual(dollar_expressions(files[name]), expressions, name)
-        self.assertIn('# cd $HOME; psql "password=${DATABASE_PASSWORD}" $$ ${target_lower}\n', files['app.yaml'])
+        self.assertIn('# cd $HOME; psql "password=${DATABASE_PASSWORD}" $$ ${target_lower}\n', files['todo-app.yaml'])
         self.assertEqual(oct(self.runtime.stat().st_mode & 0o777), '0o700')
         self.assertEqual(oct((self.runtime / 'shared-proxy.yaml').stat().st_mode & 0o777), '0o600')
         self.assertEqual(oct((self.runtime / 'shared-proxy.kube').stat().st_mode & 0o777), '0o644')
@@ -207,7 +207,7 @@ class OfflineInstallTests(unittest.TestCase):
             changed, configure = self.install(host, hostname='www.example.org')
         self.assertTrue(changed)
         stopped = {argv[3] for argv in host.ran('systemctl', '--user', 'stop')}
-        # The hostname is in config.yaml (todo's database, app and proxy), notes-config.yaml,
+        # The hostname is in todo-config.yaml (todo's database, app and proxy), notes-config.yaml,
         # keycloak.yaml and shared-proxy.yaml; keycloak-postgres's files do not have it.
         self.assertEqual(stopped, {'todo-postgres.service', 'todo-app.service', 'notes-postgres.service',
                                    'notes-app.service', 'keycloak.service', 'shared-proxy.service'})

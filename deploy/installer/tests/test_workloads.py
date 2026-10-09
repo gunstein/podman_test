@@ -34,7 +34,7 @@ class WorkloadsTests(unittest.TestCase):
                 runtime = directory / 'todo-kube-runtime'
                 rendered = base / 'rendered'
                 rendered.mkdir()
-                for name in ('postgres', 'keycloak', 'app', 'shared-proxy', 'config',
+                for name in ('todo-postgres', 'keycloak', 'todo-app', 'shared-proxy', 'todo-config',
                              'notes-app', 'notes-postgres', 'notes-config'):
                     (rendered / f'{name}.yaml').write_text(f'fixture: {name}\n')
                 for name in obsolete + ['unrelated']:
@@ -48,7 +48,7 @@ class WorkloadsTests(unittest.TestCase):
                     self.assertEqual(initial, {p: p.stat().st_mtime_ns for p in runtime.iterdir()})
                     self.assertFalse(host.ran('podman', 'secret', 'create'))
                     config = ('keycloak.yaml' if function == workloads.install_keycloak else
-                              'notes-config.yaml' if names[0].startswith('notes-') else 'config.yaml')
+                              'notes-config.yaml' if names[0].startswith('notes-') else 'todo-config.yaml')
                     (rendered / config).write_text('changed: true\n')
                     self.assertTrue(function(ROOT, directory, runtime, rendered))
                 # Each Kube secret carries the raw password, spaces and all, under its own name;
@@ -66,8 +66,25 @@ class WorkloadsTests(unittest.TestCase):
                 self.assertEqual(list(directory.glob('*.volume')), [directory / 'unrelated.volume'])
                 self.assertEqual(runtime.stat().st_mode & 0o777, 0o700)
                 manifest = ('keycloak.yaml' if function == workloads.install_keycloak else
-                            'notes-config.yaml' if names[0].startswith('notes-') else 'config.yaml')
+                            'notes-config.yaml' if names[0].startswith('notes-') else 'todo-config.yaml')
                 self.assertEqual((runtime / manifest).stat().st_mode & 0o777, 0o600)
+
+    def test_an_install_removes_todos_kube_yaml_under_its_old_names(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            directory, rendered = base / 'quadlet', base / 'rendered'
+            runtime = directory / 'todo-kube-runtime'
+            runtime.mkdir(parents=True)
+            rendered.mkdir()
+            for name in ('todo-postgres', 'todo-config'):
+                (rendered / f'{name}.yaml').write_text(f'fixture: {name}\n')
+            for name in ('postgres.yaml', 'config.yaml', 'app.yaml', 'keycloak.yaml'):
+                (runtime / name).write_text('old\n')
+            with FakeHost():
+                workloads.install_postgres(ROOT, directory, runtime, rendered)
+            self.assertEqual(sorted(path.name for path in runtime.iterdir()),
+                             ['keycloak.yaml', 'todo-config.yaml', 'todo-postgres.kube', 'todo-postgres.yaml'])
+            self.assertIn('Yaml=todo-postgres.yaml', (runtime / 'todo-postgres.kube').read_text())
 
     def test_a_dr_primary_gets_the_bundles_replicated_unit_on_its_own_address(self):
         import offline_bundle

@@ -107,7 +107,11 @@ never restart services themselves.
 Callers control safe stop/start ordering, taken from `apps.workloads()`: the
 seven pods in start order, each with its Kube YAML and ConfigMap files and
 whether a start waits for it to be healthy; stop is the reverse
-(`apps.services()`). Secret creation and obsolete `.volume`
+(`apps.services()`). Every Kube YAML file is named after its pod's name,
+then its component (`todo-postgres.yaml`, `notes-config.yaml`); an install
+removes todo's files under their earlier names (`postgres.yaml`,
+`config.yaml`, `app.yaml`), and bundles of the earlier format version are
+refused. Secret creation and obsolete `.volume`
 file cleanup do not affect the definition-change flag used by DR.
 
 `install.install` and the DR building blocks in `app_dr_host` (replication,

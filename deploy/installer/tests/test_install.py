@@ -87,7 +87,7 @@ class InstallTests(unittest.TestCase):
         plays = [(i, a) for i, a in enumerate(calls)
                  if a[:3] == ['podman', 'kube', 'play'] and '--help' not in a]
         self.assertEqual([Path(a[-1]).stem for _, a in plays], [
-            'postgres', 'notes-postgres', 'keycloak-postgres', 'keycloak', 'app', 'notes-app', 'shared-proxy'])
+            'todo-postgres', 'notes-postgres', 'keycloak-postgres', 'keycloak', 'todo-app', 'notes-app', 'shared-proxy'])
         self.assertLess(bootstrap[1], plays[2][0])
         self.assertLess(plays[-1][0], bootstrap[2])
 
@@ -132,7 +132,7 @@ class InstallTests(unittest.TestCase):
         plays = [(i, a) for i, a in enumerate(calls)
                  if a[:3] == ['podman', 'kube', 'play'] and '--help' not in a]
         self.assertEqual([Path(a[-1]).stem for _, a in plays],
-                         ['postgres', 'keycloak-postgres', 'keycloak', 'app', 'shared-proxy'])
+                         ['todo-postgres', 'keycloak-postgres', 'keycloak', 'todo-app', 'shared-proxy'])
         self.assertLess(plays[0][0], bootstrap[0])
         self.assertLess(bootstrap[0], plays[1][0])
         self.assertLess(plays[-1][0], bootstrap[1])
@@ -144,7 +144,7 @@ class InstallTests(unittest.TestCase):
         from app_installer.apps import APPS
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp)
-            for name in ('app', 'postgres', 'config', 'keycloak-postgres', 'keycloak-config',
+            for name in ('todo-app', 'todo-postgres', 'todo-config', 'keycloak-postgres', 'keycloak-config',
                         'keycloak', 'shared-proxy'):
                 (directory / (name + '.yaml')).write_text('fixture: ' + name)
             state = directory / '.state.json'
@@ -171,24 +171,24 @@ class InstallTests(unittest.TestCase):
                 roles.assert_not_called()
                 self.assertTrue(all(call.args[:3] == ('podman', 'pod', 'inspect')
                                     for call in command.call_args_list))
-                (directory / 'config.yaml').write_text('changed: true')
+                (directory / 'todo-config.yaml').write_text('changed: true')
                 self.assertTrue(kube_play.up(directory, (APPS[0],), state))
                 downs = [call.kwargs['input'] for call in command.call_args_list
                          if '--down' in call.args]
                 self.assertEqual(downs, ['fixture: ' + name for name in (
-                    'shared-proxy', 'app', 'keycloak', 'keycloak-postgres', 'postgres')])
+                    'shared-proxy', 'todo-app', 'keycloak', 'keycloak-postgres', 'todo-postgres')])
                 self.assertEqual(roles.call_count, 2)
 
     def test_down_uses_reverse_order_and_only_existing_files(self):
         with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run:
             root = Path(temp)
-            for name in ('shared-proxy', 'app', 'postgres'):
+            for name in ('shared-proxy', 'todo-app', 'todo-postgres'):
                 (root / (name + '.yaml')).touch()
             state = root / '.state.json'
             self.assertTrue(kube_play.down(root, state_file=state))
             self.assertEqual([c.args for c in run.call_args_list], [
                 ('podman', 'kube', 'play', '--down', root / (name + '.yaml'))
-                for name in ('shared-proxy', 'app', 'postgres')])
+                for name in ('shared-proxy', 'todo-app', 'todo-postgres')])
             self.assertFalse(state.exists())
 
     def test_down_uses_the_recorded_yaml_after_its_file_is_gone(self):
@@ -236,7 +236,7 @@ class InstallTests(unittest.TestCase):
                       return_value=subprocess.CompletedProcess([], 0, 'Running', '')):
             directory = Path(temp) / 'rendered'
             directory.mkdir()
-            for name in ('postgres', 'config', 'app', 'keycloak-postgres', 'keycloak-config',
+            for name in ('todo-postgres', 'todo-config', 'todo-app', 'keycloak-postgres', 'keycloak-config',
                         'keycloak', 'shared-proxy'):
                 (directory / (name + '.yaml')).write_text('fixture: ' + name)
             self.assertTrue(kube_play.up(directory, (apps.APPS[0],)))

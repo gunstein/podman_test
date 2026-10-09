@@ -39,7 +39,7 @@ def verify_package(test, archive, prefix):
     for name, content in files.items():
         if name.endswith(".py"):
             test.assertFalse(content.startswith(b"#!"), f"{name} starts with a shebang")
-    for name in ("app", "keycloak", "postgres", "config", "shared-proxy"):
+    for name in ("todo-app", "keycloak", "todo-postgres", "todo-config", "shared-proxy"):
         from tests.runtime_fixture import RUNTIME
         test.assertEqual(files[f"generated/kube-runtime/{name}.yaml"], (RUNTIME / f"{name}.yaml").read_bytes())
     guide = files["deploy/runtime/README.md"].decode()
@@ -112,8 +112,8 @@ class OperationsDistributionTests(unittest.TestCase):
                 "deploy/dr/README.md",
                 "deploy/dr/app_ops/cli.py",
                 "deploy/dr/app_ops/transport.py",
-                "generated/kube-runtime/app.yaml",
-                "generated/kube-runtime/postgres.yaml",
+                "generated/kube-runtime/todo-app.yaml",
+                "generated/kube-runtime/todo-postgres.yaml",
                 "docs/ACCEPTANCE.md",
                 "deploy/dr/PROMOTION.md",
                 "docs/ACCEPTANCE-TROUBLESHOOTING.md",
@@ -124,7 +124,7 @@ class OperationsDistributionTests(unittest.TestCase):
                 self.assertIn(path, names)
             # The DR tools install the same rendered target files as the offline bundle.
             self.assertIn("bundle.json", names)
-            self.assertIn("generated/target/manifests/postgres.yaml", names)
+            self.assertIn("generated/target/manifests/todo-postgres.yaml", names)
             self.assertIn("generated/target/quadlet/replicated/todo-postgres.kube", names)
             with tarfile.open(archive) as package:
                 package.extractall(directory, filter="data")

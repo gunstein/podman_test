@@ -51,7 +51,7 @@ guest unless stated otherwise.
 | `keycloak.service` | Keycloak | Identity has its own startup and health lifecycle |
 | `todo-app.service`, `notes-app.service` | Migration init container, backend, nginx frontend | Migration gates startup; backend and frontend share app lifecycle |
 
-Read `app.yaml`, `keycloak.yaml`, `postgres.yaml` and their `.kube` units in
+Read `todo-app.yaml`, `keycloak.yaml`, `todo-postgres.yaml` and their `.kube` units in
 the installed `~/.config/containers/systemd/todo-kube-runtime/` (or a
 temporary render as above); Notes and Keycloak's database use the same templates with
 `notes-` and `keycloak-` prefixed files. A seventh unit, `shared-proxy.service`,

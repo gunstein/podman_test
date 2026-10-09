@@ -87,7 +87,7 @@ tool on standby without touching the database.
 
 The Kube-native standby stores a `0600` replication passfile and recovery
 settings inside each `0700` database volume. The canonical PostgreSQL YAML and
-`.kube` unit of each database (for example `postgres.yaml` and
+`.kube` unit of each database (for example `todo-postgres.yaml` and
 `todo-postgres.kube`) are shared with primary; only data/recovery configuration
 and the primary LAN port exposure differ by role.
 

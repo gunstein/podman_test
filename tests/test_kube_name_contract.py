@@ -11,9 +11,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 class KubeNameContractTests(unittest.TestCase):
     def test_current_workloads_preserve_operator_container_names(self):
         expected = {
-            "app": ("todo-app", {"todo-backend", "todo-frontend"}),
+            "todo-app": ("todo-app", {"todo-backend", "todo-frontend"}),
             "keycloak": ("keycloak", {"keycloak"}),
-            "postgres": ("todo-postgres", {"todo-postgres"}),
+            "todo-postgres": ("todo-postgres", {"todo-postgres"}),
             "notes-app": ("notes-app", {"notes-backend", "notes-frontend"}),
             "notes-postgres": ("notes-postgres", {"notes-postgres"}),
             "shared-proxy": ("shared-proxy", {"nginx"}),

@@ -45,7 +45,7 @@ deploy/quadlet/app-network.network           shared rootless network
 ```
 
 Jinja2 is a build-time renderer, not a runtime orchestrator. Production rendering
-writes `app.yaml`, `keycloak.yaml`, `postgres.yaml`, `config.yaml` and
+writes `todo-app.yaml`, `keycloak.yaml`, `todo-postgres.yaml`, `todo-config.yaml` and
 `shared-proxy.yaml`, plus `notes-app.yaml`, `notes-postgres.yaml`,
 `notes-config.yaml`, `keycloak-postgres.yaml` and `keycloak-config.yaml` under
 `generated/kube-runtime/` by default. Development uses

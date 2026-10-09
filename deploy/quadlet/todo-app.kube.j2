@@ -6,8 +6,8 @@ Requires=todo-postgres.service keycloak.service
 After=todo-postgres.service keycloak.service
 
 [Kube]
-Yaml=app.yaml
-ConfigMap=config.yaml
+Yaml=todo-app.yaml
+ConfigMap=todo-config.yaml
 Network=app-network.network
 PodmanArgs=--no-pod-prefix
 ExitCodePropagation=any

@@ -28,6 +28,12 @@ def application_variables(publish_address, service_port):
     return {"todo_publish_address": publish_address, "todo_service_port": service_port}
 
 
+# todo's Kube YAML files before every app's got its name's prefix (todo-postgres.yaml,
+# todo-config.yaml, todo-app.yaml); an install removes them from the runtime
+# directory, whose units now name the new files.
+RENAMED_MANIFESTS = ("postgres.yaml", "config.yaml", "app.yaml")
+
+
 def proxy_variables(publish_address, service_port, applications):
     """The unit template's values for nginx: where it publishes HTTPS and the app services it needs."""
     return {"todo_publish_address": publish_address, "todo_service_port": service_port,
@@ -44,7 +50,8 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
     the bundle's, already filled in (see the module docstring); replicated
     picks the database unit that also publishes replication. Kube
     secrets are created from the raw Podman secrets; YAML is written 0600,
-    units 0644. Returns True if a definition changed. It never starts or
+    units 0644; todo's Kube YAML under its old names goes (RENAMED_MANIFESTS).
+    Returns True if a definition changed. It never starts or
     stops a service: the caller decides that.
     """
     root, directory, runtime = map(Path, (project_root, quadlet_dir, kube_runtime_dir))
@@ -75,6 +82,8 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         changed = quadlet.write(path, content, mode) or changed
     for name in obsolete:
         (directory / (name + ".volume")).unlink(missing_ok=True)
+    for name in RENAMED_MANIFESTS:
+        (runtime / name).unlink(missing_ok=True)
     quadlet.systemctl("daemon-reload")
     return changed
 
@@ -147,7 +156,7 @@ def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_m
     applications = apps.APPS if applications is None else applications
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        manifests=("shared-proxy.yaml", "config.yaml"), units=("shared-proxy.kube",),
+        manifests=("shared-proxy.yaml", apps.PROXY_CONFIG_MANIFEST), units=("shared-proxy.kube",),
         obsolete=(apps.NGINX_TLS_VOLUME,),
         capability="shared proxy", mapping={},
         variables=proxy_variables(publish_address, service_port, applications), target=target,

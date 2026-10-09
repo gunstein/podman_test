@@ -34,12 +34,7 @@ class Names:
         return self.resource(component) + ".service"
 
     def manifest(self, component: str) -> str:
-        # Todo was the only application before Notes/Keycloak's own database
-        # existed, so its manifests are still the bare component name
-        # ("postgres.yaml", not "todo-postgres.yaml"); existing DR callers and
-        # packaged bundles depend on that exact filename, so it stays fixed.
-        stem = component if self.name == "todo" else self.resource(component)
-        return stem + ".yaml"
+        return self.resource(component) + ".yaml"
 
     def kube_secret(self, component: str) -> str:
         return self.resource("kube-" + component) + "-secret"

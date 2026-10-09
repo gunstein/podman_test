@@ -5,7 +5,7 @@ After={{ app_services | default(['todo-app.service']) | join(' ') }} keycloak.se
 
 [Kube]
 Yaml=shared-proxy.yaml
-ConfigMap=config.yaml
+ConfigMap=todo-config.yaml
 Network=app-network.network
 PodmanArgs=--no-pod-prefix
 {# Always on loopback: plain HTTP 8080 for the host's own readiness checks and

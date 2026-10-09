@@ -19,11 +19,11 @@ class DeployLayoutTests(unittest.TestCase):
                     str(ROOT / f"deploy/environments/{environment}/values.yaml"), str(output),
                 ], cwd=directory, check=True, capture_output=True)
                 self.assertEqual({p.name for p in output.iterdir()}, {
-                    "app.yaml", "keycloak.yaml", "postgres.yaml", "config.yaml", "shared-proxy.yaml",
+                    "todo-app.yaml", "keycloak.yaml", "todo-postgres.yaml", "todo-config.yaml", "shared-proxy.yaml",
                     "notes-app.yaml", "notes-postgres.yaml", "notes-config.yaml",
                     "keycloak-postgres.yaml", "keycloak-config.yaml",
                 })
-                config = list(yaml.safe_load_all((output / "config.yaml").read_text()))
+                config = list(yaml.safe_load_all((output / "todo-config.yaml").read_text()))
                 proxy = list(yaml.safe_load_all((output / "shared-proxy.yaml").read_text()))
                 proxy_env = next(d for d in proxy if d["metadata"]["name"] == "shared-nginx-env")
                 self.assertEqual(proxy_env["data"]["TODO_TLS_HOSTNAME"], hostname)

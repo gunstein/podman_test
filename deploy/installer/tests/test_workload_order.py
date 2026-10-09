@@ -53,31 +53,31 @@ TODO_SERVER_EVENTS = [
 ]
 # Development mode: each play (Kube YAML, ConfigMap), wait and role setup, in order.
 ALL_DEV_EVENTS = [
-    ('play', 'postgres.yaml', 'config.yaml'), ('wait', 'todo-postgres'), ('roles', 'todo'),
+    ('play', 'todo-postgres.yaml', 'todo-config.yaml'), ('wait', 'todo-postgres'), ('roles', 'todo'),
     ('play', 'notes-postgres.yaml', 'notes-config.yaml'), ('wait', 'notes-postgres'), ('roles', 'notes'),
     ('play', 'keycloak-postgres.yaml', 'keycloak-config.yaml'), ('wait', 'keycloak-postgres'),
     ('play', 'keycloak.yaml', None),
-    ('play', 'app.yaml', 'config.yaml'),
+    ('play', 'todo-app.yaml', 'todo-config.yaml'),
     ('play', 'notes-app.yaml', 'notes-config.yaml'),
     ('play', 'shared-proxy.yaml', None),
     ('roles', 'todo'), ('roles', 'notes'),
 ]
 TODO_DEV_EVENTS = [
-    ('play', 'postgres.yaml', 'config.yaml'), ('wait', 'todo-postgres'), ('roles', 'todo'),
+    ('play', 'todo-postgres.yaml', 'todo-config.yaml'), ('wait', 'todo-postgres'), ('roles', 'todo'),
     ('play', 'keycloak-postgres.yaml', 'keycloak-config.yaml'), ('wait', 'keycloak-postgres'),
     ('play', 'keycloak.yaml', None),
-    ('play', 'app.yaml', 'config.yaml'),
+    ('play', 'todo-app.yaml', 'todo-config.yaml'),
     ('play', 'shared-proxy.yaml', None),
     ('roles', 'todo'),
 ]
 # Tear-down, one `podman kube play --down` after another: the reverse of the plays.
-ALL_TEARDOWN = ['shared-proxy.yaml', 'notes-app.yaml', 'app.yaml', 'keycloak.yaml',
-                'keycloak-postgres.yaml', 'notes-postgres.yaml', 'postgres.yaml']
-TODO_TEARDOWN = ['shared-proxy.yaml', 'app.yaml', 'keycloak.yaml', 'keycloak-postgres.yaml', 'postgres.yaml']
-ALL_MANIFESTS = {'postgres.yaml', 'config.yaml', 'app.yaml', 'notes-postgres.yaml', 'notes-config.yaml',
+ALL_TEARDOWN = ['shared-proxy.yaml', 'notes-app.yaml', 'todo-app.yaml', 'keycloak.yaml',
+                'keycloak-postgres.yaml', 'notes-postgres.yaml', 'todo-postgres.yaml']
+TODO_TEARDOWN = ['shared-proxy.yaml', 'todo-app.yaml', 'keycloak.yaml', 'keycloak-postgres.yaml', 'todo-postgres.yaml']
+ALL_MANIFESTS = {'todo-postgres.yaml', 'todo-config.yaml', 'todo-app.yaml', 'notes-postgres.yaml', 'notes-config.yaml',
                  'notes-app.yaml', 'keycloak-postgres.yaml', 'keycloak-config.yaml', 'keycloak.yaml',
                  'shared-proxy.yaml'}
-TODO_MANIFESTS = {'postgres.yaml', 'config.yaml', 'app.yaml', 'keycloak-postgres.yaml',
+TODO_MANIFESTS = {'todo-postgres.yaml', 'todo-config.yaml', 'todo-app.yaml', 'keycloak-postgres.yaml',
                   'keycloak-config.yaml', 'keycloak.yaml', 'shared-proxy.yaml'}
 SERVING = {'shared-proxy.service', 'todo-app.service', 'notes-app.service', 'keycloak.service'}
 DATABASES = {'todo-postgres.service', 'notes-postgres.service', 'keycloak-postgres.service'}

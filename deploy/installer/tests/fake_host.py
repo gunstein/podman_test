@@ -194,7 +194,7 @@ class RenderingHost(FakeHost):
         if argv[0].endswith('render-kube-runtime.sh'):  # script, values file, output directory[, apps]
             target = Path(argv[2])
             target.mkdir(parents=True)
-            for name in ('postgres', 'app', 'keycloak', 'shared-proxy', 'config',
+            for name in ('todo-postgres', 'todo-app', 'keycloak', 'shared-proxy', 'todo-config',
                          'notes-app', 'notes-postgres', 'notes-config',
                          'keycloak-postgres', 'keycloak-config'):
                 (target / (name + '.yaml')).write_text('fixture: true\n')

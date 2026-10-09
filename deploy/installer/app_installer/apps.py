@@ -93,7 +93,7 @@ PROXY_IMAGE = f"localhost/todo-proxy:{settings.IMAGE_TAG}"
 PROXY_ARCHIVE = f"todo-proxy-{settings.IMAGE_TAG}.tar"
 # The ConfigMap file shared-proxy.kube names (ConfigMap=); it is the identity
 # app's own ConfigMap file (tests/test_kube_name_contract.py).
-PROXY_CONFIG_MANIFEST = "config.yaml"
+PROXY_CONFIG_MANIFEST = "todo-config.yaml"
 # The TLS volume nginx used before its Podman secrets; kept for going back (tls.py).
 NGINX_TLS_VOLUME = "todo-nginx-data"
 

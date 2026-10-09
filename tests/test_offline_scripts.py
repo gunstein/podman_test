@@ -86,7 +86,7 @@ class OfflineScriptTests(unittest.TestCase):
     def test_render_failure_preserves_all_existing_manifests(self):
         output = self.directory / "output"
         output.mkdir()
-        names = ("app.yaml", "keycloak.yaml", "postgres.yaml", "config.yaml", "shared-proxy.yaml",
+        names = ("todo-app.yaml", "keycloak.yaml", "todo-postgres.yaml", "todo-config.yaml", "shared-proxy.yaml",
                  "notes-app.yaml", "notes-postgres.yaml", "notes-config.yaml",
                  "keycloak-postgres.yaml", "keycloak-config.yaml")
         for name in names:

@@ -50,7 +50,7 @@ from . import apps, manifests, quadlet, settings
 
 BUNDLE_METADATA = 'bundle.json'
 BUNDLE_FORMAT = 'todo-offline-bundle'
-BUNDLE_FORMAT_VERSION = 3
+BUNDLE_FORMAT_VERSION = 4
 PLACEHOLDER = re.compile(r'\$\{(TARGET_[A-Z0-9_]+)\}')
 EXTERNAL_HOSTNAME = 'TARGET_EXTERNAL_HOSTNAME'
 PUBLISH_ADDRESS = 'TARGET_PUBLISH_ADDRESS'

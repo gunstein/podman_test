@@ -13,9 +13,9 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(database.container, name + "-postgres")
             self.assertEqual(database.unit, name + "-postgres.kube")
             self.assertEqual(database.service, name + "-postgres.service")
-            self.assertEqual(database.manifest, "postgres.yaml" if name == "todo"
+            self.assertEqual(database.manifest, "todo-postgres.yaml" if name == "todo"
                              else name + "-postgres.yaml")
-            self.assertEqual(database.config_manifest, "config.yaml" if name == "todo"
+            self.assertEqual(database.config_manifest, "todo-config.yaml" if name == "todo"
                              else name + "-config.yaml")
             self.assertEqual(database.secret("db"), name + "-db-password")
             self.assertEqual(database.kube_secret, name + "-kube-postgres-secret")

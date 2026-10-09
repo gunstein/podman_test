@@ -18,9 +18,9 @@ def read(path: pathlib.Path) -> str:
 class KubeRuntimeTests(unittest.TestCase):
     def test_runtime_yaml_parses_and_uses_canonical_pod_names(self):
         expected = {
-            "app.yaml": "todo-app",
+            "todo-app.yaml": "todo-app",
             "keycloak.yaml": "keycloak",
-            "postgres.yaml": "todo-postgres",
+            "todo-postgres.yaml": "todo-postgres",
             "shared-proxy.yaml": "shared-proxy",
             "notes-app.yaml": "notes-app",
             "notes-postgres.yaml": "notes-postgres",
@@ -35,7 +35,7 @@ class KubeRuntimeTests(unittest.TestCase):
 
         app = next(
             doc
-            for doc in yaml.safe_load_all(read(RUNTIME / "app.yaml"))
+            for doc in yaml.safe_load_all(read(RUNTIME / "todo-app.yaml"))
             if doc and doc.get("kind") == "Pod"
         )
         keycloak = next(
@@ -57,7 +57,7 @@ class KubeRuntimeTests(unittest.TestCase):
         )
 
     def test_app_pod_groups_migration_backend_and_frontend(self):
-        documents = list(yaml.safe_load_all(read(RUNTIME / "app.yaml")))
+        documents = list(yaml.safe_load_all(read(RUNTIME / "todo-app.yaml")))
         pod = next(doc for doc in documents if doc["kind"] == "Pod")
 
         self.assertEqual(
@@ -95,7 +95,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertIn("secretName: \"keycloak-kube-postgres-secret\"", manifests)
 
     def test_proxy_reuses_the_accepted_tls_volume(self):
-        app = read(RUNTIME / "app.yaml")
+        app = read(RUNTIME / "todo-app.yaml")
         proxy = read(RUNTIME / "shared-proxy.yaml")
         self.assertIn("name: todo-nginx-data", proxy)
         self.assertNotIn("todo-kube-nginx-data", app)
@@ -124,7 +124,7 @@ class KubeRuntimeTests(unittest.TestCase):
                 elif "Yaml=keycloak-" in unit:
                     config = "keycloak-config.yaml"
                 else:
-                    config = "config.yaml"
+                    config = "todo-config.yaml"
                 self.assertIn("ConfigMap=" + config, unit)
         self.assertNotIn("ConfigMap=", keycloak)
         self.assertIn("name: keycloak-config", read(RUNTIME / "keycloak.yaml"))
@@ -147,9 +147,9 @@ class KubeRuntimeTests(unittest.TestCase):
             self.assertIn(route, config)
         self.assertNotIn("127.0.0.1:8000", config)
         self.assertNotIn("https://todo_frontend", config)
-        self.assertNotIn("todo-nginx-data", read(RUNTIME / "app.yaml"))
+        self.assertNotIn("todo-nginx-data", read(RUNTIME / "todo-app.yaml"))
         self.assertNotIn("ssl_certificate", read(ROOT / "todo-frontend/nginx.conf"))
-        self.assertIn("DATABASE_HOST: \"todo-postgres\"", read(RUNTIME / "config.yaml"))
+        self.assertIn("DATABASE_HOST: \"todo-postgres\"", read(RUNTIME / "todo-config.yaml"))
 
     def test_quadlet_conditionals_render_real_lan_and_loopback_profiles(self):
         proxy = read(RUNTIME / "shared-proxy.kube")
@@ -200,7 +200,7 @@ class KubeRuntimeTests(unittest.TestCase):
         # One postgres.yaml.j2 backs every database, and one app.yaml.j2 every application.
         rendered = "\n".join(
             read(RUNTIME / filename) for filename in
-            ("postgres.yaml", "notes-postgres.yaml", "keycloak-postgres.yaml", "app.yaml", "notes-app.yaml")
+            ("todo-postgres.yaml", "notes-postgres.yaml", "keycloak-postgres.yaml", "todo-app.yaml", "notes-app.yaml")
         )
         for pod_name in ("todo-postgres", "notes-postgres", "keycloak-postgres", "todo-app", "notes-app"):
             self.assertIn(f'name: "{pod_name}"', rendered)
@@ -212,7 +212,7 @@ class KubeRuntimeTests(unittest.TestCase):
 
         # Every rendered PASSWORD env var is either a secret file path or a secretKeyRef;
         # no template ever carries a literal secret value (secrets.py owns names only).
-        for filename in ("postgres.yaml", "app.yaml", "keycloak.yaml"):
+        for filename in ("todo-postgres.yaml", "todo-app.yaml", "keycloak.yaml"):
             for doc in yaml.safe_load_all(read(RUNTIME / filename)):
                 if doc["kind"] != "Pod":
                     continue
@@ -238,7 +238,7 @@ class KubeRuntimeTests(unittest.TestCase):
                 patch("app_installer.kube_play.exists", return_value=False):
             up(RUNTIME, state_file=RUNTIME / '.dev-state.json')
         calls = [call.args[0] for call in run.call_args_list]
-        postgres = next(i for i, a in enumerate(calls) if a[-1] == str(RUNTIME / "postgres.yaml"))
+        postgres = next(i for i, a in enumerate(calls) if a[-1] == str(RUNTIME / "todo-postgres.yaml"))
         healthy = calls.index(["podman", "wait", "--condition", "healthy", "todo-postgres"])
         setup = [i for i, a in enumerate(calls) if a[-1] == "backend.setup_roles"]
         keycloak = next(i for i, a in enumerate(calls) if a[-1] == str(RUNTIME / "keycloak.yaml"))

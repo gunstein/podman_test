@@ -10,7 +10,7 @@ class IndependentAppChartsTests(unittest.TestCase):
     def test_each_app_owns_its_database_pvcs_secrets_and_roles(self):
         all_claims = []
         for name, postgres_file, app_file, config_file in (
-            ('todo', 'postgres.yaml', 'app.yaml', 'config.yaml'),
+            ('todo', 'todo-postgres.yaml', 'todo-app.yaml', 'todo-config.yaml'),
             ('notes', 'notes-postgres.yaml', 'notes-app.yaml', 'notes-config.yaml'),
         ):
             documents = (list(yaml.safe_load_all((RUNTIME / postgres_file).read_text()))

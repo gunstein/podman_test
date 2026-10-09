@@ -38,7 +38,7 @@ class PreflightHostPortTests(unittest.TestCase):
         self.assertEqual(self.check_ports({8000}), [5432, 5433, 5434, 8080, 8443])
         self.assertNotIn('"todo-backend:8000"', PREFLIGHT)
         from tests.runtime_fixture import RUNTIME
-        manifest = (RUNTIME / "app.yaml").read_text()
+        manifest = (RUNTIME / "todo-app.yaml").read_text()
         self.assertIn("containerPort: 8000", manifest)
 
     def test_unexpected_published_port_conflicts_are_rejected(self):

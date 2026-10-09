@@ -52,7 +52,7 @@ class AppRegistryTests(unittest.TestCase):
             self.assertEqual(app.database.container, name + "-postgres")
             self.assertEqual(app.unit, name + "-app.kube")
             self.assertEqual(app.service, name + "-app.service")
-            self.assertEqual(app.manifest, "app.yaml" if name == "todo"
+            self.assertEqual(app.manifest, "todo-app.yaml" if name == "todo"
                              else name + "-app.yaml")
             self.assertEqual(app.database.secret("db"), name + "-db-password")
             self.assertEqual(app.database.kube_secret, name + "-kube-postgres-secret")

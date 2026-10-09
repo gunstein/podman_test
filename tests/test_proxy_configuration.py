@@ -136,7 +136,7 @@ class ProxyConfigurationTests(unittest.TestCase):
             "deploy/quadlet/"
             "shared-proxy.kube.j2"
         )
-        config = (RUNTIME / "config.yaml").read_text(encoding="utf-8")
+        config = (RUNTIME / "todo-config.yaml").read_text(encoding="utf-8")
         proxy_config = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
 
         from app_installer import apps

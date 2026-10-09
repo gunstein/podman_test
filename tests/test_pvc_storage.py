@@ -26,7 +26,7 @@ class PVCStorageTests(unittest.TestCase):
         # volume claim is checked as it is after going back to the volume.
         proxy = (RUNTIME / "shared-proxy.yaml").read_text()
         for text, pod_name, expected in (
-            ((RUNTIME / "postgres.yaml").read_text(), "todo-postgres", {
+            ((RUNTIME / "todo-postgres.yaml").read_text(), "todo-postgres", {
                 "todo-postgres-data": ("/var/lib/postgresql/data", 999),
                 "todo-postgres-backup": ("/var/lib/postgresql/backup", 999),
             }),
@@ -97,9 +97,9 @@ class PVCStorageTests(unittest.TestCase):
 
         from app_dr_host import replication
         from app_installer import apps
-        canonical = next(d for d in yaml.safe_load_all((RUNTIME / "postgres.yaml").read_text())
+        canonical = next(d for d in yaml.safe_load_all((RUNTIME / "todo-postgres.yaml").read_text())
                          if d["metadata"]["name"] == "todo-postgres-data")
-        target = SimpleNamespace(manifests={"postgres.yaml": (RUNTIME / "postgres.yaml").read_bytes()})
+        target = SimpleNamespace(manifests={"todo-postgres.yaml": (RUNTIME / "todo-postgres.yaml").read_bytes()})
         self.assertEqual(yaml.safe_load(replication.data_claim(apps.APPS[0].database, target)), canonical)
 
     def test_uninstall_preserves_database_and_tls_data_by_default_and_never_removes_backup(self):

@@ -11,6 +11,8 @@ cannot come back on its own: power it off or cut its network at the
 hypervisor or the switch, and turn off any automatic start. An address that
 does not answer is **not** proof: a broken link looks the same, and two
 primaries lose data. If you cannot fence Oslo for certain, stop here.
+Without access to Oslo's hypervisor, [fence-without-oslo.md](fence-without-oslo.md)
+says what counts as fenced, and what to do when Oslo comes back.
 
 ## 2. Check on Trondheim that promotion is safe
 

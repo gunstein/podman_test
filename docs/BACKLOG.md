@@ -145,7 +145,8 @@ attention above 30 minutes (G3).
   widens what a failover can lose (C4). Measure lag over the real link, check
   that the RPO target of 30 seconds holds, and that timeouts (SSH,
   `connect_timeout`) suit it.
-- **T3. Fencing when the other site does not answer.** *[docs]* Acceptance
+- **T3. Fencing when the other site does not answer.** *[docs]* *[done 2026-10-09;
+  owner: review the three accepted proofs]* docs/runbooks/fence-without-oslo.md. Acceptance
   fences the old primary through the Proxmox API (power off, links down,
   ports checked), which needs access to the failed site's hypervisor. With a
   whole site gone or cut off, that access may be missing, and an isolated old

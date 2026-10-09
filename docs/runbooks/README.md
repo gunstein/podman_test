@@ -16,6 +16,7 @@ Where each log is, and what to do when `journalctl --user` shows nothing:
 | What happened | Page | Tested in acceptance |
 |---|---|---|
 | Oslo is lost (fire, power, hardware): users cannot work | [primary-lost.md](primary-lost.md) | Yes, every run (phases 6 and 7) |
+| Oslo cannot be fenced through its hypervisor, or comes back after a failover | [fence-without-oslo.md](fence-without-oslo.md) | No: acceptance fences through the Proxmox API (backlog G4) |
 | A timer failed: `todo-dr-check`, `todo-backup` or `todo-replication-tls` | [timer-failed.md](timer-failed.md) | The failure and its message (phase 6); the fixes are the other pages |
 | The standby is down, behind, or lost its slot | [standby-rebuild.md](standby-rebuild.md) | The rebuild after a failover and the re-seed without one (both phase 9) |
 | The disk is filling up | [disk-full.md](disk-full.md) | No |

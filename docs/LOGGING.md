@@ -45,9 +45,27 @@ with a hint about the groups. `podman logs NAME` reads the same journal
 finds the output of a container that was removed, as long as the journal
 keeps it, by `journalctl CONTAINER_NAME=NAME`.
 
-Whether logs survive a reboot, and how much is kept, depends on journald's
-storage on the host, which the installer does not set (backlog L4). Check
-with `journalctl --disk-usage` and `ls -d /var/log/journal`.
+## Keep the journal across reboots, bounded
+
+Whether logs survive a reboot, and how much is kept, is journald's host
+setting, which the rootless installer cannot change. Set it once per host,
+as root:
+
+```bash
+sudo mkdir -p /etc/systemd/journald.conf.d
+printf '%s\n' '[Journal]' 'Storage=persistent' 'SystemMaxUse=1G' 'MaxRetentionSec=3month' |
+  sudo tee /etc/systemd/journald.conf.d/50-todo.conf
+sudo systemctl restart systemd-journald
+journalctl --disk-usage; ls -d /var/log/journal
+```
+
+`Storage=persistent` keeps the journal in `/var/log/journal`, so a reboot
+keeps it and `journalctl --user` has the user's own files; `SystemMaxUse`
+and `MaxRetentionSec` bound its size and age, whichever comes first. Choose
+the numbers for your disk and how far back an incident needs to look. The
+acceptance readiness check warns on a host without `/var/log/journal`, and
+the lab's `prepare-agent-snapshots.sh` sets exactly this file before it
+takes the clean snapshots.
 
 ## Ready commands
 

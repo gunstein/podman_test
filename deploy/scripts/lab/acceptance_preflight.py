@@ -230,6 +230,7 @@ echo "sudo=$(sudo -n true 2>/dev/null && echo ok || echo password-required)"
 echo "sudoers_file=$(sudo -n test -e /etc/sudoers.d/90-todo-acceptance 2>/dev/null && echo present || echo missing)"
 echo "ntp=$(timedatectl show -p NTP --value 2>/dev/null)"
 echo "ntp_synchronized=$(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
+echo "journal=$(test -d /var/log/journal && echo persistent || echo volatile)"
 echo "mem_mib=$(free -m | awk '/^Mem:/ {print $2}')"
 echo "home_free=$(df -h --output=avail "$HOME" | tail -1 | tr -d ' ')"
 echo "todo_state=$(podman ps -a --format '{{.Names}}' 2>/dev/null | grep -cE '^(todo|notes|keycloak|nginx)') containers"
@@ -272,6 +273,10 @@ def check_guest(report, args, address, hostname):
     report.check(synchronised, 'Clock synchronised (NTP)', '' if synchronised else
                  f"time service {'on' if facts.get('ntp') == 'yes' else 'off'}, not synchronised; "
                  'check chronyc tracking (sudo systemctl enable --now chronyd)', level='WARN')
+    # Logs that survive a reboot (L4): /var/log/journal makes journald keep them.
+    persistent = facts.get('journal') == 'persistent'
+    report.check(persistent, 'Journal kept across reboots', facts.get('journal', '') if persistent else
+                 'volatile: a reboot loses the logs; see docs/LOGGING.md', level='WARN')
     # A 4 GiB VM typically reports ~3450-3500 MiB to the guest OS (firmware/EFI
     # reservation); this only warns well below that, not on the documented lab spec.
     report.check(int(facts.get('mem_mib', '0') or 0) >= 3200, 'Memory', facts.get('mem_mib', '') + ' MiB', level='WARN')

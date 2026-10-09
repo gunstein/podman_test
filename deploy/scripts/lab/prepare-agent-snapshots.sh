@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # One-time lab preparation for docs/ACCEPTANCE-AGENT.md A3, through the Proxmox
 # token: roll each VM back to its current clean snapshot, authorize this
-# laptop's SSH key, add lab-only passwordless sudo, then take snapshot
-# clean-agent. DESTROYS the current state of both VMs.
+# laptop's SSH key, add lab-only passwordless sudo, PyYAML and a persistent,
+# bounded journal, then take snapshot clean-agent. DESTROYS the current state of both VMs.
 # Usage: prepare-agent-snapshots.sh [VMID:IP:CLEAN_SNAPSHOT ...]
 set -euo pipefail
 
@@ -55,6 +55,11 @@ for item in "$@"; do
   ssh -o BatchMode=yes "$vm_user@$ip" 'sudo -n dnf install -y python3-pyyaml' >/dev/null
   ssh -o BatchMode=yes "$vm_user@$ip" "python3 -c 'import yaml'" ||
     { echo "python3-pyyaml still missing on $ip" >&2; exit 1; }
+
+  echo "Keeping the journal across reboots, bounded (docs/LOGGING.md, backlog L4)"
+  ssh -o BatchMode=yes "$vm_user@$ip" "sudo -n mkdir -p /etc/systemd/journald.conf.d &&
+    printf '%s\n' '[Journal]' 'Storage=persistent' 'SystemMaxUse=1G' 'MaxRetentionSec=3month' |
+    sudo -n tee /etc/systemd/journald.conf.d/50-todo.conf >/dev/null && sudo -n systemctl restart systemd-journald"
 
   pve task "/nodes/{node}/qemu/$vmid/status/shutdown" >/dev/null
   pve task "/nodes/{node}/qemu/$vmid/snapshot" snapname="$new_snapshot" \

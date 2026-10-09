@@ -322,7 +322,9 @@ why. The seven workloads already log to journald (`LogDriver=journald`), and
   reason (never the token), database errors with context, and changes with
   the user's `sub`. A backend should also refuse to start without its OIDC
   settings, instead of answering every request with "invalid token".
-- **L4. Persistent, bounded journald.** *[config]* Whether logs survive a
+- **L4. Persistent, bounded journald.** *[config]* *[done 2026-10-09; operator:
+  the lab VMs get it with the next `prepare-agent-snapshots.sh` (K1)]* docs/LOGGING.md
+  gives the drop-in; the readiness check warns without `/var/log/journal`. Whether logs survive a
   reboot depends on journald storage on the hosts, which is neither set nor
   documented, and nothing bounds size or age. Configure persistent storage
   with limits, and document it.
@@ -493,8 +495,9 @@ between them is not a goal: each app should read on its own.
   reseed). Splitting them into manager classes would make one operation
   harder to follow. Split a part out only when it has a public contract of
   its own and can be tested without the rest of the lifecycle. The one
-  candidate today is `install.install()` (118 lines), into named steps, if
-  that reads better.
+  candidate was `install.install()` (118 lines), into named steps: done in
+  S5 task 4 (`check`, `prepare`, `write_definitions`, `start_in_order`,
+  `finish`), accepted in run 2026-10-09-run-3. Nothing else to split now.
 - **S5. Make the installer's topology concrete.** *[simplify]* *[done,
   awaiting acceptance]* Phases 1 and 2 done 2026-10-09. The Python in
   `deploy/installer/app_installer`, and the DR code that imports it, should

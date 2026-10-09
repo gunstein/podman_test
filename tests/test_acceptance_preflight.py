@@ -143,7 +143,7 @@ class AcceptancePreflightTests(unittest.TestCase):
                 "unit_qemu-guest-agent": "active", "linger": "yes", "rootless": "true",
                 "podman": "podman version 5.8.2", "pyyaml": pyyaml, "sudo": "ok",
                 "sudoers_file": "present", "mem_mib": "3457", "home_free": "16G", "todo_state": "0",
-                "ntp": "yes", "ntp_synchronized": synchronised}
+                "ntp": "yes", "ntp_synchronized": synchronised, "journal": "persistent"}
         out = "\n".join(f"{key}={value}" for key, value in facts.items())
         args = argparse.Namespace(client_ip="192.168.0.100", user="gunstein")
         report = acceptance_preflight.Report()

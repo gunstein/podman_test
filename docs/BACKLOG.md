@@ -31,18 +31,20 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-1. First, so a failover does not lose weeks of data: T3 (fencing without the
+1. High up, small: V1 (secret files left in volumes). Owner's request,
+   2026-10-09.
+2. Then, so a failover does not lose weeks of data: T3 (fencing without the
    Oslo hypervisor, a procedure). When to
    start is the owner's call.
-2. The rest of failover to Trondheim within 30 minutes (see the goal below):
+3. The rest of failover to Trondheim within 30 minutes (see the goal below):
    G4 (the disaster drill in the
    lab) and G5 (rebuilding Oslo on new hardware).
-3. What operation needs: U1 (updating a replicated pair), T6 (planned
+4. What operation needs: U1 (updating a replicated pair), T6 (planned
    switchover), U2 (the replication CA and nginx; the replication certificate
    renews itself now)
    and L1 (command logging).
-4. fapolicyd (F0 first), firewalls (W) and data checks (C).
-5. The rest.
+5. fapolicyd (F0 first), firewalls (W) and data checks (C).
+6. The rest.
 
 For a single host without DR (`install.sh` only), what matters, in order:
 Q3 (security updates, which `install.sh` can roll out). Then U3
@@ -53,6 +55,26 @@ physical sites. D2 and L6 are therefore designed for two hosts that each keep
 what the other would lose: each host backs up its own database copy (D2), and
 each holds the other's logs (L6). Everything between them crosses a network
 between sites, and replication across it uses TLS.
+
+## Secrets on disk
+
+- **V1. Kube secret volumes that outlive their secrets.** *[new]* Found
+  2026-10-09 with Podman 4.9 while nginx's TLS files moved to Podman
+  secrets: `podman kube play` writes the files of every `secret:` volume
+  into a named volume called after the Kube secret (for example
+  `todo-kube-proxy-tls-secret`, with `server.key` in it), rewrites it at
+  every play, and keeps it after `kube down`. For nginx's secret,
+  `uninstall --remove-data` now removes that volume (`uninstall.TLS_VOLUMES`).
+  The password secrets (`todo-kube-backend-secret`,
+  `todo-kube-migrator-secret`, the database and Keycloak ones) are mounted
+  the same way, so their volumes probably stay too, and nothing removes
+  them: a password lives on in a volume after `--remove-data` deleted its
+  secret. Not changed yet. To do: confirm on the lab's Podman 5.8 which
+  volumes exist after an install and after `uninstall --remove-data`;
+  remove each Kube secret's volume with its secret (`--remove-data`, and
+  `dev-down.sh` if it should); say in docs/SECRETS.md that a Kube secret
+  also lives in such a volume; and check whether a rotation
+  (docs/SECRETS.md) must remove the volume so the new value is used.
 
 ## Goal: Trondheim running within 30 minutes
 

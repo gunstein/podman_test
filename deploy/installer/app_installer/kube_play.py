@@ -19,18 +19,14 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
     Pods that exist without a state file are refused rather than guessed at.
     """
     applications = apps.APPS if applications is None else tuple(applications)
+    selected = apps.workloads(applications)
     directory = Path(rendered_manifest_dir)
     state_file = Path(state_file or settings.DEV_STATE_FILE)
-    manifests = [name for app in applications
-                 for name in (app.database.manifest, app.config_manifest, app.manifest)] + [
-        apps.KEYCLOAK_DATABASE.manifest, apps.KEYCLOAK_DATABASE.config_manifest,
-        'keycloak.yaml', 'shared-proxy.yaml']
     digest = hashlib.sha256()
-    for name in manifests:
+    for name in dict.fromkeys(name for workload in selected for name in workload.manifests):
         digest.update(name.encode() + b'\0' + (directory / name).read_bytes())
     fingerprint = digest.hexdigest()
-    pods = [pod for app in applications for pod in (app.database.container, app.pod)]
-    pods += [apps.KEYCLOAK_DATABASE.container, 'keycloak', 'shared-proxy']
+    pods = [workload.pod for workload in selected]
     previous = json.loads(state_file.read_text()) if state_file.is_file() else None
     present = {pod for pod in pods if exists('pod', pod)}
     if previous and previous['fingerprint'] == fingerprint and not refresh and len(present) == len(pods):
@@ -51,25 +47,24 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
         run('podman', 'kube', 'play', '--no-pod-prefix', '--network', apps.NETWORK,
             *arguments, *ports, directory / manifest)
 
+    # Roles are set up once an app's database is healthy, and again after every pod started.
+    databases = {app.database.container: app for app in applications}
+    for workload in selected:
+        if workload.pod == 'shared-proxy':
+            # nginx publishes its ports on loopback, and plays without config.yaml (its
+            # unit names it): its own ConfigMaps are in shared-proxy.yaml.
+            play(workload.yaml, ports=(
+                '--publish', f'127.0.0.1:{settings.LOCAL_HTTP_PORT}:{settings.LOCAL_HTTP_PORT}',
+                '--publish', f'127.0.0.1:{settings.HTTPS_PORT}:{settings.HTTPS_PORT}'))
+        else:
+            play(workload.yaml, workload.config)
+        if workload.wait_healthy:
+            run('podman', 'wait', '--condition', 'healthy', workload.pod, timeout=settings.HEALTH_TIMEOUT)
+        if workload.pod in databases:
+            setup_roles(databases[workload.pod])
     for app in applications:
-        play(app.database.manifest, app.config_manifest)
-        run('podman', 'wait', '--condition', 'healthy', app.database.container,
-            timeout=settings.HEALTH_TIMEOUT)
         setup_roles(app)
-    play(apps.KEYCLOAK_DATABASE.manifest, apps.KEYCLOAK_DATABASE.config_manifest)
-    run('podman', 'wait', '--condition', 'healthy', apps.KEYCLOAK_DATABASE.container,
-        timeout=settings.HEALTH_TIMEOUT)
-    play('keycloak.yaml')
-    for app in applications:
-        play(app.manifest, app.config_manifest)
-    play('shared-proxy.yaml', ports=(
-        '--publish', f'127.0.0.1:{settings.LOCAL_HTTP_PORT}:{settings.LOCAL_HTTP_PORT}',
-        '--publish', f'127.0.0.1:{settings.HTTPS_PORT}:{settings.HTTPS_PORT}'))
-    for app in applications:
-        setup_roles(app)
-    teardown = ['shared-proxy.yaml', *(app.manifest for app in reversed(applications)),
-                'keycloak.yaml', apps.KEYCLOAK_DATABASE.manifest,
-                *(app.database.manifest for app in reversed(applications))]
+    teardown = [workload.yaml for workload in reversed(selected)]
     state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(json.dumps({'fingerprint': fingerprint,
                                      'teardown': [(directory / name).read_text() for name in teardown]}))
@@ -116,9 +111,6 @@ def down(rendered_manifest_dir, applications=None, state_file=None):
         torn_down = _tear_down(_recorded(json.loads(state_file.read_text())))
     else:
         applications = apps.APPS if applications is None else tuple(applications)
-        torn_down = _tear_down([directory / name for name in (
-            'shared-proxy.yaml', *(app.manifest for app in reversed(applications)),
-            'keycloak.yaml', apps.KEYCLOAK_DATABASE.manifest,
-            *(app.database.manifest for app in reversed(applications)))])
+        torn_down = _tear_down([directory / workload.yaml for workload in reversed(apps.workloads(applications))])
     state_file.unlink(missing_ok=True)
     return torn_down

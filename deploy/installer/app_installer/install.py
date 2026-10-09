@@ -21,15 +21,6 @@ LEGACY = tuple(app.names.resource(component) for app in apps.APPS
                    'todo-keycloak', 'keycloak')
 
 
-def services(applications):
-    """Pod and service base names for the selected apps, including the shared ones."""
-    return (*(app.pod for app in applications), 'keycloak',
-            *(app.database.container for app in applications), 'keycloak-postgres', 'shared-proxy')
-
-
-SERVICES = services(apps.APPS)
-
-
 def preflight(quadlet_dir):
     """Refuse a host this installer does not support, before anything changes.
 
@@ -85,13 +76,8 @@ def setup_roles(app: apps.App = apps.APPS[0]):
 
 def offline_files(applications):
     """The Kube YAML files and units an offline install of these apps writes, as two sets of names."""
-    manifests = {'keycloak.yaml', apps.KEYCLOAK_DATABASE.manifest, apps.KEYCLOAK_DATABASE.config_manifest,
-                 'shared-proxy.yaml', apps.SHARED_RESOURCE_OWNER.config_manifest}
-    units = {apps.KEYCLOAK_DATABASE.unit, 'keycloak.kube', 'shared-proxy.kube'}
-    for app in applications:
-        manifests |= {app.database.manifest, app.config_manifest, app.manifest}
-        units |= {app.database.unit, app.unit}
-    return manifests, units
+    selected = apps.workloads(applications)
+    return {name for workload in selected for name in workload.manifests}, {workload.unit for workload in selected}
 
 
 def load_target(bundle_directory, applications, publish_address, service_port, target_values):
@@ -258,29 +244,24 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     changed = proxy_changed or changed
     if proxy_changed or shared_images['proxy'] or tls_changed:
         restart.add('shared-proxy')
-    selected_services = services(applications)
-    for service in selected_services:
-        if service in restart:
-            quadlet.systemctl('stop', service + '.service')
-    for app in applications:
-        quadlet.systemctl('start', app.database.service)
-        run('podman', 'wait', '--condition=healthy', app.database.container,
-            timeout=settings.HEALTH_TIMEOUT)
-        setup_roles(app)
-    quadlet.systemctl('start', apps.KEYCLOAK_DATABASE.service)
-    run('podman', 'wait', '--condition=healthy', apps.KEYCLOAK_DATABASE.container,
-        timeout=settings.HEALTH_TIMEOUT)
-    quadlet.systemctl('start', 'keycloak.service')
-    for app in applications:
-        quadlet.systemctl('start', app.service)
-        setup_roles(app)
-    quadlet.systemctl('start', 'shared-proxy.service')
+    selected = apps.workloads(applications)
+    for workload in reversed(selected):
+        if workload.pod in restart:
+            quadlet.systemctl('stop', workload.service)
+    # Roles are set up once an app's database is healthy, and again after the
+    # app started, so the tables its migrations created get their grants.
+    roles = {pod: app for app in applications for pod in (app.database.container, app.pod)}
+    for workload in selected:
+        quadlet.systemctl('start', workload.service)
+        if workload.wait_healthy:
+            run('podman', 'wait', '--condition=healthy', workload.pod, timeout=settings.HEALTH_TIMEOUT)
+        if workload.pod in roles:
+            setup_roles(roles[workload.pod])
     configured = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(applications, hostnames))
-    for service in selected_services:
-        source = quadlet.systemctl('show', service + '.service', '--property=SourcePath',
-                                  '--value').stdout.strip()
-        if source != str(runtime / (service + '.kube')):
-            raise RuntimeError(f'Unexpected SourcePath for {service}: {source}')
+    for workload in selected:
+        source = quadlet.systemctl('show', workload.service, '--property=SourcePath', '--value').stdout.strip()
+        if source != str(runtime / workload.unit):
+            raise RuntimeError(f'Unexpected SourcePath for {workload.pod}: {source}')
     # The hostnames this host now serves, for the next install, tls.py and the DR tools.
     target_render.write_record(target.values if target is not None else
                                {target_render.hostname_target(app): hostnames[app.name] for app in applications})

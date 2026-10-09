@@ -117,17 +117,62 @@ REPLICATION_CA_SECRETS = ("replication-ca-key", "replication-ca-cert")
 REPLICATED_DATABASES = tuple(app.database for app in APPS) + (KEYCLOAK_DATABASE,)
 
 
-def services(applications=None, *, databases=True):
-    """User systemd services in stop order: proxy, apps, Keycloak, then databases.
+@dataclass(frozen=True)
+class Workload:
+    """One pod, run from one Kube YAML file by one Quadlet unit.
 
-    Callers stop the serving tier before the databases it uses. Starting goes
-    the other way round, databases first (install.install).
+    pod is also the unit's and the service's base name: todo-postgres runs
+    from todo-postgres.kube as todo-postgres.service. yaml is the unit's
+    Yaml= file, config its ConfigMap= file ("" for none). wait_healthy: a
+    start waits until the pod is healthy before the next one starts.
+    """
+
+    pod: str
+    yaml: str
+    config: str = ""
+    wait_healthy: bool = False
+
+    @property
+    def unit(self) -> str:
+        return self.pod + ".kube"
+
+    @property
+    def service(self) -> str:
+        return self.pod + ".service"
+
+    @property
+    def manifests(self) -> tuple:
+        """Its Kube YAML files: the pod's, then its ConfigMap's if it has one."""
+        return (self.yaml, self.config) if self.config else (self.yaml,)
+
+
+def workloads(applications=APPS):
+    """Every workload of these apps, in start order; stop goes the other way.
+
+    Each app's database first, then Keycloak's, Keycloak, the apps, and
+    nginx last: each starts after what it needs (deploy/quadlet/*.kube.j2
+    say the same in Requires= and After=). A database is healthy before the
+    next workload starts. An app shares its ConfigMap file with its database,
+    and nginx reads the shared-resource app's.
+    """
+    return (
+        *(Workload(app.database.container, app.database.manifest, app.database.config_manifest,
+                   wait_healthy=True) for app in applications),
+        Workload(KEYCLOAK_DATABASE.container, KEYCLOAK_DATABASE.manifest, KEYCLOAK_DATABASE.config_manifest,
+                 wait_healthy=True),
+        Workload("keycloak", "keycloak.yaml"),
+        *(Workload(app.pod, app.manifest, app.config_manifest) for app in applications),
+        Workload("shared-proxy", "shared-proxy.yaml", SHARED_RESOURCE_OWNER.config_manifest),
+    )
+
+
+def services(applications=None, *, databases=True):
+    """User systemd services in stop order, the reverse of workloads(): nginx first, the databases last.
 
     applications limits the list to some apps (default: all). With
     databases=False only the serving tier is returned, which is what a
     database-only standby must not run.
     """
-    selected = APPS if applications is None else applications
-    return ['shared-proxy.service', *[app.service for app in selected], 'keycloak.service'] + (
-        [app.database.service for app in selected] + [KEYCLOAK_DATABASE.service]
-        if databases else [])
+    database_pods = {database.container for database in REPLICATED_DATABASES}
+    return [workload.service for workload in reversed(workloads(APPS if applications is None else applications))
+            if databases or workload.pod not in database_pods]

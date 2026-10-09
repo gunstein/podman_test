@@ -95,7 +95,13 @@ into the packages' `generated/target/`, or by build mode into
 one `.kube` unit and generated user service:
 `shared-proxy.service`, `todo-app.service`, `notes-app.service`,
 `keycloak.service`, `todo-postgres.service`, `notes-postgres.service`,
-`keycloak-postgres.service`. `apps.services()` returns this list. The proxy uses the operational container name `nginx`
+`keycloak-postgres.service`. `apps.workloads()` is the one table of them,
+in start order (each database, Keycloak's database, Keycloak, the apps,
+nginx), with each pod's Kube YAML and ConfigMap files; `apps.services()`
+returns the services in stop order, the reverse. The installer, development
+mode and uninstall take their order from it, and
+`deploy/installer/tests/test_workload_units.py` checks the units' `Requires=`,
+`After=`, `Yaml=` and `ConfigMap=` against it. The proxy uses the operational container name `nginx`
 and reads its TLS files read-only from the Podman secret
 `todo-kube-proxy-tls-secret`, which the installer makes ([TLS](TLS.md); the
 earlier TLS volume `todo-nginx-data` is kept for going back). It reaches the frontend/backend

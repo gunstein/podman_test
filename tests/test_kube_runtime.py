@@ -226,8 +226,8 @@ class KubeRuntimeTests(unittest.TestCase):
                             self.assertIn("secretKeyRef", entry["valueFrom"], entry)
 
     def test_clean_deploy_targets_kube_without_legacy_chain(self):
-        from app_installer import install
-        self.assertEqual(set(install.SERVICES), {
+        from app_installer import apps
+        self.assertEqual({workload.pod for workload in apps.workloads()}, {
             "todo-app", "notes-app", "keycloak", "todo-postgres", "notes-postgres",
             "keycloak-postgres", "shared-proxy"})
         self.assertIn("SourcePath", read(ROOT / "deploy/installer/app_installer/install.py"))

@@ -104,7 +104,10 @@ accept project, Quadlet, runtime and rendered-manifest directories, or an
 offline bundle's filled-in files (`target=`). They return whether manifests,
 network or unit definitions changed. They always reload user systemd; they
 never restart services themselves.
-Callers control safe stop/start ordering. Secret creation and obsolete `.volume`
+Callers control safe stop/start ordering, taken from `apps.workloads()`: the
+seven pods in start order, each with its Kube YAML and ConfigMap files and
+whether a start waits for it to be healthy; stop is the reverse
+(`apps.services()`). Secret creation and obsolete `.volume`
 file cleanup do not affect the definition-change flag used by DR.
 
 `install.install` and the DR building blocks in `app_dr_host` (replication,

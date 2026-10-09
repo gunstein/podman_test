@@ -18,16 +18,15 @@ QUADLET_FILES = (apps.NETWORK + '.network',
                    for purpose in ('data', 'backup')),
                  *(apps.KEYCLOAK_DATABASE.volume(purpose) + '.volume' for purpose in ('data', 'backup')),
                  *(volume + '.volume' for volume in TLS_VOLUMES))
-SERVICES = (*(app.names.resource(component) for app in apps.APPS
-              for component in ('app', 'frontend', 'backend', 'db-grants',
-                                'migrate', 'db-setup', 'postgres')),
-            'keycloak', apps.KEYCLOAK_DATABASE.container, 'shared-proxy', apps.NETWORK + '-network')
+# Every workload's service, the old per-container services of each app, and the network's.
+SERVICES = (*(workload.pod for workload in apps.workloads()),
+            *(app.names.resource(component) for app in apps.APPS
+              for component in ('frontend', 'backend', 'db-grants', 'migrate', 'db-setup')),
+            apps.NETWORK + '-network')
 CONTAINERS = (*(app.names.resource(component) for app in apps.APPS
                 for component in ('frontend', 'backend', 'migrate', 'db-grants', 'db-setup', 'postgres')),
               'nginx', 'keycloak')
-PODS = ('shared-proxy', *(app.pod for app in reversed(apps.APPS)),
-        'keycloak', apps.KEYCLOAK_DATABASE.container,
-        *(app.database.container for app in reversed(apps.APPS)))
+PODS = tuple(workload.pod for workload in reversed(apps.workloads()))
 MAPPINGS = {name: fields for app in apps.APPS
             for name, fields in {**secrets.postgres_secret_mapping(app.database),
                                  **secrets.application_secret_mapping(app)}.items()}

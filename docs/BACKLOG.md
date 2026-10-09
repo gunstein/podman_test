@@ -56,7 +56,7 @@ what the other would lose: each host backs up its own database copy (D2), and
 each holds the other's logs (L6). Everything between them crosses a network
 between sites, and replication across it uses TLS.
 
-## Secrets on disk
+## Secrets and leftovers on disk
 
 - **V1. Kube secret volumes that outlive their secrets.** *[new]* Found
   2026-10-09 with Podman 4.9 while nginx's TLS files moved to Podman
@@ -75,6 +75,31 @@ between sites, and replication across it uses TLS.
   `dev-down.sh` if it should); say in docs/SECRETS.md that a Kube secret
   also lives in such a volume; and check whether a rotation
   (docs/SECRETS.md) must remove the volume so the new value is used.
+
+- **V2. One uninstall that leaves nothing behind.** *[new]* Found 2026-10-09
+  on the acceptance client: an old per-container install from
+  `quadlet-reference-v1` (`todo-*.container`, `todo.network`, the
+  `todo-postgres-data` and `todo-caddy-data` volumes) started at every login
+  and held port 8080, so run `2026-10-09-run-1` stopped at C1a (see P2).
+  `app_installer uninstall --remove-data` removes only part of it: it stops
+  some of the old services and removes the volumes, but not the `.container`
+  files, `todo.network`, the network `todo-network` or the container
+  `todo-keycloak`, so the old install comes back at the next login. Its own
+  uninstaller was the retired Ansible playbook `ansible/uninstall.yml`. Two
+  parts, with V1:
+  1. `uninstall` also removes that old per-container install, from the
+     playbook's lists (quadlet files, services, containers, the network,
+     `localhost/todo-keycloak:m12`), and says what it removed.
+     `install.preflight` keeps refusing a host that has it: removing it is a
+     deliberate `uninstall`, never part of an install.
+  2. A separate, explicit flag (for example `--remove-backups`) that also
+     removes the backup volumes (`*-postgres-backup`), which `uninstall`
+     never removes today, so one command can empty a host completely. It
+     refuses without `--remove-data`, says that the backups cannot be
+     restored afterwards, and never runs on a DR host (`require_single_host`).
+  Afterwards `podman ps -a`, `podman volume ls` and `podman secret ls` show
+  nothing of the project, apart from the PostgreSQL image, which is not the
+  project's own.
 
 ## Goal: Trondheim running within 30 minutes
 

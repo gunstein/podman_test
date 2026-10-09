@@ -467,7 +467,9 @@ What is weak is how they are checked and switched.
   `acceptance.py` now has `do quarantine-profile` and `do quarantine-stop` for
   the lab. A product command that applies, lifts and verifies the whole
   profile only makes sense if the real sites run Proxmox; decide that first.
-- **W3. An exact lab baseline.** *[new]* Proxmox firewall state is not part of
+- **W3. An exact lab baseline.** *[new]* *[done 2026-10-09]* The readiness check
+  already compares both VMs with the baseline; ACCEPTANCE-AGENT.md A1 now says
+  snapshots do not cover it. Proxmox firewall state is not part of
   a VM snapshot, and leftovers from earlier runs stay behind. Add a check that
   compares both VMs with an exact expected rule list and reports anything
   else, and say clearly that snapshots do not cover this state.

@@ -95,6 +95,15 @@ the web GUI (8006) and SSH (22) from its local network, so other services on
 that host, and access from other networks, need their own rules first. Other
 VMs on the node are not affected until their own firewall flag is on.
 
+A VM snapshot does not hold any of this. The Proxmox firewall (the VM's
+options and rules), its links and `onboot` live in Proxmox, so rolling back
+to `clean-agent` leaves whatever an earlier run left. The clean baseline is:
+VM firewall off, no VM rules, every link connected. The readiness check
+compares both VMs with it and warns about each difference (`VM firewall
+disabled`, `no leftover firewall rules`, `links connected`); phase 1 then
+turns the VM firewall off (`01-1`, `01-2`) and the quarantine steps remove
+their own `todo-quarantine-*` rules.
+
 ### A2. Token file on the client/build host (the agent's machine)
 
 Save the printed CA as `~/.config/todo-acceptance/pve-root-ca.pem`, then create

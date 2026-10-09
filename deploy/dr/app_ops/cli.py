@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+from app_installer import oplog
+
 from . import failover, inventory, nginx_tls, quarantine, recovery, standby
 from .transport import Host
 
@@ -87,6 +89,7 @@ def main(argv=None):
     Errors print one "app-ops: ..." line on stderr and return 1.
     """
     args = parser().parse_args(argv)
+    oplog.describe(args.command)
     try:
         specs = inventory.load(args.inventory, COMMANDS[args.command])
         result = dispatch(args, Host(LOCAL), {role: Host(spec) for role, spec in specs.items()})

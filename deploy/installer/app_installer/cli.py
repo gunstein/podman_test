@@ -9,6 +9,7 @@ from . import (
     backup,
     install,
     kube_play,
+    oplog,
     settings,
     target_render,
     tls_secrets,
@@ -149,6 +150,7 @@ def main(argv=None):
     down.add_argument('--rendered-manifest-dir', type=Path,
                       default=Path(__file__).resolve().parents[3] / 'generated/dev')
     args = parser.parse_args(argv)
+    oplog.describe(args.command, getattr(args, 'backup_command', None))
     try:
         if args.command == 'replication-apps':
             print(json.dumps([_details(d) if args.details else d.name for d in apps.REPLICATED_DATABASES]))

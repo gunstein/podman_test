@@ -13,7 +13,7 @@ import json
 import sys
 from pathlib import Path
 
-from app_installer import apps, settings, target_render
+from app_installer import apps, oplog, settings, target_render
 
 from . import nginx_tls, pair, promoted, replication, transfer
 
@@ -100,6 +100,7 @@ def main(argv=None):
     certificate.add_argument('--ca', type=Path, help="install: the organisation's root CA on this host")
     certificate.add_argument('--mode', choices=('local', 'provided'), help="mode: the pair's nginx TLS mode")
     args = parser.parse_args(argv)
+    oplog.describe(args.command, getattr(args, 'operation', None), getattr(args, 'app', None))
     try:
         if args.command == 'replicate-workload':
             database = next(d for d in apps.REPLICATED_DATABASES if d.name == args.app)

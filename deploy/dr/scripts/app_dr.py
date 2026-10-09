@@ -40,7 +40,7 @@ from typing import Callable, List, Optional, Sequence
 # deploy/dr/README.md ("Where DR finds the installer") has the whole rule.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from app_dr_host import nginx_tls, replication, replication_tls, transfer  # noqa: E402
-from app_installer import apps, quadlet, settings  # noqa: E402
+from app_installer import apps, oplog, quadlet, settings  # noqa: E402
 from app_installer.commands import run  # noqa: E402
 
 DEFAULT_CONFIG = Path.home() / settings.DR_CONFIG / 'todo-dr.json'
@@ -512,6 +512,7 @@ def parser():
 def main(arguments: Optional[Sequence[str]] = None):
     """Run one command; print errors as 'ERROR: ...' and return exit code 1."""
     args = parser().parse_args(arguments)
+    oplog.describe(args.command)
     try:
         if args.command == 'configure':
             print(json.dumps({'changed': write_config(args.config, args.primary_name, args.primary_address,
@@ -554,4 +555,4 @@ def main(arguments: Optional[Sequence[str]] = None):
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    raise SystemExit(oplog.run('app-dr', main))

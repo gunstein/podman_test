@@ -37,7 +37,7 @@ from typing import Callable, Optional, Sequence
 # deploy/dr/README.md ("Where DR finds the installer") has the whole rule.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from app_dr_host import replication  # noqa: E402
-from app_installer import apps, keycloak, settings, stack, target_render  # noqa: E402
+from app_installer import apps, keycloak, oplog, settings, stack, target_render  # noqa: E402
 from app_installer import backup as backups  # noqa: E402
 from app_installer.commands import CommandError, run  # noqa: E402
 
@@ -667,6 +667,7 @@ def parser() -> argparse.ArgumentParser:
 def main(arguments: Optional[Sequence[str]] = None) -> int:
     """Run one command for the selected databases; print errors as 'ERROR: ...' and return 1."""
     args = parser().parse_args(arguments)
+    oplog.describe(args.command, args.app)
     selected = [database for database in apps.REPLICATED_DATABASES if args.app is None or database.name == args.app]
     try:
         if args.command in ('restore', 'restore-status', 'cleanup-restore') and len(selected) != 1:
@@ -710,4 +711,4 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(oplog.run("app-backup", main))

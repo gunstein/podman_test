@@ -308,7 +308,9 @@ Without an assistant, the logs must tell an operator what happened, where and
 why. The seven workloads already log to journald (`LogDriver=journald`), and
 `promotion.json` records promotions. The Python tools and backends do not log.
 
-- **L1. Log every operations and DR command.** *[new]* No Python code uses
+- **L1. Log every operations and DR command.** *[new]* *[done 2026-10-09, awaiting
+  acceptance]* `app_installer/oplog.py`: one `logger` line per run of each of the
+  five tools, and app-ops's output kept per run; docs/LOGGING.md. No Python code uses
   `logging`; the installer, `app_dr.py`, `app_backup.py` and app-ops print to
   the terminal only, without timestamps, and keep nothing. Add one small
   shared helper on the standard library that writes to journald (for example

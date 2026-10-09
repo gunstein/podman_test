@@ -1,10 +1,13 @@
 # Where the logs are
 
 Everything the product runs on a host logs to journald: the seven pods'
-containers, their user systemd units and the three timers. Nothing writes its
-own log files. The commands that change things (`install.sh`, `app_installer`,
-`app-ops`, `app_dr.py`) print to the terminal that runs them and keep no log;
-acceptance keeps theirs in its run folder.
+containers, their user systemd units and the three timers. The commands that
+change things (`app_installer`, so also `install.sh`, `app_dr_host`,
+`app-ops`, `app_dr.py`, `app_backup.py`) print their output to the terminal
+and leave one journald line per run: the command, the database it chose, its
+exit code and how long it took, never an argument's value
+(`app_installer/oplog.py`). app-ops also keeps everything it printed, one file
+per run, on the controller. Acceptance keeps its own logs in its run folder.
 
 Commands run as the service user on the host unless they say `sudo`.
 
@@ -15,7 +18,8 @@ Commands run as the service user on the host unless they say `sudo`.
 | A container's output: nginx's access and error log, PostgreSQL, the backends, Keycloak, the migration init container | journald, through `LogDriver=journald` in every `.kube` unit; field `CONTAINER_NAME` | `podman logs nginx`, or `journalctl CONTAINER_NAME=nginx` |
 | A pod's unit: start, stop, failure, restart | journald, the user unit (`todo-app.service`, ...) | `journalctl --user -u todo-app.service` |
 | The timers' runs: nightly backup, DR check, replication certificate renewal | journald, their user services | `journalctl --user -u todo-backup.service -n 30 -o cat` |
-| `install.sh`, `app_installer`, `app-ops`, `app_dr.py` | stdout (one JSON result) and stderr of the command | the terminal; keep it with `2>&1 \| tee` if you need it later |
+| `app_installer`, `app_dr_host`, `app-ops`, `app_dr.py`, `app_backup.py`: that they ran | one journald line per run, tagged with the tool | `journalctl -t app-installer -t app-dr-host -t app-ops -t app-dr -t app-backup` |
+| The same: what they printed | stdout (one JSON result) and stderr of the command | the terminal; app-ops also in `~/.local/state/todo/app-ops/<time>-<command>.log` on the controller |
 | A promotion's decisions | the promotion record `~/.config/todo/promotion.json` on the promoted host, a file, not journald | `cat ~/.config/todo/promotion.json` |
 | An acceptance run | `~/todo-acceptance-runs/<run ID>/logs/` on the client, one file per step | `REPORT.md` and `EVIDENCE.md` in the same folder |
 | fapolicyd and SELinux denials | the system journal and the audit log | `sudo ausearch --start recent -m fanotify` and `-m avc` ([FAPOLICYD.md](../deploy/offline/FAPOLICYD.md)) |
@@ -103,5 +107,6 @@ are no units, so read the containers with `podman logs NAME`.
 
 The two hosts keep separate journals, so after a failover the history is
 split between them, and a lost host's logs are lost with it (backlog L6).
-Each command that changes things prints its result rather than logging it
-(backlog L1).
+On the hosts, the commands' own output stays in the terminal of whoever ran
+them (app-ops over SSH keeps it on the controller); only their one journald
+line stays on the host.

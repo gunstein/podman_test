@@ -1,0 +1,24 @@
+# Q3: every pinned dependency gets a pull request when it has a new version,
+# and CI tests it like any other change. Dependabot reads this file only on
+# the repository's default branch; each entry targets the branch the work
+# happens on. Not covered here (pinned in code, update them by hand): the
+# PostgreSQL image (POSTGRES_VERSION in app_installer/settings.py) and the CI tools installed with
+# pip in .github/workflows (ruff, pyright, shellcheck-py).
+version: 2
+updates:
+  - package-ecosystem: pip
+    directories: ["/todo-backend", "/notes-backend"]
+    target-branch: feature/podman-kube
+    schedule: {interval: weekly}
+    groups:
+      python: {patterns: ["*"]}
+  - package-ecosystem: docker
+    directories: ["/todo-backend", "/notes-backend", "/todo-frontend", "/notes-frontend", "/proxy", "/keycloak"]
+    target-branch: feature/podman-kube
+    schedule: {interval: weekly}
+  - package-ecosystem: github-actions
+    directory: "/"
+    target-branch: feature/podman-kube
+    schedule: {interval: weekly}
+    groups:
+      actions: {patterns: ["*"]}

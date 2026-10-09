@@ -606,7 +606,10 @@ full-stack job and acceptance cover that.
 - **Q2. Mutation testing in CI.** *[optional]* It runs only from the default
   branch (`schedule` and `workflow_dispatch`); it starts working after the
   merge.
-- **Q3. Security update routine.** *[config]* Python packages, base images
+- **Q3. Security update routine.** *[config]* *[done 2026-10-09; owner: put
+  `.github/dependabot.yml` on the default branch, `feature/minimal-todo`, where
+  Dependabot reads it]* Weekly pull requests against `feature/podman-kube` for
+  pip, the Containerfiles and Actions; PostgreSQL and the CI tools by hand. Python packages, base images
   (Python, nginx, Keycloak, PostgreSQL) and GitHub Actions are all pinned, but
   nothing reports a security fix. Enable Dependabot for pip, container images
   and Actions, so each update arrives as a pull request that CI tests.

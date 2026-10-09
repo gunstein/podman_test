@@ -673,8 +673,9 @@ def reseed_standby(database, primary_address, *, confirm_fenced, confirm_reseed,
     return bootstrap_standby(database, primary_address, slot=database.replication_slot(rebuilt=True), **paths)
 
 
-# Application-tier runtime files the rebuilt standby must not start again.
-SHARED_TIER_FILES = ('keycloak.kube', 'shared-proxy.kube', 'keycloak.yaml', 'shared-proxy.yaml')
+# The serving tier's runtime files, which a rebuilt standby must not start again:
+# each unit and its Kube YAML. A ConfigMap file stays: its database reads it too.
+SERVING_TIER_FILES = tuple(name for workload in apps.serving_workloads() for name in (workload.unit, workload.yaml))
 
 
 def reseed_group(primary_address, *, confirm_fenced, confirm_reseed, **paths):
@@ -689,8 +690,7 @@ def reseed_group(primary_address, *, confirm_fenced, confirm_reseed, **paths):
     for database in apps.REPLICATED_DATABASES:
         authenticate(database, primary_address)
     runtime = Path(paths['kube_runtime_dir'])
-    for name in SHARED_TIER_FILES + tuple(name for app in apps.APPS
-                                          for name in (app.unit, app.manifest)):
+    for name in SERVING_TIER_FILES:
         (runtime / name).unlink(missing_ok=True)
     for database in apps.REPLICATED_DATABASES:
         reseed_standby(database, primary_address, **confirmations, **paths)

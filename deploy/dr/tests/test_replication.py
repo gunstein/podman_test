@@ -432,8 +432,9 @@ class ReseedGroupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             runtime = Path(directory) / 'todo-kube-runtime'
             runtime.mkdir()
-            tier = replication.SHARED_TIER_FILES + tuple(
-                name for app in apps.APPS for name in (app.unit, app.manifest))
+            tier = ('keycloak.kube', 'keycloak.yaml', 'todo-app.kube', 'todo-app.yaml',
+                    'notes-app.kube', 'notes-app.yaml', 'shared-proxy.kube', 'shared-proxy.yaml')
+            self.assertEqual(set(replication.SERVING_TIER_FILES), set(tier))
             for name in tier + tuple(d.unit for d in self.DATABASES):
                 (runtime / name).write_text('fixture')
 

@@ -98,8 +98,10 @@ one `.kube` unit and generated user service:
 `keycloak-postgres.service`. `apps.workloads()` is the one table of them,
 in start order (each database, Keycloak's database, Keycloak, the apps,
 nginx), with each pod's Kube YAML and ConfigMap files; `apps.services()`
-returns the services in stop order, the reverse. The installer, development
-mode and uninstall take their order from it, and
+returns the services in stop order, the reverse, and `apps.serving_workloads()`
+the serving tier without the databases. The installer, development mode,
+uninstall and the DR tools (the promoted host's start, a rebuilt standby's
+removed files, the restart around WAL archiving) take their order from it, and
 `deploy/installer/tests/test_workload_units.py` checks the units' `Requires=`,
 `After=`, `Yaml=` and `ConfigMap=` against it. The proxy uses the operational container name `nginx`
 and reads its TLS files read-only from the Podman secret

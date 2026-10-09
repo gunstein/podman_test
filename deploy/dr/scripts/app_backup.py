@@ -579,7 +579,8 @@ def configure(tools: Sequence[DatabaseBackup], journal: Path) -> dict:
                       f"{tool.database.service} restart", timeout=settings.COMMAND_TIMEOUT)
         for tool in tools:
             tool.require_configured_archive()
-        tools[0]._run(["systemctl", "--user", "start", "shared-proxy.service"],
+        tools[0]._run(["systemctl", "--user", "start",
+                       *(workload.service for workload in apps.serving_workloads())],
                       "Application tier start", timeout=settings.COMMAND_TIMEOUT)
         # Each app through nginx on the public hostname this host serves (its
         # record), else the default the bundle was built with.

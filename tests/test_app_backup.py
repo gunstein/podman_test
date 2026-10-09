@@ -748,7 +748,7 @@ class ConfigureArchiveTests(unittest.TestCase):
         self.assertEqual([c[3] for c in stops], app_backup.apps.services(databases=False))
         restarts = host.matching(lambda c: c[:3] == ["systemctl", "--user", "restart"])
         self.assertEqual([c[3] for c in restarts], [d.service for d in self.DATABASES])
-        start = host.index(lambda c: c == ["systemctl", "--user", "start", "shared-proxy.service"])
+        start = host.index(lambda c: c == ["systemctl", "--user", "start", "keycloak.service", "todo-app.service", "notes-app.service", "shared-proxy.service"])
         self.assertLess(host.index(lambda c: c[:3] == ["systemctl", "--user", "stop"]),
                         host.index(lambda c: c[:3] == ["systemctl", "--user", "restart"]))
         self.assertLess(max(host.commands.index(c) for c in restarts), start)
@@ -771,7 +771,7 @@ class ConfigureArchiveTests(unittest.TestCase):
             self.assertEqual(host.matching(lambda c, verb=verb: c[:3] == ["systemctl", "--user", verb]), [])
         self.assertFalse(host.matching(lambda c: any('ALTER SYSTEM' in part or 'pg_switch_wal' in part
                                                      for part in c)))
-        self.assertTrue(host.matching(lambda c: c == ["systemctl", "--user", "start", "shared-proxy.service"]))
+        self.assertTrue(host.matching(lambda c: c == ["systemctl", "--user", "start", "keycloak.service", "todo-app.service", "notes-app.service", "shared-proxy.service"]))
 
     def test_changed_replication_access_alone_reports_change_without_restart(self):
         host = FakeHost(configured={d.container for d in self.DATABASES},

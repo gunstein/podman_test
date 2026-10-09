@@ -177,13 +177,22 @@ def workloads(applications=APPS):
     )
 
 
+def serving_workloads(applications=APPS):
+    """The serving tier in start order: workloads() without the databases.
+
+    Keycloak, the apps and nginx: what a database-only standby must not run,
+    and what the DR tools stop around a database restart and start again.
+    """
+    database_pods = {database.container for database in REPLICATED_DATABASES}
+    return tuple(workload for workload in workloads(applications) if workload.pod not in database_pods)
+
+
 def services(applications=None, *, databases=True):
     """User systemd services in stop order, the reverse of workloads(): nginx first, the databases last.
 
     applications limits the list to some apps (default: all). With
-    databases=False only the serving tier is returned, which is what a
-    database-only standby must not run.
+    databases=False only the serving tier is returned (serving_workloads()).
     """
-    database_pods = {database.container for database in REPLICATED_DATABASES}
-    return [workload.service for workload in reversed(workloads(APPS if applications is None else applications))
-            if databases or workload.pod not in database_pods]
+    selected = APPS if applications is None else applications
+    return [workload.service for workload in
+            reversed(workloads(selected) if databases else serving_workloads(selected))]

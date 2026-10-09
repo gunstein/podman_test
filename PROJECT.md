@@ -10,10 +10,10 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `c5f4a59` for the seven-pod, three-database
+**Current verdict: CLEAN PASS** on `ce02176` for the seven-pod, three-database
 topology in a full two-VM run without an agent (`acceptance.py run`,
-[record](docs/history/ACCEPTANCE-c5f4a59.md)),
-with replication over TLS, Keycloak lockout and password policy, the nginx
+[record](docs/history/ACCEPTANCE-ce02176.md)),
+with nginx's TLS files as Podman secrets (local mode), replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 121 steps PASS
 on one clean revision and compared them with the agent guide: every step and
@@ -47,6 +47,11 @@ How it got there, newest first:
 - The one-VM quick acceptance (`ACCEPTANCE-QUICK.md`) is retired since run 46:
   the full run needs no agent and takes about 35 minutes, so every change gets
   it. Git history keeps the guide (last at `a05125f`).
+- `ce02176` run 2026-10-09-run-2: CLEAN PASS
+  ([record](docs/history/ACCEPTANCE-ce02176.md)), accepting nginx's TLS files
+  as Podman secrets in local mode, also on the promoted host: 121 steps,
+  failover 3 min 31 s. The run before it on `d3485d7` stopped at `02-5`
+  (fapolicyd and `app_ca.py`'s shebang), fixed by `ce02176`.
 - `c5f4a59` run 46: CLEAN PASS ([record](docs/history/ACCEPTANCE-c5f4a59.md)),
   the first run without an agent: `acceptance.py run`, every comment check an
   expectation, 32 min 57 s, failover 3 min 28 s.
@@ -212,9 +217,10 @@ other IdP adapters are not demonstrated production features.
 nginx's TLS files are now Podman secrets that the installer makes
 (`tls_secrets.py`, [TLS](docs/TLS.md#nginxs-tls-files-as-podman-secrets)), in
 local and provided mode and on the DR pair; the TLS volume `todo-nginx-data`
-stays, commented out in `shared-proxy.yaml.j2`, for going back. The verdict
-above predates this change and the provided mode before it: unit tests, the
-proxy smoke test and CI's full stack cover it, and it needs a new acceptance run.
+stays, commented out in `shared-proxy.yaml.j2`, for going back. Run
+2026-10-09-run-2 accepted it in local mode; the provided mode, `tls-renew`
+and going back to the volume are covered by unit tests, the proxy smoke test
+and CI, not yet by the lab (backlog T4 step 3).
 
 The [Development journal](docs/history/DEVELOPMENT-JOURNAL.md) preserves earlier
 checkpoints; historical next steps are not current instructions.

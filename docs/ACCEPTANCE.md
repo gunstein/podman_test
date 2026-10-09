@@ -708,7 +708,15 @@ operation and streaming before proceeding to fencing.
 - **STOP if:** Any fencing uncertainty, reachable old DB, nonzero local apply lag or any failed `failover` step. Never blindly retry.
 
 Create a persistent pre-failover marker in Todo and in Notes and verify both on standby. Fence
-`todo-primary` at the virtualization layer. Its database endpoint must be
+`todo-primary` at the virtualization layer.
+
+What this phase does not show: it fences only after the last marker has
+reached the standby, so it proves that a failover works, not what a crash in
+the middle of writing loses. Replication is asynchronous by design, so the
+transactions the primary committed but had not yet sent are lost when it
+fails; that window, the RPO, is the replication lag at that moment, small on a LAN, and
+grows with lag across sites (backlog T2). See
+[architecture](ARCHITECTURE.md#10-availability-and-disaster-recovery) for why. Its database endpoint must be
 unreachable before continuing.
 
 On standby, check read-only that promotion is safe now:

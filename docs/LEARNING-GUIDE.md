@@ -36,7 +36,7 @@ To experiment, render into a temporary directory, never over deployed state:
 ```bash
 render_dir=$(mktemp -d)
 deploy/scripts/render-kube-runtime.sh deploy/environments/prod/values.yaml "$render_dir"
-cat "$render_dir/app.yaml" "$render_dir/shared-proxy.yaml"
+cat "$render_dir/todo-app.yaml" "$render_dir/shared-proxy.yaml"
 ```
 
 The remaining observation commands run as the service user on an installed

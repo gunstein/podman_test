@@ -364,6 +364,13 @@ before they expire, and a nightly
 `todo-backup.timer` takes and prunes the base backups on the current primary
 ([scheduled check and nightly backup](../deploy/dr/README.md#scheduled-check-and-nightly-backup)).
 Async replication cannot guarantee that unsent commits survive abrupt loss.
+That is a design choice, not a gap: when the primary fails, the transactions
+it had committed but not yet sent to the standby are lost (the RPO, the
+replication lag at that moment, small on a LAN; acceptance measures 0 bytes). Synchronous
+replication would remove that loss, but then every write waits for the other
+site and stops when it is gone, which a two-site pair without a third
+machine cannot afford. Acceptance fences only after its last marker has
+reached the standby, so it shows that failover works, not the worst case.
 
 ```text
 verify infrastructure fencing

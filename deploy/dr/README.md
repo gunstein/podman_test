@@ -142,7 +142,10 @@ from your own CA instead of the demo CA
 `sync-standby-secrets` and `preflight-standby-rebuild` can also be run on
 their own. Every command prints one JSON result: `changed`, or the status
 report. `deploy-promoted-application` must run on the promoted host itself,
-marked `local: true`.
+marked `local: true`, and refuses otherwise. That limit is deliberate: it
+starts the application tier from the offline bundle and image archives on
+that host, and `failover`, which calls it, runs there anyway, because after
+a disaster the surviving site is the one place left to run app-ops from.
 
 ## Scheduled check and nightly backup
 

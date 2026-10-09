@@ -88,6 +88,13 @@ systemctl enable --now pve-firewall
 The agent's tooling only reads Proxmox settings (`C2` Rule 6: it never enables
 the datacenter or node firewall itself), so this must be done here, ahead of time.
 
+Know the effect before you turn them on: the datacenter and node firewall
+apply to the whole node, not only to the two lab VMs. With the datacenter
+firewall on, Proxmox drops incoming traffic to the Proxmox host itself except
+the web GUI (8006) and SSH (22) from its local network, so other services on
+that host, and access from other networks, need their own rules first. Other
+VMs on the node are not affected until their own firewall flag is on.
+
 ### A2. Token file on the client/build host (the agent's machine)
 
 Save the printed CA as `~/.config/todo-acceptance/pve-root-ca.pem`, then create
@@ -124,6 +131,12 @@ sudo chmod 0440 /etc/sudoers.d/90-todo-acceptance
 sudo visudo -c
 sudo -k; sudo -n true && echo PASSWORDLESS-SUDO-OK
 ```
+
+This rule is a lab limit, not part of the product: with `NOPASSWD: ALL` the
+service user can do anything as root, including stopping fapolicyd or
+trusting any file, so acceptance does not test fapolicyd (or SELinux) as a
+barrier against that user, only that the product runs with them enforcing.
+A production host gives app-ops narrower sudo (backlog D1).
 
 Shut the VM down cleanly and take a snapshot in Proxmox (for example
 `clean-agent`). The VM must otherwise be the documented clean baseline: no Todo,

@@ -243,7 +243,7 @@ attention above 30 minutes (G3).
 
 ## Documentation
 
-- **O2. Align the runtime guide with the seven pods.** *[docs]*
+- **O2. Align the runtime guide with the seven pods.** *[docs]* *[done 2026-10-09]* The seven pods were already right; the learning guide's `cat` now names `todo-app.yaml` (S5 task 3).
   `deploy/runtime/README.md` still says "six" workloads and units in several
   places, and `README.md` may have similar passages. Check them against
   `AGENTS.md`, `docs/ARCHITECTURE.md` and the installer; documentation only.
@@ -354,7 +354,7 @@ promoted primary.
   for all three databases but restores only todo and notes. Restore
   Keycloak's database as well, and compare a known value before and after the
   restore point.
-- **C4. State what asynchronous replication can lose.** *[docs]* Acceptance
+- **C4. State what asynchronous replication can lose.** *[docs]* *[done 2026-10-09]* ACCEPTANCE.md phase 6 and ARCHITECTURE.md section 10. Acceptance
   fences only after the last marker has reached the standby, so it shows
   failover works, not the worst-case loss of a crash while writing. Say
   plainly in ACCEPTANCE.md and ARCHITECTURE.md that the last transactions can
@@ -400,7 +400,7 @@ promoted primary.
   the default is covered by unit tests only. Decide whether acceptance gets a
   step that installs the primary with one and checks it after failover.
 - **D3. Say that `deploy-promoted-application` runs on the promoted host.**
-  *[docs]* It refuses unless that host is the machine running app-ops
+  *[docs]* *[done 2026-10-09]* deploy/dr/README.md says why. It refuses unless that host is the machine running app-ops
   (`local: true`). `failover` runs there anyway, so document the limit as
   deliberate in `deploy/dr/README.md` and remove the item.
 - **D5. pgBackRest only if the needs grow.** *[optional]* Decided 2026-10-04:
@@ -438,11 +438,11 @@ whatever its current contents.
   `todo-component`). Cost: a `.spec` file and `rpmbuild` in the build step (CI
   only), and a GPG key to sign the package. Decide whether `install.sh` on a
   single host uses the RPM too. A new acceptance run follows.
-- **F1. Correct the docs.** *[docs]* FAPOLICYD.md says trust is tied to path,
+- **F1. Correct the docs.** *[docs]* *[done 2026-10-09]* FAPOLICYD.md, "What the trust database enforces". FAPOLICYD.md says trust is tied to path,
   size and hash. That only holds when `integrity` is `size`, `sha256` or
   `ima`; waiting for the exact `--dump-db` lines checks the database, not
   enforcement. Say what holds with and without an integrity check.
-- **F6. State the lab limit.** *[docs]* With `NOPASSWD: ALL` the service user
+- **F6. State the lab limit.** *[docs]* *[done 2026-10-09]* ACCEPTANCE-AGENT.md A3, after the sudoers rule. With `NOPASSWD: ALL` the service user
   can do anything as root, so acceptance does not test fapolicyd as a barrier
   against that user. Say so in the acceptance docs.
 
@@ -465,7 +465,7 @@ What is weak is how they are checked and switched.
   fixed commands in phases 3, 4, 7 and 9, tied to fixed addresses. Let a tool
   add or at least verify them (with the app-ops zone and runtime check) before
   each DR command.
-- **W5. Note the node-wide effect.** *[docs]* VM rules need the datacenter and
+- **W5. Note the node-wide effect.** *[docs]* *[done 2026-10-09]* ACCEPTANCE-AGENT.md A1. VM rules need the datacenter and
   node firewall on, which also changes access to the Proxmox host itself.
   State this in the agent guide's preparation part.
 

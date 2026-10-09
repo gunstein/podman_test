@@ -40,8 +40,12 @@ trusts are that Python. `install DEST MODE` writes one root-owned file
 atomically from base64 standard input. `trust TRUST_FILE PATH...` updates or
 adds exact trust, reloads the daemon, and then waits until
 `fapolicyd-cli --dump-db` shows every exact path, size and SHA-256 line. A
-stale hash or a path prefix does not count. app-ops passes the script text as
-an argument, so no helper file is written to the target.
+stale hash or a path prefix does not count. That wait checks the trust
+database the daemon loaded, not what it enforces: whether a changed file at
+a trusted path still runs depends on `integrity` in `fapolicyd.conf` (see
+[What the trust database enforces](#what-the-trust-database-enforces)).
+app-ops passes the script text as an argument, so no helper file is written
+to the target.
 
 ## Diagnose a denial
 
@@ -69,9 +73,32 @@ To confirm whether an exact path is present in the combined trust database:
 sudo fapolicyd-cli --dump-db | grep -F -- "/absolute/path/to/file"
 ```
 
-Use an absolute, resolved path. Trust is tied to the recorded path, size and
-hash, so trusting an old extraction does not trust the same filename in a new
-directory.
+Use an absolute, resolved path. Trust is always tied to the recorded path,
+so trusting an old extraction does not trust the same filename in a new
+directory. Whether it is also tied to the recorded size and hash depends on
+`integrity`:
+
+### What the trust database enforces
+
+The trust database stores path, size and SHA-256 for each file, but the
+daemon compares only what `integrity` in `/etc/fapolicyd/fapolicyd.conf`
+asks for:
+
+| `integrity` | A file at a trusted path whose content changed |
+|---|---|
+| `none` (the default on many hosts) | still runs: only the path is checked |
+| `size` | is denied if its size changed; same-size edits still run |
+| `sha256` | is denied unless its hash matches the recorded one |
+| `ima` | is denied unless the kernel's IMA hash matches (needs IMA set up) |
+
+So with `integrity = none` exact-file trust is path trust. A trusted file
+the service user owns, such as the installer Python in the extracted bundle
+under its home, can then be changed by that user and still runs; only file
+permissions protect the root-owned tools that `trust-files.sh install`
+writes (`/opt/todo/bin`). The checksums verified before trust is added show
+that the files were right when they were trusted, not afterwards. Check the setting with
+`sudo grep -E '^integrity' /etc/fapolicyd/fapolicyd.conf`. Acceptance does
+not change it.
 
 ## Add or refresh trust
 

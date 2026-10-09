@@ -662,6 +662,15 @@ limited to 1.2 and 1.3.
   find it in the log. On a stop, print every FAIL line of the last attempt
   with the `== ...` heading it belongs to (or end the check with a summary of
   its FAIL lines), so the stop names what to fix.
+  The FAIL in that run was `Local port 8080 free`, held by `rootlessport`, a
+  rootless Podman container on the client that the run had not started (the
+  run only opens its own SSH tunnel on that port, in provision-user.sh, and
+  closes it). So the check should also name what holds the port: the
+  process and its pid (`ss -ltnp 'sport = :8080'`, no new tool), and for
+  `rootlessport` the container that publishes it (`podman ps --filter
+  publish=8080`), with a hint: an `ssh` process is a tunnel left from an
+  earlier run, a container is this user's own Podman stack (a dev or server
+  install on the client) to stop for the run.
 
 ## Lab housekeeping (operator)
 

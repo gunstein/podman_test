@@ -22,6 +22,7 @@ Where each log is, and what to do when `journalctl --user` shows nothing:
 | A certificate expires or has expired | [certificates.md](certificates.md) | Partly (nginx renews at start; replication renewal is tested in the unit tests, not in a lab run) |
 | Data was deleted or changed by mistake | [data-mistake.md](data-mistake.md) | Yes, to a named restore point and to a time (phase 8) |
 | A single host (no DR) must go back to last night | [single-host-restore.md](single-host-restore.md) | Yes, every run (phase 3) |
+| Prove the backups, once a month (no incident) | [restore-test.md](restore-test.md) | The same restore, every run (phase 8) |
 
 ## Before an incident
 

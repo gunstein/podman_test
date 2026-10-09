@@ -297,7 +297,8 @@ survives a power loss (both accepted in run 35). `app_backup.py --app A
 restore --target-time T` restores to a time from the newest base backup
 before it (accepted in run 40).
 
-- **M3. Regular restore tests.** *[optional]* A backup that was never restored
+- **M3. Regular restore tests.** *[optional]* *[docs done 2026-10-09]* The manual
+  monthly drill is docs/runbooks/restore-test.md; a scheduled one stays open. A backup that was never restored
   is not proven. Run the existing disposable PITR restore on a schedule (for
   example weekly) and compare it with a known point, or document a manual
   monthly restore test instead.

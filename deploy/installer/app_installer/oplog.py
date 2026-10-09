@@ -43,6 +43,12 @@ class _Tee:
     def flush(self):
         self.stream.flush()
 
+    def fileno(self):  # a subprocess given this stream writes to the terminal only
+        return self.stream.fileno()
+
+    def isatty(self):
+        return self.stream.isatty()
+
 
 def run(tag, main, keep=False):
     """Run main() and return its exit code; then log one line about it with tag.

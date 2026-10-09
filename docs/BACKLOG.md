@@ -783,6 +783,29 @@ limited to 1.2 and 1.3.
   earlier run, a container is this user's own Podman stack (a dev or server
   install on the client) to stop for the run.
 
+- **P3. Client trust without a sudo prompt.** *[new]* Found 2026-10-09
+  (run `2026-10-09-run-2`): the run stops twice for the operator's sudo
+  password, before `03-4a` and before `07-5` (the client trust, C9.4), and a
+  password typed late times out (`sudo: timed out`), so /etc/hosts was not
+  changed and the run stopped. The client needs root for three things only:
+  replace the `todo.test`/`notes.test` line in /etc/hosts, copy the serving
+  host's CA to `/usr/local/share/ca-certificates/todo-nginx-root.crt`, and
+  run `update-ca-certificates` (C9.4 and `deploy/scripts/lab/trust-serving-ca.sh`).
+  Put those three in one small root-owned script with fixed paths, for
+  example `/usr/local/sbin/todo-lab-client-trust IP CA_FILE`, which checks
+  that IP is an IPv4 address and CA_FILE a single self-signed CA
+  certificate, and give the operator's user `NOPASSWD` for that script only
+  (one sudoers line, as `todo-ca-sign` in docs/TLS.md). Fetching the CA and
+  checking its fingerprint stay unprivileged, and the Chromium NSS import
+  needs no root. Set it up once in Part A of ACCEPTANCE-AGENT.md; the
+  readiness check (C1a) verifies it with `sudo -n -l`. Then the run needs no
+  prompt at all, and no broad root stays cached during it, which keeping
+  `sudo -v` alive for 40 minutes would do. One consequence: the time to the
+  second prompt counts in the failover time today, because a person acts
+  on the client in local mode. Without the wait, REPORT.md must say that the
+  measured failover leaves out the person's client step, or add a fixed
+  allowance for it.
+
 ## Lab housekeeping (operator)
 
 - **K1.** *[optional]* *[operator]* Rebuild the `clean-agent` snapshots with

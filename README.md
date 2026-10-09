@@ -277,6 +277,7 @@ manual lab acceptance test.
 | Understand nginx and certificate trust | [TLS](docs/TLS.md) |
 | Install without network access | [Offline bundle](deploy/offline/README.md) |
 | Diagnose `fapolicyd` | [fapolicyd](deploy/offline/FAPOLICYD.md) |
+| Find a log (containers, units, timers, journald) | [Logging](docs/LOGGING.md) |
 | Read design history and live findings | [Development journal](docs/history/DEVELOPMENT-JOURNAL.md) |
 
 ## API

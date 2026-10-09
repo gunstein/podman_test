@@ -463,6 +463,7 @@ outside the demonstrated recovery scope.
 | Which definitions implement the pods? | [Kube runtime](../deploy/runtime/README.md) |
 | How is replication arranged? | [Standby architecture](../deploy/dr/STANDBY-ARCHITECTURE.md) |
 | What do I do in an incident? | [Runbooks](runbooks/README.md) |
+| Where are the logs? | [Logging](LOGGING.md) |
 | How do I run acceptance safely? | [Acceptance sequence and criteria](ACCEPTANCE.md) |
 | How does old-primary isolation work? | [Quarantine](PROXMOX-QUARANTINE.md) |
 | How do backup and reseeding work? | [Backup/PITR](../deploy/dr/BACKUP-PITR.md), [restore redundancy](../deploy/dr/RESTORE-REDUNDANCY.md) |

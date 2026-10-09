@@ -324,7 +324,8 @@ why. The seven workloads already log to journald (`LogDriver=journald`), and
   reboot depends on journald storage on the hosts, which is neither set nor
   documented, and nothing bounds size or age. Configure persistent storage
   with limits, and document it.
-- **L5. `docs/LOGGING.md`.** *[docs]* One page with where each log lives and
+- **L5. `docs/LOGGING.md`.** *[docs]* *[done 2026-10-09]* Linked from README.md,
+  ARCHITECTURE.md and the runbooks. One page with where each log lives and
   ready commands per workload and tool, including the rootless
   `journalctl _SYSTEMD_USER_UNIT=...` form (`journalctl --user` can show
   nothing).

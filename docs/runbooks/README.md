@@ -10,6 +10,8 @@ In the examples Oslo is the primary `todo-primary` (`192.168.0.102`) and
 Trondheim the standby `todo-standby` (`192.168.0.108`), service user
 `gunstein`, as in the lab. Use your own names and addresses. Commands run as
 the service user unless they say `sudo`.
+Where each log is, and what to do when `journalctl --user` shows nothing:
+[Logging](../LOGGING.md).
 
 | What happened | Page | Tested in acceptance |
 |---|---|---|

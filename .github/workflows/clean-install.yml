@@ -33,6 +33,16 @@ jobs:
       # app_dr_host, app_dr.py and app_backup.py, is tests/test_operations_distribution.py.
       - name: "Python tests: installer, DR, app-ops, acceptance tool and packages"
         run: python -m unittest discover --start-directory tests --verbose
+      # E4: line and branch coverage of the same suites, to follow up missing
+      # branches that matter. Information only, not a gate; once, on 3.12.
+      - name: Coverage report (information, not a gate)
+        if: matrix.python == '3.12'
+        run: |
+          python -m pip install "coverage==7.16.2"
+          python -m coverage run --branch \
+            --source=deploy/installer/app_installer,deploy/dr/app_dr_host,deploy/dr/app_ops,deploy/dr/scripts,deploy/scripts/lab \
+            -m unittest discover --start-directory tests > /dev/null 2>&1
+          python -m coverage report --sort=cover
       - name: Build and verify the operations package
         shell: bash
         run: |

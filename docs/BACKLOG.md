@@ -591,7 +591,8 @@ full-stack job and acceptance cover that.
   `app_installer/cli.py` and `app_dr_host/cli.py` again (the last figure, 46
   %, is from before S1), and test the commands and failure paths that are
   missing through the CLI.
-- **E4. A coverage report in CI.** *[config]* Print line and branch coverage
+- **E4. A coverage report in CI.** *[config]* *[done 2026-10-09]* A step in the
+  3.12 Python job; 94 % line coverage of the host tools locally. Print line and branch coverage
   for the Python suites on every run, as information to follow up important
   missing branches, not as a percentage gate.
 - **E5. Browser tests for failure.** *[optional]* An expired session and a real

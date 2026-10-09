@@ -157,9 +157,12 @@ class WorkloadsTests(unittest.TestCase):
         for mode, present, refresh in [('build', False, False), ('build', True, False),
                                        ('build', True, True), ('offline', False, False)]:
             with self.subTest(mode=mode, present=present, refresh=refresh), \
-                    FakeHost(images_present=present) as host:
+                    FakeHost(images_present=present) as host, tempfile.TemporaryDirectory() as bundle:
+                (Path(bundle) / 'images').mkdir()
+                for image in images.image_list(apps.APPS[0]) + images.shared_images():
+                    (Path(bundle) / 'images' / image.archive).touch()
                 calls = host.calls
-                changed = images.prepare(ROOT, mode, '/bundle', refresh)
+                changed = images.prepare(ROOT, mode, bundle, refresh)
                 self.assertEqual(set(changed.values()), {not present or refresh})
                 if mode == 'offline':
                     self.assertEqual(sum(a[1] == 'load' for a in calls), 5)

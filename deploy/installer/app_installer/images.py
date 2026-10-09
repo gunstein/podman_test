@@ -54,8 +54,11 @@ def _prepare(project_root, deployment_mode, bundle_directory, refresh_images, sp
         changed[image.component] = False
         if not present or refresh_images:
             if deployment_mode == "offline":
-                run("podman", "load", "--input", Path(bundle_directory) / "images" / image.archive,
-                    timeout=settings.IMAGE_TIMEOUT)
+                archive = Path(bundle_directory) / "images" / image.archive
+                if not archive.is_file():
+                    raise FileNotFoundError(f"The bundle {bundle_directory} has no image archive images/"
+                                            f"{image.archive}; use the complete verified bundle.")
+                run("podman", "load", "--input", archive, timeout=settings.IMAGE_TIMEOUT)
             elif image.source is None:
                 run("podman", "pull", image.reference, timeout=settings.IMAGE_TIMEOUT)
             else:

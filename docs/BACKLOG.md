@@ -592,7 +592,8 @@ full-stack job and acceptance cover that.
 - **E5. Browser tests for failure.** *[optional]* An expired session and a real
   token refresh against Keycloak, and what the user sees when the backend or
   Keycloak is down.
-- **E8. Error paths in `images.py`.** *[new]* A wrong proxy label, offline
+- **E8. Error paths in `images.py`.** *[new]* *[done 2026-10-09]*
+  `tests/test_images.py`; a missing archive is now named before `podman load`. A wrong proxy label, offline
   with `refresh_images` refused, and a missing bundle.
 - **Q1. Replication in CI.** *[optional]* *[decision]* Stream between two
   PostgreSQL instances on one runner, so replication is tested before the lab.

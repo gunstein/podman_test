@@ -39,9 +39,9 @@ def verify_package(test, archive, prefix):
     for name, content in files.items():
         if name.endswith(".py"):
             test.assertFalse(content.startswith(b"#!"), f"{name} starts with a shebang")
-    for name in ("todo-app", "keycloak", "todo-postgres", "todo-config", "shared-proxy"):
-        from tests.runtime_fixture import RUNTIME
-        test.assertEqual(files[f"generated/kube-runtime/{name}.yaml"], (RUNTIME / f"{name}.yaml").read_bytes())
+    # The package's only workload files are generated/target and bundle.json,
+    # rendered at build time (D7): no templates, no other rendering.
+    test.assertFalse([name for name in files if name.startswith(("deploy/quadlet/", "generated/kube-runtime/"))])
     guide = files["deploy/runtime/README.md"].decode()
     results = files["deploy/runtime/RESULTS.md"].decode()
     for pod in ("todo-app", "keycloak", "todo-postgres", "shared-proxy"):
@@ -50,12 +50,13 @@ def verify_package(test, archive, prefix):
         test.assertIn(f"`{pod}`", results)
     test.assertIn("`nginx`", guide)
     test.assertIn("requires its own full unchanged-revision VM acceptance", results)
-    # Execute the packaged Python renderer outside the checkout. Neither imports
-    # nor template paths may accidentally resolve back to the source tree.
+    # Filled in for one host, the package's files are what the build would render for it,
+    # and the packaged installer does it outside the checkout, with no Jinja2 import.
+    from tests.runtime_fixture import RUNTIME
     with tempfile.TemporaryDirectory() as directory:
         package_root = Path(directory)
         for name, contents in files.items():
-            if name.startswith(("deploy/quadlet/", "deploy/installer/")):
+            if name.startswith(("deploy/installer/", "generated/")) or name == "bundle.json":
                 target = package_root / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(contents)
@@ -63,19 +64,23 @@ def verify_package(test, archive, prefix):
             relative = str(source.relative_to(ROOT))
             test.assertEqual(files.get(relative), source.read_bytes(), relative)
         result = subprocess.run([sys.executable, "-c", """
+import sys
 from pathlib import Path
-from app_installer.quadlet import render
+sys.modules['jinja2'] = None  # an offline host has no Jinja2
+from app_installer import target_render
 root = Path.cwd()
-for name in ('todo-app', 'notes-app', 'keycloak', 'todo-postgres', 'notes-postgres', 'shared-proxy'):
-    (root / (name + '.kube')).write_bytes(render(root, name + '.kube', {
-        'todo_publish_address': '192.0.2.10', 'todo_service_port': 8443,
-        'app_services': ['todo-app.service', 'notes-app.service'],
-    }))
+target = target_render.load(root, {target_render.PUBLISH_ADDRESS: '192.0.2.10'}, environment={}, recorded={})
+for name, content in {**target.manifests, **target.quadlets}.items():
+    (root / 'filled' / name).parent.mkdir(exist_ok=True)
+    (root / 'filled' / name).write_bytes(content)
 """], cwd=package_root, capture_output=True, text=True,
             env={**os.environ, "PYTHONPATH": str(package_root / "deploy/installer")})
         test.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for unit in package_root.glob("*.kube"):
-            test.assertEqual(unit.read_bytes(), (RUNTIME / unit.name).read_bytes())
+        filled = {path.name: path.read_bytes() for path in (package_root / "filled").iterdir()}
+        for name in ("todo-app.yaml", "keycloak.yaml", "todo-postgres.yaml", "todo-config.yaml",
+                     "shared-proxy.yaml", "todo-app.kube", "notes-app.kube", "keycloak.kube",
+                     "todo-postgres.kube", "notes-postgres.kube", "shared-proxy.kube"):
+            test.assertEqual(filled[name], (RUNTIME / name).read_bytes(), name)
     return files
 
 
@@ -95,8 +100,6 @@ class OperationsDistributionTests(unittest.TestCase):
                 names = {name.removeprefix("todo-operations/") for name in package.getnames()}
             for path in (
                 "deploy/installer/app_installer/workloads.py",
-                "deploy/quadlet/shared-proxy.kube.j2",
-                "generated/kube-runtime/shared-proxy.yaml",
                 "deploy/dr/scripts/app_dr.py",
                 "deploy/dr/scripts/app_backup.py",
                 "deploy/dr/scripts/app-quarantine.sh",
@@ -112,8 +115,6 @@ class OperationsDistributionTests(unittest.TestCase):
                 "deploy/dr/README.md",
                 "deploy/dr/app_ops/cli.py",
                 "deploy/dr/app_ops/transport.py",
-                "generated/kube-runtime/todo-app.yaml",
-                "generated/kube-runtime/todo-postgres.yaml",
                 "docs/ACCEPTANCE.md",
                 "deploy/dr/PROMOTION.md",
                 "docs/ACCEPTANCE-TROUBLESHOOTING.md",
@@ -191,7 +192,7 @@ class OperationsDistributionTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIn("usage:", result.stdout)
 
-    def test_offline_archive_contains_quadlet_templates_and_all_image_slots(self):
+    def test_offline_archive_contains_the_rendered_target_files_and_all_image_slots(self):
         # Exercise the real packager; only expensive image production is substituted.
         # Real OCI build/load validation remains a separate release gate.
         with tempfile.TemporaryDirectory() as directory:
@@ -217,12 +218,9 @@ class OperationsDistributionTests(unittest.TestCase):
                            env={**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"]})
             from app_installer import settings
             files = verify_package(self, archive, f"todo-offline-{settings.IMAGE_TAG}")
-            for source in (ROOT / "deploy/quadlet").glob("*.kube.j2"):
-                name = str(source.relative_to(ROOT))
-                self.assertEqual(files.get(name), source.read_bytes(), name)
             for image in ("todo-backend-m12", "todo-frontend-m12", "todo-proxy-m12",
                           "keycloak-m12", "postgres-17.11", "notes-backend-m12", "notes-frontend-m12"):
                 self.assertIn(f"images/{image}.tar", files)
-            self.assertIn("deploy/quadlet/shared-proxy.kube.j2", files)
+            self.assertIn("generated/target/quadlet/shared-proxy.kube", files)
             self.assertFalse(any(name.endswith((".volume", ".volume.j2")) for name in files))
             self.assertNotIn("docs/legacy", "\n".join(files))

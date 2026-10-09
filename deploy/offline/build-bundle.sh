@@ -16,15 +16,12 @@ bundle_directory="$work_directory/$bundle_name"
 trap 'rm -rf "$work_directory"' EXIT
 
 mkdir -p "$bundle_directory/images" "$bundle_directory/docs" \
-  "$bundle_directory/deploy/runtime" \
-  "$bundle_directory/deploy/quadlet" "$bundle_directory/deploy/offline"
+  "$bundle_directory/deploy/runtime" "$bundle_directory/deploy/offline"
 mkdir -p "$(dirname "$output")"
 # generated/target and bundle.json: every Kube YAML file and Quadlet unit
 # rendered here, with ${TARGET_...} placeholders for the values only the target
-# host knows; install.sh and the DR tools fill them in without Jinja2.
-# generated/kube-runtime: the same Kube YAML with values.yaml's hostname, for
-# reading and comparison; nothing installs it.
-"$project_root/deploy/scripts/render-kube-runtime.sh" "$project_root/deploy/environments/prod/values.yaml" "$bundle_directory/generated/kube-runtime"
+# host knows; install.sh and the DR tools fill them in without Jinja2. Those
+# are the only workload files in the bundle: no templates, nothing to render.
 PYTHONPATH="$project_root/deploy/installer${PYTHONPATH:+:$PYTHONPATH}" \
   python3 -m app_installer.bundle "$project_root" "$project_root/deploy/environments/prod/values.yaml" \
   "$bundle_directory"
@@ -45,9 +42,6 @@ cp "$project_root/docs/ARCHITECTURE.md" \
 cp -r "$project_root/docs/runbooks" "$bundle_directory/docs/"
 
 cp "$project_root/deploy/README.md" "$bundle_directory/deploy/"
-cp "$project_root/deploy/quadlet/README.md" "$bundle_directory/deploy/quadlet/"
-cp "$project_root/deploy/quadlet/app-network.network" "$project_root/deploy/quadlet/"*.kube.j2 \
-  "$bundle_directory/deploy/quadlet/"
 cp -r "$project_root/deploy/environments" "$bundle_directory/deploy/"
 cp "$project_root/deploy/runtime/README.md" "$bundle_directory/deploy/runtime/"
 cp "$project_root/docs/history/RESULTS.md" "$bundle_directory/deploy/runtime/"

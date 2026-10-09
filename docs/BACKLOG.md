@@ -393,7 +393,8 @@ promoted primary.
   - *Not now.* Incremental base backups (`pg_basebackup --incremental`) add a
     chain that must be combined to restore; add them only if a full backup
     one day takes too long.
-- **D7. Shrink the packages after D6.** *[simplify]* Nothing installs
+- **D7. Shrink the packages after D6.** *[simplify]* *[done 2026-10-09, awaiting
+  acceptance]* Nothing installs
   `generated/kube-runtime` or the `deploy/quadlet/*.kube.j2` templates from a
   package any more; drop them from both packages and from the package tests,
   which then compare `generated/target` instead.

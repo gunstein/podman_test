@@ -10,19 +10,15 @@ work_directory=$(mktemp -d)
 package_directory="$work_directory/todo-operations"
 trap 'rm -rf "$work_directory"' EXIT
 
-mkdir -p "$package_directory/deploy/quadlet" \
-  "$package_directory/deploy/runtime" \
+mkdir -p "$package_directory/deploy/runtime" \
   "$package_directory/deploy/scripts" \
   "$package_directory/deploy/offline" \
   "$package_directory/docs"
 mkdir -p "$(dirname "$output")"
 
 cp "$project_root/deploy/README.md" "$package_directory/deploy/"
-cp "$project_root/deploy/quadlet/app-network.network" "$project_root/deploy/quadlet/"*.kube.j2 \
-  "$package_directory/deploy/quadlet/"
-# generated/kube-runtime: the Kube YAML with values.yaml's hostname, for reading and comparison.
-"$project_root/deploy/scripts/render-kube-runtime.sh" "$project_root/deploy/environments/prod/values.yaml" "$package_directory/generated/kube-runtime"
-# The DR tools install the same target files as the offline bundle (bundle.json, generated/target).
+# The DR tools install the same target files as the offline bundle (bundle.json,
+# generated/target); like the bundle, the package has no templates.
 PYTHONPATH="$project_root/deploy/installer${PYTHONPATH:+:$PYTHONPATH}" python3 -m app_installer.bundle \
   "$project_root" "$project_root/deploy/environments/prod/values.yaml" "$package_directory"
 cp "$project_root/deploy/runtime/README.md" "$package_directory/deploy/runtime/"
@@ -33,7 +29,6 @@ cp "$project_root/deploy/scripts/trust-files.sh" \
   "$project_root/deploy/scripts/todo-ca-sign" "$package_directory/deploy/scripts/"
 cp "$project_root/deploy/offline/FAPOLICYD.md" "$project_root/deploy/offline/README.md" \
   "$package_directory/deploy/offline/"
-cp "$project_root/deploy/quadlet/README.md" "$package_directory/deploy/quadlet/"
 cp "$project_root/docs/ARCHITECTURE.md" \
   "$project_root/docs/SECRETS.md" \
   "$project_root/docs/TLS.md" \

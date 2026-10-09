@@ -55,8 +55,7 @@ The connected build machine renders everything with Jinja2 before packaging
 | `generated/target/quadlet/` | Every `.kube` unit and `app-network.network`; the proxy unit also publishes HTTPS on `${TARGET_PUBLISH_ADDRESS}` |
 | `generated/target/quadlet/local-only/` | The proxy unit for a host that publishes only on 127.0.0.1 |
 | `generated/target/quadlet/replicated/` | The database units of a DR primary, which also publish replication on `${TARGET_PUBLISH_ADDRESS}` |
-| `bundle.json` | Format and version (`todo-offline-bundle`, 3), where each of the above is, the apps, the HTTPS port and the default target values |
-| `generated/kube-runtime/` | The Kube YAML with the build's hostnames, for reading and comparison; nothing installs it |
+| `bundle.json` | Format and version (`todo-offline-bundle`, 4), where each of the above is, the apps, the HTTPS port and the default target values |
 
 The build checks that putting the default hostnames into the target manifests
 gives exactly the normal render, so a placeholder only stands where a
@@ -265,12 +264,11 @@ backup data is never removed by this command.
 ## Source and runtime contract
 
 The bundle contains seven OCI archives, the target files described above (ten YAML files and
-seven units for seven pods, plus the network, and the replicated database units), `bundle.json`,
-the same YAML rendered with the default hostnames for reading, and the portable Python installer
-with the canonical Quadlet templates.
-Rendering happens only on the build host, from the shared `deploy/manifests/*.yaml.j2` and
-`deploy/quadlet/*.kube.j2` templates. The source checkout's `deploy/runtime`
-contains guides; package YAML is rendered fresh from the templates at build time. Packaging tests compare it to independent rendering.
+seven units for seven pods, plus the network, and the replicated database units), `bundle.json`
+and the portable Python installer. It carries no templates: rendering happens only on the build
+host, from the shared `deploy/manifests/*.yaml.j2` and `deploy/quadlet/*.kube.j2` templates in
+the source checkout, whose `deploy/runtime` contains guides. Packaging tests fill the packaged
+target files in for one host and compare them with an independent render.
 
 The operations package contains app-ops, the DR host tools, the same Python
 installer and the same target files and `bundle.json` as the bundle, which the DR tools

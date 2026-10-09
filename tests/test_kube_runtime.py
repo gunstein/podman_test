@@ -248,10 +248,13 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertEqual(len(setup), 4)
         self.assertIn("app_installer install --mode dev", read(ROOT / "deploy/scripts/dev/dev-up.sh"))
 
-    def test_offline_bundle_packages_rendered_kube_runtime(self):
+    def test_offline_bundle_packages_only_the_rendered_target_files(self):
         offline = read(ROOT / "deploy/offline" / "build-bundle.sh")
-        self.assertIn('deploy/scripts/render-kube-runtime.sh"', offline)
+        self.assertIn("python3 -m app_installer.bundle", offline)
         self.assertIn("deploy/installer/app_installer/", offline)
+        # D7: no templates and no second render in the bundle.
+        self.assertNotIn("render-kube-runtime.sh", offline)
+        self.assertNotIn(".kube.j2", offline)
         self.assertNotIn("deploy/charts", offline)
 
 

@@ -82,9 +82,22 @@ to bind the same port twice.
 Uninstall preserves database/backup volumes, nginx's TLS state and credentials
 by default, and refuses hosts with replication secrets or DR/backup markers.
 It always removes the Kube secrets' volumes, the plain-text copies `podman kube
-play` makes of mounted secrets ([Secrets](../../docs/SECRETS.md#a-kube-secret-also-lives-in-a-volume)).
+play` makes of mounted secrets ([Secrets](../../docs/SECRETS.md#a-kube-secret-also-lives-in-a-volume)),
+and an old per-container install from the tag `quadlet-reference-v1` (its
+`.container` files, `todo.network`, the network `todo-network`, its containers
+and `localhost/todo-keycloak:m12`), which it names. `install` keeps refusing a
+host with that old install: removing it is a deliberate `uninstall`.
 `--remove-data` explicitly removes database data, TLS state and the credentials,
-never the backup volume.
+not the backup volumes. Only `--remove-data --remove-backups` removes those
+too, so that one command empties a host:
+
+```bash
+python3 -m app_installer uninstall --remove-data --remove-backups
+podman ps -a; podman volume ls; podman secret ls   # nothing of the project
+```
+
+Nothing can be restored afterwards. The PostgreSQL image stays (it is not the
+project's own), and on a DR host the command refuses like every uninstall.
 
 ## Nightly backups
 

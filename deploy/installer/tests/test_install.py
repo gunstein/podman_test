@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import shutil
 import subprocess
@@ -11,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import offline_bundle  # noqa: E402
 from app_installer import (  # noqa: E402
     apps,
+    cli,
     install,
     keycloak,
     kube_play,
@@ -367,7 +370,8 @@ class UninstallTests(unittest.TestCase):
                 (directory / 'todo-kube-runtime').mkdir()
                 for name in uninstall.QUADLET_FILES:
                     (directory / name).touch()
-                self.assertTrue(uninstall.uninstall(remove_data, directory))
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertTrue(uninstall.uninstall(remove_data, directory))
                 self.assertFalse(list(directory.iterdir()))
                 calls = [c.args[0] for c in run.call_args_list]
                 self.assertEqual(['podman', 'volume', 'rm', 'todo-postgres-data'] in calls, remove_data)
@@ -435,6 +439,73 @@ class UninstallTests(unittest.TestCase):
             self.assertTrue(all('--volumes' not in command and '-v' not in command for command in removals))
             self.assertFalse(state.exists())
             self.assertTrue(unrelated.exists())
+
+    def uninstall_with(self, directory, **options):
+        """uninstall on a host where every Podman object exists; the commands it ran and what it said."""
+        said = io.StringIO()
+        with patch('app_installer.install.exists', return_value=False), \
+                patch('app_installer.uninstall.exists', return_value=True), \
+                patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run, \
+                patch.object(settings, 'DEV_STATE_FILE', directory / 'dev.json'), \
+                contextlib.redirect_stderr(said):
+            uninstall.uninstall(quadlet_dir=directory, **options)
+        return [call.args[0] for call in run.call_args_list], said.getvalue()
+
+    def test_uninstall_removes_the_old_per_container_install_and_says_so(self):
+        # The lists of the retired playbook ansible/uninstall.yml (tag quadlet-reference-v1).
+        old_files = ('todo.network', 'todo-postgres-data.volume', 'todo-nginx-data.volume', 'todo-caddy-data.volume',
+                     'todo-postgres.container', 'todo-db-setup.container', 'todo-migrate.container',
+                     'todo-db-grants.container', 'todo-backend.container', 'todo-keycloak.container',
+                     'todo-frontend.container')
+        old_services = ('todo-frontend', 'todo-backend', 'todo-keycloak', 'todo-db-grants', 'todo-migrate',
+                        'todo-db-setup', 'todo-postgres', 'todo-network', 'todo-postgres-data-volume')
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            for name in old_files:
+                (directory / name).touch()
+            commands, said = self.uninstall_with(directory)
+            self.assertEqual(sorted(path.name for path in directory.iterdir()), [])
+        stop = commands[0]
+        self.assertEqual(stop[:3], ['systemctl', '--user', 'stop'])
+        for name in old_services:
+            self.assertIn(name + '.service', stop)
+        for name in ('todo-frontend', 'todo-backend', 'todo-keycloak', 'todo-migrate', 'todo-db-grants',
+                     'todo-db-setup', 'todo-postgres'):
+            self.assertIn(['podman', 'rm', '--force', '--ignore', name], commands)
+        self.assertIn(['podman', 'network', 'rm', 'todo-network'], commands)
+        for image in ('localhost/todo-backend:m12', 'localhost/todo-frontend:m12', 'localhost/todo-keycloak:m12'):
+            self.assertIn(['podman', 'image', 'rm', image], commands)
+        self.assertIn('Removed the old per-container install (quadlet-reference-v1): ', said)
+        self.assertIn('todo-keycloak.container', said)
+        # A host without it hears nothing about it.
+        with tempfile.TemporaryDirectory() as temp:
+            self.assertNotIn('old per-container', self.uninstall_with(Path(temp))[1])
+
+    def test_only_remove_backups_removes_the_backups_and_only_with_the_data(self):
+        for options, removed in (({}, False), ({'remove_data': True}, False),
+                                 ({'remove_data': True, 'remove_backups': True}, True)):
+            with self.subTest(options), tempfile.TemporaryDirectory() as temp:
+                commands = self.uninstall_with(Path(temp), **options)[0]
+                for name in ('todo-postgres-backup', 'notes-postgres-backup', 'keycloak-postgres-backup'):
+                    self.assertEqual(['podman', 'volume', 'rm', name] in commands, removed)
+        with patch('app_installer.uninstall.run') as run, patch('app_installer.install.run') as checks:
+            with self.assertRaisesRegex(ValueError, 'needs remove_data'):
+                uninstall.uninstall(remove_backups=True)
+            run.assert_not_called()
+            checks.assert_not_called()
+
+    def test_remove_backups_still_refuses_a_dr_host(self):
+        with patch('app_installer.install.exists', return_value=True), \
+                patch('app_installer.uninstall.run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'single-host deployment'):
+                uninstall.uninstall(remove_data=True, remove_backups=True)
+            run.assert_not_called()
+
+    def test_the_cli_wants_remove_data_with_remove_backups(self):
+        with patch('app_installer.uninstall.uninstall') as remove, contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                cli.main(['uninstall', '--remove-backups'])
+            remove.assert_not_called()
 
     def test_unexpected_stop_failure_preserves_files(self):
         with tempfile.TemporaryDirectory() as temp, \

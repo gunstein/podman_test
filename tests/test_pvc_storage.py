@@ -117,11 +117,12 @@ class PVCStorageTests(unittest.TestCase):
                 volumes = [argv[-1] for argv in commands if argv[:3] == ["podman", "volume", "rm"]]
                 # todo-nginx-data holds the demo CA and is documented as persistent
                 # like the database volumes, so it only goes with --remove-data too.
-                # The Kube secrets' volumes are copies of secrets and always go (V1).
+                # The Kube secrets' and nginx's ConfigMap's volumes are copies kube play makes
+                # again: they always go (V1, V2).
                 self.assertEqual(set(volumes),
                                  ({"todo-postgres-data", "notes-postgres-data", "keycloak-postgres-data",
                                    "todo-nginx-data", "todo-caddy-data"} if remove_data else set())
-                                 | set(kube_secrets.kube_volume_names()))
+                                 | set(kube_secrets.kube_volume_names()) | {"shared-nginx-config"})
                 for backup in ("todo-postgres-backup", "notes-postgres-backup", "keycloak-postgres-backup"):
                     self.assertNotIn(backup, volumes)
                 secrets = [argv[-1] for argv in commands if argv[:3] == ["podman", "secret", "rm"]]

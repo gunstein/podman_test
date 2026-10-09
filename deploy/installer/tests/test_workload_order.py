@@ -203,7 +203,9 @@ class StopOrderTests(unittest.TestCase):
             'todo-app', 'todo-frontend', 'todo-backend', 'todo-db-grants', 'todo-migrate', 'todo-db-setup',
             'todo-postgres', 'notes-app', 'notes-frontend', 'notes-backend', 'notes-db-grants',
             'notes-migrate', 'notes-db-setup', 'notes-postgres', 'keycloak', 'keycloak-postgres',
-            'shared-proxy', 'app-network-network'})
+            'shared-proxy', 'app-network-network',
+            # The old per-container install's (quadlet-reference-v1, V2).
+            'todo-keycloak', 'todo-network', 'todo-postgres-data-volume'})
 
     def test_services_name_the_serving_tier_before_the_databases(self):
         services = apps.services()

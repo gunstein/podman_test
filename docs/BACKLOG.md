@@ -31,9 +31,9 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-1. High up, small: V1 (secret files left in volumes, done, awaiting
-   acceptance), then V2. Owner's request, 2026-10-09. S5 (the installer's topology in one table) is probably the
-   next larger piece of work (owner, 2026-10-09).
+1. High up, small: V1 and V2 (leftovers on disk), done, awaiting
+   acceptance. Owner's request, 2026-10-09. S5 (the installer's topology in
+   one table) is done too, awaiting acceptance.
 2. Then, so a failover does not lose weeks of data: T3 (fencing without the
    Oslo hypervisor, a procedure). When to
    start is the owner's call.
@@ -72,30 +72,22 @@ between sites, and replication across it uses TLS.
   live. Still to see on the lab's Podman 5.8: `podman volume ls` lists the
   `*-kube-*-secret` volumes while the stack runs and none after `uninstall`.
 
-- **V2. One uninstall that leaves nothing behind.** *[new]* Found 2026-10-09
-  on the acceptance client: an old per-container install from
-  `quadlet-reference-v1` (`todo-*.container`, `todo.network`, the
-  `todo-postgres-data` and `todo-caddy-data` volumes) started at every login
-  and held port 8080, so run `2026-10-09-run-1` stopped at C1a (see P2).
-  `app_installer uninstall --remove-data` removes only part of it: it stops
-  some of the old services and removes the volumes, but not the `.container`
-  files, `todo.network`, the network `todo-network` or the container
-  `todo-keycloak`, so the old install comes back at the next login. Its own
-  uninstaller was the retired Ansible playbook `ansible/uninstall.yml`. Two
-  parts, with V1:
-  1. `uninstall` also removes that old per-container install, from the
-     playbook's lists (quadlet files, services, containers, the network,
-     `localhost/todo-keycloak:m12`), and says what it removed.
-     `install.preflight` keeps refusing a host that has it: removing it is a
-     deliberate `uninstall`, never part of an install.
-  2. A separate, explicit flag (for example `--remove-backups`) that also
-     removes the backup volumes (`*-postgres-backup`), which `uninstall`
-     never removes today, so one command can empty a host completely. It
-     refuses without `--remove-data`, says that the backups cannot be
-     restored afterwards, and never runs on a DR host (`require_single_host`).
-  Afterwards `podman ps -a`, `podman volume ls` and `podman secret ls` show
-  nothing of the project, apart from the PostgreSQL image, which is not the
-  project's own.
+- **V2. One uninstall that leaves nothing behind.** *[done, awaiting
+  acceptance]* Found 2026-10-09 on the acceptance client: an old
+  per-container install from `quadlet-reference-v1` started at every login
+  and held port 8080, and `uninstall --remove-data` removed only part of it.
+  Done 2026-10-09, from the lists of the retired playbook
+  `ansible/uninstall.yml`: `uninstall` also removes that old install (its
+  `.container` files, `todo.network`, the network `todo-network`, the
+  container `todo-keycloak`, `localhost/todo-keycloak:m12` and their
+  services) and names what it removed; `install.preflight` keeps refusing a
+  host with it. `--remove-backups` (only with `--remove-data`, never on a DR
+  host) also removes the backup volumes and says that nothing can be
+  restored. `uninstall` also removes `shared-nginx-config`, the volume
+  `podman kube play` makes of nginx's ConfigMap. Still to see on the
+  acceptance client or a lab VM: after `uninstall --remove-data
+  --remove-backups`, `podman ps -a`, `podman volume ls` and `podman secret
+  ls` show nothing of the project, apart from the PostgreSQL image.
 
 ## Goal: Trondheim running within 30 minutes
 
@@ -499,8 +491,8 @@ between them is not a goal: each app should read on its own.
   its own and can be tested without the rest of the lifecycle. The one
   candidate today is `install.install()` (118 lines), into named steps, if
   that reads better.
-- **S5. Make the installer's topology concrete.** *[simplify]* Probably the
-  next piece of work (owner, 2026-10-09). The Python in
+- **S5. Make the installer's topology concrete.** *[simplify]* *[done,
+  awaiting acceptance]* Phases 1 and 2 done 2026-10-09. The Python in
   `deploy/installer/app_installer`, and the DR code that imports it, should
   be easier to read and maintain, with less repetition and the same
   behaviour (apart from the YAML renames in task 3). Simple, explicit code

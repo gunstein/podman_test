@@ -1,5 +1,6 @@
 """Single-host uninstall, retaining DR refusal and opt-in database removal."""
 import shutil
+import sys
 from pathlib import Path
 
 from . import apps, backup, install, secrets, settings, target_render, tls_secrets
@@ -9,19 +10,28 @@ from .quadlet import systemctl
 # caddy-data is a retired Caddy-based proxy's volume name; kept here so a host
 # still carrying it from before the nginx migration gets it cleaned up too.
 TLS_VOLUMES = (apps.NGINX_TLS_VOLUME, 'todo-caddy-data')
+DATABASES = (*(app.database for app in apps.APPS), apps.KEYCLOAK_DATABASE)
+BACKUP_VOLUMES = tuple(database.volume('backup') for database in DATABASES)
+# The old per-container install (the tag quadlet-reference-v1; its uninstaller
+# was the retired Ansible playbook ansible/uninstall.yml). install.preflight
+# refuses a host that has it; uninstall removes it, and says so.
+OLD_QUADLET_FILES = (*(name + '.container' for name in install.LEGACY), 'todo.network')
+OLD_NETWORK = 'todo-network'
+OLD_IMAGE = 'localhost/todo-keycloak:m12'
 QUADLET_FILES = (apps.NETWORK + '.network',
-                 *(app.database.volume(purpose) + '.volume' for app in apps.APPS
+                 *(database.volume(purpose) + '.volume' for database in DATABASES
                    for purpose in ('data', 'backup')),
-                 *(apps.KEYCLOAK_DATABASE.volume(purpose) + '.volume' for purpose in ('data', 'backup')),
-                 *(volume + '.volume' for volume in TLS_VOLUMES))
-# Every workload's service, the old per-container services of each app, and the network's.
-SERVICES = (*(workload.pod for workload in apps.workloads()),
-            *(app.names.resource(component) for app in apps.APPS
-              for component in ('frontend', 'backend', 'db-grants', 'migrate', 'db-setup')),
-            apps.NETWORK + '-network')
-CONTAINERS = (*(app.names.resource(component) for app in apps.APPS
-                for component in ('frontend', 'backend', 'migrate', 'db-grants', 'db-setup', 'postgres')),
-              'nginx', 'keycloak')
+                 *(volume + '.volume' for volume in TLS_VOLUMES),
+                 *OLD_QUADLET_FILES)
+# Every workload's service, the network's, and the old install's: its containers', its
+# network's (todo.network gives todo-network.service) and its data volume's.
+SERVICES = tuple(dict.fromkeys((*(workload.pod for workload in apps.workloads()), apps.NETWORK + '-network',
+                                *install.LEGACY, 'todo-network', 'todo-postgres-data-volume')))
+# nginx and the old install's containers, which kube play's pods did not start.
+CONTAINERS = (*install.LEGACY, 'nginx')
+# podman kube play makes a named volume of each ConfigMap it mounts as files, as
+# of each secret (secrets.remove_kube_volumes); it is configuration, made again at every play.
+CONFIG_VOLUMES = ('shared-nginx-config',)
 PODS = tuple(workload.pod for workload in reversed(apps.workloads()))
 MAPPINGS = secrets.kube_mappings()
 # nginx's TLS secrets (tls_secrets.py) go with the data, as the TLS volume does.
@@ -45,18 +55,23 @@ def unlink(path):
     return existed
 
 
-def uninstall(remove_data=False, quadlet_dir=None):
+def uninstall(remove_data=False, quadlet_dir=None, remove_backups=False):
     """Remove a single-host install: units, pods, containers, network and app images.
 
     Refuses on a host with replication, promotion or backup state: that is
     a DR node and needs a person to decide. The nightly backup timer goes;
     database volumes, TLS volumes and secrets are kept unless remove_data is
-    True, and backup volumes always, so reinstalling keeps the
-    data and passwords. The Kube secrets' volumes always go
-    (secrets.remove_kube_volumes). Returns True if anything was removed.
+    True, and backup volumes unless remove_backups is True too, so
+    reinstalling keeps the data and passwords. The Kube secrets' volumes
+    always go (secrets.remove_kube_volumes), and so does an old
+    per-container install (OLD_QUADLET_FILES). Returns True if anything
+    was removed.
     """
+    if remove_backups and not remove_data:
+        raise ValueError('Removing the backups needs remove_data too: a backup without its data is no use.')
     directory = Path(quadlet_dir or settings.QUADLET_DIR)
     install.require_single_host('uninstall')
+    old = [name for name in OLD_QUADLET_FILES if (directory / name).exists()]
     stopped = run('systemctl', '--user', 'stop', *(name + '.service' for name in SERVICES),
                   allowed=(0, 5)).returncode == 0
     # The nightly backup timer goes; the backups themselves stay in their volumes.
@@ -79,14 +94,16 @@ def uninstall(remove_data=False, quadlet_dir=None):
         changed = exists('container', name) or changed
         run('podman', 'rm', '--force', '--ignore', name)
     changed = remove('network', apps.NETWORK) or changed
+    changed = remove('network', OLD_NETWORK) or changed
+    for name in CONFIG_VOLUMES:
+        changed = remove('volume', name) or changed
     # The Kube secrets' volumes are copies of secrets, not data: they go now,
     # and the next install's kube play makes them again from the secrets.
     changed = secrets.remove_kube_volumes() or changed
     changed = unlink(settings.DEV_STATE_FILE) or changed
     if remove_data:
-        for app in apps.APPS:
-            changed = remove('volume', app.database.volume('data')) or changed
-        changed = remove('volume', apps.KEYCLOAK_DATABASE.volume('data')) or changed
+        for database in DATABASES:
+            changed = remove('volume', database.volume('data')) or changed
         for name in SECRETS:
             changed = remove('secret', name) or changed
         # nginx's CA and leaf are Podman secrets (in SECRETS above) or, with the TLS
@@ -98,9 +115,15 @@ def uninstall(remove_data=False, quadlet_dir=None):
         # The public hostnames go with the data they were installed for; a plain
         # uninstall keeps them, so a reinstall serves the same names.
         changed = unlink(target_render.record_path()) or changed
+    if remove_backups:
+        for name in BACKUP_VOLUMES:
+            changed = remove('volume', name) or changed
     for app in apps.APPS:
         for component in ('backend', 'frontend'):
             changed = remove('image', app.image(component)) or changed
-    for reference in (apps.PROXY_IMAGE, apps.KEYCLOAK_IMAGE):
+    for reference in (apps.PROXY_IMAGE, apps.KEYCLOAK_IMAGE, OLD_IMAGE):
         changed = remove('image', reference) or changed
+    if old:
+        print('Removed the old per-container install (quadlet-reference-v1): ' + ', '.join(old)
+              + f', its network {OLD_NETWORK} and its containers.', file=sys.stderr)
     return changed

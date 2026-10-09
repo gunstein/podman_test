@@ -126,6 +126,8 @@ def main(argv=None):
     registry.add_argument('--details', action='store_true')
     remove = subcommands.add_parser('uninstall')
     remove.add_argument('--remove-data', action='store_true')
+    remove.add_argument('--remove-backups', action='store_true',
+                        help='with --remove-data: the backup volumes too; nothing can be restored afterwards')
     remove.add_argument('--quadlet-dir', type=Path)
     backups = subcommands.add_parser('backup', help='nightly base backups of this host (todo-backup.timer)')
     backup_commands = backups.add_subparsers(dest='backup_command', required=True)
@@ -157,8 +159,16 @@ def main(argv=None):
                 target_values={name: getattr(args, name) for name in target_render.HOSTNAMES})
             print(json.dumps({'changed': changed}))
         elif args.command == 'uninstall':
-            changed = uninstall.uninstall(args.remove_data, args.quadlet_dir)
-            if not args.remove_data:
+            if args.remove_backups and not args.remove_data:
+                parser.error('--remove-backups needs --remove-data')
+            changed = uninstall.uninstall(args.remove_data, args.quadlet_dir, args.remove_backups)
+            if args.remove_backups:
+                print(f'Backup volumes {", ".join(uninstall.BACKUP_VOLUMES)} were removed: '
+                      'nothing of this install can be restored any more.', file=sys.stderr)
+            elif args.remove_data:
+                print(f'Backup volumes {", ".join(uninstall.BACKUP_VOLUMES)} were preserved. '
+                      'Use --remove-backups too to delete them permanently.', file=sys.stderr)
+            else:
                 volumes = ', '.join(d.volume('data') for d in apps.REPLICATED_DATABASES)
                 tls_volumes = ', '.join(uninstall.TLS_VOLUMES)
                 print(f'Database volumes {volumes}, TLS volumes {tls_volumes} and database, Keycloak and '

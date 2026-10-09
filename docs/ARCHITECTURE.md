@@ -262,7 +262,7 @@ An adapter seam is not evidence that Duende or another provider already works.
 | Notes database data | notes-postgres-data | Same lifecycle as Todo data, independent database |
 | Keycloak database data | keycloak-postgres-data | Same lifecycle; holds the shared realm |
 | nginx CA and leaf-key state | Host-local Podman secrets `todo-proxy-*` and `todo-kube-proxy-tls-secret` (or the TLS volume todo-nginx-data) | Survives local app recreation; removed only with `--remove-data`; promotion may create a new demo CA |
-| Base backups and WAL | todo-postgres-backup, notes-postgres-backup, keycloak-postgres-backup | One per database; separate from live data; still on the same VM |
+| Base backups and WAL | todo-postgres-backup, notes-postgres-backup, keycloak-postgres-backup | One per database; separate from live data; still on the same VM; removed only with `--remove-data --remove-backups` |
 | Runtime credentials | Host-local Podman secrets | Provisioned and transferred separately from YAML |
 
 Kube YAML declares each persistent volume with a `PersistentVolumeClaim`.

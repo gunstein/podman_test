@@ -24,7 +24,7 @@ def recorder(order, name):
 class ReplicationTests(unittest.TestCase):
     def test_registry_replicates_each_independent_database(self):
         self.assertEqual([app.name for app in apps.APPS], ['todo', 'notes'])
-        app = apps.SHARED_RESOURCE_OWNER.database
+        app = apps.APPS[0].database
         self.assertEqual(app.replication_slot(), 'todo_standby')
         self.assertEqual(app.replication_slot(rebuilt=True), 'todo_rebuilt_standby')
         self.assertEqual(app.replication_passfile(), '.todo-replication.pgpass')

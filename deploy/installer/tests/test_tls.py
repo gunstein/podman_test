@@ -59,7 +59,7 @@ class FakePodman:
             return REAL_RUN(['sh', *script], cwd=self.volume, input=input, text=True, capture_output=True,
                             check=False)
         if argv[:3] == ['podman', 'volume', 'exists']:
-            return completed(argv, 0 if self.volume_exists and argv[3] == tls.VOLUME else 1)
+            return completed(argv, 0 if self.volume_exists and argv[3] == apps.NGINX_TLS_VOLUME else 1)
         if argv[:3] == ['podman', 'image', 'inspect']:
             return completed(argv, stdout=json.dumps([{'Labels': {tls.MODES_LABEL: self.label}}]))
         if argv[:3] == ['podman', 'container', 'exists']:
@@ -77,7 +77,7 @@ class FakePodman:
         """Every TLS step runs without network, as the nginx user, on the TLS volume only."""
         assert argv[argv.index('--network') + 1] == 'none', argv
         assert argv[argv.index('--user') + 1] == '101:101', argv
-        assert argv[argv.index('--volume') + 1] == f'{tls.VOLUME}:{tls.DIRECTORY}', argv
+        assert argv[argv.index('--volume') + 1] == f'{apps.NGINX_TLS_VOLUME}:{tls.DIRECTORY}', argv
         assert argv[argv.index('--entrypoint') + 2] == apps.PROXY_IMAGE, argv
 
     def fingerprint(self):

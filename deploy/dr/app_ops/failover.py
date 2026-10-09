@@ -87,7 +87,7 @@ def connect_sources(headers):
 
 def login_page(host, hostnames):
     """Raise unless each app's login can start: Keycloak accepts its redirect, and its CSP allows the token."""
-    identity = hostnames[apps.SHARED_RESOURCE_OWNER.name]
+    identity = hostnames[apps.IDENTITY_APP.name]
     identity_origin = f'https://{identity}:{settings.HTTPS_PORT}'
     for app in apps.APPS:
         origin = f'https://{hostnames[app.name]}:{settings.HTTPS_PORT}'

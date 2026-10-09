@@ -43,7 +43,6 @@ from pathlib import Path
 from . import apps, target_render
 from .commands import exists, run
 
-VOLUME = apps.SHARED_RESOURCE_OWNER.names.resource('nginx-data')
 DIRECTORY = '/var/lib/todo-tls'
 CONTAINER = 'nginx'
 MODE_FILE = 'tls-mode'
@@ -76,7 +75,7 @@ def days_until(enddate):
     return int((expires - time.time()) // 86400)
 
 
-def proxy(*argv, input=None, allowed=(0,), volume=VOLUME, image=apps.PROXY_IMAGE):
+def proxy(*argv, input=None, allowed=(0,), volume=apps.NGINX_TLS_VOLUME, image=apps.PROXY_IMAGE):
     """Run argv in a throwaway proxy container with the TLS volume at DIRECTORY; no network.
 
     Commands that write a file run under umask 077, so a key is never
@@ -107,7 +106,7 @@ def mode(**where):
     return 'local'
 
 
-def require_ready(volume=VOLUME, image=apps.PROXY_IMAGE):
+def require_ready(volume=apps.NGINX_TLS_VOLUME, image=apps.PROXY_IMAGE):
     """Refuse a host without the TLS volume, or with a proxy image that does not know provided mode.
 
     The volume is created by the first install. An older proxy image would
@@ -130,9 +129,9 @@ def recorded_hostnames():
     but it records the hostnames it will serve after a failover.
     """
     names = target_render.hostnames(target_render.read_record())
-    if apps.SHARED_RESOURCE_OWNER.name not in names:
+    if apps.IDENTITY_APP.name not in names:
         raise TlsError(f'{target_render.record_path()} records no public hostnames: install this host first.')
-    owner = names.pop(apps.SHARED_RESOURCE_OWNER.name)
+    owner = names.pop(apps.IDENTITY_APP.name)
     return [owner] + [name for name in names.values() if name != owner]
 
 
@@ -277,7 +276,7 @@ def status(names, **where):
     certificate names every one of names from ca.crt. A volume without a
     certificate is ('local', None, '').
     """
-    if not exists('volume', where.get('volume', VOLUME)) or not present('server.crt', **where):
+    if not exists('volume', where.get('volume', apps.NGINX_TLS_VOLUME)) or not present('server.crt', **where):
         return 'local', None, ''
     result = proxy('env', 'TODO_TLS_ROLE=check', 'TODO_TLS_DIRECTORY=.', f'TODO_TLS_HOSTNAME={names[0]}',
                    'APP_TLS_HOSTNAMES=' + ' '.join(names), ENTRYPOINT, allowed=(0, 1), **where)
@@ -295,7 +294,7 @@ def check(hostnames=None, **where):
     needs the CA step (tls-request, sign, tls-install); in local mode the
     entrypoint renews its demo certificate only when nginx starts.
     """
-    if not exists('volume', where.get('volume', VOLUME)):
+    if not exists('volume', where.get('volume', apps.NGINX_TLS_VOLUME)):
         return [], []
     current, days, problem = status(list(hostnames or recorded_hostnames()), **where)
     if problem:

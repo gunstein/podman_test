@@ -53,8 +53,8 @@ def selection(application_names=()):
 
 
 def hostnames(selected, public_hostname):
-    """Each app's public hostname: the shared-resource app on public_hostname, the others from the registry."""
-    return {app.name: public_hostname if app is apps.SHARED_RESOURCE_OWNER else app.hostname for app in selected}
+    """Each app's public hostname: the identity app on public_hostname, the others from the registry."""
+    return {app.name: public_hostname if app is apps.IDENTITY_APP else app.hostname for app in selected}
 
 
 def files(project_root, selected, hostnames, port, log_level):
@@ -62,11 +62,11 @@ def files(project_root, selected, hostnames, port, log_level):
 
     hostnames maps each app's name to its public hostname; for an offline
     bundle (app_installer.bundle) each is a ${TARGET_...} placeholder, and
-    the files are otherwise the same. The shared-resource app's hostname is
+    the files are otherwise the same. The identity app's hostname is
     also Keycloak's and the OIDC issuer's.
     """
     root = Path(project_root)
-    hostname = hostnames[apps.SHARED_RESOURCE_OWNER.name]
+    hostname = hostnames[apps.IDENTITY_APP.name]
     result = {}
     for app in selected:
         result[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
@@ -80,7 +80,7 @@ def files(project_root, selected, hostnames, port, log_level):
         root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_DATABASE.image)
     result[apps.KEYCLOAK_DATABASE.config_manifest] = manifests.render_postgres_config(root, apps.KEYCLOAK_DATABASE)
     result['shared-proxy.yaml'] = manifests.render_shared_proxy(
-        root, selected, apps.SHARED_RESOURCE_OWNER, hostnames, port, apps.PROXY_IMAGE)
+        root, selected, apps.IDENTITY_APP, hostnames, port, apps.PROXY_IMAGE)
 
     for name, content in result.items():
         _validate(name, content)

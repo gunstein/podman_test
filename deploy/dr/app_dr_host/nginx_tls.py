@@ -29,7 +29,7 @@ host: each host makes its own key.
 """
 from pathlib import Path
 
-from app_installer import images, settings, target_render, tls, tls_secrets, tls_store
+from app_installer import apps, images, settings, target_render, tls, tls_secrets, tls_store
 from app_installer.commands import exists, run
 
 # The pair's nginx TLS mode on this host: 'provided' once app-ops installed both hosts' certificates.
@@ -60,9 +60,9 @@ def volume_claim(target):
     import yaml  # a DR-only dependency, as in replication.data_claim
     claims = [document for document in yaml.safe_load_all(target.manifests['shared-proxy.yaml'].decode())
               if isinstance(document, dict) and document.get('kind') == 'PersistentVolumeClaim'
-              and document.get('metadata', {}).get('name') == tls.VOLUME]
+              and document.get('metadata', {}).get('name') == apps.NGINX_TLS_VOLUME]
     if len(claims) != 1:
-        raise ValueError(f'shared-proxy.yaml must define exactly one claim {tls.VOLUME}')
+        raise ValueError(f'shared-proxy.yaml must define exactly one claim {apps.NGINX_TLS_VOLUME}')
     return yaml.safe_dump(claims[0])
 
 
@@ -78,7 +78,7 @@ def prepare(project_root, bundle_dir, node_address):
     changed = any(images.prepare_shared(bundle_dir, 'offline', bundle_dir).values())
     if tls_store.secret_storage():
         return changed
-    if not exists('volume', tls.VOLUME):
+    if not exists('volume', apps.NGINX_TLS_VOLUME):
         target = target_render.load_on_host(project_root, node_address)
         run('podman', 'kube', 'play', '-', input=volume_claim(target))
         changed = True

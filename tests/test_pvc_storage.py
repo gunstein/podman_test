@@ -100,7 +100,7 @@ class PVCStorageTests(unittest.TestCase):
         canonical = next(d for d in yaml.safe_load_all((RUNTIME / "postgres.yaml").read_text())
                          if d["metadata"]["name"] == "todo-postgres-data")
         target = SimpleNamespace(manifests={"postgres.yaml": (RUNTIME / "postgres.yaml").read_bytes()})
-        self.assertEqual(yaml.safe_load(replication.data_claim(apps.SHARED_RESOURCE_OWNER.database, target)), canonical)
+        self.assertEqual(yaml.safe_load(replication.data_claim(apps.APPS[0].database, target)), canonical)
 
     def test_uninstall_preserves_database_and_tls_data_by_default_and_never_removes_backup(self):
         from app_installer import settings, uninstall

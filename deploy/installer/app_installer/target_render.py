@@ -11,7 +11,7 @@ DR tools on the primary and the standby.
 There are two kinds of value (TARGETS):
 
   Public hostnames, one per app: TARGET_EXTERNAL_HOSTNAME for the app that
-      owns the shared resources, which Keycloak and the OIDC issuer use too,
+      is the identity app (apps.IDENTITY_APP), which Keycloak and the OIDC issuer use too,
       and TARGET_<APP>_HOSTNAME for every other app (TARGET_NOTES_HOSTNAME).
       They are the service's names: nginx server_name, the TLS certificate,
       the OIDC issuer, KC_HOSTNAME and each Keycloak client. They must be
@@ -68,7 +68,7 @@ def placeholder(name):
 
 def hostname_target(app):
     """The target value of an app's public hostname, e.g. TARGET_NOTES_HOSTNAME."""
-    return EXTERNAL_HOSTNAME if app is apps.SHARED_RESOURCE_OWNER else f'TARGET_{app.name.upper()}_HOSTNAME'
+    return EXTERNAL_HOSTNAME if app is apps.IDENTITY_APP else f'TARGET_{app.name.upper()}_HOSTNAME'
 
 
 HOSTNAMES = tuple(hostname_target(app) for app in apps.APPS)

@@ -117,7 +117,7 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
         quadlet.systemctl('start', service)
     for app in apps.APPS:
         require_application(app, hostnames[app.name])
-    require_issuer(f'https://{hostnames[apps.SHARED_RESOURCE_OWNER.name]}:{service_port}/auth/realms/todo')
+    require_issuer(f'https://{hostnames[apps.IDENTITY_APP.name]}:{service_port}/auth/realms/todo')
     clients_changed = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
                                          install.clients(apps.APPS, hostnames))
     target_render.write_record(target.values)

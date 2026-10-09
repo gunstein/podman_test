@@ -154,8 +154,9 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     Returns True if anything changed.
     """
     applications = apps.APPS if applications is None else tuple(applications)
-    if apps.SHARED_RESOURCE_OWNER not in applications:
-        raise ValueError('The application that owns the shared resources must be included.')
+    if apps.IDENTITY_APP not in applications:
+        raise ValueError(f'The identity app ({apps.IDENTITY_APP.name}) must be included: '
+                         'Keycloak and every login use its hostname.')
     if mode not in ('dev', 'server'):
         raise ValueError('mode must be dev or server')
     if deployment_mode not in ('build', 'offline') or (

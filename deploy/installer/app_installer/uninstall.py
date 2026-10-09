@@ -6,13 +6,11 @@ from . import apps, backup, install, secrets, settings, target_render, tls_secre
 from .commands import exists, run
 from .quadlet import systemctl
 
-SHARED = apps.SHARED_RESOURCE_OWNER
 # caddy-data is a retired Caddy-based proxy's volume name; kept here so a host
 # still carrying it from before the nginx migration gets it cleaned up too.
 # podman kube play keeps a secret volume's files in a named volume called after
 # the Kube secret, and it stays after kube down: nginx's key is in it too.
-TLS_VOLUMES = (SHARED.names.resource('nginx-data'), SHARED.names.resource('caddy-data'),
-               apps.PROXY_KUBE_TLS_SECRET)
+TLS_VOLUMES = (apps.NGINX_TLS_VOLUME, 'todo-caddy-data', apps.PROXY_KUBE_TLS_SECRET)
 QUADLET_FILES = (apps.NETWORK + '.network',
                  *(app.database.volume(purpose) + '.volume' for app in apps.APPS
                    for purpose in ('data', 'backup')),

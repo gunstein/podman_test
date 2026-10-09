@@ -51,7 +51,7 @@ class BackupTest(unittest.TestCase):
 
 class CreateAndPruneTests(BackupTest):
     def test_a_backup_runs_inside_the_database_container_and_is_latest_only_once_verified(self):
-        database = apps.SHARED_RESOURCE_OWNER.database
+        database = apps.APPS[0].database
         with BackupHost() as host:
             self.assertEqual(backup.create(database, lambda: NOW), 'base-20261009T023000Z')
         commands = [argv for argv in host.calls if argv[:2] == ['podman', 'exec']]
@@ -68,7 +68,7 @@ class CreateAndPruneTests(BackupTest):
     def test_backups_older_than_the_kept_days_go_but_never_the_latest(self):
         self.assertEqual(backup.expired(WEEK, WEEK[-1], backup.cutoff(7, lambda: NOW)), WEEK[:2])
         self.assertEqual(backup.expired(WEEK[:1], WEEK[0], backup.cutoff(1, lambda: NOW)), [])
-        database = apps.SHARED_RESOURCE_OWNER.database
+        database = apps.APPS[0].database
         with BackupHost() as host:
             self.assertEqual(backup.prune(database, 7, lambda: NOW), WEEK[:2])
         deletion = host.calls[-1]
@@ -105,8 +105,8 @@ class NightlyTests(BackupTest):
         self.assertEqual([step for step in order if step], ['backup', 'prune'] * len(apps.REPLICATED_DATABASES))
 
     def test_only_the_installed_databases_are_backed_up(self):
-        self.install_units(databases=[apps.SHARED_RESOURCE_OWNER.database, apps.KEYCLOAK_DATABASE],
-                           applications=[apps.SHARED_RESOURCE_OWNER])
+        self.install_units(databases=[apps.APPS[0].database, apps.KEYCLOAK_DATABASE],
+                           applications=[apps.APPS[0]])
         lines, _ = self.nightly(BackupHost())
         self.assertEqual([line.split(':')[0] for line in lines[:-1]], ['todo', 'keycloak'])
 

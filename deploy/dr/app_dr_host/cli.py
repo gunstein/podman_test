@@ -40,7 +40,7 @@ def main(argv=None):
                                                    'rebuild-primary-check', 'quarantined', 'reseed-check',
                                                    'replication-path', 'slot', 'drop-slot'))
     replicate.add_argument('--app', choices=[d.name for d in apps.REPLICATED_DATABASES],
-                           default=apps.SHARED_RESOURCE_OWNER.name)
+                           default=apps.APPS[0].name)
     replicate.add_argument('--node-address', default='')
     replicate.add_argument('--primary-address', default='')
     replicate.add_argument('--image-archive', type=Path)

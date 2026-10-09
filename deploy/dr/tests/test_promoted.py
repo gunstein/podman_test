@@ -53,7 +53,7 @@ class PromotedHost:
 
     def install(self, name):
         def install(*args, **kwargs):
-            self.steps.append(('install', name, kwargs.get('app', apps.SHARED_RESOURCE_OWNER).name))
+            self.steps.append(('install', name, kwargs.get('app', apps.IDENTITY_APP).name))
             return self.workloads_changed
         return install
 
@@ -174,8 +174,8 @@ class PromotedDeployTests(unittest.TestCase):
             self.deploy(host, directory)
             installs = [s[1:] for s in host.steps if s[0] == 'install']
             self.assertEqual(installs, [('application', app.name) for app in apps.APPS]
-                             + [('keycloak', apps.SHARED_RESOURCE_OWNER.name),
-                                ('shared-proxy', apps.SHARED_RESOURCE_OWNER.name)])
+                             + [('keycloak', apps.IDENTITY_APP.name),
+                                ('shared-proxy', apps.IDENTITY_APP.name)])
 
     def test_nginx_gets_its_tls_secrets_for_the_recorded_hostnames_before_it_is_installed(self):
         with tempfile.TemporaryDirectory() as directory:

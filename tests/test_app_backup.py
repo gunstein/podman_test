@@ -133,7 +133,7 @@ class DatabaseBackupTests(unittest.TestCase):
         self.tool(runner).create_restore_point("after_old_failure")
 
     def test_restore_rejects_existing_disposable_state_without_replace(self):
-        restore_container = app_backup.apps.SHARED_RESOURCE_OWNER.names.resource("postgres-restore")
+        restore_container = app_backup.apps.APPS[0].names.resource("postgres-restore")
         runner = FakeRunner(containers={restore_container})
         with self.assertRaisesRegex(app_backup.BackupError, "--replace"):
             self.tool(runner).restore(
@@ -403,7 +403,7 @@ class RestoreEdgeTests(unittest.TestCase):
         # Exit 1 is a fatal error in psql itself: report it at once, not after 60 seconds.
         class Starting(FakeRunner):
             def __init__(self, first_code):
-                super().__init__(containers={app_backup.apps.SHARED_RESOURCE_OWNER.names.resource("postgres-restore")})
+                super().__init__(containers={app_backup.apps.APPS[0].names.resource("postgres-restore")})
                 self.first_code, self.polls = first_code, 0
 
             def __call__(self, arguments, timeout=None):

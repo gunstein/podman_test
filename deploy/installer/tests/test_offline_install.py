@@ -255,7 +255,7 @@ class OfflineInstallTests(unittest.TestCase):
                                 quadlet_dir=self.quadlet)
             with self.assertRaisesRegex(ValueError, 'built for todo, notes'):
                 install.install(self.bundle, deployment_mode='offline', bundle_directory=self.bundle,
-                                quadlet_dir=self.quadlet, applications=(apps.SHARED_RESOURCE_OWNER,))
+                                quadlet_dir=self.quadlet, applications=(apps.IDENTITY_APP,))
             with self.assertRaisesRegex(ValueError, 'built for HTTPS port 8443, not 9443'):
                 install.install(self.bundle, deployment_mode='offline', bundle_directory=self.bundle,
                                 quadlet_dir=self.quadlet, service_port=9443)

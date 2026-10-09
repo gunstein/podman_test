@@ -105,7 +105,7 @@ def configure(admin_password, clients=None):
     identities = ([(app.keycloak_client, app.hostname) for app in apps.APPS]
                   if clients is None else list(clients))
     for client_id, hostname in identities:
-        if client_id != apps.SHARED_RESOURCE_OWNER.keycloak_client:
+        if client_id != apps.IDENTITY_APP.keycloak_client:
             wait('/health', 30, 1, 'ok', hostname=hostname)
             wait('/ready', 30, 1, 'ready', hostname=hostname)
     token = request('/auth/realms/master/protocol/openid-connect/token', 'POST', {
@@ -116,9 +116,9 @@ def configure(admin_password, clients=None):
     changed = secure_realm(token)
     template = None
     for client_id, hostname in identities:
-        # The shared-resource owner's client uses the issuer's own origin; the
+        # The identity app's client uses the issuer's own origin; the
         # other apps use their own public hostnames on the issuer's port.
-        client_origin = (origin if client_id == apps.SHARED_RESOURCE_OWNER.keycloak_client
+        client_origin = (origin if client_id == apps.IDENTITY_APP.keycloak_client
                          else f'https://{hostname}' + (f':{parsed.port}' if parsed.port else ''))
         matches = request('/auth/admin/realms/todo/clients?' + urlencode({'clientId': client_id}),
                           token=token)
@@ -136,14 +136,14 @@ def configure(admin_password, clients=None):
             for mapper in client.get('protocolMappers', []):
                 mapper.pop('id', None)
                 config = mapper.get('config', {})
-                if config.get('included.client.audience') == apps.SHARED_RESOURCE_OWNER.keycloak_client:
+                if config.get('included.client.audience') == apps.IDENTITY_APP.keycloak_client:
                     config['included.client.audience'] = client_id
             request('/auth/admin/realms/todo/clients', 'POST', client, token)
             changed = True
             continue
         path = '/auth/admin/realms/todo/clients/' + matches[0]['id']
         client = request(path, token=token)
-        if client_id == apps.SHARED_RESOURCE_OWNER.keycloak_client:
+        if client_id == apps.IDENTITY_APP.keycloak_client:
             template = client
         if client.get('redirectUris') == [client_origin + '/'] and client.get('webOrigins') == [client_origin]:
             continue

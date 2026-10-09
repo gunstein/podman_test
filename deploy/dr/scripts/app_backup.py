@@ -115,7 +115,7 @@ class DatabaseBackup:
         self,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         sleeper: Callable[[float], None] = time.sleep,
-        *, database: stack.Database = apps.SHARED_RESOURCE_OWNER.database,
+        *, database: stack.Database = apps.APPS[0].database,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.database = database

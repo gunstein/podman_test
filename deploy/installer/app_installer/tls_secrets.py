@@ -238,13 +238,13 @@ def adopt_volume():
     certificate. It reads the volume through tls.py, which stays for this
     and for going back.
     """
-    if any(has(name) for name in SERVED) or not exists('volume', tls.VOLUME) or not tls.present('server.crt'):
+    if any(has(name) for name in SERVED) or not exists('volume', apps.NGINX_TLS_VOLUME) or not tls.present('server.crt'):
         return False
     for name in ('ca.crt', 'server.crt', 'server.key', 'ca.key', 'request.key'):
         if tls.present(name):
             # stdout holds a private key for the *.key files: never show it in an error.
             store(name, run('podman', 'run', '--rm', '--network', 'none', '--user', '101:101', '--volume',
-                            f'{tls.VOLUME}:{tls.DIRECTORY}:ro', '--entrypoint', 'cat', apps.PROXY_IMAGE,
+                            f'{apps.NGINX_TLS_VOLUME}:{tls.DIRECTORY}:ro', '--entrypoint', 'cat', apps.PROXY_IMAGE,
                             f'{tls.DIRECTORY}/{name}', secret_output=True).stdout)
     store('tls-mode', tls.mode() + '\n')
     return True
@@ -275,7 +275,7 @@ def provision(hostnames=None):
     install and deploy-promoted call it before shared-proxy starts, and a
     True result means a running nginx must restart. In local mode it is the
     volume's init container: a demo CA, and a leaf for hostnames (the
-    shared-resource app's first), each replaced when missing, within 30
+    identity app's first), each replaced when missing, within 30
     days of its end or no longer fitting. In provided mode it issues
     nothing: the files tls-install put there must all exist.
     """
@@ -300,8 +300,8 @@ def provision(hostnames=None):
 
 
 def ordered(hostnames):
-    """{app name: hostname} as the list provision() takes: the shared-resource app's first, no repeats."""
-    first = hostnames[apps.SHARED_RESOURCE_OWNER.name]
+    """{app name: hostname} as the list provision() takes: the identity app's first, no repeats."""
+    first = hostnames[apps.IDENTITY_APP.name]
     return [first] + [name for name in dict.fromkeys(hostnames.values()) if name != first]
 
 

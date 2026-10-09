@@ -81,7 +81,7 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
 
 def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                      publish_address="", db_password=None, *,
-                     database: stack.Database = apps.SHARED_RESOURCE_OWNER.database, target=None):
+                     database: stack.Database = apps.APPS[0].database, target=None):
     """Install one database's PostgreSQL workload.
 
     publish_address publishes the replication port on the LAN; only
@@ -148,7 +148,7 @@ def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_m
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         manifests=("shared-proxy.yaml", "config.yaml"), units=("shared-proxy.kube",),
-        obsolete=(apps.SHARED_RESOURCE_OWNER.names.resource("nginx-data"),),
+        obsolete=(apps.NGINX_TLS_VOLUME,),
         capability="shared proxy", mapping={},
         variables=proxy_variables(publish_address, service_port, applications), target=target,
     )

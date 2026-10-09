@@ -37,3 +37,68 @@ class CLITests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(main(['replication-apps']), 0)
         self.assertEqual(json.loads(output.getvalue()), ['todo', 'notes', 'keycloak'])
+
+
+def run(argv):
+    """main(argv): its exit code, stdout and stderr."""
+    with contextlib.redirect_stdout(io.StringIO()) as output, contextlib.redirect_stderr(io.StringIO()) as error:
+        code = main(argv)
+    return code, output.getvalue(), error.getvalue()
+
+
+class UninstallCLITests(unittest.TestCase):
+    """E3: what uninstall says it kept, for each choice of what to remove."""
+
+    def test_each_choice_says_what_it_kept_or_removed(self):
+        for options, said in (([], 'Use --remove-data to delete them permanently'),
+                              (['--remove-data'], 'Backup volumes todo-postgres-backup, notes-postgres-backup, '
+                                                  'keycloak-postgres-backup were preserved'),
+                              (['--remove-data', '--remove-backups'], 'nothing of this install can be restored')):
+            with self.subTest(options), patch('app_installer.uninstall.uninstall', return_value=True) as remove:
+                code, output, error = run(['uninstall', *options])
+            self.assertEqual((code, output), (0, '{"changed": true}\n'))
+            self.assertIn(said, error)
+            self.assertEqual(remove.call_args.args[0], '--remove-data' in options)
+            self.assertEqual(remove.call_args.args[2], '--remove-backups' in options)
+
+
+class BackupAndTlsCLITests(unittest.TestCase):
+    """E3: the backup and tls- commands that print text, and their failures."""
+
+    def test_create_prints_one_line_per_database(self):
+        databases = [type('D', (), {'name': name})() for name in ('todo', 'notes')]
+        with patch('app_installer.backup.installed_databases', return_value=databases), \
+                patch('app_installer.backup.create', side_effect=['base-1', 'base-2']):
+            code, output, _ = run(['backup', 'create'])
+        self.assertEqual((code, output), (0, 'todo: verified base backup base-1\nnotes: verified base backup base-2\n'))
+
+    def test_nightly_keeps_at_least_a_day_and_reports_a_tls_problem(self):
+        with patch('app_installer.backup.nightly') as nightly:
+            code, _, error = run(['backup', 'nightly', '--keep-days', '0'])
+        self.assertEqual(code, 1)
+        self.assertIn('--keep-days must keep at least one day', error)
+        nightly.assert_not_called()
+        with patch('app_installer.backup.nightly', return_value=(['todo: ok'], [])), \
+                patch('app_installer.tls_store.module', side_effect=RuntimeError('podman is gone')):
+            code, output, error = run(['backup', 'nightly', '--keep-days', '7'])
+        self.assertEqual(code, 1)
+        self.assertEqual(output, 'todo: ok\n')
+        self.assertIn('ERROR: cannot check the nginx certificate: podman is gone', error)
+
+    def test_tls_status_without_a_certificate_and_renew_on_the_volume(self):
+        module = type('M', (), {'check': staticmethod(lambda: ([], []))})
+        with patch('app_installer.tls_store.module', return_value=module):
+            self.assertEqual(run(['tls-status'])[:2], (0, 'nginx has no certificate yet\n'))
+        with patch('app_installer.tls_store.module', return_value=module), \
+                patch('app_installer.tls_store.secret_storage', return_value=False), \
+                patch('app_installer.tls_secrets.renew') as renew:
+            code, _, error = run(['tls-renew'])
+        self.assertEqual(code, 1)
+        self.assertIn('restart shared-proxy.service renews the demo certificate', error)
+        renew.assert_not_called()
+
+    def test_down_says_when_nothing_was_installed(self):
+        with patch('app_installer.kube_play.down', return_value=False):
+            code, _, error = run(['down', '--rendered-manifest-dir', '/nowhere'])
+        self.assertEqual(code, 0)
+        self.assertIn('No installed development manifests were found under /nowhere', error)

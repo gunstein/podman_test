@@ -582,7 +582,9 @@ between them is not a goal: each app should read on its own.
 The fakes check commands and order, not real SQL or Podman behaviour; CI's
 full-stack job and acceptance cover that.
 
-- **E3. Installer CLI branches.** *[new]* Measure the branch coverage of
+- **E3. Installer CLI branches.** *[new]* *[done 2026-10-09]* Branch coverage
+  now 93 % (`app_installer/cli.py`) and 99 % (`app_dr_host/cli.py`), from 78 %
+  and 61 %; `deploy/dr/tests/test_dr_cli.py` and `deploy/installer/tests/test_cli.py`. Measure the branch coverage of
   `app_installer/cli.py` and `app_dr_host/cli.py` again (the last figure, 46
   %, is from before S1), and test the commands and failure paths that are
   missing through the CLI.

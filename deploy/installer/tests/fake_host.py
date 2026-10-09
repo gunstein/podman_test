@@ -85,6 +85,7 @@ class FakeHost:
                  unit_directory=None, source=None):
         self.secrets = {name: password for name in secrets.installed_names()}
         self.volumes = set()
+        self.volumes_in_use = set()
         # The files of the TLS volume todo-nginx-data, if a test gives it some ({name: text}).
         self.volume_files = {}
         self.keys_made = 0
@@ -150,6 +151,11 @@ class FakeHost:
             return (0, self.secrets.pop(argv[3]) and '') if argv[3] in self.secrets else (1, '')
         if argv[:3] == ['podman', 'volume', 'exists']:
             return int(argv[3] not in self.volumes), ''
+        if argv[:3] == ['podman', 'volume', 'rm']:
+            return (0, self.volumes.discard(argv[3]) or '') if argv[3] in self.volumes else (1, '')
+        if argv[:4] == ['podman', 'ps', '--all', '--quiet'] and argv[-1].startswith('volume='):
+            # The containers that use a volume, from volumes_in_use.
+            return 0, 'c0ffee\n' if argv[-1].removeprefix('volume=') in self.volumes_in_use else ''
         if argv[:2] == ['podman', 'run'] and '--volume' in argv and \
                 argv[argv.index('--volume') + 1].startswith('todo-nginx-data:'):
             # tls.py's throwaway containers on the TLS volume: only test -s and cat.

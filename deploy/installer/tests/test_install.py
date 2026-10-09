@@ -180,7 +180,8 @@ class InstallTests(unittest.TestCase):
                 self.assertEqual(roles.call_count, 2)
 
     def test_down_uses_reverse_order_and_only_existing_files(self):
-        with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run:
+        with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run, \
+                patch.object(secrets, 'remove_kube_volumes'):
             root = Path(temp)
             for name in ('shared-proxy', 'todo-app', 'todo-postgres'):
                 (root / (name + '.yaml')).touch()
@@ -194,7 +195,8 @@ class InstallTests(unittest.TestCase):
     def test_down_uses_the_recorded_yaml_after_its_file_is_gone(self):
         # The next render replaces the whole directory, so a file up played
         # may be gone (an app left out of the selection); its pods must still go.
-        with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run:
+        with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run, \
+                patch.object(secrets, 'remove_kube_volumes'):
             root = Path(temp)
             state = root / '.state.json'
             state.write_text(json.dumps({'fingerprint': 'x', 'teardown': ['kind: Pod # notes-app']}))
@@ -204,7 +206,8 @@ class InstallTests(unittest.TestCase):
             self.assertFalse(state.exists())
 
     def test_down_reports_when_nothing_was_installed(self):
-        with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run:
+        with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run, \
+                patch.object(secrets, 'remove_kube_volumes'):
             root = Path(temp)
             self.assertFalse(kube_play.down(root, state_file=root / '.state.json'))
             run.assert_not_called()
@@ -227,7 +230,7 @@ class InstallTests(unittest.TestCase):
             self.assertTrue(kube_play.up(directory, (apps.APPS[0],)))
             self.assertTrue(settings.DEV_STATE_FILE.is_file())
 
-            with patch('app_installer.kube_play.run') as run:
+            with patch('app_installer.kube_play.run') as run, patch.object(secrets, 'remove_kube_volumes'):
                 # A different directory argument: down must still find the
                 # pods through the recorded state file, not through this one.
                 self.assertTrue(kube_play.down(Path(temp) / 'unrelated'))
@@ -375,6 +378,10 @@ class UninstallTests(unittest.TestCase):
                 # database volumes and only goes away with --remove-data.
                 self.assertEqual(['podman', 'volume', 'rm', 'todo-nginx-data'] in calls, remove_data)
                 self.assertEqual(['podman', 'volume', 'rm', 'todo-caddy-data'] in calls, remove_data)
+                # The Kube secrets' volumes are copies of secrets: they always go.
+                for name in (apps.APPS[1].kube_secret('backend'), apps.KEYCLOAK_DATABASE.kube_secret,
+                             apps.PROXY_KUBE_TLS_SECRET):
+                    self.assertIn(['podman', 'volume', 'rm', name], calls)
 
     def test_uninstall_turns_the_nightly_backup_off_and_keeps_the_backups(self):
         for name in ('todo-backup.service', 'todo-backup.timer'):
@@ -398,6 +405,7 @@ class UninstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, \
                 patch('app_installer.install.exists', return_value=False), \
                 patch('app_installer.uninstall.exists', return_value=False), \
+                patch('app_installer.secrets.exists', return_value=False), \
                 patch('subprocess.run', side_effect=command), \
                 patch.object(settings, 'DEV_STATE_FILE', Path(temp) / '_unused' / 'dev.json'):
             directory = Path(temp)

@@ -23,6 +23,7 @@ from app_installer import (  # noqa: E402
     install,
     keycloak,
     kube_play,
+    secrets,
     settings,
     uninstall,
 )
@@ -177,7 +178,7 @@ class DevelopmentOrderTests(unittest.TestCase):
                     kube_play.down(directory, state_file=state)
                 recorded = [argv for argv in host.calls if argv[:4] == ['podman', 'kube', 'play', '--down']]
                 self.assertEqual(len(recorded), len(expected))
-                with patch('app_installer.kube_play.run') as run:
+                with patch('app_installer.kube_play.run') as run, patch.object(secrets, 'remove_kube_volumes'):
                     self.assertTrue(kube_play.down(directory, applications, state_file=state))
                 fallback = [Path(call.args[-1]).name for call in run.call_args_list]
                 self.assertEqual(fallback, expected)

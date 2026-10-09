@@ -24,6 +24,41 @@ def keycloak_secret_mapping():
     return {apps.KEYCLOAK_KUBE_ADMIN_SECRET: {"bootstrap-admin-password": apps.KEYCLOAK_ADMIN_SECRET}}
 
 
+def kube_mappings():
+    """The mappings above for every pod of a full install: each app's two pods, Keycloak's two."""
+    mapping = {}
+    for app in apps.APPS:
+        mapping.update(postgres_secret_mapping(app.database))
+        mapping.update(application_secret_mapping(app))
+    mapping.update(postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
+    mapping.update(keycloak_secret_mapping())
+    return mapping
+
+
+# podman kube play copies the files of each `secret:` volume, a password or
+# nginx's key in plain text, into a named volume called after the Kube
+# secret. It rewrites them at every play, so a rotated secret reaches the
+# pod, but keeps the volume after kube down and after the secret is removed.
+def kube_volume_names():
+    """The names such a volume can have: every Kube secret of a full install, nginx's TLS secret included."""
+    return (*kube_mappings(), apps.PROXY_KUBE_TLS_SECRET)
+
+
+def remove_kube_volumes():
+    """Remove each Kube secret's volume that no container uses any more; True if one went.
+
+    A pod that still runs (another app's dev pod, a Quadlet service) keeps
+    its volume; podman kube play makes it again at the next play.
+    """
+    removed = False
+    for name in kube_volume_names():
+        if exists("volume", name) and not run("podman", "ps", "--all", "--quiet",
+                                              "--filter", f"volume={name}").stdout.strip():
+            run("podman", "volume", "rm", name)
+            removed = True
+    return removed
+
+
 def read(name):
     """The value of a raw Podman secret. Only for passing on to another secret, never for printing."""
     # Strip only trailing newlines, as the value was stored; keep other whitespace.

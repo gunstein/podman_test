@@ -103,6 +103,7 @@ class PVCStorageTests(unittest.TestCase):
         self.assertEqual(yaml.safe_load(replication.data_claim(apps.APPS[0].database, target)), canonical)
 
     def test_uninstall_preserves_database_and_tls_data_by_default_and_never_removes_backup(self):
+        from app_installer import secrets as kube_secrets
         from app_installer import settings, uninstall
         for remove_data in (False, True):
             with tempfile.TemporaryDirectory() as directory, \
@@ -116,10 +117,11 @@ class PVCStorageTests(unittest.TestCase):
                 volumes = [argv[-1] for argv in commands if argv[:3] == ["podman", "volume", "rm"]]
                 # todo-nginx-data holds the demo CA and is documented as persistent
                 # like the database volumes, so it only goes with --remove-data too.
+                # The Kube secrets' volumes are copies of secrets and always go (V1).
                 self.assertEqual(set(volumes),
                                  ({"todo-postgres-data", "notes-postgres-data", "keycloak-postgres-data",
-                                   "todo-nginx-data", "todo-caddy-data", "todo-kube-proxy-tls-secret"}
-                                  if remove_data else set()))
+                                   "todo-nginx-data", "todo-caddy-data"} if remove_data else set())
+                                 | set(kube_secrets.kube_volume_names()))
                 for backup in ("todo-postgres-backup", "notes-postgres-backup", "keycloak-postgres-backup"):
                     self.assertNotIn(backup, volumes)
                 secrets = [argv[-1] for argv in commands if argv[:3] == ["podman", "secret", "rm"]]

@@ -8,9 +8,7 @@ from .quadlet import systemctl
 
 # caddy-data is a retired Caddy-based proxy's volume name; kept here so a host
 # still carrying it from before the nginx migration gets it cleaned up too.
-# podman kube play keeps a secret volume's files in a named volume called after
-# the Kube secret, and it stays after kube down: nginx's key is in it too.
-TLS_VOLUMES = (apps.NGINX_TLS_VOLUME, 'todo-caddy-data', apps.PROXY_KUBE_TLS_SECRET)
+TLS_VOLUMES = (apps.NGINX_TLS_VOLUME, 'todo-caddy-data')
 QUADLET_FILES = (apps.NETWORK + '.network',
                  *(app.database.volume(purpose) + '.volume' for app in apps.APPS
                    for purpose in ('data', 'backup')),
@@ -25,11 +23,7 @@ CONTAINERS = (*(app.names.resource(component) for app in apps.APPS
                 for component in ('frontend', 'backend', 'migrate', 'db-grants', 'db-setup', 'postgres')),
               'nginx', 'keycloak')
 PODS = tuple(workload.pod for workload in reversed(apps.workloads()))
-MAPPINGS = {name: fields for app in apps.APPS
-            for name, fields in {**secrets.postgres_secret_mapping(app.database),
-                                 **secrets.application_secret_mapping(app)}.items()}
-MAPPINGS.update(secrets.postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
-MAPPINGS.update(secrets.keycloak_secret_mapping())
+MAPPINGS = secrets.kube_mappings()
 # nginx's TLS secrets (tls_secrets.py) go with the data, as the TLS volume does.
 SECRETS = tuple(dict.fromkeys([*MAPPINGS, *(source for fields in MAPPINGS.values()
                                           for source in fields.values()),
@@ -58,7 +52,8 @@ def uninstall(remove_data=False, quadlet_dir=None):
     a DR node and needs a person to decide. The nightly backup timer goes;
     database volumes, TLS volumes and secrets are kept unless remove_data is
     True, and backup volumes always, so reinstalling keeps the
-    data and passwords. Returns True if anything was removed.
+    data and passwords. The Kube secrets' volumes always go
+    (secrets.remove_kube_volumes). Returns True if anything was removed.
     """
     directory = Path(quadlet_dir or settings.QUADLET_DIR)
     install.require_single_host('uninstall')
@@ -84,6 +79,9 @@ def uninstall(remove_data=False, quadlet_dir=None):
         changed = exists('container', name) or changed
         run('podman', 'rm', '--force', '--ignore', name)
     changed = remove('network', apps.NETWORK) or changed
+    # The Kube secrets' volumes are copies of secrets, not data: they go now,
+    # and the next install's kube play makes them again from the secrets.
+    changed = secrets.remove_kube_volumes() or changed
     changed = unlink(settings.DEV_STATE_FILE) or changed
     if remove_data:
         for app in apps.APPS:

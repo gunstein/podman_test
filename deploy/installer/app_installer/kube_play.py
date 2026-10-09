@@ -1,9 +1,12 @@
-"""Direct developer lifecycle. No systemd units and no forced volume removal."""
+"""Direct developer lifecycle. No systemd units and no forced volume removal.
+
+Only the Kube secrets' volumes go at down (secrets.remove_kube_volumes): copies, not data.
+"""
 import hashlib
 import json
 from pathlib import Path
 
-from . import apps, settings
+from . import apps, secrets, settings
 from .commands import exists, run
 from .install import setup_roles
 
@@ -105,4 +108,6 @@ def down(rendered_manifest_dir, applications=None, state_file=None):
         applications = apps.APPS if applications is None else tuple(applications)
         torn_down = _tear_down([directory / workload.yaml for workload in reversed(apps.workloads(applications))])
     state_file.unlink(missing_ok=True)
+    # kube down keeps the copies of the passwords kube play made; they go too.
+    secrets.remove_kube_volumes()
     return torn_down

@@ -105,8 +105,9 @@ nginx runs in that container. To mount them, `podman kube play` (checked with
 Podman 4.9) writes the files into a named volume called after the Kube
 secret, `todo-kube-proxy-tls-secret`, and rewrites it at every play. That
 volume stays after `kube down`, so the key is on disk there as well as in
-the secret store, both under the same Podman user; `uninstall --remove-data`
-removes it with the secrets. The installer builds the JSON from the four raw
+the secret store, both under the same Podman user, while the stack is
+installed; `uninstall` and the development `down` remove it with the pods,
+as every Kube secret's volume ([Secrets](SECRETS.md#a-kube-secret-also-lives-in-a-volume)). The installer builds the JSON from the four raw
 secrets (`publish()`) and replaces it when one of them changed.
 
 ### Step 4: a changed secret needs a new container

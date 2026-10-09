@@ -79,10 +79,12 @@ the host's own address, never a wildcard (`0.0.0.0` or `::`): the template
 always keeps the fixed loopback binding alongside it, and a wildcard would try
 to bind the same port twice.
 
-Uninstall preserves database/backup volumes and credentials by default, removes
-TLS state, and refuses hosts with replication secrets or DR/backup markers.
-`--remove-data` explicitly removes database data and its credentials, never the
-backup volume.
+Uninstall preserves database/backup volumes, nginx's TLS state and credentials
+by default, and refuses hosts with replication secrets or DR/backup markers.
+It always removes the Kube secrets' volumes, the plain-text copies `podman kube
+play` makes of mounted secrets ([Secrets](../../docs/SECRETS.md#a-kube-secret-also-lives-in-a-volume)).
+`--remove-data` explicitly removes database data, TLS state and the credentials,
+never the backup volume.
 
 ## Nightly backups
 

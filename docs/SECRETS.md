@@ -59,6 +59,23 @@ secret `todo-kube-proxy-tls-secret`, which `podman kube play` mounts as a
 read-only directory. They are host-local: the DR copy never carries them,
 and each host makes its own key. The demo CA's key and a waiting key are
 never in nginx's Kube secret.
+### A Kube secret also lives in a volume
+
+`podman kube play` does not mount a Kube secret straight from the secret
+store. It copies the files of each `secret:` volume into a named volume
+called after the Kube secret (`todo-kube-backend-secret`,
+`todo-kube-postgres-secret`, `todo-kube-proxy-tls-secret` and so on: every
+name `secrets.kube_volume_names()` lists), with the password or key in plain
+text, and mounts that. It rewrites the files at every play, so a restarted
+pod sees a rotated value. But the volume stays after `kube down`, after the
+pod is gone and after the secret itself is removed (checked with Podman 4.9).
+So the installer removes it with the pods: `uninstall` always (it is a copy,
+not data; the next install makes it again), and the development `down`
+(`dev-down.sh`) for each such volume no container uses any more. The
+Keycloak pod takes its passwords as environment variables (`secretKeyRef`),
+which leave no volume. `podman volume ls` shows the copies while the stack
+runs.
+
 For an organization-PKI variant, deploy the public certificate as a reviewed
 configuration file and deliver the node's private key as a Podman secret. Do
 not copy an organization root private key to application hosts.
@@ -77,6 +94,7 @@ controlled rotation therefore needs this order:
    install creates it again from the new value; while the two differ, the
    installer stops and names the Kube secret.
 4. Recreate the affected containers and verify readiness and authentication.
+   The Kube secret's volume (above) needs nothing: the next play rewrites it.
 5. Retire the old credential only after all consumers are verified.
 
 Automate that workflow per credential; a blind restart of the whole stack is

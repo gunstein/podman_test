@@ -32,7 +32,8 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 ## Order
 
 1. High up, small: V1 (secret files left in volumes). Owner's request,
-   2026-10-09.
+   2026-10-09. S5 (the installer's topology in one table) is probably the
+   next larger piece of work (owner, 2026-10-09).
 2. Then, so a failover does not lose weeks of data: T3 (fencing without the
    Oslo hypervisor, a procedure). When to
    start is the owner's call.
@@ -503,6 +504,91 @@ between them is not a goal: each app should read on its own.
   its own and can be tested without the rest of the lifecycle. The one
   candidate today is `install.install()` (118 lines), into named steps, if
   that reads better.
+- **S5. Make the installer's topology concrete.** *[simplify]* Probably the
+  next piece of work (owner, 2026-10-09). The Python in
+  `deploy/installer/app_installer`, and the DR code that imports it, should
+  be easier to read and maintain, with less repetition and the same
+  behaviour (apart from the YAML renames in task 3). Simple, explicit code
+  over new abstraction; delete what becomes unused; no compatibility
+  aliases. Read AGENTS.md, docs/ARCHITECTURE.md and the installer README
+  first. One commit per task. Phase 1, then push and report; phase 2 only
+  when asked.
+  *Phase 1, the installer:*
+  0. *Lock in the behaviour first.* A test that pins the start and stop
+     order of all seven workloads (pods, units, services and Kube YAML
+     files, for all apps and for one selected app), run on the unchanged
+     code; and the rendered Kube YAML and Quadlet units of build mode and of
+     an offline bundle (`render-kube-runtime.sh`,
+     `python3 -m app_installer.bundle`), kept to diff against after every
+     task.
+  1. *One ordered workload table.* The seven workloads and their order are
+     written out by hand in about ten places: `install.services()`,
+     `install.offline_files()` and the start sequence in `install.install()`;
+     the manifest list, pod list, play order, teardown list and `down`
+     fallback in `kube_play.py`; `uninstall.PODS` and its name list;
+     `apps.services()`. Replace them with one function in `apps.py` that
+     returns the workloads in start order (stop is the reverse), each with
+     its pod name (also its unit and service base name), its Kube YAML files
+     and whether starting waits for it to be healthy, for example a frozen
+     dataclass `Workload(pod, manifests, wait_healthy=False)` and
+     `workloads(applications=APPS)`. Keep explicit: `setup_roles` after each
+     database is healthy and again after its app starts, `keycloak.configure`,
+     the proxy's published ports, replication publication, and nginx's TLS
+     secrets before the proxy starts (`tls_secrets.provision`). The step-0
+     test passes unchanged. Add a test of `deploy/quadlet/*.kube.j2` against
+     the table: every service in `Requires=` and `After=` starts earlier, and
+     `Yaml=` and `ConfigMap=` name that workload's own files. The units stay
+     written out literally.
+  2. *Name the shared resources directly.* Replace the names derived through
+     `SHARED_RESOURCE_OWNER` with named constants of unchanged value: the
+     proxy image and archive, the shared `config.yaml`, the `todo-nginx-data`
+     TLS volume (`tls.VOLUME`, `tls.recorded_hostnames`) and nginx's TLS
+     secrets (`apps.PROXY_TLS_SECRETS`, `apps.PROXY_KUBE_TLS_SECRET`). Count
+     the uses again first (23 outside the tests before the TLS secrets).
+     Keep one clearly named constant for the app whose public hostname is
+     also Keycloak's and the OIDC issuer's (`TARGET_EXTERNAL_HOSTNAME`).
+  3. *No todo special case in `stack.Names.manifest`.* todo's Kube YAML
+     files have no prefix (`postgres.yaml`, `config.yaml`), notes' do; make
+     the rule uniform. Inventory first: the shared proxy reads
+     `config.yaml`; the units name these files (`todo-postgres.kube.j2`,
+     `todo-app.kube.j2`, `shared-proxy.kube.j2`); so do tests
+     (`test_kube_name_contract.py`, `test_fixed_layout.py`), the DR code and
+     the docs. Bump `target_render.BUNDLE_FORMAT_VERSION`; an install
+     removes the old file names from the kube-runtime directory. Rename only
+     Kube YAML files, never containers, pods, units, services, secrets or
+     volumes. If the blast radius is larger, stop and report before pushing.
+  4. *`install.install()` in named steps* (the S4 candidate): checks before
+     anything changes, writing definitions (returning what must restart),
+     starting in order, and finishing (Keycloak, the SourcePath check, the
+     target record, the backup timer). The docstring stays the description
+     of the whole flow.
+  5. *Small cleanups.* `App.kube_secret(component)`, so `secrets.py` stops
+     reaching through `app.names`; remove the old state-file format in
+     `kube_play._recorded` (development only); remove the unused
+     `STANDBY_CA_FILE` in `replication_tls.py`; if `install.services()`
+     survives task 1, rename it so it no longer shares a name with
+     `apps.services()`.
+  *Phase 2, the DR code (only when asked):* the workload table in
+  `promoted.py`, in `SHARED_TIER_FILES` in `replication.py` and in
+  `app_backup.py`. Every fencing, promotion, backup, PITR and
+  standby-rebuild safety check stays exactly as it is.
+  *Do not change:* the `App`, `Database` and `Names` registry itself; the
+  legacy `.container` check in `install.preflight` and the old tool names in
+  `install.require_single_host` (safety boundaries); `target_render.load`,
+  its unit variants and cross-checks, and the environment source in
+  `target_render.resolve`; any persistent name (volumes, secrets,
+  containers, units, services); the `quadlet-reference-v1` tag. Python 3.9,
+  no new dependencies, small Bash scripts, no secrets in Git.
+  *Before every push:* the whole unittest suite (on Python 3.9 too if
+  available), ruff, pyright, shellcheck on touched scripts, and the render
+  diff against step 0: byte-identical apart from the task 3 renames. Update
+  ARCHITECTURE.md, LEARNING-GUIDE.md and the READMEs where they name changed
+  functions or files; never the acceptance verdict in PROJECT.md.
+  *Report:* the starting commit, what changed per task, line counts of
+  `app_installer` before and after, the test, ruff and pyright results, the
+  render diff, anything skipped or stopped on and why, and that the lab
+  acceptance was not re-run. Push to `feature/podman-kube`; no pull request
+  unless asked.
 ## Tests and CI
 
 The fakes check commands and order, not real SQL or Podman behaviour; CI's

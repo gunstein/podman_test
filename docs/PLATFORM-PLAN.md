@@ -375,5 +375,22 @@ and what to do.
   longer requires the todo app. Bundle format version 5.
 - Clients and the lab must map `auth.test` too (`/etc/hosts` lines in the
   guides and CI). Name guard: 52 known files left.
-- Understandability check: not yet done; to be run by a fresh agent before
-  phase 2.
+- Understandability check (fresh agent, at c22a980): **YELLOW**. The
+  installer reads top to bottom without an internal framework; a small
+  change (Keycloak's root redirect) was local and its test easy to find.
+  The friction is scattered knowledge: adding an app means finding copied
+  lists in Python, `.kube` templates, shell scripts, the lab tool, CI and
+  tests. Its findings and where they go:
+  1. Hand-kept lists in `wait-ready.sh`, `preflight.sh` and `acceptance.py`
+     (phase 4e; proposed to move right after phase 3).
+  2. The bundle's baseline fixtures were ignored by Git, so a clean checkout
+     failed the baseline: fixed, and a test now refuses an ignored fixture.
+  3. `install.py`/`workloads.py`: comparison and writing are mixed, and the
+     shared ConfigMap needs the `configs_before` workaround (phase 2/3,
+     where the model makes each workload's files explicit).
+  4. Per-app `.kube` copies (phase 4d).
+  5. Keycloak setup waits for app readiness; the app check (`/api/...`
+     returns a list) is implicit (phase 4c).
+  Also noted: setup roles and migrations assume Python modules (phase 5
+  contract), checksum and shell preflight run only in `install.sh`, and
+  the proxy entrypoint tests need a writable `/tmp`.

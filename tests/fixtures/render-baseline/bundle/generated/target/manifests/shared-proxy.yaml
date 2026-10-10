@@ -1,0 +1,268 @@
+# nginx's TLS files come from Podman secrets: the Kube secret
+# platform-kube-proxy-tls-secret, which the installer makes (app_installer/tls_secrets.py),
+# is mounted read-only at /var/lib/platform-tls, one file per data key.
+#
+# The TLS volume platform-nginx-data is kept for going back (app_installer/tls.py,
+# docs/TLS.md "Switching back"). Its three parts are commented out with "#~ ":
+# this claim, the pod's nginx-tls init container and the tls-data claim at the
+# end. To use the volume again: remove "#~ " from those lines, delete the lines
+# between "# BEGIN secret" and "# END secret", and set
+# settings.NGINX_TLS_STORAGE = "volume". tests/test_proxy_configuration.py
+# checks that the result is a valid volume manifest.
+#~ apiVersion: v1
+#~ kind: PersistentVolumeClaim
+#~ metadata:
+#~   name: platform-nginx-data
+#~   annotations:
+#~     volume.podman.io/uid: "101"
+#~     volume.podman.io/gid: "101"
+#~ ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shared-nginx-env
+data:
+  PLATFORM_TLS_HOSTNAME: "${TARGET_IDENTITY_HOSTNAME}"
+  APP_TLS_HOSTNAMES: "${TARGET_TODO_HOSTNAME} ${TARGET_NOTES_HOSTNAME}"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shared-nginx-config
+data:
+  # Headers for every response, Keycloak's pages included.
+  security-headers.conf: |
+    add_header X-Content-Type-Options nosniff always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+  # Headers for the apps' own pages and API. Keycloak under /auth/ sends its own
+  # Content-Security-Policy and a stricter Referrer-Policy (no-referrer) for its
+  # login pages, so these are not added there.
+  # nginx drops inherited add_header lines in a location that has its own, so
+  # this file repeats the shared ones.
+  # connect-src also names the identity origin: every app logs in at the one
+  # Keycloak origin (KC_HOSTNAME) to share its SSO cookie, so an app on another
+  # hostname fetches its tokens from there.
+  app-headers.conf: |
+    include /etc/platform-nginx/security-headers.conf;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://${TARGET_IDENTITY_HOSTNAME}:8443; frame-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'" always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+  nginx.conf: |
+    worker_processes auto;
+    error_log /dev/stderr notice;
+    pid /tmp/nginx.pid;
+
+    events { worker_connections 1024; }
+
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        access_log /dev/stdout;
+        client_body_temp_path /tmp/client_temp;
+        proxy_temp_path /tmp/proxy_temp;
+        fastcgi_temp_path /tmp/fastcgi_temp;
+        uwsgi_temp_path /tmp/uwsgi_temp;
+        scgi_temp_path /tmp/scgi_temp;
+        sendfile on;
+        keepalive_timeout 65;
+        server_tokens off;
+
+        include /tmp/podman-resolver.conf;
+        upstream shared_keycloak { zone shared_keycloak 64k; server keycloak:8080 resolve; }
+        upstream todo_frontend { zone todo_frontend 64k; server todo-app:8080 resolve; }
+        upstream todo_backend { zone todo_backend 64k; server todo-app:8000 resolve; }
+        upstream notes_frontend { zone notes_frontend 64k; server notes-app:8080 resolve; }
+        upstream notes_backend { zone notes_backend 64k; server notes-app:8000 resolve; }
+        server {
+            listen 8080 default_server;
+            listen 8443 ssl default_server;
+            server_name ${TARGET_IDENTITY_HOSTNAME};
+            ssl_certificate /var/lib/platform-tls/server.crt;
+            ssl_certificate_key /var/lib/platform-tls/server.key;
+            ssl_protocols TLSv1.2 TLSv1.3;
+            ssl_session_tickets off;
+            include /etc/platform-nginx/security-headers.conf;
+
+            location /auth/ {
+                proxy_pass http://shared_keycloak;
+                include /etc/nginx/platform-proxy-headers.conf;
+            }
+            location / {
+                return 404;
+            }
+        }
+        server {
+            listen 8080;
+            listen 8443 ssl;
+            server_name ${TARGET_TODO_HOSTNAME};
+            ssl_certificate /var/lib/platform-tls/server.crt;
+            ssl_certificate_key /var/lib/platform-tls/server.key;
+            ssl_protocols TLSv1.2 TLSv1.3;
+            ssl_session_tickets off;
+            root /usr/share/nginx/html;
+            index index.html;
+            include /etc/platform-nginx/security-headers.conf;
+
+            location /auth/ {
+                proxy_pass http://shared_keycloak;
+                include /etc/nginx/platform-proxy-headers.conf;
+            }
+            location /api/ {
+                proxy_pass http://todo_backend;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
+            }
+            location = /health {
+                proxy_pass http://todo_backend;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
+            }
+            location = /ready {
+                proxy_pass http://todo_backend;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
+            }
+            location / {
+                proxy_pass http://todo_frontend;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
+            }
+        }
+        server {
+            listen 8080;
+            listen 8443 ssl;
+            server_name ${TARGET_NOTES_HOSTNAME};
+            ssl_certificate /var/lib/platform-tls/server.crt;
+            ssl_certificate_key /var/lib/platform-tls/server.key;
+            ssl_protocols TLSv1.2 TLSv1.3;
+            ssl_session_tickets off;
+            root /usr/share/nginx/html;
+            index index.html;
+            include /etc/platform-nginx/security-headers.conf;
+
+            location /auth/ {
+                proxy_pass http://shared_keycloak;
+                include /etc/nginx/platform-proxy-headers.conf;
+            }
+            location /api/ {
+                proxy_pass http://notes_backend;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
+            }
+            location = /health {
+                proxy_pass http://notes_backend;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
+            }
+            location = /ready {
+                proxy_pass http://notes_backend;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
+            }
+            location / {
+                proxy_pass http://notes_frontend;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
+            }
+        }
+    }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: shared-proxy
+  labels:
+    app.kubernetes.io/name: shared-proxy
+    app.kubernetes.io/component: proxy
+  annotations:
+#~     io.podman.annotations.pids-limit/nginx-tls: "128"
+    io.podman.annotations.pids-limit/nginx: "128"
+spec:
+  restartPolicy: Never
+#~   # nginx-tls is the only container that writes the TLS volume: on every pod
+#~   # start it issues or renews the demo certificate (local mode) or checks the
+#~   # provided one, then exits. nginx mounts the volume read-only
+#~   # (proxy-entrypoint.sh, PLATFORM_TLS_ROLE). tls-request and tls-install write
+#~   # through their own throwaway containers (app_installer.tls), never nginx.
+#~   initContainers:
+#~     - name: nginx-tls
+#~       image: "localhost/platform-proxy:m12"
+#~       imagePullPolicy: Never
+#~       args: ["true"]
+#~       envFrom:
+#~         - configMapRef:
+#~             name: shared-nginx-env
+#~             optional: false
+#~       env:
+#~         - name: PLATFORM_TLS_ROLE
+#~           value: provision
+#~       volumeMounts:
+#~         - name: tls-data
+#~           mountPath: /var/lib/platform-tls
+#~       resources:
+#~         limits:
+#~           memory: "64Mi"
+#~       securityContext:
+#~         runAsUser: 101
+#~         runAsGroup: 101
+#~         allowPrivilegeEscalation: false
+#~         capabilities:
+#~           drop: [ALL]
+  containers:
+    - name: nginx
+      image: "localhost/platform-proxy:m12"
+      imagePullPolicy: Never
+      args: [nginx, -c, /etc/platform-nginx/nginx.conf, -g, "daemon off;"]
+      ports:
+        - name: http
+          containerPort: 8080
+        - name: https
+          containerPort: 8443
+      envFrom:
+        - configMapRef:
+            name: shared-nginx-env
+            optional: false
+      env:
+        - name: PLATFORM_TLS_ROLE
+          value: serve
+      volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/platform-nginx
+          readOnly: true
+        - name: tls-data
+          mountPath: /var/lib/platform-tls
+          readOnly: true
+      livenessProbe:
+        exec:
+          command: [nginx, -t, -c, /etc/platform-nginx/nginx.conf]
+        initialDelaySeconds: 10
+        periodSeconds: 10
+        timeoutSeconds: 3
+        failureThreshold: 3
+      resources:
+        limits:
+          memory: "128Mi"
+      securityContext:
+        runAsUser: 101
+        runAsGroup: 101
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+  volumes:
+    - name: nginx-config
+      configMap:
+        name: shared-nginx-config
+        optional: false
+        defaultMode: 0444
+    # BEGIN secret
+    # The files nginx serves: tls-mode, ca.crt, server.crt and server.key, never
+    # a CA key. Podman mounts them as root; 0444 lets nginx (user 101) read them.
+    - name: tls-data
+      secret:
+        secretName: "platform-kube-proxy-tls-secret"
+        optional: false
+        defaultMode: 0444
+    # END secret
+#~     - name: tls-data
+#~       persistentVolumeClaim:
+#~         claimName: platform-nginx-data

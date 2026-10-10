@@ -7,6 +7,8 @@ venv/
 *.log
 htmlcov/
 generated/
+# The render baseline pins a bundle's generated/ directory (tests/render_baseline.py).
+!tests/fixtures/render-baseline/bundle/generated/
 __pycache__/
 *.py[cod]
 .env

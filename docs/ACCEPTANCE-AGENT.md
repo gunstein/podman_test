@@ -194,7 +194,7 @@ Run the Todo/Notes two-VM acceptance. Follow docs/ACCEPTANCE-AGENT.md Part C
 exactly, with docs/ACCEPTANCE.md as the phase sequence.
 
 Mode: NEW clean run
-Revision to test: <full 40-char commit SHA on feature/podman-kube>
+Revision to test: <full 40-char commit SHA on the branch under test, e.g. feature/platform>
 CI on that revision: <green | red | unknown>
 Run ID: <e.g. 2026-09-25-agent-1>
 

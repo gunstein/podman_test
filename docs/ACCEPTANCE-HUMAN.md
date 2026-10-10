@@ -18,7 +18,7 @@ anything that is missing.
 On the client, in the checkout, at the revision to test (CI green on it):
 
 ```bash
-git switch feature/podman-kube && git pull && git status --short   # must print nothing
+git switch feature/platform && git pull && git status --short   # must print nothing
 python3 deploy/scripts/lab/acceptance.py --run 2026-10-07-run-46 run
 ```
 
@@ -32,10 +32,10 @@ then `waiting for ...` until they end.
 
 **Once, at the start, it asks for your sudo password**, before the
 readiness check. The run needs root on the client for the client trust,
-before `03-4a` and before `07-5`: the client must reach `todo.test` and
-`notes.test` at the serving VM (`.102`, then `.108` after the failover) and
+before `03-4a` and before `07-5`: the client must reach `auth.test`,
+`todo.test` and `notes.test` at the serving VM (`.102`, then `.108` after the failover) and
 trust that VM's CA. It runs the lines of C9.4 in the agent guide with that
-sudo access (`sudo -n`, never a prompt), then checks that both names answer
+sudo access (`sudo -n`, never a prompt), then checks that the three names answer
 over trusted HTTPS. Meanwhile it renews sudo's timestamp every minute
 (`sudo -n -v`); when the run ends, stops or you press Ctrl-C, it stops doing
 so and drops the timestamp (`sudo -k`). No one waits at the client, so the

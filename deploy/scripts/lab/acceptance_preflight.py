@@ -105,10 +105,10 @@ def check_local(report, args):
     code, dirty, _ = run(['git', '-C', str(ROOT), 'status', '--porcelain'])
     report.check(code == 0 and not dirty, 'Clean working tree', 'uncommitted changes' if dirty else '')
     code, branch, _ = run(['git', '-C', str(ROOT), 'rev-parse', '--abbrev-ref', 'HEAD'])
-    report.check(branch == 'feature/podman-kube', 'Branch feature/podman-kube', branch, level='WARN')
+    report.check(code == 0 and branch != 'HEAD', 'On a branch', branch, level='WARN')
     if args.revision:
         report.check(head == args.revision, 'HEAD equals kickoff revision', args.revision)
-    code, remote, _ = run(['git', '-C', str(ROOT), 'ls-remote', 'origin', 'refs/heads/feature/podman-kube'])
+    code, remote, _ = run(['git', '-C', str(ROOT), 'ls-remote', 'origin', f'refs/heads/{branch}'])
     report.check(code == 0 and remote.split()[:1] == [head], 'HEAD is pushed to origin',
                  remote.split()[0] if remote else 'could not read origin', level='WARN')
 

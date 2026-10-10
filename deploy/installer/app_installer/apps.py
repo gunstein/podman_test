@@ -13,7 +13,7 @@ class App:
     from the images localhost/todo-backend and localhost/todo-frontend.
     Its PostgreSQL workload is self.database (todo-postgres, todo-db-password,
     the todo_migrator role and so on). An App is not a database: code that
-    works on the replicated database group takes REPLICATED_DATABASES.
+    works on the replicated database group asks Platform.replicated_databases.
     Build an App with keyword arguments only (tests/test_apps.py checks it):
     the string fields are easy to mix up, and the hosts' Python 3.9 has no
     dataclass kw_only.
@@ -74,11 +74,6 @@ class App:
         return self.names.image_archive(component)
 
 
-APPS = (
-    App(name="todo", hostname="todo.test", keycloak_client="todo-frontend", api_collection="todos"),
-    App(name="notes", hostname="notes.test", keycloak_client="notes-frontend", replication_port=5433),
-)
-
 # Keycloak's own public hostname, the OIDC issuer's: every app's login happens
 # there (TARGET_IDENTITY_HOSTNAME in an offline bundle), and nginx's
 # certificate names it first. It belongs to no app; this is its default, which
@@ -121,9 +116,6 @@ PROXY_TLS_SECRETS = {
 PROXY_KUBE_TLS_SECRET = "platform-kube-proxy-tls-secret"
 # The replication CA (key, certificate), shared by both hosts; see replication_tls.py.
 REPLICATION_CA_SECRETS = ("replication-ca-key", "replication-ca-cert")
-# The DR group: every app's database, then Keycloak's. Bootstrap, promotion,
-# backup and rebuild always act on all of them together.
-REPLICATED_DATABASES = tuple(app.database for app in APPS) + (KEYCLOAK_DATABASE,)
 
 
 @dataclass(frozen=True)
@@ -155,42 +147,137 @@ class Workload:
         return (self.yaml, self.config) if self.config else (self.yaml,)
 
 
-def workloads(applications=APPS):
-    """Every workload of these apps, in start order; stop goes the other way.
+@dataclass(frozen=True)
+class Platform:
+    """One installation: its apps, in start order, and Keycloak's default hostname.
 
-    Each app's database first, then Keycloak's, Keycloak, the apps, and
-    nginx last: each starts after what it needs (deploy/quadlet/*.kube.j2
-    say the same in Requires= and After=). A database is healthy before the
-    next workload starts. An app shares its ConfigMap file with its database;
-    nginx's ConfigMaps are in its own shared-proxy.yaml.
+    Every part of the installer and the DR tools that acts on an
+    installation takes one Platform and asks it, instead of reading a list
+    kept in a module. registry() builds today's; an offline bundle carries
+    its own in bundle.json (to_json, from_json), and so does a host it was
+    installed on, so a host never rebuilds it from code.
+    Keycloak's own database is the same for every platform (KEYCLOAK_DATABASE).
     """
-    return (
-        *(Workload(app.database.container, app.database.manifest, app.database.config_manifest,
-                   wait_healthy=True) for app in applications),
-        Workload(KEYCLOAK_DATABASE.container, KEYCLOAK_DATABASE.manifest, KEYCLOAK_DATABASE.config_manifest,
-                 wait_healthy=True),
-        Workload("keycloak", "keycloak.yaml"),
-        *(Workload(app.pod, app.manifest, app.config_manifest) for app in applications),
-        Workload("shared-proxy", "shared-proxy.yaml"),
-    )
+
+    apps: tuple
+    identity_hostname: str
+
+    def __post_init__(self):
+        if not self.apps:
+            raise ValueError("A platform needs at least one app")
+        for field in ("name", "hostname", "keycloak_client", "replication_port"):
+            values = [getattr(app, field) for app in self.apps]
+            if len(values) != len(set(values)):
+                raise ValueError(f"Two apps share a {field}: {values}")
+        if KEYCLOAK_DATABASE.replication_port in (app.replication_port for app in self.apps):
+            raise ValueError(f"Port {KEYCLOAK_DATABASE.replication_port} is Keycloak's database's")
+
+    def app(self, name):
+        """The app with this name."""
+        for app in self.apps:
+            if app.name == name:
+                return app
+        raise ValueError(f"No app named {name!r}; the apps are {', '.join(a.name for a in self.apps)}")
+
+    def select(self, names):
+        """This platform with only the named apps, in their order here; all of them if names is empty."""
+        if not names:
+            return self
+        unknown = set(names) - {app.name for app in self.apps}
+        if unknown:
+            raise ValueError(f"Unknown apps: {', '.join(sorted(unknown))}")
+        return Platform(apps=tuple(app for app in self.apps if app.name in names),
+                        identity_hostname=self.identity_hostname)
+
+    @property
+    def replicated_databases(self):
+        """The DR group: every app's database, then Keycloak's. Bootstrap, promotion,
+        backup and rebuild always act on all of them together."""
+        return tuple(app.database for app in self.apps) + (KEYCLOAK_DATABASE,)
+
+    def workloads(self):
+        """Every workload, in start order; stop goes the other way.
+
+        Each app's database first, then Keycloak's, Keycloak, the apps, and
+        nginx last: each starts after what it needs (deploy/quadlet/*.kube.j2
+        say the same in Requires= and After=). A database is healthy before the
+        next workload starts. An app shares its ConfigMap file with its database;
+        nginx's ConfigMaps are in its own shared-proxy.yaml.
+        """
+        return (
+            *(Workload(app.database.container, app.database.manifest, app.database.config_manifest,
+                       wait_healthy=True) for app in self.apps),
+            Workload(KEYCLOAK_DATABASE.container, KEYCLOAK_DATABASE.manifest, KEYCLOAK_DATABASE.config_manifest,
+                     wait_healthy=True),
+            Workload("keycloak", "keycloak.yaml"),
+            *(Workload(app.pod, app.manifest, app.config_manifest) for app in self.apps),
+            Workload("shared-proxy", "shared-proxy.yaml"),
+        )
+
+    def serving_workloads(self):
+        """The serving tier in start order: workloads() without the databases.
+
+        Keycloak, the apps and nginx: what a database-only standby must not run,
+        and what the DR tools stop around a database restart and start again.
+        """
+        database_pods = {database.container for database in self.replicated_databases}
+        return tuple(workload for workload in self.workloads() if workload.pod not in database_pods)
+
+    def services(self, *, databases=True):
+        """User systemd services in stop order, the reverse of workloads(): nginx first, the databases last.
+
+        With databases=False only the serving tier is returned (serving_workloads()).
+        """
+        return [workload.service for workload in
+                reversed(self.workloads() if databases else self.serving_workloads())]
+
+    def to_json(self):
+        """This platform as plain data, for bundle.json and a host's record."""
+        return {"identity_hostname": self.identity_hostname,
+                "apps": [{"name": app.name, "hostname": app.hostname, "keycloak_client": app.keycloak_client,
+                          "replication_port": app.replication_port, "api_collection": app.api_collection}
+                         for app in self.apps]}
+
+    @classmethod
+    def from_json(cls, data):
+        """The platform to_json wrote; anything else is a ValueError that says what is wrong."""
+        fields = {"name": str, "hostname": str, "keycloak_client": str, "replication_port": int,
+                  "api_collection": str}
+        if not (isinstance(data, dict) and set(data) == {"identity_hostname", "apps"}
+                and isinstance(data["identity_hostname"], str) and isinstance(data["apps"], list)):
+            raise ValueError("A platform needs exactly identity_hostname and a list of apps")
+        for entry in data["apps"]:
+            if not (isinstance(entry, dict) and set(entry) == set(fields)
+                    and all(type(entry[key]) is kind for key, kind in fields.items())):
+                raise ValueError(f"An app needs exactly {', '.join(fields)}: {entry!r}")
+        return cls(apps=tuple(App(**entry) for entry in data["apps"]),
+                   identity_hostname=data["identity_hostname"])
 
 
-def serving_workloads(applications=APPS):
-    """The serving tier in start order: workloads() without the databases.
+def registry(identity_hostname=IDENTITY_HOSTNAME):
+    """Today's platform: the example apps todo and notes. The only list of apps in the code."""
+    return Platform(apps=(
+        App(name="todo", hostname="todo.test", keycloak_client="todo-frontend", api_collection="todos"),
+        App(name="notes", hostname="notes.test", keycloak_client="notes-frontend", replication_port=5433),
+    ), identity_hostname=identity_hostname)
 
-    Keycloak, the apps and nginx: what a database-only standby must not run,
-    and what the DR tools stop around a database restart and start again.
-    """
-    database_pods = {database.container for database in REPLICATED_DATABASES}
-    return tuple(workload for workload in workloads(applications) if workload.pod not in database_pods)
+
+# Until every caller takes a Platform (docs/PLATFORM-PLAN.md, phase 2), the
+# old module-level names come from registry().
+APPS = registry().apps
+REPLICATED_DATABASES = registry().replicated_databases
+
+
+def workloads(applications=None):
+    return Platform(apps=tuple(APPS if applications is None else applications),
+                    identity_hostname=IDENTITY_HOSTNAME).workloads()
+
+
+def serving_workloads(applications=None):
+    return Platform(apps=tuple(APPS if applications is None else applications),
+                    identity_hostname=IDENTITY_HOSTNAME).serving_workloads()
 
 
 def services(applications=None, *, databases=True):
-    """User systemd services in stop order, the reverse of workloads(): nginx first, the databases last.
-
-    applications limits the list to some apps (default: all). With
-    databases=False only the serving tier is returned (serving_workloads()).
-    """
-    selected = APPS if applications is None else applications
-    return [workload.service for workload in
-            reversed(workloads(selected) if databases else serving_workloads(selected))]
+    return Platform(apps=tuple(APPS if applications is None else applications),
+                    identity_hostname=IDENTITY_HOSTNAME).services(databases=databases)

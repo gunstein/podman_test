@@ -14,6 +14,8 @@ from app_installer.apps import (  # noqa: E402
     KEYCLOAK_DATABASE,
     REPLICATED_DATABASES,
     App,
+    Platform,
+    registry,
 )
 from app_installer.stack import Database  # noqa: E402
 
@@ -107,3 +109,50 @@ class AppRegistryTests(unittest.TestCase):
             })
             mappings.append(set(mapping) | {v for fields in mapping.values() for v in fields.values()})
         self.assertFalse(mappings[0] & mappings[1])
+
+
+
+class PlatformTests(unittest.TestCase):
+    def shop(self):
+        return Platform(apps=(App(name="shop", hostname="shop.example.org", keycloak_client="shop-frontend"),),
+                        identity_hostname="login.example.org")
+
+    def test_two_platforms_in_one_process_share_nothing(self):
+        today, shop = registry(), self.shop()
+        self.assertEqual([app.name for app in today.apps], ["todo", "notes"])
+        self.assertEqual([d.name for d in shop.replicated_databases], ["shop", "keycloak"])
+        self.assertEqual([d.name for d in today.replicated_databases], ["todo", "notes", "keycloak"])
+        self.assertEqual(shop.services(databases=False), ["shared-proxy.service", "shop-app.service",
+                                                          "keycloak.service"])
+        self.assertIn("todo-app.service", today.services())
+        self.assertEqual(registry(), today)
+
+    def test_the_json_form_gives_the_same_platform_back(self):
+        for platform in (registry(), self.shop(), registry("auth.example.org").select(["notes"])):
+            with self.subTest(apps=[app.name for app in platform.apps]):
+                data = json.loads(json.dumps(platform.to_json()))
+                self.assertEqual(Platform.from_json(data), platform)
+
+    def test_json_that_is_not_a_platform_is_refused(self):
+        good = registry().to_json()
+        for data in ([], {}, {**good, "extra": 1}, {**good, "apps": "todo"},
+                     {**good, "apps": [{**good["apps"][0], "replication_port": "5432"}]},
+                     {**good, "apps": [{**good["apps"][0], "unknown": True}]},
+                     {**good, "apps": [good["apps"][0], good["apps"][0]]},
+                     {**good, "apps": []}):
+            with self.subTest(data=data), self.assertRaises(ValueError):
+                Platform.from_json(data)
+
+    def test_select_keeps_the_order_and_refuses_unknown_apps(self):
+        self.assertEqual(registry().select([]), registry())
+        self.assertEqual([app.name for app in registry().select(["notes", "todo"]).apps], ["todo", "notes"])
+        with self.assertRaisesRegex(ValueError, "Unknown apps: shop"):
+            registry().select(["shop"])
+        with self.assertRaisesRegex(ValueError, "No app named 'shop'"):
+            registry().app("shop")
+
+    def test_keycloaks_replication_port_is_not_an_apps(self):
+        with self.assertRaisesRegex(ValueError, "Keycloak's database"):
+            Platform(apps=(App(name="shop", hostname="shop.test", keycloak_client="shop-frontend",
+                               replication_port=KEYCLOAK_DATABASE.replication_port),),
+                     identity_hostname="auth.test")

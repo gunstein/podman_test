@@ -89,10 +89,11 @@ the phase.
 
 ## 4. One resolved model
 
-Where it stands after phase 4a: `apps.Platform` has two fields, the apps in
+Where it stands after phase 4b: `apps.Platform` has two fields, the apps in
 start order and Keycloak's default hostname, and derives the rest (the DR
 group, workloads, services); each app holds the images it builds
-(`apps.AppImage`). A build reads it from `platform.yaml` and each app's
+(`apps.AppImage`) and its endpoints and routes (`apps.Endpoint`,
+`apps.Route`). A build reads it from `platform.yaml` and each app's
 `examples/<app>/app.yaml` (`platform_file.load`, which also gives the
 environment's port and log level); there is no list of apps in the code.
 `bundle.json` (format version 8) carries it, and a host records it in

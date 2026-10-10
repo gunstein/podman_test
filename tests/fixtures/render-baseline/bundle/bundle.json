@@ -1,0 +1,55 @@
+{
+  "format": "todo-offline-bundle",
+  "format_version": 4,
+  "manifests": {
+    "directory": "generated/target/manifests",
+    "files": [
+      "keycloak-config.yaml",
+      "keycloak-postgres.yaml",
+      "keycloak.yaml",
+      "notes-app.yaml",
+      "notes-config.yaml",
+      "notes-postgres.yaml",
+      "shared-proxy.yaml",
+      "todo-app.yaml",
+      "todo-config.yaml",
+      "todo-postgres.yaml"
+    ]
+  },
+  "quadlets": {
+    "directory": "generated/target/quadlet",
+    "files": [
+      "keycloak-postgres.kube",
+      "keycloak.kube",
+      "notes-app.kube",
+      "notes-postgres.kube",
+      "shared-proxy.kube",
+      "todo-app.kube",
+      "todo-postgres.kube"
+    ]
+  },
+  "local_only_quadlets": {
+    "directory": "generated/target/quadlet/local-only",
+    "files": [
+      "shared-proxy.kube"
+    ]
+  },
+  "replicated_quadlets": {
+    "directory": "generated/target/quadlet/replicated",
+    "files": [
+      "keycloak-postgres.kube",
+      "notes-postgres.kube",
+      "todo-postgres.kube"
+    ]
+  },
+  "network": "generated/target/quadlet/app-network.network",
+  "applications": [
+    "todo",
+    "notes"
+  ],
+  "public_port": 8443,
+  "defaults": {
+    "TARGET_EXTERNAL_HOSTNAME": "todo.test",
+    "TARGET_NOTES_HOSTNAME": "notes.test"
+  }
+}

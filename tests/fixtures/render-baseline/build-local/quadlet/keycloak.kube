@@ -1,0 +1,18 @@
+[Unit]
+Description=Todo Keycloak Podman Kube workload
+Requires=keycloak-postgres.service
+After=keycloak-postgres.service
+
+[Kube]
+Yaml=keycloak.yaml
+Network=app-network.network
+PodmanArgs=--no-pod-prefix
+ExitCodePropagation=any
+LogDriver=journald
+SetWorkingDirectory=yaml
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=240
+TimeoutStopSec=60

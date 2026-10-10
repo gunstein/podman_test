@@ -23,8 +23,9 @@ def imported(path):
 
 class BoundaryTests(unittest.TestCase):
     def test_the_installer_imports_no_dr_package(self):
-        for path in sorted((ROOT / "deploy/installer/app_installer").glob("*.py")):
-            with self.subTest(path=path.name):
+        # rglob: a module in a subpackage of the installer is held to the same rule.
+        for path in sorted((ROOT / "deploy/installer/app_installer").rglob("*.py")):
+            with self.subTest(path=str(path.relative_to(ROOT))):
                 self.assertFalse(imported(path) & DR_PACKAGES)
 
     def test_the_offline_bundle_carries_no_dr_code(self):
@@ -33,7 +34,7 @@ class BoundaryTests(unittest.TestCase):
         self.assertNotIn("app_ops", builder)
 
     def test_the_dr_modules_are_not_left_in_the_installer(self):
-        installer = {path.name for path in (ROOT / "deploy/installer/app_installer").glob("*.py")}
+        installer = {path.name for path in (ROOT / "deploy/installer/app_installer").rglob("*.py")}
         dr_host = {path.name for path in (ROOT / "deploy/dr/app_dr_host").glob("*.py")}
         self.assertFalse({"replication.py", "replication_tls.py", "promoted.py"} & installer)
         self.assertLessEqual({"replication.py", "replication_tls.py", "promoted.py", "cli.py"}, dr_host)

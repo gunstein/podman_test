@@ -286,6 +286,11 @@ phase 1's.
 loader and its validation messages. Delete the Python app list and
 `deploy/environments/*/values.yaml`. Rendered output unchanged.
 
+**Phase 3b: Scripts read the model.** `wait-ready.sh`, `preflight.sh`,
+acceptance and the replication firewall range read the model instead of
+hand-kept lists (moved forward from 4e after the phase 1 understandability
+check, where these copied lists were the main friction).
+
 **Phase 4: A static app end to end.** The first proof of generality, split
 in small deliveries, each driven by what Help needs:
 - 4a images contract (5.2), including external context paths;
@@ -293,8 +298,7 @@ in small deliveries, each driven by what Help needs:
 - 4c start, readiness and checks in the model (5.4), with Keycloak and
   PostgreSQL only when needed;
 - 4d generated `.kube` units and `kube play` order from the model;
-- 4e `wait-ready.sh`, `preflight.sh`, acceptance and the replication
-  firewall range read the model;
+- 4e (moved to phase 3b);
 - 4f `examples/help`: build, bundle, install, check and stop an
   installation **with Help only**, then with all three apps.
 

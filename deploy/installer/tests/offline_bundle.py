@@ -11,5 +11,5 @@ def build(directory, applications):
     (the build host); the install under test may run without them.
     """
     from app_installer import bundle
-    return bundle.build(ROOT, ROOT / 'deploy/environments/prod/values.yaml', directory,
+    return bundle.build(ROOT, 'prod', directory,
                         [app.name for app in applications])

@@ -152,8 +152,8 @@ class ProxyConfigurationTests(unittest.TestCase):
         config = (RUNTIME / "todo-config.yaml").read_text(encoding="utf-8")
         proxy_config = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
 
-        from app_installer import apps
-        self.assertEqual(apps.IDENTITY_HOSTNAME, 'auth.test')
+        from app_installer import platform_file
+        self.assertEqual(platform_file.checkout().identity_hostname, 'auth.test')
         self.assertIn("'--service-port', str(settings.HTTPS_PORT)", read("deploy/dr/app_ops/recovery.py"))
         self.assertIn(
             "PublishPort={{ publish_address }}:"

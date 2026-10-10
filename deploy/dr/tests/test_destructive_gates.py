@@ -17,9 +17,9 @@ from unittest.mock import patch
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[2] / 'installer')]
 import dr_target  # noqa: E402
 from app_dr_host import replication  # noqa: E402
-from app_installer import apps  # noqa: E402
+from app_installer import platform_file  # noqa: E402
 
-APP = apps.registry().apps[1].database
+APP = platform_file.checkout().apps[1].database
 HOST = replication.socket.gethostname()
 CONFIRMED = dict(confirm_fenced=HOST + ' is fenced', confirm_reseed=HOST)
 READ_ONLY = {('podman', 'info'), ('podman', 'ps'), ('podman', 'kube', 'play', '--help')}
@@ -175,7 +175,7 @@ class ReseedGroupQuarantineTests(unittest.TestCase):
                 patch.object(replication, 'reseed_check') as check, \
                 patch.object(replication, 'reseed_standby') as reseed:
             with self.assertRaisesRegex(RuntimeError, 'keep infrastructure quarantine'):
-                replication.reseed_group('192.0.2.10', **CONFIRMED, target=SimpleNamespace(platform=apps.registry()))
+                replication.reseed_group('192.0.2.10', **CONFIRMED, target=SimpleNamespace(platform=platform_file.checkout()))
         check.assert_not_called()
         reseed.assert_not_called()
         self.assertFalse([c.args for c in commands.call_args_list if 'rm' in c.args])
@@ -185,7 +185,7 @@ class ReseedGroupQuarantineTests(unittest.TestCase):
                                                                 'MainPID=42\nControlPID=0\n')), \
                 patch.object(replication, 'reseed_standby') as reseed:
             with self.assertRaisesRegex(RuntimeError, 'zero MainPID/ControlPID'):
-                replication.reseed_group('192.0.2.10', **CONFIRMED, target=SimpleNamespace(platform=apps.registry()))
+                replication.reseed_group('192.0.2.10', **CONFIRMED, target=SimpleNamespace(platform=platform_file.checkout()))
         reseed.assert_not_called()
 
 
@@ -231,7 +231,7 @@ class RebuildPrimaryCheckTests(unittest.TestCase):
 class RequirePromotedGroupTests(unittest.TestCase):
     """The application tier and backups start only on a completely promoted group."""
 
-    NAMES = [database.name for database in apps.registry().replicated_databases]
+    NAMES = [database.name for database in platform_file.checkout().replicated_databases]
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -246,7 +246,7 @@ class RequirePromotedGroupTests(unittest.TestCase):
 
         with patch.object(replication, 'run', side_effect=run), \
                 patch.object(replication, 'require_primary', side_effect=primary):
-            return replication.require_promoted_group(apps.registry(), self.journal)
+            return replication.require_promoted_group(platform_file.checkout(), self.journal)
 
     def test_a_complete_healthy_group_passes_without_changes(self):
         self.assertFalse(self.check())

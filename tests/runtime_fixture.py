@@ -13,7 +13,7 @@ RUNTIME = Path(_tmp.name)
 
 subprocess.run(
     [str(ROOT / "deploy/scripts/render-kube-runtime.sh"),
-     str(ROOT / "deploy/environments/prod/values.yaml"), str(RUNTIME)],
+     "prod", str(RUNTIME)],
     check=True,
 )
 

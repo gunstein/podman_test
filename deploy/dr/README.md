@@ -19,7 +19,7 @@ Everything DR lives here, apart from the single-host installer it builds on:
 ## Where DR finds the installer
 
 DR reuses the single-host installer instead of copying it: `app_installer`
-(deploy/installer) owns the app registry, the workloads, the secrets and the
+(deploy/installer) owns the platform model, the workloads, the secrets and the
 Quadlet files. DR imports the installer; the installer never imports DR
 (`tests/test_dr_boundary.py`). Where the two packages are depends on where
 the code runs:

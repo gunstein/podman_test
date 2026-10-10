@@ -22,7 +22,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import apps, cli, tls, tls_store  # noqa: E402
+from app_installer import apps, cli, platform_file, tls, tls_store  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location('app_ca', ROOT / 'deploy/scripts/app_ca.py')
@@ -109,7 +109,7 @@ class TlsTest(unittest.TestCase):
         self.record.write_text(json.dumps({'TARGET_IDENTITY_HOSTNAME': NAMES[0], 'TARGET_NOTES_HOSTNAME': NAMES[1]}))
         # The platform this host was installed with (target_render.record_platform).
         self.platform_record = self.directory / 'platform.json'
-        self.platform_record.write_text(json.dumps(apps.registry().to_json()))
+        self.platform_record.write_text(json.dumps(platform_file.checkout().to_json()))
         self.podman = FakePodman(self, self.volume)
         for target, name, value in ((tls, 'KEY', 'rsa:2048'),  # a smaller key only to keep the tests fast
                                     (tls, 'ENTRYPOINT', str(ROOT / 'proxy/proxy-entrypoint.sh')),

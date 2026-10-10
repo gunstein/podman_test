@@ -17,14 +17,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "deploy/installer"))
 
-from app_installer import apps, bundle, render  # noqa: E402
+from app_installer import bundle, platform_file, render  # noqa: E402
 
 FIXTURES = ROOT / "tests/fixtures/render-baseline"
 ENVIRONMENTS = ("local", "prod")
-
-
-def _values(environment):
-    return ROOT / "deploy/environments" / environment / "values.yaml"
 
 
 def rendered():
@@ -33,15 +29,16 @@ def rendered():
     for environment in ENVIRONMENTS:
         # Build mode: the Kube YAML render.render writes, and the units an
         # install writes for a host that publishes only on 127.0.0.1.
-        identity, port, log_level = render.read_values(_values(environment))
-        manifests = render.files(ROOT, apps.registry(), render.hostnames(apps.registry()), identity, port, log_level)
+        platform, settings = platform_file.load(ROOT / "platform.yaml", environment)
+        manifests = render.files(ROOT, platform, render.hostnames(platform), platform.identity_hostname,
+                                 settings.public_port, settings.log_level)
         for name, content in manifests.items():
             files[f"build-{environment}/manifests/{name}"] = content
-        for name, content in bundle.quadlets(ROOT, apps.registry(), port, "127.0.0.1").items():
+        for name, content in bundle.quadlets(ROOT, platform, settings.public_port, "127.0.0.1").items():
             files[f"build-{environment}/quadlet/{name}"] = content
     # The offline bundle: generated/target and bundle.json, as build-bundle.sh makes them.
     with tempfile.TemporaryDirectory() as directory:
-        bundle.build(ROOT, _values("prod"), directory)
+        bundle.build(ROOT, "prod", directory)
         for path in sorted(Path(directory).rglob("*")):
             if path.is_file():
                 files["bundle/" + path.relative_to(directory).as_posix()] = path.read_bytes()

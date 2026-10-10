@@ -22,7 +22,7 @@ from . import apps, manifests
 FILE = 'platform.yaml'
 APP_FILE = 'app.yaml'
 ENVIRONMENTS = ('local', 'prod')
-# An app's name becomes resource names (todo-app, todo-postgres, the todo_migrator role).
+# An app's name becomes resource names (shop-app, shop-postgres, the shop_migrator role).
 NAME = re.compile(r'[a-z][a-z0-9]{0,29}')
 WORD = re.compile(r'[a-z][a-z0-9-]{0,62}')
 

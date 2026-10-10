@@ -15,10 +15,10 @@ import jinja2
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import apps, manifests, render, stack  # noqa: E402
+from app_installer import apps, manifests, platform_file, render, stack  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-VALUES = ROOT / "deploy/environments/local/values.yaml"
+PLATFORM, LOCAL = platform_file.load(ROOT / "platform.yaml", "local")
 
 
 def _database(name="widget"):
@@ -149,11 +149,11 @@ class StrictUndefinedTests(unittest.TestCase):
 class RenderErrorTests(unittest.TestCase):
     def test_unknown_application_name_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unknown apps: bogus"):
-            render.platform(VALUES, ("bogus",))
+            PLATFORM.select(("bogus",))
 
     def test_mixed_known_and_unknown_application_names_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unknown apps: bogus"):
-            render.platform(VALUES, ("todo", "bogus"))
+            PLATFORM.select(("todo", "bogus"))
 
     def test_broken_template_syntax_fails_before_any_output(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -162,7 +162,7 @@ class RenderErrorTests(unittest.TestCase):
             (project_root / "deploy/manifests/postgres.yaml.j2").write_text("{% broken\n")
             output = Path(directory) / "output"
             with self.assertRaises(jinja2.TemplateSyntaxError):
-                render.render(project_root, VALUES, output, render.platform(VALUES))
+                render.render(project_root, LOCAL, output, PLATFORM)
             self.assertFalse(output.exists())
 
     def test_valid_jinja_producing_invalid_yaml_raises_a_clear_error(self):
@@ -172,17 +172,17 @@ class RenderErrorTests(unittest.TestCase):
             (project_root / "deploy/manifests/postgres.yaml.j2").write_text("foo: [1, 2\n")
             output = Path(directory) / "output"
             with self.assertRaisesRegex(RuntimeError, "is not valid YAML"):
-                render.render(project_root, VALUES, output, render.platform(VALUES))
+                render.render(project_root, LOCAL, output, PLATFORM)
             self.assertFalse(output.exists())
 
     def test_render_replaces_the_whole_output_directory(self):
         with tempfile.TemporaryDirectory() as directory:
-            todo, notes = apps.registry().apps
+            todo, notes = platform_file.checkout().apps
             output = Path(directory) / "output"
-            render.render(ROOT, VALUES, output, render.platform(VALUES))
+            render.render(ROOT, LOCAL, output, PLATFORM)
             self.assertTrue((output / notes.manifest).is_file())
             (output / "left-over.yaml").write_text("stale")
-            render.render(ROOT, VALUES, output, render.platform(VALUES, (todo.name,)))
+            render.render(ROOT, LOCAL, output, PLATFORM.select((todo.name,)))
             self.assertFalse((output / "left-over.yaml").exists())
             self.assertFalse((output / notes.manifest).exists())
             self.assertTrue((output / todo.manifest).is_file())
@@ -191,38 +191,13 @@ class RenderErrorTests(unittest.TestCase):
     def test_failed_render_leaves_the_earlier_output_as_it_was(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
-            render.render(ROOT, VALUES, output, render.platform(VALUES))
+            render.render(ROOT, LOCAL, output, PLATFORM)
             before = {path.name: path.read_bytes() for path in output.iterdir()}
             with patch.object(Path, "write_bytes", side_effect=OSError("disk full")):
                 with self.assertRaisesRegex(OSError, "disk full"):
-                    render.render(ROOT, VALUES, output, render.platform(VALUES))
+                    render.render(ROOT, LOCAL, output, PLATFORM)
             self.assertEqual({path.name: path.read_bytes() for path in output.iterdir()}, before)
             self.assertEqual(sorted(path.name for path in Path(directory).iterdir()), ["output"])
-
-    def test_values_file_mistakes_name_the_file_and_the_setting(self):
-        good = {"identityHostname": "todo.test", "publicPort": 8443, "logLevel": "info"}
-        cases = [
-            ("runtime: [1]\n", "needs a runtime section"),
-            ("other: {}\n", "needs a runtime section"),
-            ("", "needs a runtime section"),
-            ("runtime: [\n", "not valid YAML"),
-            (yaml.safe_dump({"runtime": {"identityHostname": "todo.test"}}),
-             "runtime is missing publicPort, logLevel"),
-            (yaml.safe_dump({"runtime": {**good, "publicPort": "8443"}}), "publicPort must be a port"),
-            (yaml.safe_dump({"runtime": {**good, "publicPort": 70000}}), "publicPort must be a port"),
-            (yaml.safe_dump({"runtime": {**good, "publicPort": True}}), "publicPort must be a port"),
-            (yaml.safe_dump({"runtime": {**good, "identityHostname": 7}}), "identityHostname must be"),
-            (yaml.safe_dump({"runtime": {**good, "logLevel": ""}}), "logLevel must be"),
-        ]
-        with tempfile.TemporaryDirectory() as directory:
-            values = Path(directory) / "values.yaml"
-            output = Path(directory) / "output"
-            for text, message in cases:
-                with self.subTest(message=message, text=text):
-                    values.write_text(text)
-                    with self.assertRaisesRegex(ValueError, "values.yaml: .*" + message):
-                        render.render(ROOT, values, output, render.platform(values))
-                    self.assertFalse(output.exists())
 
     def test_only_dns_names_are_hostnames(self):
         for hostname in ("todo.test", "notes.test", "a", "x-1.example.org", "a" * 63 + ".test"):
@@ -233,13 +208,3 @@ class RenderErrorTests(unittest.TestCase):
                          "evil.test; return 200", "a" * 64 + ".test", ("a" * 62 + ".") * 4 + "test", None):
             with self.subTest(hostname=hostname), self.assertRaisesRegex(ValueError, "safe hostname"):
                 manifests.validate_hostname(hostname)
-
-    def test_malicious_public_hostname_is_rejected_before_any_rendering(self):
-        with tempfile.TemporaryDirectory() as directory:
-            values = Path(directory) / "values.yaml"
-            values.write_text(yaml.safe_dump({"runtime": {
-                "identityHostname": "evil.test; return 200 pwned", "publicPort": 8443, "logLevel": "info"}}))
-            output = Path(directory) / "output"
-            with self.assertRaisesRegex(ValueError, "safe hostname"):
-                render.render(ROOT, values, output, render.platform(values))
-            self.assertFalse(output.exists())

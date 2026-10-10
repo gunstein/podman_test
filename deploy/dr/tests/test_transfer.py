@@ -10,7 +10,7 @@ from unittest.mock import patch
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[2] / 'installer')]
 import dr_target  # noqa: E402
 from app_dr_host import cli, transfer  # noqa: E402
-from app_installer import apps  # noqa: E402
+from app_installer import apps, platform_file  # noqa: E402
 
 
 class FakeSecrets:
@@ -37,7 +37,7 @@ class FakeSecrets:
 
 
 def primary_values():
-    return {name: 'value-' + name for name in transfer.transfer_names(apps.registry())}
+    return {name: 'value-' + name for name in transfer.transfer_names(platform_file.checkout())}
 
 
 class ReplicatedSecretTests(unittest.TestCase):
@@ -47,44 +47,44 @@ class ReplicatedSecretTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     def test_names_cover_the_complete_group_once(self):
-        names = transfer.replicated_names(apps.registry())
-        expected = [name for app in apps.registry().apps for name in (
+        names = transfer.replicated_names(platform_file.checkout())
+        expected = [name for app in platform_file.checkout().apps for name in (
             app.database.secret('db'), app.database.secret('migrator'), app.database.secret('app'), app.database.secret('replicator'))]
         expected += [apps.KEYCLOAK_DATABASE.secret('db'), apps.KEYCLOAK_DATABASE.secret('replicator')]
         self.assertEqual(sorted(names), sorted(expected + [apps.KEYCLOAK_ADMIN_SECRET]))
         self.assertEqual(len(names), len(set(names)))
         self.assertIn(apps.KEYCLOAK_ADMIN_SECRET, names)
-        for database in apps.registry().replicated_databases:
+        for database in platform_file.checkout().replicated_databases:
             self.assertIn(database.secret('replicator'), names)
 
     def test_the_copy_also_carries_the_replication_ca_but_the_promoted_host_does_not_need_it(self):
-        self.assertEqual(transfer.transfer_names(apps.registry()), transfer.replicated_names(apps.registry()) + list(apps.REPLICATION_CA_SECRETS))
+        self.assertEqual(transfer.transfer_names(platform_file.checkout()), transfer.replicated_names(platform_file.checkout()) + list(apps.REPLICATION_CA_SECRETS))
         for name in apps.REPLICATION_CA_SECRETS:
-            self.assertNotIn(name, transfer.replicated_names(apps.registry()))
+            self.assertNotIn(name, transfer.replicated_names(platform_file.checkout()))
 
     def test_export_reads_every_group_credential(self):
         self.use(FakeSecrets(primary_values()))
-        self.assertEqual(transfer.export_replicated(apps.registry()), primary_values())
+        self.assertEqual(transfer.export_replicated(platform_file.checkout()), primary_values())
 
     def test_import_creates_only_missing_and_is_idempotent(self):
         values = primary_values()
-        present = transfer.transfer_names(apps.registry())[0]
+        present = transfer.transfer_names(platform_file.checkout())[0]
         store = FakeSecrets({present: values[present]})
         self.use(store)
-        self.assertTrue(transfer.import_replicated(apps.registry(), values))
+        self.assertTrue(transfer.import_replicated(platform_file.checkout(), values))
         self.assertNotIn(present, store.created)
         self.assertEqual(store.stored, values)
         store.created.clear()
-        self.assertFalse(transfer.import_replicated(apps.registry(), values))
+        self.assertFalse(transfer.import_replicated(platform_file.checkout(), values))
         self.assertEqual(store.created, [])
 
     def test_a_different_existing_value_refuses_before_any_create(self):
         values = primary_values()
-        different = transfer.transfer_names(apps.registry())[-1]
+        different = transfer.transfer_names(platform_file.checkout())[-1]
         store = FakeSecrets({different: 'standby-only-value'})
         self.use(store)
         with self.assertRaises(RuntimeError) as refused:
-            transfer.import_replicated(apps.registry(), values)
+            transfer.import_replicated(platform_file.checkout(), values)
         self.assertEqual(store.created, [])
         self.assertEqual(store.stored, {different: 'standby-only-value'})
         self.assertIn(different, str(refused.exception))
@@ -97,10 +97,10 @@ class ReplicatedSecretTests(unittest.TestCase):
         values = primary_values()
         partial = dict(list(values.items())[1:])
         extra = {**values, 'unrelated-password': 'x'}
-        empty = {**values, transfer.replicated_names(apps.registry())[0]: ''}
+        empty = {**values, transfer.replicated_names(platform_file.checkout())[0]: ''}
         for payload in (partial, extra, empty, list(values), {**values, 'todo-db-password': 1}):
             with self.subTest(payload=type(payload).__name__), self.assertRaises(ValueError):
-                transfer.import_replicated(apps.registry(), payload)
+                transfer.import_replicated(platform_file.checkout(), payload)
         self.assertEqual(store.created, [])
 
     def test_cli_round_trip_keeps_values_out_of_import_output(self):
@@ -122,7 +122,7 @@ class ReplicatedSecretTests(unittest.TestCase):
 
     def test_cli_reports_refusal_without_values(self):
         values = primary_values()
-        different = transfer.replicated_names(apps.registry())[0]
+        different = transfer.replicated_names(platform_file.checkout())[0]
         self.use(FakeSecrets({different: 'standby-only-value'}))
         output, errors = io.StringIO(), io.StringIO()
         payload = base64.b64encode(json.dumps(values).encode()).decode()

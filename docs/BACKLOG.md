@@ -298,7 +298,7 @@ why. The seven workloads already log to journald (`LogDriver=journald`), and
 
 - **L3. Backend logging.** *[new]* *[optional]* The example apps, not the
   core of the repository. The backends log almost nothing, and `logLevel`
-  in `values.yaml` becomes `LOG_LEVEL` in each app's ConfigMap, but no
+  in `platform.yaml` becomes `LOG_LEVEL` in each app's ConfigMap, but no
   backend reads it. Use it (or remove it), and log rejected tokens with the
   reason (never the token), database errors with context, and changes with
   the user's `sub`. A backend should also refuse to start without its OIDC

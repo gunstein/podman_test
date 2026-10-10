@@ -35,12 +35,13 @@ Current architecture and workflow:
 - todo-app and notes-app each group migration init, FastAPI and HTTP-only frontend.
   Each app has its own PostgreSQL pod. Shared nginx, Keycloak and Keycloak's
   own keycloak-postgres pod bring the single-host topology to seven pods on
-  rootless app-network. The App registry in
-  deploy/installer/app_installer/apps.py owns per-app installer names.
+  rootless app-network. App and Platform in
+  deploy/installer/app_installer/apps.py own per-app installer names.
   DR/backup/rebuild act on one group of three databases (todo, notes,
   keycloak; Platform.replicated_databases), never on a partial group. The
-  Platform comes from bundle.json or the host's record, never from a list in
-  the code (apps.registry() is the only one, for build mode).
+  Platform comes from bundle.json or the host's record; a build reads it from
+  platform.yaml and each app's examples/<app>/app.yaml (platform_file.py).
+  There is no list of apps in the code.
   shared-proxy.service owns nginx, which reads its TLS files read-only from
   Podman secrets the installer makes (tls_secrets.py, the worked example of
   files as Podman secrets); the TLS volume platform-nginx-data (tls.py) is kept,

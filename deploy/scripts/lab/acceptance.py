@@ -97,7 +97,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'deploy/installer'))
-from app_installer import apps  # noqa: E402  (the registry of services, read-only, until phase 3b)
+# platform.yaml of this checkout, read-only, until phase 3b
+from app_installer import platform_file  # noqa: E402
 
 TODO_URL = 'https://todo.test:8443'
 NOTES_URL = 'https://notes.test:8443'
@@ -108,7 +109,7 @@ PYTHON = ROOT / 'todo-backend/.venv/bin/python'
 REBOOT_TIMEOUT = 600
 POLL_SECONDS = 10
 FIREWALL_SETTLE_SECONDS = 20  # the Proxmox firewall applies changes about every 10 s
-DATABASES = ('todo', 'notes', 'keycloak')  # apps.registry().replicated_databases; user and container share the name
+DATABASES = ('todo', 'notes', 'keycloak')  # platform_file.checkout().replicated_databases; user and container share the name
 MIN_FREE_KIB = 2 * 1024 * 1024
 
 
@@ -285,7 +286,7 @@ def check_services(step, host, mode):
         nginx = step.ssh(host, 'podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf')
         step.expect(nginx.returncode == 0, 'nginx configuration is valid')
     else:
-        serving = apps.registry().services(databases=False)
+        serving = platform_file.checkout().services(databases=False)
         states = step.ssh(host, 'systemctl --user is-active ' + ' '.join(serving)).stdout.split()
         step.expect(len(states) == len(serving) and 'active' not in states,
                     'a database-only standby runs none of: ' + ', '.join(serving))
@@ -722,7 +723,7 @@ def do_quarantine_stop(step, vmid, name):
 
 def check_stopped(step, host):
     """Every registered service inactive or failed with no process, and no running container."""
-    services = apps.registry().services()
+    services = platform_file.checkout().services()
     # One property per call: systemctl show does not keep the order properties were asked in.
     script = ''.join(f'echo "{unit}' + ''.join(f' $(systemctl --user show -p {name} --value {unit})'
                                               for name in ('ActiveState', 'MainPID', 'ControlPID')) + '"\n'

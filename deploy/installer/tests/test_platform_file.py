@@ -73,6 +73,9 @@ class PlatformFileTests(unittest.TestCase):
     def test_values_are_checked(self):
         for platform, message in (
             ({**PLATFORM, 'publicPort': 443}, r'publicPort: must be a port number, 1024-65535'),
+            ({**PLATFORM, 'publicPort': 70000}, r'publicPort: must be a port number'),
+            ({**PLATFORM, 'publicPort': '8443'}, r'publicPort: must be a port number'),
+            ({**PLATFORM, 'publicPort': True}, r'publicPort: must be a port number'),
             ({**PLATFORM, 'logLevel': ''}, r'logLevel: must be a word'),
             ({**PLATFORM, 'identityHostname': 'evil.test; return 200'}, r'identityHostname: not a hostname'),
             ({**PLATFORM, 'apps': []}, r'apps must be a list of at least one app'),

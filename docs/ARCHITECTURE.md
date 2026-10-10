@@ -52,9 +52,9 @@ Clients reach the profile's HTTPS hostname rather than a pod address.
 Both local and production profiles use `https://auth.test:8443`,
 `https://todo.test:8443` and `https://notes.test:8443`. One SAN certificate
 covers the three hostnames. Map all three names to the serving host; direct
-development uses 127.0.0.1. The values file sets Keycloak's hostname
-(`runtime.identityHostname`) and port, while the App registry supplies each
-application's hostname.
+development uses 127.0.0.1. `platform.yaml` sets Keycloak's hostname
+(`identityHostname`), each application's hostname and, per environment, the
+port.
 Port 8080 is published on loopback for
 local checks; remote HTTPS and replication publication are explicit
 deployment choices constrained by host firewalls.
@@ -183,12 +183,14 @@ Checksums establish integrity against the supplied digest, not publisher
 identity; organizational artifact signing is not implemented.
 
 The portable module lives in `deploy/installer/app_installer/` and uses Jinja2
-plus the Python standard library. `apps.py` is the single registry of per-app
-names; image, secret, workload, lifecycle and cleanup code consume App objects.
+plus the Python standard library. `platform.yaml` lists the apps (each
+described by its `examples/<app>/app.yaml`) and `apps.py` holds the naming
+rules; image, secret, workload, lifecycle and cleanup code consume App objects.
 Rendering calls the shared `deploy/manifests/*.yaml.j2` templates once per app
-using one environment values file, then renders Keycloak and shared-proxy once.
-Adding an App entry activates the already-shared template set with no new
-files. Its shared workload functions install files
+with one environment's settings from `platform.yaml`, then renders Keycloak and
+shared-proxy once. Adding an app to `platform.yaml` activates the
+already-shared Kube YAML templates; it still needs its own `.kube` templates
+until phase 4d of docs/PLATFORM-PLAN.md. Its shared workload functions install files
 and reload systemd; callers retain responsibility for safe stop/start ordering.
 app-ops stages the operations package's `bundle.json` and `generated/target`
 files on each host, where `app_dr_host` fills in that host's values and

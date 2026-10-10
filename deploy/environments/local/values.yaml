@@ -1,4 +1,0 @@
-runtime:
-  identityHostname: auth.test
-  publicPort: 8443
-  logLevel: debug

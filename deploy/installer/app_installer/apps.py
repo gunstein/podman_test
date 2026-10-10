@@ -1,4 +1,7 @@
-"""Application registry: per-application identity for the shared installer."""
+"""An installation's model: its apps (App), their workloads and the Platform that holds them.
+
+platform_file.py makes a Platform from platform.yaml and the apps' app.yaml.
+"""
 from dataclasses import dataclass
 
 from . import settings, stack
@@ -74,11 +77,6 @@ class App:
         return self.names.image_archive(component)
 
 
-# Keycloak's own public hostname, the OIDC issuer's: every app's login happens
-# there (TARGET_IDENTITY_HOSTNAME in an offline bundle), and nginx's
-# certificate names it first. It belongs to no app; this is its default, which
-# deploy/environments/*/values.yaml and the target values may change.
-IDENTITY_HOSTNAME = "auth.test"
 # The Keycloak client the realm import brings (keycloak/todo-realm.json): the
 # template every other app's client is copied from (keycloak.configure).
 TEMPLATE_CLIENT = "todo-frontend"
@@ -153,9 +151,9 @@ class Platform:
 
     Every part of the installer and the DR tools that acts on an
     installation takes one Platform and asks it, instead of reading a list
-    kept in a module. registry() builds today's; an offline bundle carries
-    its own in bundle.json (to_json, from_json), and so does a host it was
-    installed on, so a host never rebuilds it from code.
+    kept in a module. A build reads it from platform.yaml (platform_file);
+    an offline bundle carries its own in bundle.json (to_json, from_json),
+    and so does a host it was installed on, so a host never rebuilds it.
     Keycloak's own database is the same for every platform (KEYCLOAK_DATABASE).
     """
 
@@ -256,10 +254,3 @@ class Platform:
         return cls(apps=tuple(App(**entry) for entry in data["apps"]),
                    identity_hostname=data["identity_hostname"])
 
-
-def registry(identity_hostname=IDENTITY_HOSTNAME):
-    """Today's platform: the example apps todo and notes. The only list of apps in the code."""
-    return Platform(apps=(
-        App(name="todo", hostname="todo.test", keycloak_client="todo-frontend", api_collection="todos"),
-        App(name="notes", hostname="notes.test", keycloak_client="notes-frontend", replication_port=5433),
-    ), identity_hostname=identity_hostname)

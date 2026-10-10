@@ -16,7 +16,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import apps, cli, settings, tls_secrets  # noqa: E402
+from app_installer import apps, cli, platform_file, settings, tls_secrets  # noqa: E402
 from fake_host import REAL_RUN, FakeHost  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -381,7 +381,7 @@ class InstallTests(SecretTest):
     def test_uninstall_with_its_data_removes_every_tls_secret(self):
         from app_installer import uninstall
         for name in tls_secrets.secret_names():
-            self.assertIn(name, uninstall.secret_names(apps.registry()))
+            self.assertIn(name, uninstall.secret_names(platform_file.checkout()))
 
 
 if __name__ == '__main__':

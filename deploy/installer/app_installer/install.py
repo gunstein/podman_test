@@ -6,6 +6,7 @@ from . import (
     backup,
     images,
     keycloak,
+    platform_file,
     quadlet,
     secrets,
     settings,
@@ -106,14 +107,17 @@ def load_target(bundle_directory, platform, publish_address, service_port, targe
     return target
 
 
-def build_platform(project_root, mode):
-    """The platform build and dev mode install: the registry's, Keycloak's hostname from the mode's values.yaml.
+def environment_name(mode):
+    """The platform.yaml environment of a build or dev mode install: local for dev, prod for a server."""
+    return 'local' if mode == 'dev' else 'prod'
 
-    render needs PyYAML, which those modes have.
+
+def build_platform(project_root, mode):
+    """The platform a build or dev mode install installs: project_root's platform.yaml.
+
+    Reading it needs PyYAML, which those modes have.
     """
-    from . import render
-    profile = 'local' if mode == 'dev' else 'prod'
-    return render.platform(Path(project_root) / f'deploy/environments/{profile}/values.yaml')
+    return platform_file.load(Path(project_root) / platform_file.FILE, environment_name(mode))[0]
 
 
 def public_hostnames(platform, target):
@@ -186,8 +190,8 @@ def prepare(root, mode, deployment_mode, bundle_directory, refresh_images, platf
     rendered = None if deployment_mode == 'offline' else root / 'generated' / ('dev' if mode == 'dev' else 'kube-runtime')
     if deployment_mode == 'build':
         from . import render  # Jinja2 and PyYAML: build mode only
-        profile = 'local' if mode == 'dev' else 'prod'
-        render.render(root, root / f'deploy/environments/{profile}/values.yaml', rendered, platform)
+        environment = platform_file.load(root / platform_file.FILE, environment_name(mode))[1]
+        render.render(root, environment, rendered, platform)
     secrets.provision(platform)
     image_changes = {}
     for app in platform.apps:
@@ -293,7 +297,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     """Install or update the whole single-host stack. Safe to run again.
 
     platform is what to install: by default an offline bundle's own, or in
-    build and dev mode the registry's (build_platform). The host records it
+    build and dev mode platform.yaml's (build_platform). The host records it
     first (target_render.record_platform).
     Steps: check the host, render the Kube YAML (build mode) or use the
     bundle's (offline mode), create missing passwords, build or load

@@ -15,9 +15,9 @@ steps without an agent: [ACCEPTANCE-HUMAN.md](ACCEPTANCE-HUMAN.md)
 - Part C: the agent's instructions. The agent follows Part C literally.
 
 If this document and ACCEPTANCE.md disagree on a safety gate, the stricter rule
-wins. If either disagrees with the App registry
-(`deploy/installer/app_installer/apps.py`) on a name, port or service, the
-registry wins and the agent records the drift.
+wins. If either disagrees with `platform.yaml` and the naming rules in
+`deploy/installer/app_installer/apps.py` on a name, port or service, those
+win and the agent records the drift.
 
 ---
 

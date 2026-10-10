@@ -12,9 +12,9 @@ from unittest.mock import patch
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[2] / 'installer')]
 from app_dr_host import replication  # noqa: E402
-from app_installer import apps  # noqa: E402
+from app_installer import platform_file  # noqa: E402
 
-GROUP = apps.registry().replicated_databases
+GROUP = platform_file.checkout().replicated_databases
 HOST = replication.socket.gethostname()
 STANDBY = dict(in_recovery=True, transaction_read_only=True)
 
@@ -58,7 +58,7 @@ class StandbyHost:
 class StandbyReseedCheckTests(unittest.TestCase):
     def test_a_healthy_standby_passes_and_changes_nothing(self):
         host = StandbyHost()
-        self.assertIs(host.call(replication.standby_reseed_check, apps.registry(), '192.0.2.11'), False)
+        self.assertIs(host.call(replication.standby_reseed_check, platform_file.checkout(), '192.0.2.11'), False)
         self.assertEqual(host.authenticated, [database.name for database in GROUP])
         self.assertEqual(host.changing(), [])
 
@@ -79,19 +79,19 @@ class StandbyReseedCheckTests(unittest.TestCase):
                 host = StandbyHost()
                 breaks(host)
                 with self.assertRaisesRegex(RuntimeError, message):
-                    host.call(replication.standby_reseed_check, apps.registry(), '192.0.2.11')
+                    host.call(replication.standby_reseed_check, platform_file.checkout(), '192.0.2.11')
                 self.assertEqual(host.changing(), [])
                 self.assertNotIn('keycloak', host.authenticated)
 
     def test_the_primary_address_must_be_a_literal_ipv4_address(self):
         with self.assertRaises(ValueError):
-            StandbyHost().call(replication.standby_reseed_check, apps.registry(), 'primary.example')
+            StandbyHost().call(replication.standby_reseed_check, platform_file.checkout(), 'primary.example')
 
 
 class EraseStandbyGroupTests(unittest.TestCase):
     def test_after_every_check_it_stops_the_databases_and_removes_only_their_data_volumes(self):
         host = StandbyHost()
-        erased = host.call(replication.erase_standby_group, apps.registry(), '192.0.2.11', HOST)
+        erased = host.call(replication.erase_standby_group, platform_file.checkout(), '192.0.2.11', HOST)
         self.assertEqual(erased, [database.name for database in GROUP])
         self.assertEqual(host.changing()[0], ('systemctl', '--user', 'stop', *(d.service for d in GROUP)))
         removed = [argv[3:] for argv in host.changing() if argv[:3] == ('podman', 'volume', 'rm')]
@@ -101,12 +101,12 @@ class EraseStandbyGroupTests(unittest.TestCase):
     def test_a_wrong_hostname_or_a_failed_check_erases_nothing(self):
         host = StandbyHost()
         with self.assertRaisesRegex(RuntimeError, 'exact local hostname'):
-            host.call(replication.erase_standby_group, apps.registry(), '192.0.2.11', 'todo-standby-typo')
+            host.call(replication.erase_standby_group, platform_file.checkout(), '192.0.2.11', 'todo-standby-typo')
         self.assertEqual(host.commands, [])
         host = StandbyHost()
         host.states['todo'] = dict(in_recovery=False, transaction_read_only=False)
         with self.assertRaisesRegex(RuntimeError, 'never erases a primary'):
-            host.call(replication.erase_standby_group, apps.registry(), '192.0.2.11', HOST)
+            host.call(replication.erase_standby_group, platform_file.checkout(), '192.0.2.11', HOST)
         self.assertEqual(host.changing(), [])
 
 

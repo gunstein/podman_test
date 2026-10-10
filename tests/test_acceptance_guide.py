@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'deploy/installer'))
 
-from app_installer import apps  # noqa: E402
+from app_installer import platform_file  # noqa: E402
 
 
 def shell_blocks():
@@ -32,7 +32,7 @@ class AcceptanceGuideTests(unittest.TestCase):
                   if "systemctl --user is-active" in line]
         self.assertTrue(checks)
         for command in checks:
-            self.assertEqual(set(command[3:]), set(apps.registry().services()))
+            self.assertEqual(set(command[3:]), set(platform_file.checkout().services()))
         for line in commands.splitlines():
             if "podman exec nginx nginx -t" in line:
                 self.assertIn("-c /etc/platform-nginx/nginx.conf", line)
@@ -104,9 +104,9 @@ class AcceptanceGuideTests(unittest.TestCase):
 
     def test_registered_group_table_matches_the_app_registry(self):
         guide = (ROOT / 'docs/ACCEPTANCE.md').read_text()
-        for service in apps.registry().services():
+        for service in platform_file.checkout().services():
             self.assertIn(f'`{service}`', guide)
-        for database in apps.registry().replicated_databases:
+        for database in platform_file.checkout().replicated_databases:
             row = (f'| {database.name} | `{database.container}` | `{database.name}` '
                    f'| {database.replication_port} | `{database.replication_slot()}` '
                    f'| `{database.replication_slot(rebuilt=True)}` |')

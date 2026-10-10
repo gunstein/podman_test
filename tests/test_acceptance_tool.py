@@ -763,7 +763,7 @@ class GuideCommandTests(ToolTest):
 
     def test_stopped_needs_every_service_down_and_no_containers(self):
         def answer(line):
-            units = [unit for unit in acceptance.apps.registry().services() if unit in line]
+            units = [unit for unit in acceptance.platform_file.checkout().services() if unit in line]
             return 0, "".join(f"{unit} failed 0 0\n" for unit in units) + "containers 0\n"
         self.assertEqual(self.tool("--step", "09-5", "check", "stopped", "192.168.0.102",
                                    rules=[("ActiveState", answer)])[0], 0)

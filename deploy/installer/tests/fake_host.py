@@ -22,7 +22,7 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from app_installer import apps, secrets, tls_secrets
+from app_installer import apps, platform_file, secrets, tls_secrets
 
 # What `podman image inspect` shows for the proxy image the installer checks.
 PROXY_LABELS = '[{"Labels":{"io.todo.proxy":"nginx","io.todo.proxy.tls":"local provided"}}]'
@@ -85,7 +85,7 @@ class FakeHost:
     def __init__(self, *, password='fixture-password\n', images_present=True,
                  unit_directory=None, source=None, platform=None):
         # The platform this host was installed with: recorded in its home (target_render.record_platform).
-        self.platform = apps.registry() if platform is None else platform
+        self.platform = platform_file.checkout() if platform is None else platform
         self.secrets = {name: password for name in secrets.installed_names(self.platform)}
         self.volumes = set()
         self.volumes_in_use = set()
@@ -204,7 +204,7 @@ class FakeHost:
 class RenderingHost(FakeHost):
     """A host where a build-mode install's render (render.render) writes placeholder manifests.
 
-    rendered holds each render's (values file, output directory, platform).
+    rendered holds each render's (environment, output directory, platform).
     """
 
     def __enter__(self):
@@ -215,8 +215,8 @@ class RenderingHost(FakeHost):
         self._patchers.append(patcher)
         return self
 
-    def _render(self, project_root, values_file, output_directory, platform):
-        self.rendered.append((Path(values_file), Path(output_directory), platform))
+    def _render(self, project_root, environment, output_directory, platform):
+        self.rendered.append((environment, Path(output_directory), platform))
         target = Path(output_directory)
         target.mkdir(parents=True)
         names = ['keycloak.yaml', 'shared-proxy.yaml', apps.KEYCLOAK_DATABASE.manifest,

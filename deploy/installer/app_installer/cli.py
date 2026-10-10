@@ -5,11 +5,11 @@ import sys
 from pathlib import Path
 
 from . import (
-    apps,
     backup,
     install,
     kube_play,
     oplog,
+    platform_file,
     settings,
     target_render,
     tls_secrets,
@@ -119,8 +119,8 @@ def main(argv=None):
     install, uninstall, down, backup and the tls- commands serve a single host
     (tls-request, tls-install, tls-status and tls-renew touch only nginx's
     TLS files, so they also run on a DR host); replication-apps
-    prints the registry's DR group for the acceptance guide to compare with
-    its table. install takes its platform from the bundle or the registry;
+    prints platform.yaml's DR group for the acceptance guide to compare with
+    its table. install takes its platform from the bundle or platform.yaml;
     the other host commands take the one the host recorded at install.
     The DR tools import the installer's functions instead, and their own
     commands live in app_dr_host (deploy/dr). Each command prints one JSON
@@ -142,6 +142,7 @@ def main(argv=None):
                              'of the bundle; repeat it for each (see target_render.py)')
     registry = subcommands.add_parser('replication-apps')
     registry.add_argument('--details', action='store_true')
+    registry.add_argument('--project-root', type=Path, default=Path(__file__).resolve().parents[3])
     remove = subcommands.add_parser('uninstall')
     remove.add_argument('--remove-data', action='store_true')
     remove.add_argument('--remove-backups', action='store_true',
@@ -171,7 +172,8 @@ def main(argv=None):
     try:
         if args.command == 'replication-apps':
             print(json.dumps([_details(d) if args.details else d.name
-                              for d in apps.registry().replicated_databases]))
+                              for d in platform_file.load(args.project_root / platform_file.FILE)[0]
+                              .replicated_databases]))
         elif args.command == 'install':
             changed = install.install(
                 args.project_root, args.mode, args.deployment_mode, args.bundle_dir, args.refresh_images,

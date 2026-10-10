@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import apps, images, quadlet, stack, workloads  # noqa: E402
+from app_installer import apps, images, platform_file, quadlet, stack, workloads  # noqa: E402
 from fake_host import FakeHost  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -18,14 +18,14 @@ ROOT = Path(__file__).resolve().parents[3]
 class WorkloadsTests(unittest.TestCase):
     def test_each_workload_is_idempotent_and_preserves_storage(self):
         for function, names, obsolete in (
-            (partial(workloads.install_postgres, database=apps.registry().apps[0].database), ['todo-postgres'],
+            (partial(workloads.install_postgres, database=platform_file.checkout().apps[0].database), ['todo-postgres'],
              ['todo-postgres-data', 'todo-postgres-backup']),
-            (partial(workloads.install_application, app=apps.registry().apps[0]), ['todo-app'], []),
-            (partial(workloads.install_postgres, database=apps.registry().apps[1].database), ['notes-postgres'],
+            (partial(workloads.install_application, app=platform_file.checkout().apps[0]), ['todo-app'], []),
+            (partial(workloads.install_postgres, database=platform_file.checkout().apps[1].database), ['notes-postgres'],
              ['notes-postgres-data', 'notes-postgres-backup']),
-            (partial(workloads.install_application, app=apps.registry().apps[1]), ['notes-app'], []),
+            (partial(workloads.install_application, app=platform_file.checkout().apps[1]), ['notes-app'], []),
             (workloads.install_keycloak, ['keycloak'], []),
-            (partial(workloads.install_shared_proxy, applications=apps.registry().apps), ['shared-proxy'],
+            (partial(workloads.install_shared_proxy, applications=platform_file.checkout().apps), ['shared-proxy'],
              ['platform-nginx-data']),
         ):
             with self.subTest(function=str(function)), tempfile.TemporaryDirectory() as temp:
@@ -83,7 +83,7 @@ class WorkloadsTests(unittest.TestCase):
             for name in ('postgres.yaml', 'config.yaml', 'app.yaml', 'keycloak.yaml'):
                 (runtime / name).write_text('old\n')
             with FakeHost():
-                workloads.install_postgres(ROOT, directory, runtime, rendered, database=apps.registry().apps[0].database)
+                workloads.install_postgres(ROOT, directory, runtime, rendered, database=platform_file.checkout().apps[0].database)
             self.assertEqual(sorted(path.name for path in runtime.iterdir()),
                              ['keycloak.yaml', 'todo-config.yaml', 'todo-postgres.kube', 'todo-postgres.yaml'])
             self.assertIn('Yaml=todo-postgres.yaml', (runtime / 'todo-postgres.kube').read_text())
@@ -93,7 +93,7 @@ class WorkloadsTests(unittest.TestCase):
         from app_installer import target_render
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
-            offline_bundle.build(base / 'bundle', apps.registry().apps)
+            offline_bundle.build(base / 'bundle', platform_file.checkout().apps)
             target = target_render.load(base / 'bundle', {target_render.PUBLISH_ADDRESS: '192.0.2.10'},
                                         environment={}, recorded={})
             runtime = base / 'quadlet/platform-kube-runtime'
@@ -142,7 +142,7 @@ class WorkloadsTests(unittest.TestCase):
         self.assertIn('PublishPort=127.0.0.1:5432:5432\n', rendered)
 
     def test_databases_publish_distinct_ports_from_the_registry(self):
-        for app in apps.registry().apps:
+        for app in platform_file.checkout().apps:
             rendered = quadlet.render(ROOT, app.database.unit, {
                 'postgres_publish_port': app.replication_port,
                 'postgres_publish_address': '192.0.2.50',
@@ -162,10 +162,10 @@ class WorkloadsTests(unittest.TestCase):
             with self.subTest(mode=mode, present=present, refresh=refresh), \
                     FakeHost(images_present=present) as host, tempfile.TemporaryDirectory() as bundle:
                 (Path(bundle) / 'images').mkdir()
-                for image in images.image_list(apps.registry().apps[0]) + images.shared_images():
+                for image in images.image_list(platform_file.checkout().apps[0]) + images.shared_images():
                     (Path(bundle) / 'images' / image.archive).touch()
                 calls = host.calls
-                changed = images.prepare(ROOT, mode, bundle, refresh, app=apps.registry().apps[0])
+                changed = images.prepare(ROOT, mode, bundle, refresh, app=platform_file.checkout().apps[0])
                 self.assertEqual(set(changed.values()), {not present or refresh})
                 if mode == 'offline':
                     self.assertEqual(sum(a[1] == 'load' for a in calls), 5)

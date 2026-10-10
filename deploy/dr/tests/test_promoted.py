@@ -12,7 +12,7 @@ from unittest.mock import patch
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[2] / 'installer')]
 import dr_target  # noqa: E402
 from app_dr_host import cli, promoted, transfer  # noqa: E402
-from app_installer import apps, target_render  # noqa: E402
+from app_installer import platform_file, target_render  # noqa: E402
 
 CERTIFICATE = '-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----'
 ISSUER = 'https://auth.test:8443/auth/realms/todo'
@@ -128,7 +128,7 @@ class PromotedDeployTests(unittest.TestCase):
             # The serving tier in start order: Keycloak, the apps, nginx.
             self.assertEqual(starts, ['keycloak.service', 'todo-app.service', 'notes-app.service',
                                       'shared-proxy.service'])
-            for app in apps.registry().apps:
+            for app in platform_file.checkout().apps:
                 self.assertLess(self.index(host, ('systemctl', 'start', 'shared-proxy.service')),
                                 self.index(host, ('wait', '/health', app.hostname)))
                 self.assertIn(('request', app.api_path(), app.hostname), host.steps)
@@ -140,7 +140,7 @@ class PromotedDeployTests(unittest.TestCase):
                 host = PromotedHost(**changes)
                 self.assertTrue(self.deploy(host, directory))
                 stops = [s for s in host.steps if s[:3] == ('systemctl', '--user', 'stop')]
-                self.assertEqual(stops, [('systemctl', '--user', 'stop', *apps.registry().services(databases=False))])
+                self.assertEqual(stops, [('systemctl', '--user', 'stop', *platform_file.checkout().services(databases=False))])
                 self.assertLess(host.steps.index(stops[0]),
                                 min(i for i, s in enumerate(host.steps) if s[:2] == ('systemctl', 'start')))
 
@@ -150,8 +150,8 @@ class PromotedDeployTests(unittest.TestCase):
             'address': (PromotedHost(address='192.0.2.99'), {}, '192.0.2.11 is not'),
             'port': (PromotedHost(), {'service_port': 443}, 'service port 443'),
             'promotion': (PromotedHost(promoted=False), {}, 'promotion record'),
-            'secret': (PromotedHost(missing_secrets=[transfer.replicated_names(apps.registry())[-1]]), {},
-                       transfer.replicated_names(apps.registry())[-1]),
+            'secret': (PromotedHost(missing_secrets=[transfer.replicated_names(platform_file.checkout())[-1]]), {},
+                       transfer.replicated_names(platform_file.checkout())[-1]),
         }
         for name, (host, overrides, message) in cases.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as directory:
@@ -174,7 +174,7 @@ class PromotedDeployTests(unittest.TestCase):
             host = PromotedHost()
             self.deploy(host, directory)
             installs = [s[1:] for s in host.steps if s[0] == 'install']
-            self.assertEqual(installs, [('application', app.name) for app in apps.registry().apps]
+            self.assertEqual(installs, [('application', app.name) for app in platform_file.checkout().apps]
                              + [('keycloak', None), ('shared-proxy', None)])
 
     def test_nginx_gets_its_tls_secrets_for_the_recorded_hostnames_before_it_is_installed(self):
@@ -192,7 +192,7 @@ class PromotedDeployTests(unittest.TestCase):
 
     def test_a_failed_public_read_or_foreign_issuer_stops_the_deployment(self):
         with tempfile.TemporaryDirectory() as directory:
-            host = PromotedHost(reads={apps.registry().apps[-1].hostname: {'detail': 'error'}})
+            host = PromotedHost(reads={platform_file.checkout().apps[-1].hostname: {'detail': 'error'}})
             with self.assertRaisesRegex(RuntimeError, 'did not return a list'):
                 self.deploy(host, directory)
             host = PromotedHost(issuers=['https://192.0.2.11:8443/auth/realms/todo'])
@@ -215,8 +215,8 @@ class PromotedDeployTests(unittest.TestCase):
                                           'TARGET_NOTES_HOSTNAME': 'notes.example.org'}))
             host = PromotedHost(issuers=['https://auth.example.org:8443/auth/realms/todo'])
             self.deploy(host, directory)
-            self.assertIn(('request', apps.registry().apps[0].api_path(), 'shop.example.org'), host.steps)
-            self.assertIn(('request', apps.registry().apps[1].api_path(), 'notes.example.org'), host.steps)
+            self.assertIn(('request', platform_file.checkout().apps[0].api_path(), 'shop.example.org'), host.steps)
+            self.assertIn(('request', platform_file.checkout().apps[1].api_path(), 'notes.example.org'), host.steps)
             self.assertEqual([hostname for _client, hostname in host.clients], ['shop.example.org', 'notes.example.org'])
 
     def test_a_port_other_than_the_bundles_refuses_before_anything_changes(self):

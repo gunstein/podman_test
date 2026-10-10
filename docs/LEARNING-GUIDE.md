@@ -29,13 +29,13 @@ there is no template engine to install on the target host, only Python.
 CI compares packaged YAML with independent rendering. This is the Podman-supported
 subset of Kubernetes YAML: no Kubernetes cluster or portability promise.
 Read `deploy/manifests/postgres.yaml.j2`, `deploy/installer/app_installer/stack.py`,
-`deploy/environments/prod/values.yaml`,
+`platform.yaml`,
 `deploy/scripts/render-kube-runtime.sh` and `deploy/runtime/README.md`.
 To experiment, render into a temporary directory, never over deployed state:
 
 ```bash
 render_dir=$(mktemp -d)
-deploy/scripts/render-kube-runtime.sh deploy/environments/prod/values.yaml "$render_dir"
+deploy/scripts/render-kube-runtime.sh prod "$render_dir"
 cat "$render_dir/todo-app.yaml" "$render_dir/shared-proxy.yaml"
 ```
 

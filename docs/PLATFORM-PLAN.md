@@ -89,12 +89,14 @@ the phase.
 
 ## 4. One resolved model
 
-Where it stands after phase 2: `apps.Platform` has two fields, the apps in
+Where it stands after phase 3: `apps.Platform` has two fields, the apps in
 start order and Keycloak's default hostname, and derives the rest (the DR
-group, workloads, services). `apps.registry()` builds it in code;
+group, workloads, services). A build reads it from `platform.yaml` and each
+app's `examples/<app>/app.yaml` (`platform_file.load`, which also gives the
+environment's port and log level); there is no list of apps in the code.
 `bundle.json` (format version 6) carries it, and a host records it in
-`~/.config/platform/platform.json`. Loading it from `platform.yaml` and
-`app.yaml` is phase 3; the richer tree below grows with phases 3 to 5.
+`~/.config/platform/platform.json`. The richer tree below grows with phases
+4 and 5 (images, routes, checks, database and login as app fields).
 
 Before phase 2, bundling, installation and DR each rebuild the installation from the
 Python registry (`apps.APPS`, `apps.IDENTITY_APP`, default arguments such as
@@ -464,3 +466,25 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
   changed: setup and migration still assume Python entry points (phase 5
   contract), and the proxy entrypoint tests need a writable `/tmp`.
   Name guard: 51 known files left.
+
+**Phase 3, code done; understandability check pending.**
+- `platform.yaml` (the operator's: Keycloak's hostname, the public port and
+  log level with a `local` and a `prod` environment that may change only
+  those two, and the apps by directory with their hostnames and replication
+  ports) and `examples/todo/app.yaml`, `examples/notes/app.yaml` (the
+  developer's: name, OAuth client, REST collection) hold today's values. The
+  app sources stay at the repository root until phase 5.
+- `app_installer/platform_file.py` loads and checks them: unknown or missing
+  fields, bad hostnames and ports (`publicPort` 1024-65535) and clashes
+  between apps are errors that name the file and the field. PyYAML is
+  imported only when a file is read, so offline hosts never need it.
+- `apps.registry()`, `apps.IDENTITY_HOSTNAME`, `render.read_values`,
+  `render.platform` and `deploy/environments/*/values.yaml` are gone. Build
+  and dev mode, `render-kube-runtime.sh` (now `[ENVIRONMENT] [OUTPUT]`), the
+  bundle and operations package builds, the image export and
+  `replication-apps` read `platform.yaml`; the tests and the lab tools use
+  `platform_file.checkout()`, this checkout's file. Rendered output unchanged
+  (render baseline).
+- Not in v1 of the files, because nothing uses it yet: the realm each app
+  uses (all apps share the `todo` realm today) and `which app serves another
+  app's help path`; they come with the phases that need them.

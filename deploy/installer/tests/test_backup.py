@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import apps, backup, cli  # noqa: E402
+from app_installer import apps, backup, cli, platform_file  # noqa: E402
 from fake_host import FakeHost  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -45,15 +45,15 @@ class BackupTest(unittest.TestCase):
         self.runtime.mkdir()
 
     def install_units(self, databases=None, applications=None):
-        databases = apps.registry().replicated_databases if databases is None else databases
-        applications = apps.registry().apps if applications is None else applications
+        databases = platform_file.checkout().replicated_databases if databases is None else databases
+        applications = platform_file.checkout().apps if applications is None else applications
         for name in [database.unit for database in databases] + [app.unit for app in applications]:
             (self.runtime / name).write_text('[Kube]\n')
 
 
 class CreateAndPruneTests(BackupTest):
     def test_a_backup_runs_inside_the_database_container_and_is_latest_only_once_verified(self):
-        database = apps.registry().apps[0].database
+        database = platform_file.checkout().apps[0].database
         with BackupHost() as host:
             self.assertEqual(backup.create(database, lambda: NOW), 'base-20261009T023000Z')
         commands = [argv for argv in host.calls if argv[:2] == ['podman', 'exec']]
@@ -70,7 +70,7 @@ class CreateAndPruneTests(BackupTest):
     def test_backups_older_than_the_kept_days_go_but_never_the_latest(self):
         self.assertEqual(backup.expired(WEEK, WEEK[-1], backup.cutoff(7, lambda: NOW)), WEEK[:2])
         self.assertEqual(backup.expired(WEEK[:1], WEEK[0], backup.cutoff(1, lambda: NOW)), [])
-        database = apps.registry().apps[0].database
+        database = platform_file.checkout().apps[0].database
         with BackupHost() as host:
             self.assertEqual(backup.prune(database, 7, lambda: NOW), WEEK[:2])
         deletion = host.calls[-1]
@@ -92,7 +92,7 @@ class CreateAndPruneTests(BackupTest):
 class NightlyTests(BackupTest):
     def nightly(self, host, disk=DISK):
         with host:
-            return backup.nightly(apps.registry(), 7, self.quadlet, lambda: NOW, disk)
+            return backup.nightly(platform_file.checkout(), 7, self.quadlet, lambda: NOW, disk)
 
     def test_every_installed_database_is_backed_up_then_pruned(self):
         self.install_units()
@@ -104,11 +104,11 @@ class NightlyTests(BackupTest):
         self.assertEqual(lines[-1], 'Disk: 50% free (51200 MiB)')
         order = [('backup' if 'pg_basebackup' in argv else 'prune' if 'rm -rf' in ' '.join(argv) else None)
                  for argv in host.calls]
-        self.assertEqual([step for step in order if step], ['backup', 'prune'] * len(apps.registry().replicated_databases))
+        self.assertEqual([step for step in order if step], ['backup', 'prune'] * len(platform_file.checkout().replicated_databases))
 
     def test_only_the_installed_databases_are_backed_up(self):
-        self.install_units(databases=[apps.registry().apps[0].database, apps.KEYCLOAK_DATABASE],
-                           applications=[apps.registry().apps[0]])
+        self.install_units(databases=[platform_file.checkout().apps[0].database, apps.KEYCLOAK_DATABASE],
+                           applications=[platform_file.checkout().apps[0]])
         lines, _ = self.nightly(BackupHost())
         self.assertEqual([line.split(':')[0] for line in lines[:-1]], ['todo', 'keycloak'])
 
@@ -125,7 +125,7 @@ class NightlyTests(BackupTest):
     def test_a_nearly_full_disk_is_a_problem_after_the_backup(self):
         self.install_units()
         lines, problems = self.nightly(BackupHost(), disk=(100 * 2**30, 95 * 2**30, 5 * 2**30))
-        self.assertEqual(len(lines), len(apps.registry().replicated_databases))
+        self.assertEqual(len(lines), len(platform_file.checkout().replicated_databases))
         self.assertEqual(problems, ['only 5% of the disk is free (5120 MiB); the backup wants 10%'])
 
     def test_the_command_exits_1_on_a_problem_and_needs_a_day(self):
@@ -139,12 +139,12 @@ class NightlyTests(BackupTest):
 class RestoreTests(BackupTest):
     def restore(self, host, confirm='this-host'):
         with host, patch.object(backup.socket, 'gethostname', return_value='this-host'):
-            return backup.restore(apps.registry(), confirm, self.quadlet)
+            return backup.restore(platform_file.checkout(), confirm, self.quadlet)
 
     def test_checks_then_stops_everything_then_restores_then_starts_in_order(self):
         self.install_units()
         host = BackupHost()
-        self.assertEqual(self.restore(host), {database.name: WEEK[-1] for database in apps.registry().replicated_databases})
+        self.assertEqual(self.restore(host), {database.name: WEEK[-1] for database in platform_file.checkout().replicated_databases})
         kinds = []
         for argv in host.calls:
             if argv[:2] == ['podman', 'run'] and any('cat /backup/LATEST' in part for part in argv):
@@ -155,12 +155,12 @@ class RestoreTests(BackupTest):
                 kinds.append('restore')
             elif argv[:3] == ['systemctl', '--user', 'start']:
                 kinds.append('start')
-        databases = len(apps.registry().replicated_databases)
+        databases = len(platform_file.checkout().replicated_databases)
         self.assertEqual(kinds[:databases + 1 + databases], ['check'] * databases + ['stop'] + ['restore'] * databases)
         stop = next(argv for argv in host.calls if argv[:3] == ['systemctl', '--user', 'stop'])
-        self.assertEqual(stop[3:], apps.registry().services())
+        self.assertEqual(stop[3:], platform_file.checkout().services())
         starts = [argv[3] for argv in host.calls if argv[:3] == ['systemctl', '--user', 'start']]
-        self.assertEqual(starts[:databases], [database.service for database in apps.registry().replicated_databases])
+        self.assertEqual(starts[:databases], [database.service for database in platform_file.checkout().replicated_databases])
         self.assertEqual(starts[-1], 'shared-proxy.service')
         restore = next(argv for argv in host.calls if backup.RESTORE_SCRIPT in argv)
         self.assertIn('todo-postgres-data:/data:z', restore)

@@ -217,9 +217,9 @@ class TransportTimeoutTests(unittest.TestCase):
         self.assertEqual(seen, [transport.COMMAND_TIMEOUT, 5])
 
     def test_data_copy_steps_get_a_longer_backstop_than_other_steps(self):
-        from app_installer import apps
+        from app_installer import platform_file
         from app_ops import steps
-        self.assertGreater(steps.copy_step_timeout(apps.registry().replicated_databases), steps.STEP_TIMEOUT)
+        self.assertGreater(steps.copy_step_timeout(platform_file.checkout().replicated_databases), steps.STEP_TIMEOUT)
         self.assertGreater(steps.STEP_TIMEOUT, transport.COMMAND_TIMEOUT)
 
 if __name__ == "__main__":

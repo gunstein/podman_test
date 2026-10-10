@@ -23,7 +23,7 @@ mkdir -p "$(dirname "$output")"
 # host knows; install.sh and the DR tools fill them in without Jinja2. Those
 # are the only workload files in the bundle: no templates, nothing to render.
 PYTHONPATH="$project_root/deploy/installer${PYTHONPATH:+:$PYTHONPATH}" \
-  python3 -m app_installer.bundle "$project_root" "$project_root/deploy/environments/prod/values.yaml" \
+  python3 -m app_installer.bundle "$project_root" prod \
   "$bundle_directory"
 
 PYTHONPATH="$project_root/deploy/installer${PYTHONPATH:+:$PYTHONPATH}" \
@@ -42,7 +42,6 @@ cp "$project_root/docs/ARCHITECTURE.md" \
 cp -r "$project_root/docs/runbooks" "$bundle_directory/docs/"
 
 cp "$project_root/deploy/README.md" "$bundle_directory/deploy/"
-cp -r "$project_root/deploy/environments" "$bundle_directory/deploy/"
 cp "$project_root/deploy/runtime/README.md" "$bundle_directory/deploy/runtime/"
 cp "$project_root/docs/history/RESULTS.md" "$bundle_directory/deploy/runtime/"
 cp "$project_root/deploy/offline/install.sh" "$project_root/deploy/offline/preflight.sh" \

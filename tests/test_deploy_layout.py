@@ -16,7 +16,7 @@ class DeployLayoutTests(unittest.TestCase):
                 output = Path(directory) / "rendered"
                 subprocess.run([
                     str(ROOT / "deploy/scripts/render-kube-runtime.sh"),
-                    str(ROOT / f"deploy/environments/{environment}/values.yaml"), str(output),
+                    environment, str(output),
                 ], cwd=directory, check=True, capture_output=True)
                 self.assertEqual({p.name for p in output.iterdir()}, {
                     "todo-app.yaml", "keycloak.yaml", "todo-postgres.yaml", "todo-config.yaml", "shared-proxy.yaml",

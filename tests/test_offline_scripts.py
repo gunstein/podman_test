@@ -93,10 +93,12 @@ class OfflineScriptTests(unittest.TestCase):
             (output / name).write_text(f"original {name}\n")
         project_root = self.directory / "project"
         shutil.copytree(ROOT / "deploy/manifests", project_root / "deploy/manifests")
+        shutil.copytree(ROOT / "examples", project_root / "examples")
+        shutil.copy(ROOT / "platform.yaml", project_root)
         (project_root / "deploy/manifests/shared-proxy.yaml.j2").write_text("{% broken jinja syntax\n")
         result = subprocess.run(
             [sys.executable, "-m", "app_installer.render", str(project_root),
-             str(ROOT / "deploy/environments/prod/values.yaml"), str(output)],
+             "prod", str(output)],
             env={**self.env, "PYTHONPATH": str(ROOT / "deploy/installer")},
             capture_output=True, text=True, check=False,
         )

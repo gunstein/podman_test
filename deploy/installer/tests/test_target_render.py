@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import offline_bundle  # noqa: E402
-from app_installer import apps, target_render  # noqa: E402
+from app_installer import platform_file, target_render  # noqa: E402
 from app_installer.target_render import (  # noqa: E402
     IDENTITY_HOSTNAME,
     PUBLISH_ADDRESS,
@@ -42,9 +42,9 @@ class SubstituteTests(unittest.TestCase):
 
 class ResolveTests(unittest.TestCase):
     def test_keycloak_and_every_app_have_their_own_hostname_value(self):
-        self.assertEqual(target_render.hostname_targets(apps.registry()), [IDENTITY_HOSTNAME, TODO, NOTES])
-        self.assertEqual([target_render.hostname_target(app) for app in apps.registry().apps], [TODO, NOTES])
-        self.assertEqual(target_render.hostnames(VALUES, apps.registry()),
+        self.assertEqual(target_render.hostname_targets(platform_file.checkout()), [IDENTITY_HOSTNAME, TODO, NOTES])
+        self.assertEqual([target_render.hostname_target(app) for app in platform_file.checkout().apps], [TODO, NOTES])
+        self.assertEqual(target_render.hostnames(VALUES, platform_file.checkout()),
                          {'todo': 'todo.example.org', 'notes': 'notes.example.org'})
         self.assertEqual(target_render.identity_hostname(VALUES), 'shop.example.org')
 
@@ -113,7 +113,7 @@ class MetadataTests(unittest.TestCase):
     def setUp(self):
         self.bundle = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__('shutil').rmtree(self.bundle))
-        offline_bundle.build(self.bundle, apps.registry().apps)
+        offline_bundle.build(self.bundle, platform_file.checkout().apps)
         self.metadata = json.loads((self.bundle / 'bundle.json').read_text())
 
     def write(self, **changes):

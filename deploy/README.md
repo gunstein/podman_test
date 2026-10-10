@@ -9,7 +9,6 @@ rebuilds the Todo, Notes and Keycloak databases as one group.
 | Path | Responsibility |
 |---|---|
 | `manifests/` | Jinja2 workload templates, one per workload type, shared by every app |
-| `environments/local/values.yaml`, `environments/prod/values.yaml` | Non-secret workload overrides, shared by every workload |
 | `quadlet/` | One source for the network and seven systemd workload templates |
 | `installer/` | Single-host Python installer, shared workload functions and nightly backups |
 | `dr/` | app-ops (controller) and app_dr_host (each host): guarded DR/backup operations over plain SSH, the DR and backup tools, their timers (`dr/systemd`) and documentation |
@@ -33,7 +32,9 @@ deploy/scripts/dev/dev-down.sh
 PYTHONPATH=deploy/installer python3 -m app_installer install --mode server
 ```
 
-Workload settings that vary by environment belong in `environments/*/values.yaml`;
+Which apps run, their hostnames and the settings that vary by environment
+(public port, log level) belong in `platform.yaml` at the repository root, and
+what each app is in its `app.yaml` (`examples/<app>/`);
 host and operational settings belong in the app-ops inventory. Settings that never
 vary stay directly in the `.yaml.j2` template. Secrets stay
 outside YAML and Git. Jinja2 renders both the Kube YAML in `manifests/*.yaml.j2`

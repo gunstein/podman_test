@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 
-# app-ops reuses the installer's registry and settings. On the controller it
+# app-ops reuses the installer's model and settings. On the controller it
 # runs from a checkout or the operations package, where the installer is
 # deploy/installer next to deploy/dr; see deploy/dr/README.md ("Where DR finds
 # the installer"). Done here, so every module of the package can import it.

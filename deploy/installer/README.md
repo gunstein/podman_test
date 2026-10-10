@@ -11,8 +11,9 @@ files the build rendered (`target_render.py`, standard library only), and so
 do the DR tools on a primary and a standby.
 
 One installation is an `apps.Platform`: its apps, in start order, and
-Keycloak's default hostname. `apps.registry()` builds today's (Todo and
-Notes); an offline bundle carries the one it was built for in `bundle.json`,
+Keycloak's default hostname. A build reads it from `platform.yaml` at the
+project root and each app's `app.yaml` (`platform_file.py`; today Todo and
+Notes, in `examples/`); an offline bundle carries the one it was built for in `bundle.json`,
 and an install records it on the host (`~/.config/platform/platform.json`),
 which every later command on the host (backup, uninstall, the DR tools) reads
 instead of a list in the code. That record is written before an install

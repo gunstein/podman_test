@@ -20,7 +20,7 @@ cp "$project_root/deploy/README.md" "$package_directory/deploy/"
 # The DR tools install the same target files as the offline bundle (bundle.json,
 # generated/target); like the bundle, the package has no templates.
 PYTHONPATH="$project_root/deploy/installer${PYTHONPATH:+:$PYTHONPATH}" python3 -m app_installer.bundle \
-  "$project_root" "$project_root/deploy/environments/prod/values.yaml" "$package_directory"
+  "$project_root" prod "$package_directory"
 cp "$project_root/deploy/runtime/README.md" "$package_directory/deploy/runtime/"
 cp "$project_root/docs/history/RESULTS.md" "$package_directory/deploy/runtime/"
 # app_ca.py and platform-ca-sign: the CA for provided TLS mode, from its own storage (docs/TLS.md).

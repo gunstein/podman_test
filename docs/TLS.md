@@ -139,7 +139,7 @@ host) uses the OpenSSL in the proxy image to create:
 
 - a local demo CA (10 years);
 - one server key and SAN certificate (397 days) covering `todo.test` and
-  `notes.test` (the public hostnames, derived from the App registry); and
+  `notes.test` (the public hostnames, from `platform.yaml`); and
 - a public `ca.crt` that an operator may explicitly install on a test client.
 
 They are host-local Podman secrets. The demo CA's private key stays in its own

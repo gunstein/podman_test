@@ -3,7 +3,7 @@
 Kubernetes YAML here is only a manifest format for podman kube play/Quadlet;
 there is never a real cluster, so a template engine is all that is needed
 and Helm is not used. Ownership is split the same way as for the Quadlet templates:
-stack.py/apps.py own topology and naming, values.yaml owns per-environment
+stack.py/apps.py own topology and naming, platform.yaml owns per-environment
 settings, and only truly static structure lives in the .j2 files themselves.
 """
 import re
@@ -14,7 +14,7 @@ from . import apps
 # shared-proxy.yaml.j2 interpolates hostnames raw into the nginx.conf literal
 # block scalar (plain text, not a YAML value, so | tojson does not apply
 # there). Validate every hostname that reaches it - both the operator-supplied
-# runtime.identityHostname and each App's own registry hostname - so neither can
+# identityHostname and each app's hostname in platform.yaml - so neither can
 # inject an nginx directive or break the surrounding YAML with a stray ';',
 # '#' or newline. The check also requires a real DNS name, so a name such as
 # ".." or "-todo.test" fails here and not later in nginx, TLS or Keycloak.

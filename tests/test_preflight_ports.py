@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PREFLIGHT = (ROOT / "deploy/offline/preflight.sh").read_text()
 sys.path.insert(0, str(ROOT / "deploy/installer"))
 
-from app_installer import apps  # noqa: E402
+from app_installer import platform_file  # noqa: E402
 
 PORT_CHECK = PREFLIGHT.split("python3 - <<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
 
@@ -66,7 +66,7 @@ class PreflightHostPortTests(unittest.TestCase):
 
     def test_every_registered_database_port_is_checked(self):
         checked = self.check_ports(set())
-        for database in apps.registry().replicated_databases:
+        for database in platform_file.checkout().replicated_databases:
             self.assertIn(database.replication_port, checked)
             self.assertIn(f'"{database.container}:{database.replication_port}"', PREFLIGHT)
 

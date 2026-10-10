@@ -111,8 +111,8 @@ hypervisor isolation and is not a substitute for fencing.
 An isolated DHCP boot can leave the configured publish address unavailable:
 `rootlessport ... bind: cannot assign requested address`. The PostgreSQL
 units may then remain `failed` even after a successful stop. The helper accepts
-`inactive` or `failed` only after stopping every unit in the App registry
-(`shared-proxy`, `todo-app`, `notes-app`, `keycloak`, `todo-postgres`,
+`inactive` or `failed` only after stopping every unit of the platform the host
+recorded at install (`shared-proxy`, `todo-app`, `notes-app`, `keycloak`, `todo-postgres`,
 `notes-postgres`, `keycloak-postgres`), requiring zero
 MainPID and ControlPID for each and no running user containers. It warns about
 failed units without clearing their failure state. Read the journal over

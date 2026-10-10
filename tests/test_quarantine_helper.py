@@ -154,16 +154,16 @@ class QuarantineRegistryTests(unittest.TestCase):
         # The fake python3 above never runs the helper's own Python; run it here against
         # the installer it imports on a host, with a platform record in the user's home.
         sys.path.insert(0, str(ROOT / "deploy/installer"))
-        from app_installer import apps
+        from app_installer import platform_file
 
         helper = (ROOT / "deploy/dr/scripts/app-quarantine.sh").read_text()
         code = helper.split("python3 -c \\\n  '", 1)[1].split("')", 1)[0]
         with tempfile.TemporaryDirectory() as home:
             record = Path(home) / ".config/platform/platform.json"
             record.parent.mkdir(parents=True)
-            record.write_text(json.dumps(apps.registry().to_json()))
+            record.write_text(json.dumps(platform_file.checkout().to_json()))
             result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False,
                                     env={**os.environ, "HOME": home, "PYTHONDONTWRITEBYTECODE": "1",
                                          "PYTHONPATH": str(ROOT / "deploy/installer")})
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.split(), apps.registry().services())
+        self.assertEqual(result.stdout.split(), platform_file.checkout().services())

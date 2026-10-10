@@ -16,8 +16,7 @@ The bundle then holds, under generated/target/:
                       replication on ${TARGET_PUBLISH_ADDRESS}
 
 and bundle.json says where each of them is, the platform it was built for (apps.Platform), the
-public port and the default target values (values.yaml and the app
-registry). The offline bundle and the operations package carry the same
+public port and the default target values (platform.yaml). The offline bundle and the operations package carry the same
 files: install.sh installs them on a single host, the DR tools on the
 primary and the standby.
 """
@@ -26,7 +25,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import quadlet, render, target_render, workloads
+from . import platform_file, quadlet, render, target_render, workloads
 from .target_render import (
     IDENTITY_HOSTNAME,
     LOOPBACK,
@@ -52,8 +51,11 @@ def quadlets(project_root, platform, port, publish_address):
     return units
 
 
-def build(project_root, values_file, bundle_directory, application_names=()):
+def build(project_root, environment_name, bundle_directory, application_names=()):
     """Write generated/target and bundle.json into bundle_directory, and check them; return bundle.json's data.
+
+    The platform is project_root's platform.yaml in environment_name (prod
+    for a real bundle), with only the named apps if any are named.
 
     The manifests are rendered with placeholder hostnames, then checked
     against a normal render with the default hostnames: putting those
@@ -62,8 +64,9 @@ def build(project_root, values_file, bundle_directory, application_names=()):
     target host loads it, once for each proxy unit.
     """
     root, bundle = Path(project_root), Path(bundle_directory)
-    platform = render.platform(values_file, application_names)
-    _identity, port, log_level = render.read_values(values_file)
+    platform, environment = platform_file.load(root / platform_file.FILE, environment_name)
+    platform = platform.select(application_names)
+    port, log_level = environment.public_port, environment.log_level
     normal = render.hostnames(platform)
     manifest_files = render.files(root, platform,
                                   {app.name: placeholder(hostname_target(app)) for app in platform.apps},

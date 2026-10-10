@@ -1,4 +1,4 @@
-"""Build-time manifest rendering driven by the same registry as installation."""
+"""Build-time manifest rendering of one platform (platform_file.load reads it from platform.yaml)."""
 import shutil
 import sys
 import tempfile
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from . import apps, manifests
+from . import apps, manifests, platform_file
 
 
 def _validate(name, content):
@@ -15,38 +15,6 @@ def _validate(name, content):
         list(yaml.safe_load_all(content))
     except yaml.YAMLError as error:
         raise RuntimeError(f'Rendered {name} is not valid YAML: {error}') from error
-
-
-def read_values(values_file):
-    """identityHostname, publicPort and logLevel from the runtime section of values.yaml.
-
-    Checked here, so a mistake in the file gives an error that names the
-    file and the setting instead of a KeyError or a broken manifest.
-    """
-    try:
-        document = yaml.safe_load(Path(values_file).read_text())
-    except yaml.YAMLError as error:
-        raise ValueError(f'{values_file}: not valid YAML: {error}') from error
-    runtime = document.get('runtime') if isinstance(document, dict) else None
-    if not isinstance(runtime, dict):
-        raise ValueError(f'{values_file}: needs a runtime section')
-    missing = [key for key in ('identityHostname', 'publicPort', 'logLevel') if key not in runtime]
-    if missing:
-        raise ValueError(f'{values_file}: runtime is missing {", ".join(missing)}')
-    hostname, port, log_level = runtime['identityHostname'], runtime['publicPort'], runtime['logLevel']
-    if not isinstance(hostname, str):
-        raise ValueError(f'{values_file}: runtime.identityHostname must be a hostname')
-    manifests.validate_hostname(hostname)
-    if type(port) is not int or not 1 <= port <= 65535:
-        raise ValueError(f'{values_file}: runtime.publicPort must be a port number, 1-65535')
-    if not isinstance(log_level, str) or not log_level:
-        raise ValueError(f'{values_file}: runtime.logLevel must be a word such as info')
-    return hostname, port, log_level
-
-
-def platform(values_file, application_names=()):
-    """The platform a build renders: the registry's apps (the named ones, or all), Keycloak's hostname from values."""
-    return apps.registry(read_values(values_file)[0]).select(application_names)
 
 
 def hostnames(platform):
@@ -84,20 +52,20 @@ def files(project_root, platform, hostnames, identity_hostname, port, log_level)
     return result
 
 
-def render(project_root, values_file, output_directory, platform):
+def render(project_root, environment, output_directory, platform):
     """Render every Kube YAML file of platform into output_directory.
 
     Runs at build time: install.py renders the platform it installs, and
-    render-kube-runtime.sh the registry's (see platform). The port and the
-    log level come from the environment's values.yaml. Every file is
+    render-kube-runtime.sh the one in platform.yaml. environment
+    (platform_file.Environment) gives the port and the log level. Every file is
     rendered and checked first. Then the whole output directory is replaced
     (see _replace_directory), so it holds exactly this render: no file from
     an earlier render stays behind, and a failed render leaves the earlier
     output as it was.
     """
-    _identity, port, log_level = read_values(values_file)
     _replace_directory(Path(output_directory), files(project_root, platform, hostnames(platform),
-                                                     platform.identity_hostname, port, log_level))
+                                                     platform.identity_hostname, environment.public_port,
+                                                     environment.log_level))
 
 
 def _replace_directory(output, files):
@@ -125,8 +93,9 @@ def _replace_directory(output, files):
 
 if __name__ == '__main__':
     try:
-        project_root, values_file, output_directory = sys.argv[1:]
-        render(project_root, values_file, output_directory, platform(values_file))
+        project_root, environment_name, output_directory = sys.argv[1:]
+        platform, environment = platform_file.load(Path(project_root) / platform_file.FILE, environment_name)
+        render(project_root, environment, output_directory, platform)
     except (OSError, ValueError, RuntimeError) as error:
         print(f'Rendering failed: {error}', file=sys.stderr)
         sys.exit(1)

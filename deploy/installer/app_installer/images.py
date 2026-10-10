@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import apps, settings
+from . import apps, platform_file, settings
 from .commands import exists, run
 
 
@@ -118,4 +118,5 @@ if __name__ == '__main__':
     parser.add_argument('project_root', type=Path)
     parser.add_argument('destination', type=Path)
     arguments = parser.parse_args()
-    build_and_export(arguments.project_root, arguments.destination, apps.registry())
+    platform = platform_file.load(arguments.project_root / platform_file.FILE)[0]
+    build_and_export(arguments.project_root, arguments.destination, platform)

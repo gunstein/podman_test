@@ -20,7 +20,7 @@ def bundle():
     from app_installer import bundle as builder
     directory = Path(tempfile.mkdtemp())
     atexit.register(shutil.rmtree, directory, True)
-    builder.build(ROOT, ROOT / 'deploy/environments/prod/values.yaml', directory)
+    builder.build(ROOT, 'prod', directory)
     return directory
 
 

@@ -27,7 +27,7 @@ There are two kinds of value:
 A hostname comes from the first of: the command line (or, for the DR tools,
 the host they copy it from), the environment variable of the same name
 (install.sh only), the host's record, and the default the bundle was built
-with (values.yaml and the app registry).
+with (platform.yaml).
 
 bundle.json also carries the platform the bundle was built for
 (apps.Platform): its apps and Keycloak's default hostname. An install

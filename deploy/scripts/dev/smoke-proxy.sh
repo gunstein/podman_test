@@ -15,7 +15,7 @@ cleanup() {
   rm -rf "$work_directory"
 }
 trap cleanup EXIT
-"$project_root/deploy/scripts/render-kube-runtime.sh" "$project_root/deploy/environments/prod/values.yaml" "$work_directory"
+"$project_root/deploy/scripts/render-kube-runtime.sh" prod "$work_directory"
 python3 - "$work_directory" <<'PY'
 import sys
 from pathlib import Path

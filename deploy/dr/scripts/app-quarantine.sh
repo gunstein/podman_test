@@ -31,9 +31,12 @@ until as_user systemctl --user show --property=Version --value > /dev/null 2>&1;
   attempt=$((attempt + 1))
   sleep "${MANAGER_DELAY:-1}"
 done
-# One trusted registry owns the complete group; never leave another app running.
-units=$(PYTHONPATH=/opt/platform/lib PYTHONDONTWRITEBYTECODE=1 python3 -c \
-  'from app_installer.apps import services; print("\n".join(services()))')
+# The platform the service user's install recorded names the complete group
+# (target_render.installed_platform); never leave another app running.
+service_home=$(getent passwd "$service_user" | cut -d: -f6)
+test -n "$service_home" || { echo "No home directory for $service_user" >&2; exit 1; }
+units=$(as_user env HOME="$service_home" PYTHONPATH=/opt/platform/lib PYTHONDONTWRITEBYTECODE=1 python3 -c \
+  'from app_installer.target_render import installed_platform; print("\n".join(installed_platform().services()))')
 set -f
 # Intentional splitting of the registry's newline-separated, validated unit names.
 # shellcheck disable=SC2086

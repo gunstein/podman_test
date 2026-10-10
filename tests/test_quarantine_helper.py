@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -26,12 +27,16 @@ if name == 'id':
     print(os.environ.get('ROOT_UID', '0') if len(args) == 1 else '1000')
 elif name == 'hostname':
     print('todo-primary')
-elif name == 'python3':
-    print(os.environ.get('REGISTRY_UNITS', 'shared-proxy.service\\ntodo-app.service\\nnotes-app.service\\nkeycloak.service\\ntodo-postgres.service\\nnotes-postgres.service'))
+elif name == 'getent':
+    print('gunstein:x:1000:1000::/home/gunstein:/bin/bash')
 elif name == 'runuser':
     assert args[:5] == ['-u', 'gunstein', '--', 'env', 'XDG_RUNTIME_DIR=/run/user/1000']
     command = args[5:]
-    if command[0] == 'podman':
+    if command[0] == 'env':
+        # The platform record is read as the service user, from its own home.
+        assert 'HOME=/home/gunstein' in command and command[-3:-1] == ['python3', '-c'], command
+        print(os.environ.get('REGISTRY_UNITS', 'shared-proxy.service\\ntodo-app.service\\nnotes-app.service\\nkeycloak.service\\ntodo-postgres.service\\nnotes-postgres.service'))
+    elif command[0] == 'podman':
         print(os.environ.get('CONTAINERS', ''), end='')
         sys.exit(int(os.environ.get('PODMAN_RC', '0')))
     elif '--property=Version' in command:
@@ -59,7 +64,7 @@ else:
     sys.exit(99)
 ''')
             fake.chmod(0o755)
-            for name in ("id", "hostname", "runuser", "python3"):
+            for name in ("id", "hostname", "runuser", "getent"):
                 (directory / name).symlink_to(fake)
             result = subprocess.run(
                 ["sh", str(ROOT / "deploy/dr/scripts/app-quarantine.sh"), action, expected, "gunstein"],
@@ -142,3 +147,23 @@ else:
             result, _ = self.run_helper('stop', **settings)
             self.assertNotEqual(result.returncode, 0)
             self.assertNotIn('STOPPED:', result.stdout)
+
+
+class QuarantineRegistryTests(unittest.TestCase):
+    def test_the_helper_python_names_every_service_of_the_recorded_platform(self):
+        # The fake python3 above never runs the helper's own Python; run it here against
+        # the installer it imports on a host, with a platform record in the user's home.
+        sys.path.insert(0, str(ROOT / "deploy/installer"))
+        from app_installer import apps
+
+        helper = (ROOT / "deploy/dr/scripts/app-quarantine.sh").read_text()
+        code = helper.split("python3 -c \\\n  '", 1)[1].split("')", 1)[0]
+        with tempfile.TemporaryDirectory() as home:
+            record = Path(home) / ".config/platform/platform.json"
+            record.parent.mkdir(parents=True)
+            record.write_text(json.dumps(apps.registry().to_json()))
+            result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False,
+                                    env={**os.environ, "HOME": home, "PYTHONDONTWRITEBYTECODE": "1",
+                                         "PYTHONPATH": str(ROOT / "deploy/installer")})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.split(), apps.registry().services())

@@ -56,5 +56,5 @@ def verify(platform, hostnames):
 
 
 def ready_urls(platform, hostnames):
-    """What wait-ready.sh asks for each app with a ready path: HOSTNAME/PATH, e.g. todo.test/ready."""
+    """What wait-ready.sh asks for each app with a ready path: HOSTNAME/PATH, e.g. shop.example.org/ready."""
     return [hostnames[app.name] + app.ready for app in platform.apps if app.ready]

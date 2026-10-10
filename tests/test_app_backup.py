@@ -601,7 +601,7 @@ class FakeHost:
             return completed("active\n" if self.active else "inactive\n", returncode=0 if self.active else 3)
         if command[:3] == ["systemctl", "--user", "show"]:
             database = next(d for d in self.databases.values() if d.service == command[3])
-            default = "/home/u/.config/containers/systemd/todo-kube-runtime/" + database.unit
+            default = "/home/u/.config/containers/systemd/platform-kube-runtime/" + database.unit
             return completed(self.source.get(database.name, default) + "\n")
         if command[:2] == ["systemctl", "--user"]:
             return completed()

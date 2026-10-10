@@ -37,7 +37,7 @@ trap cleanup EXIT
 
 # test_multi_app.py (Todo/Notes SSO) never ignores TLS errors, even here; it
 # needs the real demo CA, exported fresh so a rebuilt CA is picked up too.
-podman exec nginx cat /var/lib/todo-tls/ca.crt > "$ca_file"
+podman exec nginx cat /var/lib/platform-tls/ca.crt > "$ca_file"
 
 E2E_BASE_URL=https://localhost:8443 E2E_NOTES_URL=https://notes.test:8443 \
   E2E_MULTI_APP=1 E2E_CA_FILE="$ca_file" E2E_IGNORE_HTTPS_ERRORS=true \

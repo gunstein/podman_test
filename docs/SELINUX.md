@@ -44,7 +44,7 @@ still fail because of ownership.
 
    ```bash
    getenforce
-   ls -Zd "$HOME/.config/todo"
+   ls -Zd "$HOME/.config/platform"
    podman volume inspect todo-postgres-data
    podman unshare cat /proc/self/uid_map
    ```

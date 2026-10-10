@@ -1,0 +1,25 @@
+#!/bin/sh
+# The one CA operation the Podman user may run as root, in the v1 model
+# (docs/TLS.md, "v1: root owns the CA"): a certificate signing request on
+# stdin, the signed certificate on stdout. Installed root-owned 0755 as
+# /usr/local/sbin/platform-ca-sign, with app_ca.py root-owned 0644 in
+# /usr/local/lib/platform-ca/, and allowed by sudoers with no arguments at all:
+#   podman-user ALL=(root) NOPASSWD: /usr/local/sbin/platform-ca-sign ""
+# Everything else is fixed here or in app_ca.py: the CA directory, the
+# passphrase file, the validity, the subject and every extension. The caller
+# chooses no path, no openssl command and no option; app_ca.py refuses
+# any name outside the CA's domains.
+set -eu
+if [ "$#" -ne 0 ]; then
+    echo 'platform-ca-sign takes no arguments: a CSR on stdin, the certificate on stdout' >&2
+    exit 2
+fi
+umask 077
+# Kept outside /var/lib/platform-ca, root-only (0400). Without it, openssl asks
+# for the passphrase on the terminal.
+passphrase=/etc/platform-ca/passphrase
+if [ -f "$passphrase" ]; then
+    exec /usr/bin/python3 -I /usr/local/lib/platform-ca/app_ca.py sign-stdin \
+        --directory /var/lib/platform-ca --passphrase-file "$passphrase"
+fi
+exec /usr/bin/python3 -I /usr/local/lib/platform-ca/app_ca.py sign-stdin --directory /var/lib/platform-ca

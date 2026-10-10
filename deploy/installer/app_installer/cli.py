@@ -82,7 +82,7 @@ def tls_command(args):
         return 0
     if args.command == 'tls-request':
         names = tls.request(args.output, args.new_key)
-        print(f'Have the CA sign {args.output} (app_ca.py sign, or sudo todo-ca-sign), then: '
+        print(f'Have the CA sign {args.output} (app_ca.py sign, or sudo platform-ca-sign), then: '
               'python3 -m app_installer tls-install --certificate FILE --ca FILE', file=sys.stderr)
         print(json.dumps({'changed': True, 'request': str(args.output), 'hostnames': names}))
         return 0
@@ -130,7 +130,7 @@ def main(argv=None):
     remove.add_argument('--remove-backups', action='store_true',
                         help='with --remove-data: the backup volumes too; nothing can be restored afterwards')
     remove.add_argument('--quadlet-dir', type=Path)
-    backups = subcommands.add_parser('backup', help='nightly base backups of this host (todo-backup.timer)')
+    backups = subcommands.add_parser('backup', help='nightly base backups of this host (platform-backup.timer)')
     backup_commands = backups.add_subparsers(dest='backup_command', required=True)
     backup_commands.add_parser('create', help='a verified base backup of every installed database')
     nightly = backup_commands.add_parser('nightly', help='create, then delete backups older than --keep-days')

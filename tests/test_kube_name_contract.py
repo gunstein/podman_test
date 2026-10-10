@@ -42,14 +42,14 @@ class SharedResourceNameTests(unittest.TestCase):
         from app_installer import apps
         # nginx's unit reads the identity app's ConfigMap file.
         self.assertEqual(apps.PROXY_CONFIG_MANIFEST, apps.IDENTITY_APP.config_manifest)
-        self.assertEqual(apps.PROXY_IMAGE, 'localhost/todo-proxy:m12')
-        self.assertEqual(apps.PROXY_ARCHIVE, 'todo-proxy-m12.tar')
-        self.assertEqual(apps.NGINX_TLS_VOLUME, 'todo-nginx-data')
-        self.assertEqual(apps.PROXY_KUBE_TLS_SECRET, 'todo-kube-proxy-tls-secret')
+        self.assertEqual(apps.PROXY_IMAGE, 'localhost/platform-proxy:m12')
+        self.assertEqual(apps.PROXY_ARCHIVE, 'platform-proxy-m12.tar')
+        self.assertEqual(apps.NGINX_TLS_VOLUME, 'platform-nginx-data')
+        self.assertEqual(apps.PROXY_KUBE_TLS_SECRET, 'platform-kube-proxy-tls-secret')
         self.assertEqual(sorted(apps.PROXY_TLS_SECRETS.values()), [
-            'todo-proxy-ca-cert', 'todo-proxy-ca-key', 'todo-proxy-tls-cert', 'todo-proxy-tls-incoming',
-            'todo-proxy-tls-incoming-ca', 'todo-proxy-tls-key', 'todo-proxy-tls-mode',
-            'todo-proxy-tls-request-key'])
+            'platform-proxy-ca-cert', 'platform-proxy-ca-key', 'platform-proxy-tls-cert', 'platform-proxy-tls-incoming',
+            'platform-proxy-tls-incoming-ca', 'platform-proxy-tls-key', 'platform-proxy-tls-mode',
+            'platform-proxy-tls-request-key'])
 
 
 if __name__ == "__main__":

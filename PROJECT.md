@@ -26,10 +26,10 @@ the single host and, since D6, on the DR primary and standby too: app-ops
 copies the primary's public hostnames to the standby, and failover and
 rebuild use the recorded names. No target renders, so none needs Jinja2,
 and since D9 the VMs have none installed.
-A scheduled check on both hosts (`todo-dr-check.timer`) reports replication,
+A scheduled check on both hosts (`platform-dr-check.timer`) reports replication,
 archive and disk problems as a failed unit, and whether the host could take
 over (the same bundle revision, its image archives and every DR secret), and a nightly timer on the
-primary takes and prunes the base backups (`todo-backup.timer`); every
+primary takes and prunes the base backups (`platform-backup.timer`); every
 single-host install gets the same nightly backup and can restore the latest
 one, and the WAL archive survives a power loss. Install, standby bootstrap,
 quarantine rehearsal, fencing, the one `failover` command (group promotion,
@@ -229,7 +229,7 @@ other IdP adapters are not demonstrated production features.
 
 nginx's TLS files are now Podman secrets that the installer makes
 (`tls_secrets.py`, [TLS](docs/TLS.md#nginxs-tls-files-as-podman-secrets)), in
-local and provided mode and on the DR pair; the TLS volume `todo-nginx-data`
+local and provided mode and on the DR pair; the TLS volume `platform-nginx-data`
 stays, commented out in `shared-proxy.yaml.j2`, for going back. Run
 2026-10-09-run-2 accepted it in local mode; the provided mode, `tls-renew`
 and going back to the volume are covered by unit tests, the proxy smoke test

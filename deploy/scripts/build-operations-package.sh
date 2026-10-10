@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Build the operations package: app-ops, the DR host tools, the installer and
 # the same rendered target files as the offline bundle, plus the docs; no
-# image archives. Writes dist/todo-operations.tar.gz and its .sha256.
+# image archives. Writes dist/platform-operations.tar.gz and its .sha256.
 set -euo pipefail
 
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-output=${1:-"$project_root/dist/todo-operations.tar.gz"}
+output=${1:-"$project_root/dist/platform-operations.tar.gz"}
 work_directory=$(mktemp -d)
-package_directory="$work_directory/todo-operations"
+package_directory="$work_directory/platform-operations"
 trap 'rm -rf "$work_directory"' EXIT
 
 mkdir -p "$package_directory/deploy/runtime" \
@@ -23,10 +23,10 @@ PYTHONPATH="$project_root/deploy/installer${PYTHONPATH:+:$PYTHONPATH}" python3 -
   "$project_root" "$project_root/deploy/environments/prod/values.yaml" "$package_directory"
 cp "$project_root/deploy/runtime/README.md" "$package_directory/deploy/runtime/"
 cp "$project_root/docs/history/RESULTS.md" "$package_directory/deploy/runtime/"
-# app_ca.py and todo-ca-sign: the CA for provided TLS mode, from its own storage (docs/TLS.md).
+# app_ca.py and platform-ca-sign: the CA for provided TLS mode, from its own storage (docs/TLS.md).
 cp "$project_root/deploy/scripts/trust-files.sh" \
   "$project_root/deploy/scripts/wait-ready.sh" "$project_root/deploy/scripts/app_ca.py" \
-  "$project_root/deploy/scripts/todo-ca-sign" "$package_directory/deploy/scripts/"
+  "$project_root/deploy/scripts/platform-ca-sign" "$package_directory/deploy/scripts/"
 cp "$project_root/deploy/offline/FAPOLICYD.md" "$project_root/deploy/offline/README.md" \
   "$package_directory/deploy/offline/"
 cp "$project_root/docs/ARCHITECTURE.md" \
@@ -65,7 +65,7 @@ if source_revision=$(git -C "$project_root" rev-parse --verify HEAD 2>/dev/null)
     source_state=dirty
   fi
 fi
-printf 'package=todo-operations\nsource_revision=%s\nsource_state=%s\n' \
+printf 'package=platform-operations\nsource_revision=%s\nsource_state=%s\n' \
   "$source_revision" "$source_state" > "$package_directory/VERSION"
 (
   cd "$package_directory"

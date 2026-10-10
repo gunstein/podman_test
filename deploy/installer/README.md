@@ -45,12 +45,12 @@ without network access, in server mode only:
 
 ```bash
 python3 -m app_installer install --mode server --deployment-mode offline \
-  --bundle-dir /path/to/todo-offline-m12 --publish-address 192.168.0.102 \
+  --bundle-dir /path/to/platform-offline-m12 --publish-address 192.168.0.102 \
   --target-external-hostname todo.example.org --target-notes-hostname notes.example.org
 ```
 
 The hostname options are optional, one per app; the host records the names it
-installed with (`~/.config/todo/target-values.json`), so a later install keeps
+installed with (`~/.config/platform/target-values.json`), so a later install keeps
 them. The supported target values, their sources and checks are in
 [the offline README](../offline/README.md#target-values).
 
@@ -101,7 +101,7 @@ project's own), and on a DR host the command refuses like every uninstall.
 
 ## Nightly backups
 
-A server install turns on `todo-backup.timer`, which runs
+A server install turns on `platform-backup.timer`, which runs
 `python3 -m app_installer backup nightly --keep-days 7` from this installer's
 directory every night: a verified base backup of every installed database,
 taken inside its container into its backup volume, then deletion of those
@@ -134,7 +134,7 @@ reseed, promoted deploy, under [deploy/dr](../dr/README.md)) call these
 functions directly; there is no command line for a single workload, and this
 package imports nothing from `app_dr_host`. LAN replication publication is
 accepted only for the DR group's databases.
-Runtime directories must be exactly `quadlet-dir/todo-kube-runtime`; no new
+Runtime directories must be exactly `quadlet-dir/platform-kube-runtime`; no new
 `.volume` units are installed. Canonical Jinja templates stay outside the Python
 package, under the supplied project's `deploy/quadlet` directory.
 

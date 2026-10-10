@@ -103,7 +103,7 @@ TODO_URL = 'https://todo.test:8443'
 NOTES_URL = 'https://notes.test:8443'
 IDENTITY_ORIGIN = TODO_URL
 ZONE = 'public'  # the firewalld zone of the lab VMs' LAN interface (ACCEPTANCE.md phase 3)
-CA_PATH = '/var/lib/todo-tls/ca.crt'
+CA_PATH = '/var/lib/platform-tls/ca.crt'
 PYTHON = ROOT / 'todo-backend/.venv/bin/python'
 REBOOT_TIMEOUT = 600
 POLL_SECONDS = 10
@@ -252,13 +252,13 @@ cat /etc/machine-id
 # Podman runs each container health check as a transient unit named
 # <container id>-<random>.service; one failed run leaves it "failed" until the next.
 HEALTH_CHECK_UNIT = re.compile(r'[0-9a-f]{64}-[0-9a-f]+\.(service|timer)')
-# The scheduled DR check (todo-dr-check.timer). Its failed state means DR needs attention, as
+# The scheduled DR check (platform-dr-check.timer). Its failed state means DR needs attention, as
 # after a failover until the rebuild, not that a service is down; check
 # monitor tests it on its own.
-DR_CHECK = 'todo-dr-check'
+DR_CHECK = 'platform-dr-check'
 # The check's last line on a host that could take over (app_dr.readiness).
 READY = 'Ready to take over:'
-BACKUP = 'todo-backup'
+BACKUP = 'platform-backup'
 
 
 def check_services(step, host, mode):
@@ -282,7 +282,7 @@ def check_services(step, host, mode):
                 'no failed user units' + (f' (ignored {len(health_checks)} failed Podman health-check run)'
                                           if health_checks else '') + (f': {", ".join(others)}' if others else ''))
     if mode == 'app':
-        nginx = step.ssh(host, 'podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf')
+        nginx = step.ssh(host, 'podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf')
         step.expect(nginx.returncode == 0, 'nginx configuration is valid')
     else:
         serving = apps.services(databases=False)
@@ -700,7 +700,7 @@ def check_connect(step, source, target, port, expected):
 
 def quarantine_helper(step, vmid, action, name):
     """Run app-quarantine.sh ACTION through the Guest Agent; return the result and the agent's JSON."""
-    result = pve(step, 'exec', vmid, '--', '/opt/todo/bin/app-quarantine.sh', action, name, step.user)
+    result = pve(step, 'exec', vmid, '--', '/opt/platform/bin/app-quarantine.sh', action, name, step.user)
     return result, parsed(result, {})
 
 
@@ -830,7 +830,7 @@ echo "PINNED $host $actual"
 
 def do_pin_ssh(step, source, target):
     """Key-based SSH from source to target, with target's host key checked over the client's trusted SSH."""
-    key = step.ssh(source, "test -f ~/.ssh/id_rsa || ssh-keygen -q -t rsa -b 3072 -N '' -C todo-ops-control "
+    key = step.ssh(source, "test -f ~/.ssh/id_rsa || ssh-keygen -q -t rsa -b 3072 -N '' -C platform-ops-control "
                            "-f ~/.ssh/id_rsa; cat ~/.ssh/id_rsa.pub").stdout.strip().splitlines()
     public = key[-1] if key and key[-1].startswith('ssh-') else ''
     if not step.expect(bool(public), f'{source} has an SSH key'):

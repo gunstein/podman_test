@@ -81,13 +81,13 @@ do
     fi
 done
 
-if ! TODO_ALLOWED_PORTS="$allowed_ports" python3 - <<'PY'
+if ! PLATFORM_ALLOWED_PORTS="$allowed_ports" python3 - <<'PY'
 import os
 import socket
 
 allowed = {
     int(port)
-    for port in os.environ.get("TODO_ALLOWED_PORTS", "").split(",")
+    for port in os.environ.get("PLATFORM_ALLOWED_PORTS", "").split(",")
     if port
 }
 failed = []

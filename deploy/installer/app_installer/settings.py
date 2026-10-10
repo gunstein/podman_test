@@ -8,7 +8,7 @@ quarantine helper) rely on, so they belong with the rules, not here.
 from pathlib import Path
 
 # Image build tag; bump together with a rebuilt offline bundle. It also names
-# the bundle, todo-offline-<tag>: build-bundle.sh reads it from here, and the
+# the bundle, platform-offline-<tag>: build-bundle.sh reads it from here, and the
 # guides that name the bundle must follow (tests/test_fixed_layout.py).
 IMAGE_TAG = "m12"
 
@@ -29,21 +29,21 @@ SYSTEMD_USER_DIR = Path.home() / ".config/systemd/user"
 
 # The directory next to the Quadlet units that holds the rendered Kube YAML
 # the .kube units point at: QUADLET_DIR / KUBE_RUNTIME.
-KUBE_RUNTIME = "todo-kube-runtime"
+KUBE_RUNTIME = "platform-kube-runtime"
 
 # Where app-ops installs the DR tools (app_dr.py, app_backup.py, the
 # quarantine helper) and, under fapolicyd, the packages they import. This is a
 # fixed layout, not a setting: the tools must find the packages before they
 # can read this file, so app_dr.py and app_backup.py look in the lib next to
-# their own bin, and app-quarantine.sh names /opt/todo/lib itself
+# their own bin, and app-quarantine.sh names /opt/platform/lib itself
 # (tests/test_fixed_layout.py checks both). The installer also uses these
 # paths, and DR_CONFIG below, to recognise and refuse a DR host.
-TOOLS_BIN = Path("/opt/todo/bin")
-TOOLS_LIB = Path("/opt/todo/lib")
+TOOLS_BIN = Path("/opt/platform/bin")
+TOOLS_LIB = Path("/opt/platform/lib")
 
 # The DR settings and the promotion record, relative to the service user's
-# home directory: ~/.config/todo/promotion.json on a host.
-DR_CONFIG = ".config/todo"
+# home directory: ~/.config/platform/promotion.json on a host.
+DR_CONFIG = ".config/platform"
 PROMOTION_RECORD = "promotion.json"
 # The public hostnames this host was installed with (target_render); install.sh
 # and the DR tools write it, and every later step on the host reads it.
@@ -57,7 +57,7 @@ RPO_TARGET_SECONDS = 30
 # played here so `down` can find and remove it, independent of whatever
 # --rendered-manifest-dir or --quadlet-dir a later `down` call happens to pass.
 # Where nginx's TLS files live: "secret", Podman secrets (app_installer/tls_secrets.py),
-# or "volume", the TLS volume todo-nginx-data (app_installer/tls.py). To go back
+# or "volume", the TLS volume platform-nginx-data (app_installer/tls.py). To go back
 # to the volume, set "volume" and follow the steps at the top of
 # deploy/manifests/shared-proxy.yaml.j2 (docs/TLS.md, "Switching back").
 NGINX_TLS_STORAGE = "secret"

@@ -1,7 +1,7 @@
 """nginx's TLS certificate as Podman secrets: the local demo CA, or a certificate a separate CA process issued.
 
 The same two modes and commands as tls.py, which keeps the files in the TLS
-volume todo-nginx-data; here every file is a Podman secret on this host.
+volume platform-nginx-data; here every file is a Podman secret on this host.
 tls_store.py picks one of the two (settings.NGINX_TLS_STORAGE), and tls.py
 stays, so a host can go back to the volume (docs/TLS.md).
 
@@ -22,11 +22,11 @@ How a file becomes a secret, and a secret becomes a file again:
   certificate on stdout, and `podman secret create NAME -` stores what it
   printed. No key is ever written to a file on the host.
 - The secrets a step needs come into that container as files:
-  `podman run --secret NAME,type=mount,target=/run/todo-tls/FILE,uid=101,gid=101,mode=0400`.
+  `podman run --secret NAME,type=mount,target=/run/platform-tls/FILE,uid=101,gid=101,mode=0400`.
 - nginx gets its files from the Kube secret: `podman kube play` mounts it
-  read-only at /var/lib/todo-tls, one file per data key
+  read-only at /var/lib/platform-tls, one file per data key
   (deploy/manifests/shared-proxy.yaml.j2). Its entrypoint checks them as for
-  the volume (TODO_TLS_ROLE=serve) and never writes.
+  the volume (PLATFORM_TLS_ROLE=serve) and never writes.
 
   local     provision() makes the demo CA and a leaf certificate for every
             public hostname before nginx starts (install, deploy-promoted,
@@ -59,7 +59,7 @@ KUBE_SECRET = apps.PROXY_KUBE_TLS_SECRET
 # What nginx mounts, in this order: the Kube secret's data keys.
 SERVED = ('tls-mode', 'ca.crt', 'server.crt', 'server.key')
 # Where a throwaway container sees the secrets it was given.
-MOUNT = '/run/todo-tls'
+MOUNT = '/run/platform-tls'
 SERVICE = 'shared-proxy.service'
 CONTAINER = tls.CONTAINER
 PROVIDED = tls.PROVIDED
@@ -253,7 +253,7 @@ def adopt_volume():
 def publish():
     """Make the Kube secret nginx mounts hold the four served files; True if it changed.
 
-    The data keys become the file names under /var/lib/todo-tls in nginx.
+    The data keys become the file names under /var/lib/platform-tls in nginx.
     """
     data = {name: base64.b64encode(read(name).encode()).decode() for name in SERVED}
     present = exists('secret', KUBE_SECRET)
@@ -431,13 +431,13 @@ def renew(hostnames=None):
 def status(names):
     """How nginx would start with these secrets: (mode, days left, problem or ''); see tls.status.
 
-    It runs the entrypoint's own check (TODO_TLS_ROLE=check) on the raw
+    It runs the entrypoint's own check (PLATFORM_TLS_ROLE=check) on the raw
     secrets, mounted as the files nginx would get. No certificate yet is
     ('local', None, '').
     """
     if not has('server.crt'):
         return 'local', None, ''
-    result = proxy('env', 'TODO_TLS_ROLE=check', f'TODO_TLS_DIRECTORY={MOUNT}', f'TODO_TLS_HOSTNAME={names[0]}',
+    result = proxy('env', 'PLATFORM_TLS_ROLE=check', f'PLATFORM_TLS_DIRECTORY={MOUNT}', f'PLATFORM_TLS_HOSTNAME={names[0]}',
                    'APP_TLS_HOSTNAMES=' + ' '.join(names), ENTRYPOINT,
                    files=[name for name in SERVED if has(name)], allowed=(0, 1))
     output = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
@@ -466,7 +466,7 @@ def check(hostnames=None):
         return lines, []
     if current == PROVIDED:
         return lines, [f'the nginx certificate expires in {days} days; run tls-request, have the CA sign '
-                       'the request (app_ca.py sign, or sudo todo-ca-sign), then tls-install']
+                       'the request (app_ca.py sign, or sudo platform-ca-sign), then tls-install']
     return lines, [f'the nginx demo certificate expires in {days} days; '
                    'python3 -m app_installer tls-renew renews it']
 

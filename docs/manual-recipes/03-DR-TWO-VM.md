@@ -107,18 +107,18 @@ Check:
 ```bash
 cd dist
 
-sha256sum -c todo-offline-m12.tar.gz.sha256
-sha256sum -c todo-operations.tar.gz.sha256
+sha256sum -c platform-offline-m12.tar.gz.sha256
+sha256sum -c platform-operations.tar.gz.sha256
 ```
 
 You now have:
 
 ```text
-todo-offline-m12.tar.gz
-todo-offline-m12.tar.gz.sha256
+platform-offline-m12.tar.gz
+platform-offline-m12.tar.gz.sha256
 
-todo-operations.tar.gz
-todo-operations.tar.gz.sha256
+platform-operations.tar.gz
+platform-operations.tar.gz.sha256
 ```
 
 The operations package contains app-ops and the DR tools; the offline bundle
@@ -132,10 +132,10 @@ application failover.
 From the laptop:
 
 ```bash
-scp todo-offline-m12.tar.gz todo-offline-m12.tar.gz.sha256 \
+scp platform-offline-m12.tar.gz platform-offline-m12.tar.gz.sha256 \
     todo@192.168.1.50:
 
-scp todo-offline-m12.tar.gz todo-offline-m12.tar.gz.sha256 \
+scp platform-offline-m12.tar.gz platform-offline-m12.tar.gz.sha256 \
     todo@192.168.1.51:
 ```
 
@@ -144,12 +144,12 @@ On both VMs:
 ```bash
 cd ~
 
-sha256sum -c todo-offline-m12.tar.gz.sha256
-tar -xzf todo-offline-m12.tar.gz
+sha256sum -c platform-offline-m12.tar.gz.sha256
+tar -xzf platform-offline-m12.tar.gz
 ```
 
 Do not run `install.sh` on VM2. The bundle should just sit at
-`/home/todo/todo-offline-m12`. Standby bootstrap expects this bundle and
+`/home/todo/platform-offline-m12`. Standby bootstrap expects this bundle and
 loads the PostgreSQL image from it.
 
 ## 4. Install Todo normally on VM1
@@ -159,7 +159,7 @@ This is [Offline install on one VM](02-OFFLINE-INSTALL.md).
 On VM1:
 
 ```bash
-cd ~/todo-offline-m12
+cd ~/platform-offline-m12
 
 sh ./preflight.sh
 sh ./install.sh --publish-address 192.168.1.50
@@ -196,10 +196,10 @@ You will use it later to confirm the data survived.
 From the laptop:
 
 ```bash
-scp todo-operations.tar.gz todo-operations.tar.gz.sha256 \
+scp platform-operations.tar.gz platform-operations.tar.gz.sha256 \
     todo@192.168.1.50:
 
-scp todo-operations.tar.gz todo-operations.tar.gz.sha256 \
+scp platform-operations.tar.gz platform-operations.tar.gz.sha256 \
     todo@192.168.1.51:
 ```
 
@@ -208,11 +208,11 @@ On both:
 ```bash
 cd ~
 
-sha256sum -c todo-operations.tar.gz.sha256
-tar -xzf todo-operations.tar.gz
+sha256sum -c platform-operations.tar.gz.sha256
+tar -xzf platform-operations.tar.gz
 ```
 
-You should now have `~/todo-operations` on both machines.
+You should now have `~/platform-operations` on both machines.
 
 ## The DR setup itself
 
@@ -257,7 +257,7 @@ app-ops is project Python. With fapolicyd active, trust its files once on the
 controller, from the extracted package (this asks for your sudo password):
 
 ```bash
-cd ~/todo-operations
+cd ~/platform-operations
 sha256sum -c SHA256SUMS
 sudo sh deploy/scripts/trust-files.sh trust todo \
   "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py
@@ -296,7 +296,7 @@ todo ALL=(root) NOPASSWD: ALL
 Every app-ops command below starts from the package directory with:
 
 ```bash
-cd ~/todo-operations
+cd ~/platform-operations
 export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
 ```
 
@@ -378,13 +378,13 @@ python3 -m app_ops --inventory initial.yaml install-dr-tool
 VM2 should now have:
 
 ```text
-/opt/todo/bin/app_dr.py
+/opt/platform/bin/app_dr.py
 ```
 
 Test from VM2:
 
 ```bash
-python3 /opt/todo/bin/app_dr.py status
+python3 /opt/platform/bin/app_dr.py status
 ```
 
 You expect roughly:
@@ -486,7 +486,7 @@ ssh todo@192.168.1.51
 Run:
 
 ```bash
-python3 /opt/todo/bin/app_dr.py preflight \
+python3 /opt/platform/bin/app_dr.py preflight \
   --confirm-primary-fenced 'todo-primary is fenced'
 ```
 
@@ -508,7 +508,7 @@ Require successful preflight, replicated marker, zero apply lag, unreachable
 old database and explicit promotion approval. Keep VM1 fenced. On VM2:
 
 ```bash
-python3 /opt/todo/bin/app_dr.py promote \
+python3 /opt/platform/bin/app_dr.py promote \
   --confirm-primary-fenced 'todo-primary is fenced' \
   --confirm-promotion todo-standby
 ```
@@ -516,7 +516,7 @@ python3 /opt/todo/bin/app_dr.py promote \
 Check:
 
 ```bash
-python3 /opt/todo/bin/app_dr.py status
+python3 /opt/platform/bin/app_dr.py status
 ```
 
 And directly against PostgreSQL:
@@ -544,7 +544,7 @@ That means: not in recovery, and writable.
 VM2 is the controller from now on. Trust app-ops there as in step 7, then:
 
 ```bash
-cd ~/todo-operations
+cd ~/platform-operations
 cat > recovery.yaml <<'EOF'
 user: todo
 hosts:

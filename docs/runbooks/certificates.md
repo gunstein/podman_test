@@ -6,10 +6,10 @@ Four certificates, four different stories. See when each expires:
 # nginx: its TLS mode (local or provided) and how many days are left
 PYTHONPATH=deploy/installer python3 -m app_installer tls-status
 # nginx: the leaf users see, and the CA that signed it
-podman exec nginx openssl x509 -in /var/lib/todo-tls/server.crt -noout -enddate
-podman exec nginx openssl x509 -in /var/lib/todo-tls/ca.crt -noout -enddate
+podman exec nginx openssl x509 -in /var/lib/platform-tls/server.crt -noout -enddate
+podman exec nginx openssl x509 -in /var/lib/platform-tls/ca.crt -noout -enddate
 # replication: the primary's server certificates and the replication CA, in days
-python3 /opt/todo/bin/app_dr.py check | grep -i 'certificate\|Replication CA'
+python3 /opt/platform/bin/app_dr.py check | grep -i 'certificate\|Replication CA'
 ```
 
 ## nginx certificate from your own CA (provided mode)
@@ -17,13 +17,13 @@ python3 /opt/todo/bin/app_dr.py check | grep -i 'certificate\|Replication CA'
 Set up as in [TLS.md](../TLS.md#provided-mode-a-separate-ca-process). The
 nightly backup run checks it: below 30 days it fails with `the nginx
 certificate expires in N days`. Make a request (a new key waits in a Podman
-secret, or in the TLS volume), have the CA sign it (`app_ca.py sign`, or `sudo todo-ca-sign` in
+secret, or in the TLS volume), have the CA sign it (`app_ca.py sign`, or `sudo platform-ca-sign` in
 v1), and install the result:
 
 ```bash
 PYTHONPATH=deploy/installer python3 -m app_installer tls-request \
   --output ~/host.csr                                         # on the host
-python3 deploy/scripts/app_ca.py sign --directory /media/ca-usb/todo-ca \
+python3 deploy/scripts/app_ca.py sign --directory /media/ca-usb/platform-ca \
   --request host.csr --output host.crt                        # the CA, from its own storage
 PYTHONPATH=deploy/installer python3 -m app_installer tls-install \
   --certificate ~/host.crt --ca ~/ca.crt                      # on the host
@@ -33,7 +33,7 @@ PYTHONPATH=deploy/installer python3 -m app_installer tls-install \
 |---|---|---|
 | `tls-install`: `belongs to neither the waiting request ... nor the installed key` | It was signed from another host's request, or from an older one replaced with `--new-key` | Sign the request this host made last |
 | `tls-install`: `not valid for NAME from this CA` | It misses a hostname nginx serves, is expired, or came from another CA | Check `--ca`; make a new request (`tls-request`) and sign it |
-| nginx does not start, or `install` stops: `provided TLS mode, but ...` (in `journalctl --user -u shared-proxy.service` for nginx) | One of nginx's TLS files (a `todo-proxy-*` secret, or a file in the TLS volume) is missing or does not fit, often after a new hostname was added | `tls-request`, sign, `tls-install`; nginx never falls back to the demo CA |
+| nginx does not start, or `install` stops: `provided TLS mode, but ...` (in `journalctl --user -u shared-proxy.service` for nginx) | One of nginx's TLS files (a `platform-proxy-*` secret, or a file in the TLS volume) is missing or does not fit, often after a new hostname was added | `tls-request`, sign, `tls-install`; nginx never falls back to the demo CA |
 | `does not know provided TLS mode` | The proxy image predates provided mode | Rebuild it (`install --refresh-images`) or load it from a current offline bundle |
 
 **On a DR pair** both hosts have a certificate, and renewal goes through
@@ -60,7 +60,7 @@ host, where `install` refuses:
 
 ```bash
 PYTHONPATH=deploy/installer python3 -m app_installer tls-renew
-podman exec nginx openssl x509 -in /var/lib/todo-tls/server.crt -noout -enddate
+podman exec nginx openssl x509 -in /var/lib/platform-tls/server.crt -noout -enddate
 ```
 
 A restart alone renews nothing: nginx's files are a read-only secret. On a
@@ -80,7 +80,7 @@ or a public one instead ([TLS.md](../TLS.md), backlog T4).
 ## Replication server certificate (825 days)
 
 It is issued when a primary is published (`bootstrap-standby`,
-`rebuild-standby`) and **renewed by itself**: `todo-replication-tls.timer`
+`rebuild-standby`) and **renewed by itself**: `platform-replication-tls.timer`
 runs `app_dr.py renew-tls` every night at 03:30 on both hosts. On the
 primary it issues a new certificate for every database with fewer than 30
 days left, for the same address, signed by the same replication CA, and
@@ -88,16 +88,16 @@ reloads PostgreSQL: no restart, and the standby needs nothing new. On the
 standby it prints `standby, nothing to renew`.
 
 **You notice a renewal that fails** in two places: the timer's own unit
-fails (`journalctl --user -u todo-replication-tls.service`), and once a
+fails (`journalctl --user -u platform-replication-tls.service`), and once a
 certificate has fewer than 25 days left the DR check fails with
-`replication certificate expires in N days; todo-replication-tls.timer has
+`replication certificate expires in N days; platform-replication-tls.timer has
 not renewed it`. Read the timer's `ERROR:` line, fix the cause and renew
 at once on the primary:
 
 ```bash
-journalctl --user -u todo-replication-tls.service -n 20 -o cat
-python3 /opt/todo/bin/app_dr.py renew-tls
-python3 /opt/todo/bin/app_dr.py check
+journalctl --user -u platform-replication-tls.service -n 20 -o cat
+python3 /opt/platform/bin/app_dr.py renew-tls
+python3 /opt/platform/bin/app_dr.py check
 ```
 
 | Message | Meaning | Do |

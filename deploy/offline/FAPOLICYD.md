@@ -27,9 +27,9 @@ checks the internal manifest before importing the Python module.
 app-ops, the DR tool, is itself project Python, so its files are trusted once
 on each controller ([deploy/dr/README.md](../dr/README.md)). On every
 hardened host it touches, it installs root-owned copies of the installer
-module under `/opt/todo/lib/app_installer`, of the DR host module under
-`/opt/todo/lib/app_dr_host`, and of the DR and backup tools under
-`/opt/todo/bin`, and waits for exact source and target trust. It refreshes
+module under `/opt/platform/lib/app_installer`, of the DR host module under
+`/opt/platform/lib/app_dr_host`, and of the DR and backup tools under
+`/opt/platform/bin`, and waits for exact source and target trust. It refreshes
 exact source-file trust on the controller, sends each file over SSH standard
 input, and registers only those exact target files, with `sudo -n`. No other
 manual trust preparation is part of the supported workflow.
@@ -95,7 +95,7 @@ So with `integrity = none` exact-file trust is path trust. A trusted file
 the service user owns, such as the installer Python in the extracted bundle
 under its home, can then be changed by that user and still runs; only file
 permissions protect the root-owned tools that `trust-files.sh install`
-writes (`/opt/todo/bin`). The checksums verified before trust is added show
+writes (`/opt/platform/bin`). The checksums verified before trust is added show
 that the files were right when they were trusted, not afterwards. Check the setting with
 `sudo grep -E '^integrity' /etc/fapolicyd/fapolicyd.conf`. Acceptance does
 not change it.
@@ -170,17 +170,17 @@ exact source entry on its controller and an exact installed entry on its target
 only when that tool is retired:
 
 ```bash
-sudo fapolicyd-cli --file delete "$HOME/todo-operations/deploy/dr/scripts/app_dr.py" --trust-file todo
-sudo fapolicyd-cli --file delete "$HOME/todo-operations/deploy/dr/scripts/app_backup.py" --trust-file todo
+sudo fapolicyd-cli --file delete "$HOME/platform-operations/deploy/dr/scripts/app_dr.py" --trust-file todo
+sudo fapolicyd-cli --file delete "$HOME/platform-operations/deploy/dr/scripts/app_backup.py" --trust-file todo
 
-sudo fapolicyd-cli --file delete /opt/todo/bin/app_dr.py --trust-file todo
-sudo fapolicyd-cli --file delete /opt/todo/bin/app_backup.py --trust-file todo
+sudo fapolicyd-cli --file delete /opt/platform/bin/app_dr.py --trust-file todo
+sudo fapolicyd-cli --file delete /opt/platform/bin/app_backup.py --trust-file todo
 sudo fapolicyd-cli --update
 ```
 
 Only run commands for paths present on that machine. Removing trust does not
 delete a file, and deleting a file does not clean up trust. The DR config under
-`~/.config/todo` is data and is not added to execution trust.
+`~/.config/platform` is data and is not added to execution trust.
 
 ## Scaling host-side tools beyond the demo
 

@@ -17,7 +17,7 @@ expected_fingerprint=${2:-}
 host=${target#*@}
 key_file="$HOME/.ssh/id_rsa"
 
-test -f "$key_file" || ssh-keygen -t rsa -b 3072 -N '' -C "todo-ops-control" -f "$key_file"
+test -f "$key_file" || ssh-keygen -t rsa -b 3072 -N '' -C "platform-ops-control" -f "$key_file"
 
 if [[ -n "$expected_fingerprint" ]]; then
   if ssh-keygen -F "$host" >/dev/null 2>&1; then

@@ -24,9 +24,9 @@ def unit(name):
 
 class UnitTests(unittest.TestCase):
     def test_each_service_runs_one_installed_tool_once(self):
-        for name, command in (("todo-dr-check", "app_dr.py check"),
-                              ("todo-backup", "app_backup.py nightly --keep-days 7"),
-                              ("todo-replication-tls", "app_dr.py renew-tls")):
+        for name, command in (("platform-dr-check", "app_dr.py check"),
+                              ("platform-backup", "app_backup.py nightly --keep-days 7"),
+                              ("platform-replication-tls", "app_dr.py renew-tls")):
             with self.subTest(name=name):
                 service = unit(f"{name}.service")
                 self.assertEqual(service["Service"]["Type"], "oneshot")
@@ -37,12 +37,12 @@ class UnitTests(unittest.TestCase):
                 self.assertNotIn("Unit", timer["Timer"])  # the timer starts the service of its own name
 
     def test_the_check_runs_every_quarter_hour_and_the_backup_and_renewal_every_night(self):
-        self.assertEqual(unit("todo-dr-check.timer")["Timer"]["OnCalendar"], "*:0/15")
-        backup = unit("todo-backup.timer")["Timer"]
+        self.assertEqual(unit("platform-dr-check.timer")["Timer"]["OnCalendar"], "*:0/15")
+        backup = unit("platform-backup.timer")["Timer"]
         self.assertEqual(backup["OnCalendar"], "*-*-* 02:30")
         self.assertEqual(backup["Persistent"], "true")
         # After the backup has usually finished; neither depends on the other.
-        renewal = unit("todo-replication-tls.timer")["Timer"]
+        renewal = unit("platform-replication-tls.timer")["Timer"]
         self.assertEqual(renewal["OnCalendar"], "*-*-* 03:30")
         self.assertEqual(renewal["Persistent"], "true")
 
@@ -50,7 +50,7 @@ class UnitTests(unittest.TestCase):
         analyze = subprocess.run(["sh", "-c", "command -v systemd-analyze"], capture_output=True, text=True)
         if analyze.returncode:
             self.skipTest("systemd-analyze is not installed")
-        for name in ("todo-dr-check.timer", "todo-backup.timer", "todo-replication-tls.timer"):
+        for name in ("platform-dr-check.timer", "platform-backup.timer", "platform-replication-tls.timer"):
             result = subprocess.run(["systemd-analyze", "calendar",
                                      unit(name)["Timer"]["OnCalendar"]], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -90,7 +90,7 @@ class InstallTimerTests(unittest.TestCase):
 
     def install(self):
         self.runner.calls.clear()
-        return steps.install_timer(ROOT, self.host, "todo-dr-check")
+        return steps.install_timer(ROOT, self.host, "platform-dr-check")
 
     def systemctl(self):
         return [call[2:] for call in self.runner.calls if call[0] == "systemctl"]
@@ -98,20 +98,20 @@ class InstallTimerTests(unittest.TestCase):
     def test_first_install_writes_the_units_reloads_and_turns_the_timer_on(self):
         self.assertTrue(self.install())
         directory = self.home / ".config/systemd/user"
-        for name in ("todo-dr-check.service", "todo-dr-check.timer"):
+        for name in ("platform-dr-check.service", "platform-dr-check.timer"):
             self.assertEqual((directory / name).read_bytes(), (UNITS / name).read_bytes())
             self.assertEqual(oct((directory / name).stat().st_mode & 0o777), "0o644")
         self.assertIn(["daemon-reload"], self.systemctl())
-        self.assertIn(["enable", "--now", "todo-dr-check.timer"], self.systemctl())
+        self.assertIn(["enable", "--now", "platform-dr-check.timer"], self.systemctl())
 
     def test_a_repeat_changes_nothing_and_a_changed_unit_is_replaced(self):
         self.install()
         self.assertFalse(self.install())
         self.assertEqual([call for call in self.systemctl() if call[0] not in ("is-enabled", "is-active")], [])
-        service = self.home / ".config/systemd/user/todo-dr-check.service"
+        service = self.home / ".config/systemd/user/platform-dr-check.service"
         service.write_text("[Service]\nExecStart=/bin/false\n")
         self.assertTrue(self.install())
-        self.assertEqual(service.read_bytes(), (UNITS / "todo-dr-check.service").read_bytes())
+        self.assertEqual(service.read_bytes(), (UNITS / "platform-dr-check.service").read_bytes())
         self.assertIn(["daemon-reload"], self.systemctl())
         self.assertEqual(list(service.parent.glob("*.service.*")), [])  # no temporary file left
 
@@ -119,7 +119,7 @@ class InstallTimerTests(unittest.TestCase):
         self.install()
         self.runner.enabled.clear()
         self.assertTrue(self.install())
-        self.assertIn(["enable", "--now", "todo-dr-check.timer"], self.systemctl())
+        self.assertIn(["enable", "--now", "platform-dr-check.timer"], self.systemctl())
 
 
 class WhereTheTimersGoTests(unittest.TestCase):
@@ -146,15 +146,15 @@ class WhereTheTimersGoTests(unittest.TestCase):
         world = self.commands.World()
         controller, primary, other = self.hosts(world)
         standby.install_dr_tools(str(self.commands.PROJECT), controller, primary, other)
-        self.assertEqual(self.enabled(world), [("todo-primary", "todo-dr-check.timer"),
-                                               ("todo-primary", "todo-replication-tls.timer"),
-                                               ("todo-standby", "todo-dr-check.timer"),
-                                               ("todo-standby", "todo-replication-tls.timer")])
+        self.assertEqual(self.enabled(world), [("todo-primary", "platform-dr-check.timer"),
+                                               ("todo-primary", "platform-replication-tls.timer"),
+                                               ("todo-standby", "platform-dr-check.timer"),
+                                               ("todo-standby", "platform-replication-tls.timer")])
         # Each host's settings name its offline bundle, for the readiness part of the check.
         configures = [command for _host, command in world.commands if "configure" in command]
         self.assertEqual(len(configures), 2)
         self.assertEqual(sorted(command[command.index("--bundle") + 1] for command in configures),
-                         ["/home/todo-primary/todo-offline-m12", "/home/todo-standby/todo-offline-m12"])
+                         ["/home/todo-primary/platform-offline-m12", "/home/todo-standby/platform-offline-m12"])
         for command in configures:
             self.assertIn("--revision", command)
 
@@ -165,7 +165,7 @@ class WhereTheTimersGoTests(unittest.TestCase):
         from app_ops import steps
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(steps.package_revision(directory), "")
-            (Path(directory) / "VERSION").write_text("package=todo-operations\nsource_revision=" + "a" * 40
+            (Path(directory) / "VERSION").write_text("package=platform-operations\nsource_revision=" + "a" * 40
                                                      + "\nsource_state=clean\n")
             self.assertEqual(steps.package_revision(directory), "a" * 40)
 
@@ -173,14 +173,14 @@ class WhereTheTimersGoTests(unittest.TestCase):
         world = self.commands.World()
         controller, current, _other = self.hosts(world, "current_primary", "rebuild_standby")
         recovery.configure_backup(str(self.commands.PROJECT), controller, current)
-        self.assertEqual(self.enabled(world), [("todo-primary", "todo-backup.timer")])
+        self.assertEqual(self.enabled(world), [("todo-primary", "platform-backup.timer")])
 
     def test_rebuild_turns_the_check_and_the_renewal_on_on_the_rebuilt_standby(self):
         world = self.commands.World()
         recovery.rebuild(str(self.commands.PROJECT), *self.commands.RecoveryTests.hosts(None, world),
                          "todo-primary is fenced", "todo-primary")
-        self.assertIn(("todo-primary", "todo-dr-check.timer"), self.enabled(world))
-        self.assertIn(("todo-primary", "todo-replication-tls.timer"), self.enabled(world))
+        self.assertIn(("todo-primary", "platform-dr-check.timer"), self.enabled(world))
+        self.assertIn(("todo-primary", "platform-replication-tls.timer"), self.enabled(world))
 
 
 if __name__ == "__main__":

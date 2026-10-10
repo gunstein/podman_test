@@ -1,16 +1,16 @@
 """Local DR checks and guarded promotion of the complete database group.
 
-Installed as /opt/todo/bin/app_dr.py on both DR hosts and run there:
+Installed as /opt/platform/bin/app_dr.py on both DR hosts and run there:
 
   app_dr.py configure ...   write the DR settings (done by install-dr-tool)
   app_dr.py status          show each database's role, lag and primary reachability
   app_dr.py check           read-only: is replication, archiving, its TLS
                             certificates and disk space fine for this host's
                             role, and could this host take over?
-                            (todo-dr-check.timer)
+                            (platform-dr-check.timer)
   app_dr.py renew-tls       renew each primary's replication certificate once
                             fewer than 30 days are left
-                            (todo-replication-tls.timer)
+                            (platform-replication-tls.timer)
   app_dr.py preflight ...   read-only: may the group be promoted now? (standby)
   app_dr.py promote ...     preflight, then promote every database (standby)
 
@@ -34,8 +34,8 @@ from pathlib import Path
 from typing import Callable, List, Optional, Sequence
 
 # This DR tool reuses the installer (app_installer) and the DR building
-# blocks (app_dr_host). app-ops installs it in /opt/todo/bin and both
-# packages side by side in /opt/todo/lib, so they are found in lib next to
+# blocks (app_dr_host). app-ops installs it in /opt/platform/bin and both
+# packages side by side in /opt/platform/lib, so they are found in lib next to
 # bin. In a checkout, set PYTHONPATH=deploy/installer:deploy/dr instead.
 # deploy/dr/README.md ("Where DR finds the installer") has the whole rule.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
@@ -43,7 +43,7 @@ from app_dr_host import nginx_tls, replication, replication_tls, transfer  # noq
 from app_installer import apps, oplog, quadlet, settings  # noqa: E402
 from app_installer.commands import run  # noqa: E402
 
-DEFAULT_CONFIG = Path.home() / settings.DR_CONFIG / 'todo-dr.json'
+DEFAULT_CONFIG = Path.home() / settings.DR_CONFIG / 'platform-dr.json'
 DEFAULT_JOURNAL = DEFAULT_CONFIG.with_name(settings.PROMOTION_RECORD)
 # Status and promotion commands answer within seconds. Two minutes is
 # generous, and keeps a hung command from stalling a failover.
@@ -334,7 +334,7 @@ class StandbyGroup:
 
 
 def check(databases=apps.REPLICATED_DATABASES, disk=None):
-    """The scheduled check (todo-dr-check.timer): what is fine, and what is wrong, for this host's role.
+    """The scheduled check (platform-dr-check.timer): what is fine, and what is wrong, for this host's role.
 
     Returns (lines, problems). Each database's role is read live, so the same
     check fits the primary and the standby, and still fits after a failover
@@ -368,7 +368,7 @@ def check(databases=apps.REPLICATED_DATABASES, disk=None):
         # Checked even when streaming failed: an expired certificate is a likely reason.
         if primary:
             expiry(f'{database.name}: replication certificate', partial(replication_tls.server_days_left, database),
-                   replication_tls.ALERT_DAYS, 'todo-replication-tls.timer has not renewed it', lines, problems)
+                   replication_tls.ALERT_DAYS, 'platform-replication-tls.timer has not renewed it', lines, problems)
     expiry('Replication CA', replication_tls.ca_days_left, replication_tls.CA_ALERT_DAYS,
            'replace it by hand before then (backlog U2)', lines, problems)
     if len(set(roles.values())) > 1:
@@ -397,7 +397,7 @@ def expiry(name, read_days, alert_days, advice, lines, problems):
 
 
 def renew_tls(databases=apps.REPLICATED_DATABASES):
-    """The nightly renewal (todo-replication-tls.timer): renew each primary's certificate if it is due.
+    """The nightly renewal (platform-replication-tls.timer): renew each primary's certificate if it is due.
 
     Returns (lines, problems), like check(). Each database's role is read
     live, so the same timer runs on both hosts: a standby has nothing to

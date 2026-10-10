@@ -39,8 +39,8 @@ their own RPM-installed Python, not anything from the laptop.
 The build produces:
 
 ```text
-dist/todo-offline-m12.tar.gz
-dist/todo-offline-m12.tar.gz.sha256
+dist/platform-offline-m12.tar.gz
+dist/platform-offline-m12.tar.gz.sha256
 ```
 
 The bundle contains the backend, frontend, shared proxy, Keycloak and PostgreSQL images,
@@ -51,8 +51,8 @@ plus the installer and manifest files (see `deploy/offline/README.md`).
 From the laptop, substitute your username and IP:
 
 ```bash
-scp dist/todo-offline-m12.tar.gz \
-    dist/todo-offline-m12.tar.gz.sha256 \
+scp dist/platform-offline-m12.tar.gz \
+    dist/platform-offline-m12.tar.gz.sha256 \
     todo@192.168.1.50:/home/todo/
 ```
 
@@ -71,10 +71,10 @@ Run:
 ```bash
 cd /home/todo
 
-sha256sum -c todo-offline-m12.tar.gz.sha256
-tar -xzf todo-offline-m12.tar.gz
+sha256sum -c platform-offline-m12.tar.gz.sha256
+tar -xzf platform-offline-m12.tar.gz
 
-cd todo-offline-m12
+cd platform-offline-m12
 sh ./preflight.sh
 ```
 
@@ -125,7 +125,7 @@ The install also turns on the nightly backup timer, which takes a verified
 base backup of every database at 02:30 and keeps 7 days:
 
 ```bash
-systemctl --user list-timers todo-backup.timer
+systemctl --user list-timers platform-backup.timer
 ```
 
 ## 6. Open Todo from the laptop
@@ -183,6 +183,6 @@ If login loops or fails, inspect discovery at
 issuer must be `https://todo.test:8443/auth/realms/todo`. Check the client mapping,
 CA trust and user profile; do not disable certificate verification.
 
-On the VM, `podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf` should
+On the VM, `podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf` should
 report success. `nginx` belongs to `shared-proxy.service`; its CA and
-certificate persist as Podman secrets (`podman secret ls --filter name=todo-proxy`). `todo-frontend` only serves HTTP static files.
+certificate persist as Podman secrets (`podman secret ls --filter name=platform-proxy`). `todo-frontend` only serves HTTP static files.

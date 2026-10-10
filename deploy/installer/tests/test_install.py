@@ -40,7 +40,7 @@ class InstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             directory = root / 'quadlet'
-            runtime = directory / 'todo-kube-runtime'
+            runtime = directory / 'platform-kube-runtime'
             if mode == 'server':
                 offline_bundle.build(root, applications)
                 project, how, Host = ROOT, dict(deployment_mode='offline', bundle_directory=root), FakeHost
@@ -111,7 +111,7 @@ class InstallTests(unittest.TestCase):
             directory = root / 'quadlet'
             offline_bundle.build(root, applications)
 
-            with FakeHost(unit_directory=directory / 'todo-kube-runtime') as host, \
+            with FakeHost(unit_directory=directory / 'platform-kube-runtime') as host, \
                     patch.object(keycloak, 'configure'), \
                     patch.object(settings, 'DEV_STATE_FILE', root / 'app-installer-dev.json'):
                 install.install(ROOT, mode='server', deployment_mode='offline',
@@ -126,7 +126,7 @@ class InstallTests(unittest.TestCase):
 
     def test_source_path_must_be_the_expected_workload_unit(self):
         for source in ('/tmp/todo-app.container', '/tmp/todo-app.kube',
-                       '/tmp/todo-kube-runtime/unrelated.kube'):
+                       '/tmp/platform-kube-runtime/unrelated.kube'):
             with self.subTest(source=source), self.assertRaisesRegex(RuntimeError, 'SourcePath'):
                 self.exercise_install('server', source_override=source)
 
@@ -367,7 +367,7 @@ class UninstallTests(unittest.TestCase):
                     patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run, \
                     patch.object(settings, 'DEV_STATE_FILE', Path(temp) / '_unused' / 'dev.json'):
                 directory = Path(temp)
-                (directory / 'todo-kube-runtime').mkdir()
+                (directory / 'platform-kube-runtime').mkdir()
                 for name in uninstall.QUADLET_FILES:
                     (directory / name).touch()
                 with contextlib.redirect_stderr(io.StringIO()):
@@ -378,9 +378,9 @@ class UninstallTests(unittest.TestCase):
                 self.assertEqual(['podman', 'secret', 'rm', 'todo-db-password'] in calls, remove_data)
                 self.assertNotIn(['podman', 'volume', 'rm', 'todo-postgres-backup'], calls)
                 self.assertIn('app-network-network.service', calls[0])
-                # todo-nginx-data holds the demo CA; it is persistent like the
+                # platform-nginx-data holds the demo CA; it is persistent like the
                 # database volumes and only goes away with --remove-data.
-                self.assertEqual(['podman', 'volume', 'rm', 'todo-nginx-data'] in calls, remove_data)
+                self.assertEqual(['podman', 'volume', 'rm', 'platform-nginx-data'] in calls, remove_data)
                 self.assertEqual(['podman', 'volume', 'rm', 'todo-caddy-data'] in calls, remove_data)
                 # The Kube secrets' volumes are copies of secrets: they always go.
                 for name in (apps.APPS[1].kube_secret('backend'), apps.KEYCLOAK_DATABASE.kube_secret,
@@ -388,7 +388,7 @@ class UninstallTests(unittest.TestCase):
                     self.assertIn(['podman', 'volume', 'rm', name], calls)
 
     def test_uninstall_turns_the_nightly_backup_off_and_keeps_the_backups(self):
-        for name in ('todo-backup.service', 'todo-backup.timer'):
+        for name in ('platform-backup.service', 'platform-backup.timer'):
             (self.units / name).write_text('[Unit]\n')
         with tempfile.TemporaryDirectory() as temp, \
                 patch('app_installer.install.exists', return_value=False), \
@@ -398,7 +398,7 @@ class UninstallTests(unittest.TestCase):
             self.assertTrue(uninstall.uninstall(quadlet_dir=Path(temp)))
         self.assertEqual(list(self.units.iterdir()), [])
         calls = [c.args[0] for c in run.call_args_list]
-        self.assertIn(['systemctl', '--user', 'disable', '--now', 'todo-backup.timer'], calls)
+        self.assertIn(['systemctl', '--user', 'disable', '--now', 'platform-backup.timer'], calls)
         self.assertFalse([c for c in calls if c[:3] == ['podman', 'volume', 'rm'] and c[-1].endswith('-backup')])
 
     def test_noop_uninstall_on_an_untouched_host_reports_no_change(self):
@@ -453,7 +453,7 @@ class UninstallTests(unittest.TestCase):
 
     def test_uninstall_removes_the_old_per_container_install_and_says_so(self):
         # The lists of the retired playbook ansible/uninstall.yml (tag quadlet-reference-v1).
-        old_files = ('todo.network', 'todo-postgres-data.volume', 'todo-nginx-data.volume', 'todo-caddy-data.volume',
+        old_files = ('todo.network', 'todo-postgres-data.volume', 'platform-nginx-data.volume', 'todo-caddy-data.volume',
                      'todo-postgres.container', 'todo-db-setup.container', 'todo-migrate.container',
                      'todo-db-grants.container', 'todo-backend.container', 'todo-keycloak.container',
                      'todo-frontend.container')
@@ -522,9 +522,9 @@ class UninstallTests(unittest.TestCase):
 
 class FailureBoundaryTests(unittest.TestCase):
     def test_each_dr_marker_refuses_uninstall(self):
-        for marker in ('.config/todo/todo-standby-entrypoint.sh',
-                       '/opt/todo/bin/app_dr.py', '/opt/todo/bin/app_backup.py',
-                       '/opt/todo/bin/todo_dr.py', '/opt/todo/bin/todo_backup.py'):
+        for marker in ('.config/platform/todo-standby-entrypoint.sh',
+                       '/opt/platform/bin/app_dr.py', '/opt/platform/bin/app_backup.py',
+                       '/opt/platform/bin/todo_dr.py', '/opt/platform/bin/todo_backup.py'):
             with patch('app_installer.install.exists', return_value=False), \
                     patch.object(Path, 'exists', autospec=True,
                                  side_effect=lambda p, marker=marker: str(p).endswith(marker)), \
@@ -536,8 +536,8 @@ class FailureBoundaryTests(unittest.TestCase):
     def test_install_refuses_a_replicated_host_before_any_command(self):
         # Rerunning install on a replicated primary would drop the LAN publication
         # of its databases and cut off the standby (seen in an acceptance run).
-        markers = ('.config/todo/todo-standby-entrypoint.sh', '/opt/todo/bin/app_dr.py',
-                   '/opt/todo/bin/app_backup.py', '/opt/todo/bin/todo_dr.py', '/opt/todo/bin/todo_backup.py')
+        markers = ('.config/platform/todo-standby-entrypoint.sh', '/opt/platform/bin/app_dr.py',
+                   '/opt/platform/bin/app_backup.py', '/opt/platform/bin/todo_dr.py', '/opt/platform/bin/todo_backup.py')
         cases = [(marker, lambda kind, name: False) for marker in markers]
         cases += [(None, lambda kind, name, d=d: name == d.secret('replicator'))
                   for d in apps.REPLICATED_DATABASES]

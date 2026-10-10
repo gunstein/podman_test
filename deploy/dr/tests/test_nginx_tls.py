@@ -81,7 +81,7 @@ class NginxTlsTest(unittest.TestCase):
         if not hasattr(self, 'bundle'):
             self.bundle = volume_bundle(dr_target.bundle())
             self.addCleanup(lambda: REAL_RUN(['rm', '-rf', str(self.bundle.parent)], check=True))
-        return self.bundle, '/home/todo/todo-offline-m12', '192.0.2.11'
+        return self.bundle, '/home/todo/platform-offline-m12', '192.0.2.11'
 
     def certificate(self, days=365):
         csr, names = nginx_tls.request(*self.where())
@@ -101,9 +101,9 @@ class StandbyTests(NginxTlsTest):
         csr, names = nginx_tls.request(*self.where())
         self.assertEqual(names, NAMES)
         self.assertEqual(app_ca.requested_names(self.write(csr)), NAMES)
-        self.assertEqual(self.loaded, [('/home/todo/todo-offline-m12', 'offline', '/home/todo/todo-offline-m12')])
+        self.assertEqual(self.loaded, [('/home/todo/platform-offline-m12', 'offline', '/home/todo/platform-offline-m12')])
         self.assertEqual(len(self.podman.claims), 1)
-        self.assertIn('name: todo-nginx-data', self.podman.claims[0])
+        self.assertIn('name: platform-nginx-data', self.podman.claims[0])
         self.assertIn('volume.podman.io/uid', self.podman.claims[0])
         self.assertNotIn('kind: Pod', self.podman.claims[0])
         # The volume exists now: the next request plays nothing.

@@ -461,7 +461,7 @@ python3 deploy/scripts/lab/pve_lab.py task /nodes/{node}/qemu/107/status/shutdow
 python3 deploy/scripts/lab/pve_lab.py task /nodes/{node}/qemu/107/status/stop
 python3 deploy/scripts/lab/pve_lab.py task /nodes/{node}/qemu/107/status/reboot
 python3 deploy/scripts/lab/pve_lab.py post /nodes/{node}/qemu/107/agent/ping
-python3 deploy/scripts/lab/pve_lab.py exec 107 -- /opt/todo/bin/app-quarantine.sh check todo-primary gunstein
+python3 deploy/scripts/lab/pve_lab.py exec 107 -- /opt/platform/bin/app-quarantine.sh check todo-primary gunstein
 python3 deploy/scripts/lab/pve_lab.py nic 107 link_down 1
 python3 deploy/scripts/lab/pve_lab.py set /nodes/{node}/qemu/107/config onboot=0
 python3 deploy/scripts/lab/pve_lab.py get /nodes/{node}/qemu/107/firewall/options
@@ -515,7 +515,7 @@ its pod starts; containers, health checks and HTTP answers follow seconds
 later. `$A check services` and `$A do reboot` wait for that with
 `deploy/scripts/wait-ready.sh` (`app` on a host with the application,
 `standby` on a database-only standby), up to 5 minutes. Do not write your own
-wait loops around `systemctl` or `podman`. A failed `todo-dr-check.service`
+wait loops around `systemctl` or `podman`. A failed `platform-dr-check.service`
 (the scheduled DR check) does not fail `check services`: it fails on purpose
 while DR is degraded, as after the failover until the rebuild, and
 `$A check monitor` tests it on its own.
@@ -712,10 +712,10 @@ vm 01-7-prerequisites-102 192.168.0.102 'sudo -n dnf install -y python3-pyyaml'
 vm 01-8-prerequisites-108 192.168.0.108 'sudo -n dnf install -y python3-pyyaml'
 product 02-1-build-offline deploy/offline/build-bundle.sh &   # wait for exit=
 product 02-2-build-operations deploy/scripts/build-operations-package.sh
-product 02-3-transfer-102 scp dist/todo-offline-m12.tar.gz dist/todo-offline-m12.tar.gz.sha256 dist/todo-operations.tar.gz dist/todo-operations.tar.gz.sha256 gunstein@192.168.0.102:
-product 02-4-transfer-108 scp dist/todo-offline-m12.tar.gz dist/todo-offline-m12.tar.gz.sha256 dist/todo-operations.tar.gz dist/todo-operations.tar.gz.sha256 gunstein@192.168.0.108:
-vm 02-5-verify-102 192.168.0.102 'sha256sum -c todo-offline-m12.tar.gz.sha256 todo-operations.tar.gz.sha256 && tar -xzf todo-offline-m12.tar.gz && tar -xzf todo-operations.tar.gz && (cd todo-offline-m12 && sha256sum --quiet -c SHA256SUMS && cat VERSION) && (cd todo-operations && sha256sum --quiet -c SHA256SUMS && cat VERSION)'   # → 2× "source_state=clean"; both VERSION files name the kickoff revision
-vm 02-6-verify-108 192.168.0.108 'sha256sum -c todo-offline-m12.tar.gz.sha256 todo-operations.tar.gz.sha256 && tar -xzf todo-offline-m12.tar.gz && tar -xzf todo-operations.tar.gz && (cd todo-offline-m12 && sha256sum --quiet -c SHA256SUMS && cat VERSION) && (cd todo-operations && sha256sum --quiet -c SHA256SUMS && cat VERSION)'   # → 2× "source_state=clean"; both VERSION files name the kickoff revision
+product 02-3-transfer-102 scp dist/platform-offline-m12.tar.gz dist/platform-offline-m12.tar.gz.sha256 dist/platform-operations.tar.gz dist/platform-operations.tar.gz.sha256 gunstein@192.168.0.102:
+product 02-4-transfer-108 scp dist/platform-offline-m12.tar.gz dist/platform-offline-m12.tar.gz.sha256 dist/platform-operations.tar.gz dist/platform-operations.tar.gz.sha256 gunstein@192.168.0.108:
+vm 02-5-verify-102 192.168.0.102 'sha256sum -c platform-offline-m12.tar.gz.sha256 platform-operations.tar.gz.sha256 && tar -xzf platform-offline-m12.tar.gz && tar -xzf platform-operations.tar.gz && (cd platform-offline-m12 && sha256sum --quiet -c SHA256SUMS && cat VERSION) && (cd platform-operations && sha256sum --quiet -c SHA256SUMS && cat VERSION)'   # → 2× "source_state=clean"; both VERSION files name the kickoff revision
+vm 02-6-verify-108 192.168.0.108 'sha256sum -c platform-offline-m12.tar.gz.sha256 platform-operations.tar.gz.sha256 && tar -xzf platform-offline-m12.tar.gz && tar -xzf platform-operations.tar.gz && (cd platform-offline-m12 && sha256sum --quiet -c SHA256SUMS && cat VERSION) && (cd platform-operations && sha256sum --quiet -c SHA256SUMS && cat VERSION)'   # → 2× "source_state=clean"; both VERSION files name the kickoff revision
 ```
 
 Both `VERSION` files on both VMs must show the kickoff revision and
@@ -728,7 +728,7 @@ not a deviation.
 #### C9.3 Phase 3 — Initial deployment on `.102`
 
 ```bash
-vm 03-1-trust 192.168.0.102 'cd ~/todo-offline-m12 && for source in "$PWD"/deploy/installer/app_installer/*.py; do source=$(realpath "$source"); sudo -n fapolicyd-cli --file update "$source" --trust-file app-installer || sudo -n fapolicyd-cli --file add "$source" --trust-file app-installer; done && sudo -n fapolicyd-cli --update'
+vm 03-1-trust 192.168.0.102 'cd ~/platform-offline-m12 && for source in "$PWD"/deploy/installer/app_installer/*.py; do source=$(realpath "$source"); sudo -n fapolicyd-cli --file update "$source" --trust-file app-installer || sudo -n fapolicyd-cli --file add "$source" --trust-file app-installer; done && sudo -n fapolicyd-cli --update'
 ```
 
 First an install that `uninstall` must take away completely (V1, V2): the
@@ -739,17 +739,17 @@ volume, secret, network, image (but PostgreSQL's and Podman's own pause
 image), Quadlet file or unit of the project:
 
 ```bash
-vm 03-1u1-install 192.168.0.102 'cd ~/todo-offline-m12 && sh ./preflight.sh && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": true}
-vm 03-1u2-kube-secret-volumes 192.168.0.102 'podman volume ls --format "{{.Name}}"'   # → "todo-kube-backend-secret", "notes-kube-migrator-secret", "keycloak-kube-postgres-secret", "todo-kube-proxy-tls-secret"
+vm 03-1u1-install 192.168.0.102 'cd ~/platform-offline-m12 && sh ./preflight.sh && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": true}
+vm 03-1u2-kube-secret-volumes 192.168.0.102 'podman volume ls --format "{{.Name}}"'   # → "todo-kube-backend-secret", "notes-kube-migrator-secret", "keycloak-kube-postgres-secret", "platform-kube-proxy-tls-secret"
 vm 03-1u3-old-install 192.168.0.102 'cd ~/.config/containers/systemd && printf "[Container]\nImage=localhost/todo-keycloak:m12\nContainerName=todo-keycloak\n" > todo-keycloak.container && printf "[Network]\nNetworkName=todo-network\n" > todo.network && podman tag localhost/keycloak:m12 localhost/todo-keycloak:m12 && podman create --name todo-keycloak localhost/todo-keycloak:m12 && podman network create todo-network && systemctl --user daemon-reload'
-vm 03-1u4-uninstall 192.168.0.102 'cd ~/todo-offline-m12 && PYTHONPATH=deploy/installer python3 -m app_installer uninstall --remove-data --remove-backups'   # → "Removed the old per-container install (quadlet-reference-v1): ", "todo-keycloak.container", "nothing of this install can be restored"
+vm 03-1u4-uninstall 192.168.0.102 'cd ~/platform-offline-m12 && PYTHONPATH=deploy/installer python3 -m app_installer uninstall --remove-data --remove-backups'   # → "Removed the old per-container install (quadlet-reference-v1): ", "todo-keycloak.container", "nothing of this install can be restored"
 vm 03-1u5-nothing-left 192.168.0.102 'podman ps -a --format "{{.Names}}"; podman pod ps --format "{{.Name}}"; podman volume ls --format "{{.Name}}"; podman secret ls --format "{{.Name}}"; podman network ls --format "{{.Name}}" | grep -vx podman; podman images --format "{{.Repository}}:{{.Tag}}" | grep -v -e "^docker.io/library/postgres:" -e "^localhost/podman-pause:"; ls -A ~/.config/containers/systemd; systemctl --user list-unit-files --no-legend "todo-*" "notes-*" "keycloak*" "shared-proxy*" "app-network*"; true'   # → nothing
 ```
 
 Then the install the rest of the run uses, on the now empty host:
 
 ```bash
-vm 03-2-install 192.168.0.102 'cd ~/todo-offline-m12 && sh ./preflight.sh && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": true}
+vm 03-2-install 192.168.0.102 'cd ~/platform-offline-m12 && sh ./preflight.sh && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": true}
 $A --step 03-3 do firewall-https 192.168.0.102 192.168.0.100
 $A --step 03-4 check services 192.168.0.102 app
 ```
@@ -774,18 +774,18 @@ $A --step 03-12 check markers 192.168.0.102
 ```
 
 The single host's nightly backup: `install.sh` turned on
-`todo-backup.timer`. Run it once, write one Todo row after it, restore the
+`platform-backup.timer`. Run it once, write one Todo row after it, restore the
 three databases from that backup, and check that the row is gone while the
 markers, written before the backup, remain:
 
 ```bash
 $A --step 03-12a do backup-nightly 192.168.0.102
 vm 03-12b-after-backup 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('written after the nightly backup', false);\""
-vm 03-12c-restore 192.168.0.102 'cd ~/todo-offline-m12 && PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore todo-primary'   # → {"changed": true}; after one "restored" line each for todo, notes and keycloak
+vm 03-12c-restore 192.168.0.102 'cd ~/platform-offline-m12 && PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore todo-primary'   # → {"changed": true}; after one "restored" line each for todo, notes and keycloak
 vm 03-12d-restored 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"SELECT 1 / (CASE WHEN count(*) = 0 THEN 1 ELSE 0 END) AS row_gone FROM todos WHERE title = 'written after the nightly backup';\""   # → 1; division by zero if the row survived
 $A --step 03-12e check services 192.168.0.102 app
 $A --step 03-12f check markers 192.168.0.102
-vm 03-13-install-again 192.168.0.102 'cd ~/todo-offline-m12 && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": false}
+vm 03-13-install-again 192.168.0.102 'cd ~/platform-offline-m12 && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": false}
 $A --step 03-14 check services 192.168.0.102 app
 ```
 
@@ -807,7 +807,7 @@ deploy/scripts/lab/trust-serving-ca.sh "gunstein@$IP"
 ```
 
 The script is the review: it verifies the new CA's fingerprint against the
-serving host before it replaces `/usr/local/share/ca-certificates/todo-nginx-root.crt`,
+serving host before it replaces `/usr/local/share/ca-certificates/platform-nginx-root.crt`,
 which holds an earlier run's lab CA. Do not stop to inspect that file first.
 
 The test user (`03-4b`, C9.3) lives in the replicated Keycloak database and
@@ -819,9 +819,9 @@ Before phase 4, on `.102` (C9.13): trust app-ops twice (`changed`, then
 `unchanged`), write `initial.yaml`, record the skipped first sudo refusal.
 
 ```bash
-vm 04-1-trust-ops 192.168.0.102 'cd ~/todo-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
-vm 04-2-trust-ops-again 192.168.0.102 'cd ~/todo-operations && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → unchanged
-vm 04-3-inventory 192.168.0.102 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-primary: {role: primary, address: 192.168.0.102, local: true}" "  todo-standby: {role: standby, address: 192.168.0.108}" > initial.yaml && cat initial.yaml'
+vm 04-1-trust-ops 192.168.0.102 'cd ~/platform-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
+vm 04-2-trust-ops-again 192.168.0.102 'cd ~/platform-operations && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → unchanged
+vm 04-3-inventory 192.168.0.102 'cd ~/platform-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-primary: {role: primary, address: 192.168.0.102, local: true}" "  todo-standby: {role: standby, address: 192.168.0.108}" > initial.yaml && cat initial.yaml'
 product 04-4-sudo-refusal-skip echo 'C9.13 item 1: first sudo refusal check skipped (lab sudoers)'
 $A --step 04-5 do pin-ssh 192.168.0.102 192.168.0.108
 $A --step 04-6 do pin-ssh 192.168.0.108 192.168.0.102
@@ -831,7 +831,7 @@ ops 04-9-preflight 192.168.0.102 '--inventory initial.yaml preflight-standby'   
 ops 04-10-bootstrap 192.168.0.102 '--inventory initial.yaml bootstrap-standby' &        # → {"changed": true}; wait for exit=
 ops 04-11-status 192.168.0.102 '--inventory initial.yaml replication-status'            # → {"changed": false}
 ops 04-12-status-again 192.168.0.102 '--inventory initial.yaml replication-status'      # → {"changed": false}
-vm 04-13-no-secrets 192.168.0.102 'cd ~/todo-operations && find . -newer SHA256SUMS -type f'   # → only "./initial.yaml"; no secret file
+vm 04-13-no-secrets 192.168.0.102 'cd ~/platform-operations && find . -newer SHA256SUMS -type f'   # → only "./initial.yaml"; no secret file
 $A --step 04-14 check replication-tls 192.168.0.102
 $A --step 04-15 check roles 192.168.0.108 standby
 $A --step 04-16 do markers phase4
@@ -846,7 +846,7 @@ $A --step 04-20 check markers 192.168.0.108
 ```bash
 ops 05-1-install-dr-tool 192.168.0.102 '--inventory initial.yaml install-dr-tool'          # → {"changed": true}
 ops 05-2-install-dr-tool-again 192.168.0.102 '--inventory initial.yaml install-dr-tool'    # → {"changed": false}
-vm 05-3-dr-status 192.168.0.108 'python3 /opt/todo/bin/app_dr.py status'                   # → 3× "Database role: standby", 3× "Writable: no", 3× "Local apply lag: 0 bytes", 3× ": reachable"
+vm 05-3-dr-status 192.168.0.108 'python3 /opt/platform/bin/app_dr.py status'                   # → 3× "Database role: standby", 3× "Writable: no", 3× "Local apply lag: 0 bytes", 3× ": reachable"
 ops 05-4-install-quarantine-tool 192.168.0.102 '--inventory initial.yaml install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint'        # → {"changed": true}
 ops 05-5-install-quarantine-tool-again 192.168.0.102 '--inventory initial.yaml install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint'  # → {"changed": false}
 $A --step 05-6 check quarantine-ready 107 todo-primary
@@ -904,12 +904,12 @@ $A --step 06-2 check markers 192.168.0.108
 $A --step 06-3 do fence 107
 $A --step 06-4 check ports-closed 192.168.0.102 client
 $A --step 06-5 check ports-closed 192.168.0.102 192.168.0.108
-vm 06-6-preflight 192.168.0.108 "python3 /opt/todo/bin/app_dr.py preflight --confirm-primary-fenced 'todo-primary is fenced'"
-vm 06-7-trust-ops 192.168.0.108 'cd ~/todo-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
-vm 06-8-inventory 192.168.0.108 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-standby: {role: current_primary, address: 192.168.0.108, local: true}" "  todo-primary: {role: rebuild_standby, address: 192.168.0.102}" > recovery.yaml && cat recovery.yaml'
+vm 06-6-preflight 192.168.0.108 "python3 /opt/platform/bin/app_dr.py preflight --confirm-primary-fenced 'todo-primary is fenced'"
+vm 06-7-trust-ops 192.168.0.108 'cd ~/platform-operations && sha256sum --quiet -c SHA256SUMS && sudo -n sh deploy/scripts/trust-files.sh trust todo "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py'   # → changed
+vm 06-8-inventory 192.168.0.108 'cd ~/platform-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-standby: {role: current_primary, address: 192.168.0.108, local: true}" "  todo-primary: {role: rebuild_standby, address: 192.168.0.102}" > recovery.yaml && cat recovery.yaml'
 $A --step 06-9 do firewall-https 192.168.0.108 192.168.0.100
 ops 06-10-failover 192.168.0.108 "--inventory recovery.yaml failover --confirm-primary-fenced 'todo-primary is fenced' --confirm-promotion todo-standby" &   # → {"changed": true, "promoted_now": true, ...}; wait for exit=
-vm 06-11-status 192.168.0.108 'python3 /opt/todo/bin/app_dr.py status'
+vm 06-11-status 192.168.0.108 'python3 /opt/platform/bin/app_dr.py status'
 $A --step 06-12 check roles 192.168.0.108 primary
 $A --step 06-13 check write-probe 192.168.0.108
 $A --step 06-14 check markers 192.168.0.108
@@ -948,11 +948,11 @@ $A --step 07-15 check markers 192.168.0.108
 ```bash
 ops 08-1-configure-backup 192.168.0.108 '--inventory recovery.yaml configure-backup'   # → {"changed": false}; failover configured it
 $A --step 08-2 check roles 192.168.0.108 archiving
-vm 08-3-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'        # → 3× "Archive mode: on", 3× "Failed archive attempts: 0"
-vm 08-4-backup-create 192.168.0.108 'python3 /opt/todo/bin/app_backup.py create'        # → 3× "Verified base backup: base-"; 08-9 reads the todo one
+vm 08-3-backup-status 192.168.0.108 'python3 /opt/platform/bin/app_backup.py status'        # → 3× "Archive mode: on", 3× "Failed archive attempts: 0"
+vm 08-4-backup-create 192.168.0.108 'python3 /opt/platform/bin/app_backup.py create'        # → 3× "Verified base backup: base-"; 08-9 reads the todo one
 vm 08-5-restore-state 192.168.0.108 'podman ps -a --filter name=restore --format "{{.Names}}"; podman volume ls --filter name=restore --format "{{.Name}}"'   # → nothing
 vm 08-6-before-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR before restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR before restore point');\""
-vm 08-7-mark 192.168.0.108 'python3 /opt/todo/bin/app_backup.py mark --name acceptance_before_after && sleep 1 && date --utc +%Y-%m-%dT%H:%M:%SZ && sleep 1'   # → 3× "Archived restore point acceptance_before_after"; 08-10 reads the time
+vm 08-7-mark 192.168.0.108 'python3 /opt/platform/bin/app_backup.py mark --name acceptance_before_after && sleep 1 && date --utc +%Y-%m-%dT%H:%M:%SZ && sleep 1'   # → 3× "Archived restore point acceptance_before_after"; 08-10 reads the time
 vm 08-8-after-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR after restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR after restore point');\""
 ```
 
@@ -965,19 +965,19 @@ on its own side of it. If a value is missing, `app_backup.py` refuses before
 it changes anything, and the step is a STOP.
 
 ```bash
-vm 08-9-restore-todo 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app todo restore --backup $(backup_name todo) --target acceptance_before_after && python3 /opt/todo/bin/app_backup.py --app todo restore-status && podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec todo-postgres-restore psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec todo-postgres psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
-vm 08-10-restore-notes 192.168.0.108 "python3 /opt/todo/bin/app_backup.py --app notes restore --target-time $(restore_time) && python3 /opt/todo/bin/app_backup.py --app notes restore-status && podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec notes-postgres-restore psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec notes-postgres psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
+vm 08-9-restore-todo 192.168.0.108 "python3 /opt/platform/bin/app_backup.py --app todo restore --backup $(backup_name todo) --target acceptance_before_after && python3 /opt/platform/bin/app_backup.py --app todo restore-status && podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec todo-postgres-restore psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec todo-postgres psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
+vm 08-10-restore-notes 192.168.0.108 "python3 /opt/platform/bin/app_backup.py --app notes restore --target-time $(restore_time) && python3 /opt/platform/bin/app_backup.py --app notes restore-status && podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec notes-postgres-restore psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec notes-postgres psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
 ```
 
 Each must show `recovery|paused|read_only = t|t|on`, network `none`, only the
 before-row in the restored view and both rows in the live view. Then:
 
 ```bash
-vm 08-11-cleanup 192.168.0.108 'python3 /opt/todo/bin/app_backup.py --app todo cleanup-restore --confirm todo-postgres-restore && python3 /opt/todo/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore && echo "restore containers: $(podman ps -aq --filter name=restore | wc -l)" && echo "restore volumes: $(podman volume ls -q --filter name=restore | wc -l)" && echo "backup volumes: $(podman volume ls -q --filter name=postgres-backup | wc -l)"'   # → "restore containers: 0", "restore volumes: 0", "backup volumes: 3"
+vm 08-11-cleanup 192.168.0.108 'python3 /opt/platform/bin/app_backup.py --app todo cleanup-restore --confirm todo-postgres-restore && python3 /opt/platform/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore && echo "restore containers: $(podman ps -aq --filter name=restore | wc -l)" && echo "restore volumes: $(podman volume ls -q --filter name=restore | wc -l)" && echo "backup volumes: $(podman volume ls -q --filter name=postgres-backup | wc -l)"'   # → "restore containers: 0", "restore volumes: 0", "backup volumes: 3"
 ops 08-12-configure-backup-again 192.168.0.108 '--inventory recovery.yaml configure-backup'   # → {"changed": false}
 $A --step 08-13 do reboot 108 192.168.0.108 app
 $A --step 08-14 check roles 192.168.0.108 archiving
-vm 08-15-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'   # → 3× "Archive mode: on", 3× "Failed archive attempts: 0"
+vm 08-15-backup-status 192.168.0.108 'python3 /opt/platform/bin/app_backup.py status'   # → 3× "Archive mode: on", 3× "Failed archive attempts: 0"
 $A --step 08-16 do backup-nightly 192.168.0.108   # one run of the nightly backup that failover turned on
 ```
 
@@ -1031,7 +1031,7 @@ before anything changes; the real run deletes `.102`'s three databases only
 after `.102` proved it is a read-only standby that reaches `.108`.
 
 ```bash
-vm 09-13a-pair-inventory 192.168.0.108 'cd ~/todo-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-standby: {role: primary, address: 192.168.0.108, local: true}" "  todo-primary: {role: standby, address: 192.168.0.102}" > initial.yaml && cat initial.yaml'
+vm 09-13a-pair-inventory 192.168.0.108 'cd ~/platform-operations && printf "%s\n" "user: gunstein" "hosts:" "  todo-standby: {role: primary, address: 192.168.0.108, local: true}" "  todo-primary: {role: standby, address: 192.168.0.102}" > initial.yaml && cat initial.yaml'
 ops 09-13b-reseed-refused 192.168.0.108 '--inventory initial.yaml reseed-standby --confirm-reseed todo-standby'   # → "must name the standby exactly"; exit=1
 ops 09-13c-reseed 192.168.0.108 '--inventory initial.yaml reseed-standby --confirm-reseed todo-primary' &   # → {"changed": true}; wait for exit=
 $A --step 09-13d check roles 192.168.0.102 standby
@@ -1055,7 +1055,7 @@ ops 10-3-cluster-status 192.168.0.108 '--inventory recovery.yaml cluster-status'
 $A --step 10-4 do reboot 108 192.168.0.108 app
 $A --step 10-5a check roles 192.168.0.108 archiving
 $A --step 10-5b check ca 192.168.0.108
-vm 10-5c-backup-status 192.168.0.108 'python3 /opt/todo/bin/app_backup.py status'
+vm 10-5c-backup-status 192.168.0.108 'python3 /opt/platform/bin/app_backup.py status'
 ops 10-6-cluster-status 192.168.0.108 '--inventory recovery.yaml cluster-status'
 $A --step 10-7a check headers
 $A --step 10-7b check markers 192.168.0.108
@@ -1107,7 +1107,7 @@ the controller VM over SSH, from the package directory, and end it with the
 exit code:
 
 ```bash
-ssh gunstein@192.168.0.102 'cd ~/todo-operations && PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops --inventory initial.yaml replication-status; echo "exit=$?"'
+ssh gunstein@192.168.0.102 'cd ~/platform-operations && PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops --inventory initial.yaml replication-status; echo "exit=$?"'
 ```
 
 The controller is `.102` with `initial.yaml` for phases 4-5, and `.108` with

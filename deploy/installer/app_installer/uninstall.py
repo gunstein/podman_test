@@ -107,7 +107,7 @@ def uninstall(remove_data=False, quadlet_dir=None, remove_backups=False):
         for name in SECRETS:
             changed = remove('secret', name) or changed
         # nginx's CA and leaf are Podman secrets (in SECRETS above) or, with the TLS
-        # volume, in todo-nginx-data; docs/ARCHITECTURE.md lists both with the
+        # volume, in platform-nginx-data; docs/ARCHITECTURE.md lists both with the
         # database volumes as surviving local app recreation, so they are only
         # removed alongside them, not on a plain uninstall.
         for name in TLS_VOLUMES:

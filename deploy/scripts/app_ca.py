@@ -15,11 +15,11 @@ not the TLS volume. The CA only ever sees a certificate signing request
 Two ways to run it (docs/TLS.md says which security each gives):
 
   development: the same Unix user that runs rootless Podman owns the CA
-  directory (for example ~/.local/share/todo-ca) and runs this tool:
+  directory (for example ~/.local/share/platform-ca) and runs this tool:
       app_ca.py init --directory DIR --domain intern.example.org
       app_ca.py sign --directory DIR --request host.csr --output host.crt
-  v1: root owns /var/lib/todo-ca (0700, ca.key 0600) and the Podman user can
-      only run the narrow wrapper deploy/scripts/todo-ca-sign through sudo:
+  v1: root owns /var/lib/platform-ca (0700, ca.key 0600) and the Podman user can
+      only run the narrow wrapper deploy/scripts/platform-ca-sign through sudo:
       a CSR on stdin, the certificate on stdout. The wrapper fixes the
       directory, the passphrase file, the validity and the extensions, so
       the caller chooses none of them (sign-stdin below).
@@ -48,8 +48,8 @@ CA_DAYS = 7300
 SERVER_DAYS = 365
 # Apple platforms refuse TLS server certificates valid for longer, from any CA.
 MAX_SERVER_DAYS = 825
-# The v1 storage, owned by root; todo-ca-sign uses it.
-V1_DIRECTORY = Path('/var/lib/todo-ca')
+# The v1 storage, owned by root; platform-ca-sign uses it.
+V1_DIRECTORY = Path('/var/lib/platform-ca')
 DOMAIN = re.compile(r'(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+')
 # A request is a few kilobytes; anything much larger is not one.
 MAX_REQUEST_BYTES = 64 * 1024
@@ -236,7 +236,7 @@ def sign(directory, request, output, days=SERVER_DAYS, passphrase_file=None):
 def sign_request(directory, request_text, passphrase_file=None):
     """sign-stdin: sign the CSR in request_text with SERVER_DAYS; return the certificate as text.
 
-    The narrow form for todo-ca-sign under sudo: the caller hands over only
+    The narrow form for platform-ca-sign under sudo: the caller hands over only
     the CSR and gets back only the certificate. No path the caller names is
     read or written, and the validity is fixed.
     """
@@ -263,7 +263,7 @@ def parser():
     issue.add_argument('--request', type=Path, required=True)
     issue.add_argument('--output', type=Path, required=True)
     issue.add_argument('--days', type=int, default=SERVER_DAYS)
-    narrow = commands.add_parser('sign-stdin', help='a CSR on stdin, the certificate on stdout (todo-ca-sign)')
+    narrow = commands.add_parser('sign-stdin', help='a CSR on stdin, the certificate on stdout (platform-ca-sign)')
     narrow.add_argument('--directory', type=Path, required=True)
     for command in (create, issue, narrow):
         # Not next to ca.key (refused). Without it, openssl asks on the terminal.

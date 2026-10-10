@@ -139,7 +139,7 @@ class LocalModeTests(SecretTest):
         # The secrets come in as files, readable by the nginx user only.
         mounts = [argv[i + 1] for argv in self.host.ran('podman', 'run') for i, word in enumerate(argv)
                   if word == '--secret']
-        self.assertIn(f'{SECRET["ca.key"]},type=mount,target=/run/todo-tls/ca.key,uid=101,gid=101,mode=0400', mounts)
+        self.assertIn(f'{SECRET["ca.key"]},type=mount,target=/run/platform-tls/ca.key,uid=101,gid=101,mode=0400', mounts)
 
     def test_a_repeat_changes_nothing(self):
         tls_secrets.provision(NAMES)
@@ -185,7 +185,7 @@ class LocalModeTests(SecretTest):
                         '-days', '300', '-extfile', 'ext', '-out', 'server.crt', cwd=directory)
             volume = {name: Path(directory, name).read_text() for name in ('ca.key', 'ca.crt', 'server.key',
                                                                             'server.crt')}
-        self.host.volumes.add('todo-nginx-data')
+        self.host.volumes.add('platform-nginx-data')
         self.host.volume_files.update(volume)
         self.assertTrue(tls_secrets.provision(NAMES))
         for name, text in volume.items():

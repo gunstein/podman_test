@@ -1,7 +1,7 @@
 """proxy/proxy-entrypoint.sh in both TLS modes, run here with real openssl on a temporary volume.
 
-TODO_TLS_DIRECTORY points the script at a temporary directory instead of
-/var/lib/todo-tls; the command it hands over to is `true`. The real image and
+PLATFORM_TLS_DIRECTORY points the script at a temporary directory instead of
+/var/lib/platform-tls; the command it hands over to is `true`. The real image and
 volume are covered by deploy/scripts/dev/smoke-proxy.sh in CI.
 """
 import os
@@ -27,11 +27,11 @@ class EntrypointTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.volume)
 
     def start(self, names=NAMES, role=None):
-        environment = {**os.environ, 'TODO_TLS_DIRECTORY': str(self.volume),
-                       'TODO_TLS_HOSTNAME': names[0], 'APP_TLS_HOSTNAMES': ' '.join(names)}
-        environment.pop('TODO_TLS_ROLE', None)
+        environment = {**os.environ, 'PLATFORM_TLS_DIRECTORY': str(self.volume),
+                       'PLATFORM_TLS_HOSTNAME': names[0], 'APP_TLS_HOSTNAMES': ' '.join(names)}
+        environment.pop('PLATFORM_TLS_ROLE', None)
         if role:
-            environment['TODO_TLS_ROLE'] = role
+            environment['PLATFORM_TLS_ROLE'] = role
         return subprocess.run(['sh', SCRIPT, 'true'], env=environment, capture_output=True, text=True, check=False)
 
     def provided(self, names=NAMES, days=365, other_key=False):
@@ -129,7 +129,7 @@ class EntrypointTests(unittest.TestCase):
     def test_an_unknown_role_stops_before_anything(self):
         result = self.start(role='admin')
         self.assertEqual(result.returncode, 1)
-        self.assertIn('invalid TODO_TLS_ROLE', result.stderr)
+        self.assertIn('invalid PLATFORM_TLS_ROLE', result.stderr)
         self.assertEqual(list(self.volume.iterdir()), [])
 
     def test_an_unknown_mode_stops_nginx(self):

@@ -1,8 +1,8 @@
 # nginx's TLS files come from Podman secrets: the Kube secret
 # {{ tls_secret }}, which the installer makes (app_installer/tls_secrets.py),
-# is mounted read-only at /var/lib/todo-tls, one file per data key.
+# is mounted read-only at /var/lib/platform-tls, one file per data key.
 #
-# The TLS volume todo-nginx-data is kept for going back (app_installer/tls.py,
+# The TLS volume platform-nginx-data is kept for going back (app_installer/tls.py,
 # docs/TLS.md "Switching back"). Its three parts are commented out with "#~ ":
 # this claim, the pod's nginx-tls init container and the tls-data claim at the
 # end. To use the volume again: remove "#~ " from those lines, delete the lines
@@ -12,7 +12,7 @@
 #~ apiVersion: v1
 #~ kind: PersistentVolumeClaim
 #~ metadata:
-#~   name: todo-nginx-data
+#~   name: platform-nginx-data
 #~   annotations:
 #~     volume.podman.io/uid: "101"
 #~     volume.podman.io/gid: "101"
@@ -22,7 +22,7 @@ kind: ConfigMap
 metadata:
   name: shared-nginx-env
 data:
-  TODO_TLS_HOSTNAME: {{ hostname | tojson }}
+  PLATFORM_TLS_HOSTNAME: {{ hostname | tojson }}
   APP_TLS_HOSTNAMES: {{ applications | map(attribute="hostname") | join(" ") | tojson }}
 ---
 apiVersion: v1
@@ -43,7 +43,7 @@ data:
   # Keycloak origin (KC_HOSTNAME) to share its SSO cookie, so an app on another
   # hostname fetches its tokens from there.
   app-headers.conf: |
-    include /etc/todo-nginx/security-headers.conf;
+    include /etc/platform-nginx/security-headers.conf;
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' {{ identity_origin }}; frame-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'" always;
     add_header X-Frame-Options DENY always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
@@ -85,37 +85,37 @@ data:
             listen 8080;
             listen 8443 ssl;
             server_name {{ app.hostname }};
-            ssl_certificate /var/lib/todo-tls/server.crt;
-            ssl_certificate_key /var/lib/todo-tls/server.key;
+            ssl_certificate /var/lib/platform-tls/server.crt;
+            ssl_certificate_key /var/lib/platform-tls/server.key;
             ssl_protocols TLSv1.2 TLSv1.3;
             ssl_session_tickets off;
             root /usr/share/nginx/html;
             index index.html;
-            include /etc/todo-nginx/security-headers.conf;
+            include /etc/platform-nginx/security-headers.conf;
 
             location /auth/ {
                 proxy_pass http://shared_keycloak;
-                include /etc/nginx/todo-proxy-headers.conf;
+                include /etc/nginx/platform-proxy-headers.conf;
             }
             location /api/ {
                 proxy_pass http://{{ app.name }}_backend;
-                include /etc/nginx/todo-proxy-headers.conf;
-                include /etc/todo-nginx/app-headers.conf;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
             }
             location = /health {
                 proxy_pass http://{{ app.name }}_backend;
-                include /etc/nginx/todo-proxy-headers.conf;
-                include /etc/todo-nginx/app-headers.conf;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
             }
             location = /ready {
                 proxy_pass http://{{ app.name }}_backend;
-                include /etc/nginx/todo-proxy-headers.conf;
-                include /etc/todo-nginx/app-headers.conf;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
             }
             location / {
                 proxy_pass http://{{ app.name }}_frontend;
-                include /etc/nginx/todo-proxy-headers.conf;
-                include /etc/todo-nginx/app-headers.conf;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
             }
         }
 {% endfor %}
@@ -136,7 +136,7 @@ spec:
 #~   # nginx-tls is the only container that writes the TLS volume: on every pod
 #~   # start it issues or renews the demo certificate (local mode) or checks the
 #~   # provided one, then exits. nginx mounts the volume read-only
-#~   # (proxy-entrypoint.sh, TODO_TLS_ROLE). tls-request and tls-install write
+#~   # (proxy-entrypoint.sh, PLATFORM_TLS_ROLE). tls-request and tls-install write
 #~   # through their own throwaway containers (app_installer.tls), never nginx.
 #~   initContainers:
 #~     - name: nginx-tls
@@ -148,11 +148,11 @@ spec:
 #~             name: shared-nginx-env
 #~             optional: false
 #~       env:
-#~         - name: TODO_TLS_ROLE
+#~         - name: PLATFORM_TLS_ROLE
 #~           value: provision
 #~       volumeMounts:
 #~         - name: tls-data
-#~           mountPath: /var/lib/todo-tls
+#~           mountPath: /var/lib/platform-tls
 #~       resources:
 #~         limits:
 #~           memory: "64Mi"
@@ -166,7 +166,7 @@ spec:
     - name: nginx
       image: {{ image | tojson }}
       imagePullPolicy: Never
-      args: [nginx, -c, /etc/todo-nginx/nginx.conf, -g, "daemon off;"]
+      args: [nginx, -c, /etc/platform-nginx/nginx.conf, -g, "daemon off;"]
       ports:
         - name: http
           containerPort: 8080
@@ -177,18 +177,18 @@ spec:
             name: shared-nginx-env
             optional: false
       env:
-        - name: TODO_TLS_ROLE
+        - name: PLATFORM_TLS_ROLE
           value: serve
       volumeMounts:
         - name: nginx-config
-          mountPath: /etc/todo-nginx
+          mountPath: /etc/platform-nginx
           readOnly: true
         - name: tls-data
-          mountPath: /var/lib/todo-tls
+          mountPath: /var/lib/platform-tls
           readOnly: true
       livenessProbe:
         exec:
-          command: [nginx, -t, -c, /etc/todo-nginx/nginx.conf]
+          command: [nginx, -t, -c, /etc/platform-nginx/nginx.conf]
         initialDelaySeconds: 10
         periodSeconds: 10
         timeoutSeconds: 3
@@ -219,4 +219,4 @@ spec:
     # END secret
 #~     - name: tls-data
 #~       persistentVolumeClaim:
-#~         claimName: todo-nginx-data
+#~         claimName: platform-nginx-data

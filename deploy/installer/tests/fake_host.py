@@ -86,7 +86,7 @@ class FakeHost:
         self.secrets = {name: password for name in secrets.installed_names()}
         self.volumes = set()
         self.volumes_in_use = set()
-        # The files of the TLS volume todo-nginx-data, if a test gives it some ({name: text}).
+        # The files of the TLS volume platform-nginx-data, if a test gives it some ({name: text}).
         self.volume_files = {}
         self.keys_made = 0
         self.images = None if images_present else set()
@@ -99,7 +99,7 @@ class FakeHost:
         # The host's record of its public hostnames lives in a temporary
         # directory, never in the home directory of whoever runs the tests.
         self.home = Path(tempfile.mkdtemp())
-        self.record = self.home / '.config/todo/target-values.json'
+        self.record = self.home / '.config/platform/target-values.json'
         # The nightly backup timer's units (backup.install_timer) go here too.
         self.units = self.home / '.config/systemd/user'
         self._patchers = [mock.patch('app_installer.commands.subprocess.run', side_effect=self._run),
@@ -157,7 +157,7 @@ class FakeHost:
             # The containers that use a volume, from volumes_in_use.
             return 0, 'c0ffee\n' if argv[-1].removeprefix('volume=') in self.volumes_in_use else ''
         if argv[:2] == ['podman', 'run'] and '--volume' in argv and \
-                argv[argv.index('--volume') + 1].startswith('todo-nginx-data:'):
+                argv[argv.index('--volume') + 1].startswith('platform-nginx-data:'):
             # tls.py's throwaway containers on the TLS volume: only test -s and cat.
             program = argv[argv.index('--entrypoint') + 1]
             words = [program, *argv[argv.index('--entrypoint') + 3:]] if program == 'cat' else \

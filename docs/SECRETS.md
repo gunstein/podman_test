@@ -52,10 +52,10 @@ Public certificates are not secrets. TLS private keys and CA private keys are.
 
 nginx's TLS files are the worked example of files as Podman secrets
 ([TLS](TLS.md#nginxs-tls-files-as-podman-secrets)): one raw secret per file
-(`todo-proxy-*`), made in throwaway containers that print a key straight
+(`platform-proxy-*`), made in throwaway containers that print a key straight
 into `podman secret create NAME -`, mounted into other throwaway containers
 with `--secret NAME,type=mount,target=FILE`, and given to nginx as the Kube
-secret `todo-kube-proxy-tls-secret`, which `podman kube play` mounts as a
+secret `platform-kube-proxy-tls-secret`, which `podman kube play` mounts as a
 read-only directory. They are host-local: the DR copy never carries them,
 and each host makes its own key. The demo CA's key and a waiting key are
 never in nginx's Kube secret.
@@ -64,7 +64,7 @@ never in nginx's Kube secret.
 `podman kube play` does not mount a Kube secret straight from the secret
 store. It copies the files of each `secret:` volume into a named volume
 called after the Kube secret (`todo-kube-backend-secret`,
-`todo-kube-postgres-secret`, `todo-kube-proxy-tls-secret` and so on: every
+`todo-kube-postgres-secret`, `platform-kube-proxy-tls-secret` and so on: every
 name `secrets.kube_volume_names()` lists), with the password or key in plain
 text, and mounts that. It rewrites the files at every play, so a restarted
 pod sees a rotated value. But the volume stays after `kube down`, after the

@@ -54,14 +54,14 @@ through `.kube` Quadlets, updates each registered Keycloak client to the stable
 origin, and checks health, readiness, discovery and public reads for every
 application. When an image or workload definition changed, it stops the whole
 application tier once before starting it again. It exports the public nginx root
-to `~/.config/todo/todo-nginx-root.crt`.
+to `~/.config/platform/platform-nginx-root.crt`.
 
 ## Client name and certificate
 
 Use the [client trust and browser checks](../../docs/ACCEPTANCE.md#client-trust-and-real-browser-verification)
 after failover. Replace the prior `todo.test` mapping and trust only the verified
 public CA of the serving host; the private CA key stays in that host's Podman
-secret `todo-proxy-ca-key` (with the TLS volume: in `todo-nginx-data`) and never
+secret `platform-proxy-ca-key` (with the TLS volume: in `platform-nginx-data`) and never
 reaches nginx.
 
 ### Certificate lifecycle and DR alternatives

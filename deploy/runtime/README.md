@@ -57,14 +57,14 @@ The offline bundle and the operations package carry every Kube YAML file and
 placeholders for the public hostnames and the host's address, and
 `bundle.json` naming them. The installer and the DR tools fill those values in
 with the standard library (`target_render.py`) and install the files under
-`~/.config/containers/systemd/todo-kube-runtime/`; targets render nothing.
+`~/.config/containers/systemd/platform-kube-runtime/`; targets render nothing.
 Build mode renders the same files on the host. CI compares the packages with
 fresh rendering; see [offline delivery](../offline/README.md#target-values).
 
 All seven `.kube` units use `--no-pod-prefix`, so the grouped containers keep
 the stable names `todo-backend` and `todo-frontend` while one
 `todo-app.service` owns their shared lifecycle. The separate `shared-proxy.service` owns container `nginx`, terminates TLS with the
-files of the Podman secret `todo-kube-proxy-tls-secret`, and routes to `todo-app:8080` (frontend), `todo-app:8000`
+files of the Podman secret `platform-kube-proxy-tls-secret`, and routes to `todo-app:8080` (frontend), `todo-app:8000`
 (backend), the corresponding `notes-app` ports, and `keycloak:8080`. The frontend is HTTP-only; no TLS material
 belongs in `todo-frontend`. App containers share loopback, but the proxy does not.
 

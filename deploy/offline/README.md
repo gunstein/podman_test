@@ -55,7 +55,7 @@ The connected build machine renders everything with Jinja2 before packaging
 | `generated/target/quadlet/` | Every `.kube` unit and `app-network.network`; the proxy unit also publishes HTTPS on `${TARGET_PUBLISH_ADDRESS}` |
 | `generated/target/quadlet/local-only/` | The proxy unit for a host that publishes only on 127.0.0.1 |
 | `generated/target/quadlet/replicated/` | The database units of a DR primary, which also publish replication on `${TARGET_PUBLISH_ADDRESS}` |
-| `bundle.json` | Format and version (`todo-offline-bundle`, 4), where each of the above is, the apps, the HTTPS port and the default target values |
+| `bundle.json` | Format and version (`platform-offline-bundle`, 4), where each of the above is, the apps, the HTTPS port and the default target values |
 
 The build checks that putting the default hostnames into the target manifests
 gives exactly the normal render, so a placeholder only stands where a
@@ -66,8 +66,8 @@ This builds the backend, frontend, shared proxy and Keycloak images, pulls Postg
 creates both the archive and its external checksum:
 
 ```text
-dist/todo-offline-m12.tar.gz
-dist/todo-offline-m12.tar.gz.sha256
+dist/platform-offline-m12.tar.gz
+dist/platform-offline-m12.tar.gz.sha256
 ```
 
 Build the bundle on a machine compatible with the offline target. Its `VERSION`
@@ -81,9 +81,9 @@ Copy the archive and checksum to the target through the trusted transfer path.
 Verify the archive before extracting or running any bundled code:
 
 ```bash
-sha256sum -c todo-offline-m12.tar.gz.sha256
-tar -xzf todo-offline-m12.tar.gz
-cd todo-offline-m12
+sha256sum -c platform-offline-m12.tar.gz.sha256
+tar -xzf platform-offline-m12.tar.gz
+cd platform-offline-m12
 # With active fapolicyd, first apply the exact-file trust steps below.
 sh ./preflight.sh
 sh ./install.sh
@@ -133,7 +133,7 @@ service by is a decision, not a property of the host. There is no
 `${TARGET_HOSTNAME}` or `${TARGET_FQDN}`: no file needs them, and an unknown
 placeholder stops the install.
 
-The host's record is `~/.config/todo/target-values.json`. A successful install
+The host's record is `~/.config/platform/target-values.json`. A successful install
 writes the public hostnames it used there (never the address, which belongs to
 the host and is given each time). A later install or update without the
 options therefore keeps the names instead of going back to the bundle's
@@ -226,15 +226,15 @@ the target before running `install.sh`.
 
 ### Nightly backups
 
-Every install turns on `todo-backup.timer`: each night at 02:30 (or at the
+Every install turns on `platform-backup.timer`: each night at 02:30 (or at the
 next start, if the host was off) it takes a verified base backup of every
 database into its backup volume and deletes those older than 7 days, never
 the latest. A failed backup, or less than 10 % free disk, leaves
-`todo-backup.service` failed; see `systemctl --user --failed` and
-`journalctl --user -u todo-backup.service`. Run one now, or list them:
+`platform-backup.service` failed; see `systemctl --user --failed` and
+`journalctl --user -u platform-backup.service`. Run one now, or list them:
 
 ```bash
-systemctl --user start todo-backup.service
+systemctl --user start platform-backup.service
 podman exec todo-postgres ls /var/lib/postgresql/backup/base
 ```
 

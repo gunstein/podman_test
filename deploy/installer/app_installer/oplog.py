@@ -11,7 +11,7 @@ adds the time and the host:
 
 Tests call main() directly, not run(), so they log nothing. app-ops, on the
 controller, also keeps everything it printed in one file per run
-(run(..., keep=True)), in ~/.local/state/todo/app-ops/.
+(run(..., keep=True)), in ~/.local/state/platform/app-ops/.
 """
 import io
 import shutil
@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-KEPT = Path.home() / '.local/state/todo/app-ops'
+KEPT = Path.home() / '.local/state/platform/app-ops'
 _command = []
 
 

@@ -13,7 +13,7 @@ from tests.runtime_fixture import ROOT, RUNTIME
 sys.path.insert(0, str(ROOT / "deploy/installer/tests"))
 from volume_mode import volume_manifest  # noqa: E402
 
-VOLUMES = {"todo-postgres-data", "todo-postgres-backup", "todo-nginx-data",
+VOLUMES = {"todo-postgres-data", "todo-postgres-backup", "platform-nginx-data",
            "notes-postgres-data", "notes-postgres-backup"}
 
 
@@ -36,7 +36,7 @@ class PVCStorageTests(unittest.TestCase):
             }),
             (proxy, "shared-proxy", {}),
             (volume_manifest(proxy), "shared-proxy", {
-                "todo-nginx-data": ("/var/lib/todo-tls", 101),
+                "platform-nginx-data": ("/var/lib/platform-tls", 101),
             }),
         ):
             docs = list(yaml.safe_load_all(text))
@@ -54,7 +54,7 @@ class PVCStorageTests(unittest.TestCase):
                     claim = volume["persistentVolumeClaim"]["claimName"]
                     mount = mounts[volume["name"]]
                     # nginx serves its TLS volume read-only; only its init container writes it.
-                    self.assertEqual(mount.get("readOnly", False), claim == "todo-nginx-data")
+                    self.assertEqual(mount.get("readOnly", False), claim == "platform-nginx-data")
                     resolved[claim] = mount["mountPath"]
             self.assertEqual(resolved, {name: path for name, (path, uid) in expected.items()})
             for name, (_path, uid) in expected.items():
@@ -70,7 +70,7 @@ class PVCStorageTests(unittest.TestCase):
         roles = {}
         for container in pod["spec"]["initContainers"] + pod["spec"]["containers"]:
             mount = next(m for m in container["volumeMounts"] if m["name"] == "tls-data")
-            role = next(e["value"] for e in container["env"] if e["name"] == "TODO_TLS_ROLE")
+            role = next(e["value"] for e in container["env"] if e["name"] == "PLATFORM_TLS_ROLE")
             roles[container["name"]] = (role, mount.get("readOnly", False))
             self.assertEqual(container["securityContext"]["runAsUser"], 101)
         self.assertEqual(roles, {"nginx-tls": ("provision", False), "nginx": ("serve", True)})
@@ -115,13 +115,13 @@ class PVCStorageTests(unittest.TestCase):
                 uninstall.uninstall(remove_data=remove_data, quadlet_dir=directory)
                 commands = [call.args[0] for call in run.call_args_list]
                 volumes = [argv[-1] for argv in commands if argv[:3] == ["podman", "volume", "rm"]]
-                # todo-nginx-data holds the demo CA and is documented as persistent
+                # platform-nginx-data holds the demo CA and is documented as persistent
                 # like the database volumes, so it only goes with --remove-data too.
                 # The Kube secrets' and nginx's ConfigMap's volumes are copies kube play makes
                 # again: they always go (V1, V2).
                 self.assertEqual(set(volumes),
                                  ({"todo-postgres-data", "notes-postgres-data", "keycloak-postgres-data",
-                                   "todo-nginx-data", "todo-caddy-data"} if remove_data else set())
+                                   "platform-nginx-data", "todo-caddy-data"} if remove_data else set())
                                  | set(kube_secrets.kube_volume_names()) | {"shared-nginx-config"})
                 for backup in ("todo-postgres-backup", "notes-postgres-backup", "keycloak-postgres-backup"):
                     self.assertNotIn(backup, volumes)

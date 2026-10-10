@@ -79,7 +79,7 @@ def main(argv=None):
     promoted_tier.add_argument('--node-address', required=True)
     promoted_tier.add_argument('--service-port', type=int, default=settings.HTTPS_PORT)
     promoted_tier.add_argument('--journal', type=Path, default=Path.home() / settings.DR_CONFIG / settings.PROMOTION_RECORD)
-    promoted_tier.add_argument('--config-dir', type=Path, default=Path.home() / '.config/todo')
+    promoted_tier.add_argument('--config-dir', type=Path, default=Path.home() / '.config/platform')
     node = subcommands.add_parser('node-facts')
     node.add_argument('--inventory-hostname', required=True)
     node.add_argument('--role', required=True)

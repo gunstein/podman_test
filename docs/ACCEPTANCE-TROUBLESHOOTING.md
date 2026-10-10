@@ -37,7 +37,7 @@ with a small inventory that names the promoted host as primary and the rebuilt
 host as standby:
 
 ```bash
-cd "$HOME/todo-operations"
+cd "$HOME/platform-operations"
 cat > dr-tool.yaml <<'EOF'
 user: gunstein
 hosts:

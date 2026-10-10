@@ -77,5 +77,5 @@ class IndependentAppChartsTests(unittest.TestCase):
             self.assertIn('server ' + name + '-app:8000 resolve;', config)
             self.assertIn('server ' + name + '-app:8080 resolve;', config)
         self.assertEqual(config.count('proxy_pass http://shared_keycloak;'), 2)
-        self.assertEqual(config.count('ssl_certificate /var/lib/todo-tls/server.crt;'), 2)
-        self.assertEqual(config.count('ssl_certificate_key /var/lib/todo-tls/server.key;'), 2)
+        self.assertEqual(config.count('ssl_certificate /var/lib/platform-tls/server.crt;'), 2)
+        self.assertEqual(config.count('ssl_certificate_key /var/lib/platform-tls/server.key;'), 2)

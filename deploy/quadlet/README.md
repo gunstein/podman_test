@@ -5,7 +5,7 @@ templates. The bundle build renders them with Jinja2 into `generated/target/quad
 which an offline install and the DR tools fill in and install without Jinja2; build
 mode renders the same files on the host. There are no role-local copies.
 Host-specific units live beside the rendered YAML in
-`~/.config/containers/systemd/todo-kube-runtime/`. See the [runtime guide](../runtime/README.md).
+`~/.config/containers/systemd/platform-kube-runtime/`. See the [runtime guide](../runtime/README.md).
 
 Persistent storage is declared by Kube YAML PVCs. No `.volume` Quadlets are
 needed for the current workloads.

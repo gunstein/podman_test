@@ -57,7 +57,7 @@ def promote(host, confirm_fenced, confirm_promotion):
 def https(host, hostname, path, *curl_options):
     """GET https://hostname:port/path from the host's own address, trusting only the host's CA."""
     script = ('curl --silent --show-error --fail --max-time 10 '
-              '--cacert <(podman exec nginx cat /var/lib/todo-tls/ca.crt) '
+              '--cacert <(podman exec nginx cat /var/lib/platform-tls/ca.crt) '
               '--resolve "$1:$2:$3" "${@:5}" "https://$1:$2$4"')
     return host.run(['bash', '-c', script, 'https', hostname, str(settings.HTTPS_PORT), host.spec.address,
                      path, *curl_options]).stdout
@@ -107,8 +107,8 @@ def login_page(host, hostnames):
 
 
 # The TLS mode (provided, or nothing for local) and the fingerprint of the CA nginx serves from.
-CA_FACTS = ('cat /var/lib/todo-tls/tls-mode 2>/dev/null; '
-            'openssl x509 -in /var/lib/todo-tls/ca.crt -noout -fingerprint -sha256')
+CA_FACTS = ('cat /var/lib/platform-tls/tls-mode 2>/dev/null; '
+            'openssl x509 -in /var/lib/platform-tls/ca.crt -noout -fingerprint -sha256')
 
 
 def users(host, hostnames):

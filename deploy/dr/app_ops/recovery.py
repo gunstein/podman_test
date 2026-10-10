@@ -34,7 +34,7 @@ def configure_backup(project_root, controller, current):
     """Install app_backup.py on the current primary, turn on WAL archiving and the nightly backup.
 
     Refuses unless the promotion record shows the whole group was promoted.
-    todo-backup.timer then runs `app_backup.py nightly` every night; on a host
+    platform-backup.timer then runs `app_backup.py nightly` every night; on a host
     installed with install.sh it replaces the installer's service of the same timer.
     """
     pythonpath = trust.stage_installer(project_root, controller, current)
@@ -47,7 +47,7 @@ def configure_backup(project_root, controller, current):
     result = current.run(['env', 'PYTHONDONTWRITEBYTECODE=1', 'python3', str(settings.TOOLS_BIN / 'app_backup.py'),
                           'configure', '--journal', journal], timeout=steps.STEP_TIMEOUT)
     changed = steps.changed(result) or changed
-    return steps.install_timer(project_root, current, 'todo-backup') or changed
+    return steps.install_timer(project_root, current, 'platform-backup') or changed
 
 
 def preflight_rebuild(project_root, controller, current, rebuild, confirm_fenced, confirm_reseed):

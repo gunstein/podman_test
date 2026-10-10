@@ -4,13 +4,13 @@
 # standby it does nothing. A failure fails the unit, so it shows in
 # `systemctl --user --failed`, and `app_dr.py check` fails too once a
 # certificate has fewer than 25 days left:
-#   journalctl --user -u todo-replication-tls.service
-# app-ops install-dr-tool installs it on both hosts with todo-replication-tls.timer.
+#   journalctl --user -u platform-replication-tls.service
+# app-ops install-dr-tool installs it on both hosts with platform-replication-tls.timer.
 [Unit]
 Description=Todo replication TLS certificate renewal
 
 [Service]
 Type=oneshot
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/usr/bin/python3 /opt/todo/bin/app_dr.py renew-tls
+ExecStart=/usr/bin/python3 /opt/platform/bin/app_dr.py renew-tls
 TimeoutStartSec=10min

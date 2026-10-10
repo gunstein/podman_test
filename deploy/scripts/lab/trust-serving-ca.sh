@@ -13,11 +13,11 @@ temporary=$(mktemp)
 trap 'rm -f "$temporary"' EXIT
 
 ssh -o StrictHostKeyChecking=yes "$ssh_target" \
-  'podman exec nginx cat /var/lib/todo-tls/ca.crt' > "$temporary"
+  'podman exec nginx cat /var/lib/platform-tls/ca.crt' > "$temporary"
 
 local_fingerprint=$(openssl x509 -in "$temporary" -noout -fingerprint -sha256)
 remote_fingerprint=$(ssh -o BatchMode=yes "$ssh_target" \
-  'podman exec nginx openssl x509 -in /var/lib/todo-tls/ca.crt -noout -fingerprint -sha256')
+  'podman exec nginx openssl x509 -in /var/lib/platform-tls/ca.crt -noout -fingerprint -sha256')
 
 if [[ "$local_fingerprint" != "$remote_fingerprint" ]]; then
   echo "Fingerprint mismatch: SSH-retrieved certificate does not match the" >&2
@@ -26,7 +26,7 @@ if [[ "$local_fingerprint" != "$remote_fingerprint" ]]; then
 fi
 echo "Verified fingerprint: $local_fingerprint"
 
-sudo cp "$temporary" /usr/local/share/ca-certificates/todo-nginx-root.crt
+sudo cp "$temporary" /usr/local/share/ca-certificates/platform-nginx-root.crt
 sudo update-ca-certificates
 
 nssdb=$HOME/.pki/nssdb

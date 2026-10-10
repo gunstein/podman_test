@@ -1,6 +1,6 @@
 # TLS and reverse proxy model
 
-The separate shared proxy image (`localhost/todo-proxy:m12`) terminates TLS
+The separate shared proxy image (`localhost/platform-proxy:m12`) terminates TLS
 in container `nginx`, owned by `shared-proxy.service`. It routes to the HTTP-only
 frontends, FastAPI backends and Keycloak over Podman DNS. Frontend holds no TLS material.
 
@@ -15,7 +15,7 @@ same host, issues the certificate and nginx only uses it
 
 Those files are **Podman secrets** by default, mounted read-only into nginx
 from a Kube secret ([below](#nginxs-tls-files-as-podman-secrets)). The earlier
-**TLS volume** `todo-nginx-data` is kept, so a host can go back to it
+**TLS volume** `platform-nginx-data` is kept, so a host can go back to it
 ([switching back](#switching-back-to-the-tls-volume)); the two modes and every
 command are the same with either.
 A single host uses the installer's commands below; a DR pair uses app-ops,
@@ -33,14 +33,14 @@ The code is `deploy/installer/app_installer/tls_secrets.py`; the manifest is
 
 | File in nginx | Raw Podman secret | In nginx's Kube secret |
 |---|---|---|
-| `tls-mode` | `todo-proxy-tls-mode` (`local` or `provided`) | yes |
-| `ca.crt` | `todo-proxy-ca-cert` | yes |
-| `server.crt` | `todo-proxy-tls-cert` (certificate, then any intermediates) | yes |
-| `server.key` | `todo-proxy-tls-key` | yes |
-| `ca.key` | `todo-proxy-ca-key` (demo CA, local mode only) | **no** |
-| `request.key` | `todo-proxy-tls-request-key` (waiting for its certificate) | **no** |
+| `tls-mode` | `platform-proxy-tls-mode` (`local` or `provided`) | yes |
+| `ca.crt` | `platform-proxy-ca-cert` | yes |
+| `server.crt` | `platform-proxy-tls-cert` (certificate, then any intermediates) | yes |
+| `server.key` | `platform-proxy-tls-key` | yes |
+| `ca.key` | `platform-proxy-ca-key` (demo CA, local mode only) | **no** |
+| `request.key` | `platform-proxy-tls-request-key` (waiting for its certificate) | **no** |
 
-nginx's Kube secret, `todo-kube-proxy-tls-secret`, holds exactly the four
+nginx's Kube secret, `platform-kube-proxy-tls-secret`, holds exactly the four
 files nginx serves. The CA's key and a waiting key are never in it, so nginx
 never sees them.
 
@@ -53,9 +53,9 @@ installer passes what it printed to `podman secret create`:
 
 ```bash
 podman run --rm --network none --user 101:101 --tmpfs /work:mode=1777 \
-  --entrypoint openssl localhost/todo-proxy:m12 genpkey -algorithm RSA \
+  --entrypoint openssl localhost/platform-proxy:m12 genpkey -algorithm RSA \
   -pkeyopt rsa_keygen_bits:3072 \
-  | podman secret create todo-proxy-tls-key -
+  | podman secret create platform-proxy-tls-key -
 ```
 
 An existing secret is replaced with `podman secret create --replace NAME -`.
@@ -70,9 +70,9 @@ gets it this way, for the nginx user only:
 
 ```bash
 podman run --rm --network none --user 101:101 --tmpfs /work:mode=1777 --workdir /work \
-  --secret todo-proxy-tls-key,type=mount,target=/run/todo-tls/server.key,uid=101,gid=101,mode=0400 \
-  --entrypoint openssl localhost/todo-proxy:m12 \
-  req -new -key /run/todo-tls/server.key -subj /CN=todo.test
+  --secret platform-proxy-tls-key,type=mount,target=/run/platform-tls/server.key,uid=101,gid=101,mode=0400 \
+  --entrypoint openssl localhost/platform-proxy:m12 \
+  req -new -key /run/platform-tls/server.key -subj /CN=todo.test
 ```
 
 ### Step 3: nginx gets a directory of files from a Kube secret
@@ -82,28 +82,28 @@ JSON (or YAML) document whose `data` holds base64 values. A `secret:` volume
 then mounts it as a directory with one file per key:
 
 ```yaml
-# The Podman secret todo-kube-proxy-tls-secret holds:
-#   {"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "todo-kube-proxy-tls-secret"},
+# The Podman secret platform-kube-proxy-tls-secret holds:
+#   {"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "platform-kube-proxy-tls-secret"},
 #    "data": {"tls-mode": "...", "ca.crt": "...", "server.crt": "...", "server.key": "..."}}
   containers:
     - name: nginx
       volumeMounts:
         - name: tls-data
-          mountPath: /var/lib/todo-tls
+          mountPath: /var/lib/platform-tls
           readOnly: true
   volumes:
     - name: tls-data
       secret:
-        secretName: todo-kube-proxy-tls-secret
+        secretName: platform-kube-proxy-tls-secret
         optional: false
         defaultMode: 0444
 ```
 
-nginx reads `/var/lib/todo-tls/server.crt` and `server.key` as before. Podman
+nginx reads `/var/lib/platform-tls/server.crt` and `server.key` as before. Podman
 mounts the files as root, so they need mode 0444 for nginx (user 101); only
 nginx runs in that container. To mount them, `podman kube play` (checked with
 Podman 4.9) writes the files into a named volume called after the Kube
-secret, `todo-kube-proxy-tls-secret`, and rewrites it at every play. That
+secret, `platform-kube-proxy-tls-secret`, and rewrites it at every play. That
 volume stays after `kube down`, so the key is on disk there as well as in
 the secret store, both under the same Podman user, while the stack is
 installed; `uninstall` and the development `down` remove it with the pods,
@@ -124,10 +124,10 @@ reload.
 ### Inspecting the secrets
 
 ```bash
-podman secret ls --filter name=todo-proxy                 # the raw secrets
-podman secret ls --filter name=todo-kube-proxy-tls        # nginx's Kube secret
-podman exec nginx ls -l /var/lib/todo-tls                 # the four files nginx sees
-podman exec nginx cat /var/lib/todo-tls/ca.crt            # the public root for clients
+podman secret ls --filter name=platform-proxy                 # the raw secrets
+podman secret ls --filter name=platform-kube-proxy-tls        # nginx's Kube secret
+podman exec nginx ls -l /var/lib/platform-tls                 # the four files nginx sees
+podman exec nginx cat /var/lib/platform-tls/ca.crt            # the public root for clients
 ```
 
 Never print `podman secret inspect --showsecret` for a key: it shows the key.
@@ -158,11 +158,11 @@ clients need nothing new. The volume itself stays until
 `uninstall --remove-data`, which removes the TLS secrets too.
 
 With the TLS volume instead, the pod's init container, `nginx-tls`, makes the
-same files in `todo-nginx-data` at every pod start, so a pod restart renews an
+same files in `platform-nginx-data` at every pod start, so a pod restart renews an
 expiring leaf certificate.
 
 Clean deployment and application recovery require `io.todo.proxy=nginx` on
-`localhost/todo-proxy:m12`. Rebuild with `refresh_images=true` on a connected
+`localhost/platform-proxy:m12`. Rebuild with `refresh_images=true` on a connected
 controller, or explicitly load the proxy archive from a verified current offline
 bundle before deployment. The frontend image has no proxy identity contract.
 
@@ -182,9 +182,9 @@ For direct development, add this entry to the test client’s `/etc/hosts`:
 For a VM or server, use its serving IP instead. Export only the public CA:
 
 ```bash
-podman exec nginx cat /var/lib/todo-tls/ca.crt > ./todo-nginx-root.crt
-curl --cacert ./todo-nginx-root.crt https://todo.test:8443/ready
-curl --cacert ./todo-nginx-root.crt https://notes.test:8443/ready
+podman exec nginx cat /var/lib/platform-tls/ca.crt > ./platform-nginx-root.crt
+curl --cacert ./platform-nginx-root.crt https://todo.test:8443/ready
+curl --cacert ./platform-nginx-root.crt https://notes.test:8443/ready
 ```
 
 Trust that CA in the browser as well. Both apps authenticate against the same
@@ -203,9 +203,9 @@ root under a distinct filename, and rebuild the generated store:
 
 ```bash
 sudo rm -f /usr/local/share/ca-certificates/todo-m14.crt
-sudo cp todo-nginx-root.crt /usr/local/share/ca-certificates/todo-nginx-root.crt
+sudo cp platform-nginx-root.crt /usr/local/share/ca-certificates/platform-nginx-root.crt
 sudo update-ca-certificates --fresh
-openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt todo-nginx-root.crt
+openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt platform-nginx-root.crt
 ```
 
 The final command must report `OK`. Do not use `curl -k`; it bypasses the trust
@@ -226,7 +226,7 @@ nginx, as `deploy/scripts/app_ca.py`, with its own storage:
 
 ```text
                      one host
-  CA storage (not Podman)            nginx's Podman secrets (todo-proxy-*)
+  CA storage (not Podman)            nginx's Podman secrets (platform-proxy-*)
   ├── ca.key  (encrypted)            ├── server.key   active key
   ├── ca.crt                         ├── server.crt   active certificate (+ chain)
   └── issued.log                     ├── ca.crt       the root clients trust
@@ -235,14 +235,14 @@ nginx, as `deploy/scripts/app_ca.py`, with its own storage:
           │ certificate out                 │
           │                                 │
   app_ca.py sign  ◄── CSR ──────────  tls-request    (new key: throwaway container → secret)
-  (or sudo todo-ca-sign in v1)  ──►   tls-install    (checks, then switches the secrets)
+  (or sudo platform-ca-sign in v1)  ──►   tls-install    (checks, then switches the secrets)
                                             │
-                                     todo-kube-proxy-tls-secret  (the four served files)
+                                     platform-kube-proxy-tls-secret  (the four served files)
                                             │
                                      nginx  (RO: serves; restarted to read new files)
 ```
 
-With the TLS volume the same files are in `todo-nginx-data` (with the CSR as
+With the TLS volume the same files are in `platform-nginx-data` (with the CSR as
 `request.csr`), the `nginx-tls` init container checks them at every start,
 and `tls-install` reloads nginx instead of restarting it.
 
@@ -250,23 +250,23 @@ Two private keys, two homes, never mixed:
 
 | Key | Lives in | Made by | Used by | Leaves its home |
 |---|---|---|---|---|
-| `ca.key` | CA storage (`/var/lib/todo-ca` in v1) | `app_ca.py init` | `app_ca.py` signing only | never: not Podman, never mounted, never one of nginx's files |
-| `server.key` | the Podman secret `todo-proxy-tls-key` (or the TLS volume) | `tls-request`, in a throwaway container | nginx | never: the CA receives only the CSR |
+| `ca.key` | CA storage (`/var/lib/platform-ca` in v1) | `app_ca.py init` | `app_ca.py` signing only | never: not Podman, never mounted, never one of nginx's files |
+| `server.key` | the Podman secret `platform-proxy-tls-key` (or the TLS volume) | `tls-request`, in a throwaway container | nginx | never: the CA receives only the CSR |
 
 ### Commands
 
 ```bash
 # Once: the CA (development: a directory of the Podman user; v1: see below).
-python3 deploy/scripts/app_ca.py init --directory ~/.local/share/todo-ca \
+python3 deploy/scripts/app_ca.py init --directory ~/.local/share/platform-ca \
   --domain todo.example.org --domain notes.example.org
 
 # For each certificate (first time and every renewal):
-cd ~/todo-offline-m12
+cd ~/platform-offline-m12
 PYTHONPATH=deploy/installer python3 -m app_installer tls-request --output ~/host.csr
-python3 deploy/scripts/app_ca.py sign --directory ~/.local/share/todo-ca \
+python3 deploy/scripts/app_ca.py sign --directory ~/.local/share/platform-ca \
   --request ~/host.csr --output ~/host.crt
 PYTHONPATH=deploy/installer python3 -m app_installer tls-install \
-  --certificate ~/host.crt --ca ~/.local/share/todo-ca/ca.crt
+  --certificate ~/host.crt --ca ~/.local/share/platform-ca/ca.crt
 ```
 
 openssl asks for the CA key's passphrase. `--passphrase-file FILE` reads it
@@ -289,15 +289,15 @@ next to `ca.key` it would protect nothing.
   signed around the tool fails for names outside the domains: clients
   enforce the name constraints.
 - **`tls-request`** makes a new waiting key (the secret
-  `todo-proxy-tls-request-key`) and a CSR for every public hostname nginx
-  serves, as every install records them (`~/.config/todo/target-values.json`);
+  `platform-proxy-tls-request-key`) and a CSR for every public hostname nginx
+  serves, as every install records them (`~/.config/platform/target-values.json`);
   only the CSR leaves the host's secret store.
 - **`tls-install`** checks everything before nginx's files change: the CA
   file is a self-signed root, the certificate chains to it (intermediates
   may follow it in the same file), is valid now for TLS servers, names every
   hostname, and belongs to the waiting key or the active one. The two
   certificate files are checked as temporary secrets
-  (`todo-proxy-tls-incoming*`), removed afterwards. Then it switches the
+  (`platform-proxy-tls-incoming*`), removed afterwards. Then it switches the
   secrets to provided mode, removes the demo CA's key and the waiting key,
   replaces nginx's Kube secret, restarts a running nginx and waits until it
   serves the new certificate for every hostname. Every openssl step runs in
@@ -323,9 +323,9 @@ pending: request.key (+ the CSR)     until the signed certificate passed every c
 
 1. `tls-request` makes a new `request.key` and a CSR; the active pair
    is untouched. Nothing makes it by itself: the single host's nightly
-   backup run (`todo-backup.timer`) fails below 30 days, so it shows in
+   backup run (`platform-backup.timer`) fails below 30 days, so it shows in
    `systemctl --user --failed`, and on a DR pair `app_dr.py check` does.
-2. The CA signs the CSR (`app_ca.py sign`, or `sudo todo-ca-sign` in v1).
+2. The CA signs the CSR (`app_ca.py sign`, or `sudo platform-ca-sign` in v1).
 3. `tls-install` checks the certificate against the pending key. A
    certificate that fits neither key, misses a hostname or chains to another
    CA changes nothing, and the pending key keeps waiting.
@@ -358,35 +358,35 @@ or wait for the operator to type it.
 
 ```text
 Podman user                         root
-├── rootless Podman                 └── /var/lib/todo-ca        root:root 0700
+├── rootless Podman                 └── /var/lib/platform-ca        root:root 0700
 ├── the TLS volume                      ├── ca.key              root:root 0600
 ├── cannot read ca.key                  ├── ca.crt              root:root 0644
 └── may run only:                       └── issued.log          root:root 0600
-    sudo todo-ca-sign < host.csr > host.crt
+    sudo platform-ca-sign < host.csr > host.crt
 ```
 
-`deploy/scripts/todo-ca-sign` is the whole interface: a CSR on stdin, the
+`deploy/scripts/platform-ca-sign` is the whole interface: a CSR on stdin, the
 certificate on stdout, no arguments. It runs `app_ca.py sign-stdin` with a
-fixed directory (`/var/lib/todo-ca`), a fixed optional passphrase file
-(`/etc/todo-ca/passphrase`, root 0400, outside the CA directory; without it
+fixed directory (`/var/lib/platform-ca`), a fixed optional passphrase file
+(`/etc/platform-ca/passphrase`, root 0400, outside the CA directory; without it
 openssl asks on the terminal) and the fixed 365-day validity. The caller
 chooses no CA key, no openssl command, no config file, no extension and no
 output path, so it cannot overwrite a root file or sign anything the CA's
 checks refuse. Setup, as root:
 
 ```bash
-install -d -m 0755 /usr/local/lib/todo-ca
-install -m 0644 deploy/scripts/app_ca.py /usr/local/lib/todo-ca/app_ca.py
-install -m 0755 deploy/scripts/todo-ca-sign /usr/local/sbin/todo-ca-sign
-python3 /usr/local/lib/todo-ca/app_ca.py init --directory /var/lib/todo-ca \
+install -d -m 0755 /usr/local/lib/platform-ca
+install -m 0644 deploy/scripts/app_ca.py /usr/local/lib/platform-ca/app_ca.py
+install -m 0755 deploy/scripts/platform-ca-sign /usr/local/sbin/platform-ca-sign
+python3 /usr/local/lib/platform-ca/app_ca.py init --directory /var/lib/platform-ca \
   --domain todo.example.org --domain notes.example.org
-# sudoers (visudo -f /etc/sudoers.d/todo-ca): "" allows no arguments at all.
-#   podman ALL=(root) NOPASSWD: /usr/local/sbin/todo-ca-sign ""
+# sudoers (visudo -f /etc/sudoers.d/platform-ca): "" allows no arguments at all.
+#   podman ALL=(root) NOPASSWD: /usr/local/sbin/platform-ca-sign ""
 ```
 
 Then the Podman user signs with
-`sudo todo-ca-sign < ~/host.csr > ~/host.crt` and installs with
-`--ca /var/lib/todo-ca/ca.crt`, or a copy of it (the certificate is public).
+`sudo platform-ca-sign < ~/host.csr > ~/host.crt` and installs with
+`--ca /var/lib/platform-ca/ca.crt`, or a copy of it (the certificate is public).
 Each signing is in `issued.log` with the uid that ran it.
 
 **The limit of one host.** Full root compromise of the host means the CA must
@@ -394,7 +394,7 @@ be assumed compromised: root reads `ca.key` and can watch the passphrase
 being used. That is the accepted price of a CA on the same machine as the
 workload; the name constraints still limit what a stolen CA key can sign
 for. In v1, a compromise of nginx, of a container or of the Podman user alone
-does not give `ca.key`: the user can only ask `todo-ca-sign` for
+does not give `ca.key`: the user can only ask `platform-ca-sign` for
 certificates the CA's policy allows, and each one is logged. A CA on a
 separate machine, or an organisational PKI, removes that limit; provided
 mode works with either unchanged, as only the signing step differs.
@@ -406,8 +406,8 @@ gets them and what a change costs:
 
 | | Podman secrets (default) | TLS volume |
 |---|---|---|
-| Where the files are | one Podman secret per file | `todo-nginx-data` |
-| What nginx mounts | the Kube secret `todo-kube-proxy-tls-secret`, read-only | the volume, read-only |
+| Where the files are | one Podman secret per file | `platform-nginx-data` |
+| What nginx mounts | the Kube secret `platform-kube-proxy-tls-secret`, read-only | the volume, read-only |
 | Who makes the demo files | the installer, before nginx starts | the `nginx-tls` init container, at every pod start |
 | The demo CA's key | its own secret, never mounted into nginx | in the volume beside nginx's files |
 | A new certificate takes effect | after a restart (a new pod): a few seconds without HTTPS | after a reload, no interruption |
@@ -448,7 +448,7 @@ the DR test_nginx_tls.py) run with step 2.
 
 ### nginx reads its files read-only
 
-nginx runs with `TODO_TLS_ROLE=serve` and its files mounted read-only: it
+nginx runs with `PLATFORM_TLS_ROLE=serve` and its files mounted read-only: it
 only checks that the files it is about to serve fit, and never writes them.
 With Podman secrets nothing in the pod writes them; the installer's
 throwaway containers make them, and the pod has no init container. So a
@@ -460,7 +460,7 @@ install, tls-renew, tls-request, tls-install   make the secrets (throwaway conta
 nginx                                          RO   (serve)
 ```
 
-With the TLS volume, the `nginx-tls` init container (`TODO_TLS_ROLE=provision`)
+With the TLS volume, the `nginx-tls` init container (`PLATFORM_TLS_ROLE=provision`)
 mounts the volume read-write and issues, renews or checks at every pod start.
 
 ### With an organisational PKI

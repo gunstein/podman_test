@@ -1,5 +1,5 @@
 {
-  "format": "todo-offline-bundle",
+  "format": "platform-offline-bundle",
   "format_version": 4,
   "manifests": {
     "directory": "generated/target/manifests",

@@ -105,8 +105,8 @@ removed files, the restart around WAL archiving) take their order from it, and
 `deploy/installer/tests/test_workload_units.py` checks the units' `Requires=`,
 `After=`, `Yaml=` and `ConfigMap=` against it. The proxy uses the operational container name `nginx`
 and reads its TLS files read-only from the Podman secret
-`todo-kube-proxy-tls-secret`, which the installer makes ([TLS](TLS.md); the
-earlier TLS volume `todo-nginx-data` is kept for going back). It reaches the frontend/backend
+`platform-kube-proxy-tls-secret`, which the installer makes ([TLS](TLS.md); the
+earlier TLS volume `platform-nginx-data` is kept for going back). It reaches the frontend/backend
 at `<app>-app:8080`/`<app>-app:8000` and Keycloak at `keycloak:8080`.
 Loopback is shared only within a pod; it cannot connect the separate proxy to Todo.
 The units use `--no-pod-prefix` to preserve operational container names;
@@ -122,7 +122,7 @@ This is a tested baseline, not a claim about the capability's minimum version.
 | Kube YAML | Pod contents, init ordering, runtime settings and secret references | Infrastructure fencing or host policy |
 | .kube Quadlet | Binding a workload to user systemd, published ports and dependencies | Database failover decisions |
 | systemd | Service ordering, restart, shutdown and boot behavior | PostgreSQL replication correctness |
-| systemd user timers | The nightly backup (`todo-backup.timer`) and, on DR hosts, the DR check every 15 minutes (`todo-dr-check.timer`) and the nightly replication certificate renewal (`todo-replication-tls.timer`); a failure leaves a failed unit | Paging anyone: the failed unit and the journal are the alert |
+| systemd user timers | The nightly backup (`platform-backup.timer`) and, on DR hosts, the DR check every 15 minutes (`platform-dr-check.timer`) and the nightly replication certificate renewal (`platform-replication-tls.timer`); a failure leaves a failed unit | Paging anyone: the failed unit and the journal are the alert |
 | Python installer | Single-host dev/server lifecycle and shared workload installation | DR decisions or remote transport |
 | app-ops | Multi-host DR over plain SSH: transport, security integration and assertions | A separate workload installer |
 | Python tools | Guarded DR, backup and resumable operator stages | A second configuration-management system |
@@ -172,7 +172,7 @@ rendered, with `${TARGET_EXTERNAL_HOSTNAME}`, `${TARGET_NOTES_HOSTNAME}` and
 fill in those placeholders with the standard library alone
 (`target_render.py`); neither renders, and neither needs Jinja2. The public
 hostnames are the same on primary and standby: each host records them
-(`~/.config/todo/target-values.json`) and app-ops copies the primary's to the
+(`~/.config/platform/target-values.json`) and app-ops copies the primary's to the
 standby. The address is each host's own. Images and rendered
 definitions are delivered offline; target execution does not fetch from a
 registry. Both acceptance artifacts must identify the same clean revision.
@@ -261,7 +261,7 @@ An adapter seam is not evidence that Duende or another provider already works.
 | Todo database data | todo-postgres-data | Survives app replacement; explicitly replaced only during approved reseed |
 | Notes database data | notes-postgres-data | Same lifecycle as Todo data, independent database |
 | Keycloak database data | keycloak-postgres-data | Same lifecycle; holds the shared realm |
-| nginx CA and leaf-key state | Host-local Podman secrets `todo-proxy-*` and `todo-kube-proxy-tls-secret` (or the TLS volume todo-nginx-data) | Survives local app recreation; removed only with `--remove-data`; promotion may create a new demo CA |
+| nginx CA and leaf-key state | Host-local Podman secrets `platform-proxy-*` and `platform-kube-proxy-tls-secret` (or the TLS volume platform-nginx-data) | Survives local app recreation; removed only with `--remove-data`; promotion may create a new demo CA |
 | Base backups and WAL | todo-postgres-backup, notes-postgres-backup, keycloak-postgres-backup | One per database; separate from live data; still on the same VM; removed only with `--remove-data --remove-backups` |
 | Runtime credentials | Host-local Podman secrets | Provisioned and transferred separately from YAML |
 
@@ -302,7 +302,7 @@ secrets between hosts over SSH on stdin only, never as an argument or in a log.
 
 Filesystem ownership, rootless UID mapping and SELinux labels are independent.
 A named volume is persistent storage, not a backup policy. Every server
-install therefore backs itself up: `install.sh` turns on `todo-backup.timer`,
+install therefore backs itself up: `install.sh` turns on `platform-backup.timer`,
 which takes a verified base backup of each database every night inside its
 own container (`pg_basebackup` over the local socket, `pg_verifybackup`) into
 its backup volume and keeps 7 days; `app_installer backup restore` puts the
@@ -355,13 +355,13 @@ whose creation was lost in the last seconds.
 
 Initially one host serves both applications and a second streams each
 PostgreSQL database's WAL asynchronously. Physical slots retain needed WAL within a configured bound;
-lag and invalidated slots require monitoring: `todo-dr-check.timer` runs
+lag and invalidated slots require monitoring: `platform-dr-check.timer` runs
 `app_dr.py check` on both hosts every 15 minutes, which also checks that the
 host could take over (the same bundle revision, its image archives and every
 DR secret, and the expiry of the replication certificates), a nightly
-`todo-replication-tls.timer` renews those certificates on the current primary
+`platform-replication-tls.timer` renews those certificates on the current primary
 before they expire, and a nightly
-`todo-backup.timer` takes and prunes the base backups on the current primary
+`platform-backup.timer` takes and prunes the base backups on the current primary
 ([scheduled check and nightly backup](../deploy/dr/README.md#scheduled-check-and-nightly-backup)).
 Async replication cannot guarantee that unsent commits survive abrupt loss.
 That is a design choice, not a gap: when the primary fails, the transactions

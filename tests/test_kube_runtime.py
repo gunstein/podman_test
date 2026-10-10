@@ -97,11 +97,11 @@ class KubeRuntimeTests(unittest.TestCase):
     def test_proxy_reuses_the_accepted_tls_volume(self):
         app = read(RUNTIME / "todo-app.yaml")
         proxy = read(RUNTIME / "shared-proxy.yaml")
-        self.assertIn("name: todo-nginx-data", proxy)
+        self.assertIn("name: platform-nginx-data", proxy)
         self.assertNotIn("todo-kube-nginx-data", app)
         self.assertIn('volume.podman.io/uid: "101"', proxy)
         self.assertNotIn('volume.podman.io/gid: "101"', app)
-        self.assertNotIn("todo-nginx-data", app)
+        self.assertNotIn("platform-nginx-data", app)
 
     def test_systemd_represents_the_six_workload_boundaries(self):
         app = read(RUNTIME / "shared-proxy.kube")
@@ -136,7 +136,7 @@ class KubeRuntimeTests(unittest.TestCase):
         pod = next(doc for doc in docs if doc["kind"] == "Pod")
         proxy = pod["spec"]["containers"]
         self.assertEqual([item["name"] for item in proxy], ["nginx"])
-        self.assertEqual(proxy[0]["image"], "localhost/todo-proxy:m12")
+        self.assertEqual(proxy[0]["image"], "localhost/platform-proxy:m12")
         config = next(doc["data"]["nginx.conf"] for doc in docs
                       if doc["metadata"]["name"] == "shared-nginx-config")
         for upstream in ("todo-app:8080", "todo-app:8000", "keycloak:8080"):
@@ -147,7 +147,7 @@ class KubeRuntimeTests(unittest.TestCase):
             self.assertIn(route, config)
         self.assertNotIn("127.0.0.1:8000", config)
         self.assertNotIn("https://todo_frontend", config)
-        self.assertNotIn("todo-nginx-data", read(RUNTIME / "todo-app.yaml"))
+        self.assertNotIn("platform-nginx-data", read(RUNTIME / "todo-app.yaml"))
         self.assertNotIn("ssl_certificate", read(ROOT / "todo-frontend/nginx.conf"))
         self.assertIn("DATABASE_HOST: \"todo-postgres\"", read(RUNTIME / "todo-config.yaml"))
 

@@ -89,7 +89,7 @@ class ReplicateWorkloadTests(unittest.TestCase):
         self.assertEqual(target.call_args.args[1], '192.0.2.11')
         self.assertEqual(bootstrap.call_args.args, (apps.APPS[0].database, '192.0.2.10'))
         self.assertEqual(bootstrap.call_args.kwargs['slot'], 's1')
-        self.assertEqual(bootstrap.call_args.kwargs['kube_runtime_dir'], Path('/q/todo-kube-runtime'))
+        self.assertEqual(bootstrap.call_args.kwargs['kube_runtime_dir'], Path('/q/platform-kube-runtime'))
         self.assertIs(bootstrap.call_args.kwargs['target'], FILES)
         record.assert_called_once_with(FILES.values)
 

@@ -21,21 +21,21 @@ class BundleNameTests(unittest.TestCase):
     def test_every_script_and_guide_names_the_bundle_of_the_current_image_tag(self):
         # build-bundle.sh reads the tag from settings; the guides spell the
         # name out, so a new IMAGE_TAG must take them along.
-        expected = f"todo-offline-{settings.IMAGE_TAG}"
+        expected = f"platform-offline-{settings.IMAGE_TAG}"
         stale = [f"{path.relative_to(ROOT)}: {name}"
                  for path in tracked_files("*.md", "*.sh", "*.py", "*.yml")
-                 for name in set(re.findall(r"todo-offline-m\d+", path.read_text()))
+                 for name in set(re.findall(r"platform-offline-m\d+", path.read_text()))
                  if name != expected]
         self.assertEqual(stale, [])
 
     def test_the_bundle_builder_takes_the_tag_from_settings(self):
         builder = (ROOT / "deploy/offline/build-bundle.sh").read_text()
         self.assertIn("print(settings.IMAGE_TAG)", builder)
-        self.assertNotRegex(builder, r"todo-offline-m\d+")
+        self.assertNotRegex(builder, r"platform-offline-m\d+")
 
 
 class ToolsLayoutTests(unittest.TestCase):
-    """/opt/todo/{bin,lib} is fixed: the tools find their packages before settings can be read."""
+    """/opt/platform/{bin,lib} is fixed: the tools find their packages before settings can be read."""
 
     def test_lib_lies_next_to_bin(self):
         self.assertEqual((settings.TOOLS_BIN.name, settings.TOOLS_LIB.name), ("bin", "lib"))

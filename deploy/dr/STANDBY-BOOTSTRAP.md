@@ -26,7 +26,7 @@ the real machine boundary.
 The read-only preflight queries firewalld to confirm that rule is already in
 place before bootstrap runs, in the running and the permanent configuration,
 so it needs `sudo -n`. It also requires the offline bundle already staged on
-standby, by default under `/home/<user>/todo-offline-m12` (set `home` or
+standby, by default under `/home/<user>/platform-offline-m12` (set `home` or
 `bundle` in the inventory for another location).
 
 Before that, each host reports itself with `app_installer node-facts` and

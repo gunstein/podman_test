@@ -92,7 +92,7 @@ class RecordTests(unittest.TestCase):
     def test_write_then_read_keeps_the_hostnames_and_drops_the_address(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as home:
-            path = Path(home) / '.config/todo/target-values.json'
+            path = Path(home) / '.config/platform/target-values.json'
             with patch.object(target_render, 'record_path', return_value=path):
                 self.assertEqual(target_render.read_record(), {})
                 self.assertTrue(target_render.write_record(VALUES))
@@ -145,7 +145,7 @@ class MetadataTests(unittest.TestCase):
         with self.assertRaisesRegex(TargetError, 'format version 2; this installer reads version 4'):
             self.load()
         self.write(format='something-else')
-        with self.assertRaisesRegex(TargetError, 'does not describe a todo-offline-bundle'):
+        with self.assertRaisesRegex(TargetError, 'does not describe a platform-offline-bundle'):
             self.load()
 
     def test_units_must_name_the_bundles_own_files(self):

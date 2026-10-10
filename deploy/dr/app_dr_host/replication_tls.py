@@ -20,7 +20,7 @@ configure_primary and publish_primaries call ensure_ca and
 install_server_tls. The standby only uses the CA certificate with
 sslmode=verify-full, so it refuses any server without a certificate for the
 primary's address from this CA. The certificate lasts 825 days.
-todo-replication-tls.timer runs `app_dr.py renew-tls` every night on both
+platform-replication-tls.timer runs `app_dr.py renew-tls` every night on both
 hosts: on the primary it calls renew, which issues a new certificate once
 fewer than 30 days are left, and PostgreSQL reloads it without a restart;
 the standby has nothing to renew. `app_dr.py check` fails when a

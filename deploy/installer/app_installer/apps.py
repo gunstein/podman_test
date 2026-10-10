@@ -93,13 +93,13 @@ KEYCLOAK_ARCHIVE = f"keycloak-{settings.IMAGE_TAG}.tar"
 
 # The resources nginx, shared by every app, runs with. Their names start with
 # "todo-" because todo was the first app; they belong to no app.
-PROXY_IMAGE = f"localhost/todo-proxy:{settings.IMAGE_TAG}"
-PROXY_ARCHIVE = f"todo-proxy-{settings.IMAGE_TAG}.tar"
+PROXY_IMAGE = f"localhost/platform-proxy:{settings.IMAGE_TAG}"
+PROXY_ARCHIVE = f"platform-proxy-{settings.IMAGE_TAG}.tar"
 # The ConfigMap file shared-proxy.kube names (ConfigMap=); it is the identity
 # app's own ConfigMap file (tests/test_kube_name_contract.py).
 PROXY_CONFIG_MANIFEST = "todo-config.yaml"
 # The TLS volume nginx used before its Podman secrets; kept for going back (tls.py).
-NGINX_TLS_VOLUME = "todo-nginx-data"
+NGINX_TLS_VOLUME = "platform-nginx-data"
 
 # Keycloak has its own dedicated database (no frontend/backend/OAuth client of
 # its own), replicated for DR parity alongside every registered Application.
@@ -109,18 +109,18 @@ KEYCLOAK_ADMIN_SECRET = "keycloak-admin-password"
 # nginx's TLS files as Podman secrets on this host (tls_secrets.py), one secret
 # per file: {file name: raw secret}. Host-local: the DR copy never carries them.
 PROXY_TLS_SECRETS = {
-    "tls-mode": "todo-proxy-tls-mode",              # local or provided
-    "ca.crt": "todo-proxy-ca-cert",                 # the root clients trust
-    "server.crt": "todo-proxy-tls-cert",            # nginx's certificate (+ chain)
-    "server.key": "todo-proxy-tls-key",             # its private key
-    "ca.key": "todo-proxy-ca-key",                  # the demo CA's key, local mode only
-    "request.key": "todo-proxy-tls-request-key",    # a key waiting for its certificate
-    "incoming.crt": "todo-proxy-tls-incoming",      # tls-install's certificate while it is checked
-    "incoming-ca.crt": "todo-proxy-tls-incoming-ca",
+    "tls-mode": "platform-proxy-tls-mode",              # local or provided
+    "ca.crt": "platform-proxy-ca-cert",                 # the root clients trust
+    "server.crt": "platform-proxy-tls-cert",            # nginx's certificate (+ chain)
+    "server.key": "platform-proxy-tls-key",             # its private key
+    "ca.key": "platform-proxy-ca-key",                  # the demo CA's key, local mode only
+    "request.key": "platform-proxy-tls-request-key",    # a key waiting for its certificate
+    "incoming.crt": "platform-proxy-tls-incoming",      # tls-install's certificate while it is checked
+    "incoming-ca.crt": "platform-proxy-tls-incoming-ca",
 }
-# The Kube secret nginx mounts at /var/lib/todo-tls: tls-mode, ca.crt, server.crt
+# The Kube secret nginx mounts at /var/lib/platform-tls: tls-mode, ca.crt, server.crt
 # and server.key, made from the raw secrets above; never a CA or waiting key.
-PROXY_KUBE_TLS_SECRET = "todo-kube-proxy-tls-secret"
+PROXY_KUBE_TLS_SECRET = "platform-kube-proxy-tls-secret"
 # The replication CA (key, certificate), shared by both hosts; see replication_tls.py.
 REPLICATION_CA_SECRETS = ("replication-ca-key", "replication-ca-cert")
 # The DR group: every app's database, then Keycloak's. Bootstrap, promotion,

@@ -42,7 +42,7 @@ packages on both hosts before an incident; verify checksums and matching clean
 VERSION values before running extracted code.
 
 `configure-backup` refreshes exact source trust, installs root-owned
-`/opt/todo/bin/app_backup.py` and maintains its exact target trust entry,
+`/opt/platform/bin/app_backup.py` and maintains its exact target trust entry,
 with `sudo -n`. It never disables `fapolicyd` or trusts the extracted
 directory.
 
@@ -80,7 +80,7 @@ force an explicit WAL switch, so drills do not need an aggressive timeout.
 
 The archive remains intentionally non-circular: PostgreSQL must never silently
 discard WAL that belongs to the retained recovery window. The nightly backup
-(`todo-backup.timer`, `app_backup.py nightly --keep-days 7`) creates and
+(`platform-backup.timer`, `app_backup.py nightly --keep-days 7`) creates and
 verifies a new base backup, and only then deletes the backups older than 7
 days and the WAL older than the oldest kept backup; the scheduled DR check
 watches free space and archive health ([README](README.md#scheduled-check-and-nightly-backup)).
@@ -98,7 +98,7 @@ fapolicyd diagnostics and trust-entry cleanup.
 | `status` | Reports live role and archive diagnostics |
 | `configure [--journal PATH]` | Always the complete group; checks every database before any change, enables archiving, restarts the application tier at most once and verifies an archived restore point for each changed database. Prints one JSON result |
 | `create` | Requires writable database and archive mode; runs `pg_basebackup` inside the database container over its local socket (the installer's `app_installer.backup.create`, the same as a single host's nightly backup) and verifies its SHA-256 manifest with `pg_verifybackup` before `LATEST` names it |
-| `nightly --keep-days N` | Always the complete group; does nothing on a standby. Otherwise `create` for every database, then deletes base backups older than N days (never the latest) and, with `pg_archivecleanup`, the archived WAL older than the oldest kept backup. Run by `todo-backup.timer` |
+| `nightly --keep-days N` | Always the complete group; does nothing on a standby. Otherwise `create` for every database, then deletes base backups older than N days (never the latest) and, with `pg_archivecleanup`, the archived WAL older than the oldest kept backup. Run by `platform-backup.timer` |
 | `mark --name NAME` | Creates a named restore point, switches WAL and waits for the exact segment in the archive |
 | `restore --backup NAME --target POINT` | Copies into fixed disposable resources and pauses recovery at the named restore point; database networking is disabled and backup is mounted read-only |
 | `restore --target-time TIME [--backup NAME]` | The same, paused at a time (ISO 8601 with its UTC offset, such as `2026-10-04T14:36:00+02:00`; it must be in the past). Without `--backup` it uses the newest base backup taken before that time. It first switches the live database to a new WAL file and waits until the last one is archived, so changes from the last hour are in the archive too. Recovery cannot reach a time after the last archived change, or one before the end of the chosen base backup |

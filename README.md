@@ -157,9 +157,9 @@ deploy/offline/build-bundle.sh
 Transfer both generated files through a trusted path. On the target:
 
 ```bash
-sha256sum -c todo-offline-m12.tar.gz.sha256
-tar -xzf todo-offline-m12.tar.gz
-cd todo-offline-m12
+sha256sum -c platform-offline-m12.tar.gz.sha256
+tar -xzf platform-offline-m12.tar.gz
+cd platform-offline-m12
 sh ./preflight.sh
 sh ./install.sh
 ```
@@ -170,7 +170,7 @@ revision plus clean/dirty build state. SHA-256 provides authenticity only when
 the checksum itself came through a trusted channel. See
 [deploy/offline/README.md](deploy/offline/README.md).
 
-Every server install backs itself up: `todo-backup.timer` takes a verified base
+Every server install backs itself up: `platform-backup.timer` takes a verified base
 backup of each database every night and keeps 7 days, and
 `python3 -m app_installer backup restore` puts the latest one back
 ([nightly backups](deploy/offline/README.md#nightly-backups)).

@@ -1,4 +1,4 @@
-"""deploy/scripts/app_ca.py and todo-ca-sign: the CA for nginx's certificates, with real openssl.
+"""deploy/scripts/app_ca.py and platform-ca-sign: the CA for nginx's certificates, with real openssl.
 
 The CA runs on the same host as Podman here, as in development; the tests
 check what keeps it apart from nginx: its own storage, its own permissions,
@@ -138,7 +138,7 @@ class CaTests(unittest.TestCase):
         self.assertEqual(oct((self.ca / 'issued.log').stat().st_mode & 0o777), '0o600')
 
     def test_the_sudo_wrapper_takes_no_arguments_and_fixes_every_path(self):
-        wrapper = ROOT / 'deploy/scripts/todo-ca-sign'
+        wrapper = ROOT / 'deploy/scripts/platform-ca-sign'
         result = subprocess.run(['sh', wrapper, '--directory', '/tmp/elsewhere'], capture_output=True, text=True,
                                 check=False, stdin=subprocess.DEVNULL)
         self.assertEqual(result.returncode, 2)
@@ -146,9 +146,9 @@ class CaTests(unittest.TestCase):
         text = wrapper.read_text()
         self.assertNotIn('"$@"', text)
         self.assertNotIn('$*', text)
-        self.assertIn('--directory /var/lib/todo-ca', text)
-        self.assertIn('/usr/bin/python3 -I /usr/local/lib/todo-ca/app_ca.py sign-stdin', text)
-        self.assertEqual(str(app_ca.V1_DIRECTORY), '/var/lib/todo-ca')
+        self.assertIn('--directory /var/lib/platform-ca', text)
+        self.assertIn('/usr/bin/python3 -I /usr/local/lib/platform-ca/app_ca.py sign-stdin', text)
+        self.assertEqual(str(app_ca.V1_DIRECTORY), '/var/lib/platform-ca')
 
     def test_a_second_ca_in_the_same_directory_and_a_bad_domain_are_refused(self):
         with self.assertRaisesRegex(app_ca.CaError, 'already holds a CA'):

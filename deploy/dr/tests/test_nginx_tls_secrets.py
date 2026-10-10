@@ -51,7 +51,7 @@ class NginxTlsSecretTest(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     def where(self):
-        return dr_target.bundle(), '/home/todo/todo-offline-m12', '192.0.2.11'
+        return dr_target.bundle(), '/home/todo/platform-offline-m12', '192.0.2.11'
 
     def sign(self, csr, days=365):
         request, output = self.directory / 'host.csr', self.directory / f'host-{days}.crt'
@@ -69,7 +69,7 @@ class StandbyTests(NginxTlsSecretTest):
     def test_a_standby_gets_only_the_proxy_image_and_keeps_its_waiting_key_in_a_secret(self):
         csr, names = nginx_tls.request(*self.where())
         self.assertEqual(names, NAMES)
-        self.assertEqual(self.loaded, [('/home/todo/todo-offline-m12', 'offline', '/home/todo/todo-offline-m12')])
+        self.assertEqual(self.loaded, [('/home/todo/platform-offline-m12', 'offline', '/home/todo/platform-offline-m12')])
         # No TLS volume: nothing is played, nothing is mounted.
         self.assertFalse(self.host.ran('podman', 'kube', 'play'))
         self.assertFalse([argv for argv in self.host.ran('podman', 'run') if '--volume' in argv])

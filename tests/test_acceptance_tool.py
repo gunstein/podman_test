@@ -192,7 +192,7 @@ class CheckTests(ToolTest):
 
     def test_the_ca_is_saved_and_must_not_change_on_the_same_host(self):
         def ca_rules(value):
-            return [("cat /var/lib/todo-tls/ca.crt", (0, "-----BEGIN CERTIFICATE-----\n")),
+            return [("cat /var/lib/platform-tls/ca.crt", (0, "-----BEGIN CERTIFICATE-----\n")),
                     ("-fingerprint", (0, f"sha256 Fingerprint={value}\n"))]
         self.assertEqual(self.tool("--step", "03-3", "check", "ca", "192.168.0.102", rules=ca_rules(FINGERPRINT))[0], 0)
         self.assertTrue((self.run_directory / "ca.crt").is_file())
@@ -321,14 +321,14 @@ class FullRunTests(ToolTest):
         self.assertEqual(self.tool("--step", "10-8", "check", "disk", "192.168.0.108", rules=sizes(1024))[0], 1)
 
     def test_monitor_needs_the_timer_and_the_expected_outcome(self):
-        timer = ("is-enabled todo-dr-check.timer", (0, "enabled\nactive\n"))
-        passed = ("systemctl --user start todo-dr-check.service",
+        timer = ("is-enabled platform-dr-check.timer", (0, "enabled\nactive\n"))
+        passed = ("systemctl --user start platform-dr-check.service",
                   (0, "exit=0\ntodo: primary, 1 standby streaming over TLS, WAL archiving off\nDisk: 40% free (9000 MiB)\n"
                       "Ready to take over: offline bundle aaaaaaaaaaaa with 7 image archives, all 13 DR secrets\n"))
-        not_ready = ("systemctl --user start todo-dr-check.service",
+        not_ready = ("systemctl --user start platform-dr-check.service",
                      (0, "exit=0\ntodo: primary, 1 standby streaming over TLS, WAL archiving off\n"
                          "Disk: 40% free (9000 MiB)\n"))
-        failed = ("systemctl --user start todo-dr-check.service",
+        failed = ("systemctl --user start platform-dr-check.service",
                   (0, "exit=1\nDisk: 40% free (9000 MiB)\nERROR: todo: no standby streams from this primary over TLS\n"))
         self.assertEqual(self.tool("--step", "05-7a", "check", "monitor", "192.168.0.102", "ok",
                                    rules=[timer, passed])[0], 0)
@@ -347,26 +347,26 @@ class FullRunTests(ToolTest):
 
     def test_a_failed_dr_check_is_not_a_failed_service(self):
         ready = ("wait-ready", (0, "READY: x\n"))
-        line = "todo-dr-check.service loaded failed failed Todo DR check\n"
+        line = "platform-dr-check.service loaded failed failed Todo DR check\n"
         self.assertEqual(self.tool("--step", "07-5", "check", "services", "192.168.0.108", "app",
                                    rules=[ready, ("--failed", (0, line))])[0], 0)
         self.assertEqual(self.record()[-1]["values"], {"dr_check": "failed (see check monitor)"})
-        backup = "todo-backup.service loaded failed failed Todo nightly base backup\n"
+        backup = "platform-backup.service loaded failed failed Todo nightly base backup\n"
         self.assertEqual(self.tool("--step", "07-5", "check", "services", "192.168.0.108", "app",
                                    rules=[ready, ("--failed", (0, line + backup))])[0], 1)
 
     def test_the_nightly_backup_backs_up_every_database(self):
-        timer = ("is-enabled todo-backup.timer", (0, "enabled\nactive\n"))
+        timer = ("is-enabled platform-backup.timer", (0, "enabled\nactive\n"))
         journal = "".join(f"{d}: verified base backup base-20261002T200000Z; deleted 0 older than 7 days\n"
                           for d in ("todo", "notes", "keycloak"))
         code, fake = self.tool("--step", "08-16", "do", "backup-nightly", "192.168.0.108",
-                               rules=[timer, ("start todo-backup.service", (0, "exit=0\n" + journal))])
+                               rules=[timer, ("start platform-backup.service", (0, "exit=0\n" + journal))])
         self.assertEqual(code, 0)
         self.assertEqual(self.record()[-1]["values"]["notes"], "base-20261002T200000Z")
-        self.assertIn("journalctl _SYSTEMD_USER_UNIT=todo-backup.service", fake.calls[-1])
+        self.assertIn("journalctl _SYSTEMD_USER_UNIT=platform-backup.service", fake.calls[-1])
         self.assertEqual(self.tool("--step", "08-16", "do", "backup-nightly", "192.168.0.108", "--operator-approved",
                                    "retry in the test",
-                                   rules=[timer, ("start todo-backup.service", (0, "exit=1\n"))])[0], 1)
+                                   rules=[timer, ("start platform-backup.service", (0, "exit=1\n"))])[0], 1)
 
     def test_replication_rule_is_added_and_removed_permanently(self):
         rule = acceptance.replication_rule("192.168.0.108", "192.168.0.102")
@@ -551,7 +551,7 @@ class ReportTests(ToolTest):
         """Run 15 replaced two guide steps with four others; report said ALL STEPS PASS."""
         closed = [("CLOSED", (0, "CLOSED: 192.168.0.102\n"))]
         guide = ("$A --step 06-3 check ports-closed 192.168.0.102 client\n"
-                 "vm 06-6-preflight 192.168.0.108 'python3 /opt/todo/bin/app_dr.py preflight'\n"
+                 "vm 06-6-preflight 192.168.0.108 'python3 /opt/platform/bin/app_dr.py preflight'\n"
                  '$A --step 09-12b do onboot 107 "$ONBOOT"\n')
         self.tool("--step", "06-4", "check", "connect", "client", "192.168.0.102", "22", "blocked",
                   rules=[("/dev/tcp", (124, ""))])
@@ -827,7 +827,7 @@ class GuideCommandTests(ToolTest):
         self.assertFalse(any(" delete " in f" {call} " or " post " in f" {call} " for call in fake.calls))
 
     def test_pin_ssh_verifies_the_host_key(self):
-        rules = [("id_rsa.pub", (0, "ssh-rsa AAAA todo-ops-control\n")),
+        rules = [("id_rsa.pub", (0, "ssh-rsa AAAA platform-ops-control\n")),
                  ("ssh_host_ed25519_key.pub", (0, "256 SHA256:abc root@todo-standby (ED25519)\n")),
                  ("ssh-keyscan", (0, "PINNED 192.168.0.108 SHA256:abc\n")),
                  ("hostname", (0, "todo-standby\n"))]
@@ -852,9 +852,9 @@ class RemoteArgumentTests(ToolTest):
             return subprocess.CompletedProcess(argv, 0, "", "")
         step = acceptance.Step(self.runs, "04-5", "do", "pin-ssh", [], "gunstein")
         with patch.object(acceptance.subprocess, "run", remote_shell), contextlib.redirect_stdout(io.StringIO()):
-            step.ssh("192.168.0.108", "unused", "ssh-rsa AAAA todo-ops-control", "it's; $(x)")
+            step.ssh("192.168.0.108", "unused", "ssh-rsa AAAA platform-ops-control", "it's; $(x)")
         step.log_file.close()
-        self.assertEqual(seen, ["ssh-rsa AAAA todo-ops-control|it's; $(x)|"])
+        self.assertEqual(seen, ["ssh-rsa AAAA platform-ops-control|it's; $(x)|"])
 
 
 class StreamingWaitTests(ToolTest):

@@ -43,7 +43,7 @@ VM2 already has the operations package, trusts app-ops and has
 from recipe 3 step 7 is still in place. On VM2:
 
 ```bash
-cd ~/todo-operations
+cd ~/platform-operations
 export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
 cat recovery.yaml
 ```
@@ -59,7 +59,7 @@ python3 -m app_ops --inventory recovery.yaml configure-backup
 This installs:
 
 ```text
-/opt/todo/bin/app_backup.py
+/opt/platform/bin/app_backup.py
 ```
 
 and creates a separate Podman volume:
@@ -76,7 +76,7 @@ lands in the backup volume.
 ## 5. Check backup status
 
 ```bash
-python3 /opt/todo/bin/app_backup.py status
+python3 /opt/platform/bin/app_backup.py status
 ```
 
 Without `--app`, `status`, `create` and `mark` act on all three databases
@@ -99,7 +99,7 @@ todo-postgres-backup
 ## 6. Take a base backup
 
 ```bash
-python3 /opt/todo/bin/app_backup.py create
+python3 /opt/platform/bin/app_backup.py create
 ```
 
 The tool uses `pg_basebackup`, creates a SHA-256 manifest and runs
@@ -140,7 +140,7 @@ podman exec todo-postgres \
 Run:
 
 ```bash
-python3 /opt/todo/bin/app_backup.py mark \
+python3 /opt/platform/bin/app_backup.py mark \
   --name before_bad_change
 ```
 
@@ -190,7 +190,7 @@ After restore point
 Use the backup name from step 6:
 
 ```bash
-python3 /opt/todo/bin/app_backup.py --app todo restore \
+python3 /opt/platform/bin/app_backup.py --app todo restore \
   --backup base-20260907T081500Z \
   --target before_bad_change
 ```
@@ -212,7 +212,7 @@ production instance.
 First:
 
 ```bash
-python3 /opt/todo/bin/app_backup.py --app todo restore-status
+python3 /opt/platform/bin/app_backup.py --app todo restore-status
 ```
 
 Require `recovery|paused|read_only = t|t|on` and verify networking is disabled:
@@ -280,7 +280,7 @@ After inspecting the restore result and obtaining explicit approval to delete
 only the disposable restore container/volume:
 
 ```bash
-python3 /opt/todo/bin/app_backup.py --app todo cleanup-restore \
+python3 /opt/platform/bin/app_backup.py --app todo cleanup-restore \
   --confirm todo-postgres-restore
 ```
 

@@ -120,14 +120,14 @@ class BuildBundleTests(unittest.TestCase):
                 "  save*) while [ \"$#\" -gt 0 ]; do [ \"$1\" = --output ] && : > \"$2\"; shift; done ;;\n"
                 "esac\n")
             (fake / "podman").chmod(0o755)
-            output = directory / "dist/todo-offline-test.tar.gz"
+            output = directory / "dist/platform-offline-test.tar.gz"
             result = subprocess.run(
                 ["bash", str(ROOT / "deploy/offline/build-bundle.sh"), str(output)],
                 env={**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"},
                 capture_output=True, text=True, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
             subprocess.run(["tar", "-xzf", str(output), "-C", str(directory)], check=True)
-            bundle = next(directory.glob("todo-offline-*/"))
+            bundle = next(directory.glob("platform-offline-*/"))
             check = subprocess.run(["sha256sum", "--quiet", "-c", "SHA256SUMS"], cwd=bundle,
                                    capture_output=True, text=True, check=False)
             self.assertEqual(check.returncode, 0, check.stdout + check.stderr)

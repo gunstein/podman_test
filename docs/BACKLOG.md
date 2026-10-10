@@ -213,14 +213,14 @@ attention above 30 minutes (G3).
 - **T7. The CA under root before v1.** *[new]* Provided mode runs with
   the CA on the same host (`app_ca.py`), owned by the Podman user in
   development. Before v1:
-  - Move it to root: `/var/lib/todo-ca` root 0700, and the Podman user may
-    run only `sudo todo-ca-sign` (CSR in, certificate out, no arguments).
+  - Move it to root: `/var/lib/platform-ca` root 0700, and the Podman user may
+    run only `sudo platform-ca-sign` (CSR in, certificate out, no arguments).
     The wrapper and `app_ca.py sign-stdin` exist and are tested; the
     installation (root-owned copies, sudoers line, `init` as root) is the
     manual list in docs/TLS.md. Make it one reviewed installer step, and
     check the sudoers rule in the preflight.
   - Decide where the passphrase lives: typed at each signing (strongest,
-    no unattended signing), or `/etc/todo-ca/passphrase` root 0400 (then the
+    no unattended signing), or `/etc/platform-ca/passphrase` root 0400 (then the
     encryption protects only copies and backups of the CA directory).
   - A DR pair: decide which host holds the CA and how it is backed up. A CA
     only on the primary is lost with Oslo; the standby's next renewal then
@@ -254,7 +254,7 @@ attention above 30 minutes (G3).
   PostgreSQL minor updates (standby first), and a plan for major upgrades such
   as 17 to 18, which cannot stream between versions.
 - **U2. Certificate renewal while running.** *[partly done]*
-  - *Replication server certificate: done.* `todo-replication-tls.timer`
+  - *Replication server certificate: done.* `platform-replication-tls.timer`
     runs `app_dr.py renew-tls` every night on both hosts; on the primary it
     issues a new certificate for the same address once fewer than 30 days
     are left and reloads PostgreSQL. `app_dr.py check` fails below 25 days.
@@ -275,9 +275,9 @@ attention above 30 minutes (G3).
 WAL on the primary is bounded (`max_slot_wal_keep_size=1GB`): a standby that is
 down too long invalidates its slot, `cluster-status` reports it, and
 `app-ops reseed-standby` copies the standby again while the primary serves
-(accepted in run 44). On both DR hosts `todo-dr-check.timer` reports that, failed WAL
+(accepted in run 44). On both DR hosts `platform-dr-check.timer` reports that, failed WAL
 archiving and a filling disk as a failed unit every 15 minutes, and
-`todo-backup.timer` takes and prunes the primary's base backups every night
+`platform-backup.timer` takes and prunes the primary's base backups every night
 (accepted in run 32; deploy/dr/README.md). A single host gets the same nightly
 backup from `install.sh` and restores to last night, and the WAL archive
 survives a power loss (both accepted in run 35). `app_backup.py --app A
@@ -394,7 +394,7 @@ whatever its current contents.
   --file add` is Red Hat's documented way for a few local exceptions, which is
   how this project started. Build one `todo-tools` RPM with `app_installer`,
   `app_dr_host`, `app_ops`, `app_dr.py`, `app_backup.py` and
-  `app-quarantine.sh`, installed root-owned under `/opt/todo`, and ship it in
+  `app-quarantine.sh`, installed root-owned under `/opt/platform`, and ship it in
   the offline bundle; install it with `dnf install ./todo-tools-<version>.rpm`,
   never `rpm -i`. That removes `trust-files.sh`, the trust steps in the guides
   and the controller's sudo password step, and with them today's weaknesses:
@@ -630,13 +630,13 @@ limited to 1.2 and 1.3.
   password typed late times out (`sudo: timed out`), so /etc/hosts was not
   changed and the run stopped. The client needs root for three things only:
   replace the `todo.test`/`notes.test` line in /etc/hosts, copy the serving
-  host's CA to `/usr/local/share/ca-certificates/todo-nginx-root.crt`, and
+  host's CA to `/usr/local/share/ca-certificates/platform-nginx-root.crt`, and
   run `update-ca-certificates` (C9.4 and `deploy/scripts/lab/trust-serving-ca.sh`).
   Put those three in one small root-owned script with fixed paths, for
   example `/usr/local/sbin/todo-lab-client-trust IP CA_FILE`, which checks
   that IP is an IPv4 address and CA_FILE a single self-signed CA
   certificate, and give the operator's user `NOPASSWD` for that script only
-  (one sudoers line, as `todo-ca-sign` in docs/TLS.md). Fetching the CA and
+  (one sudoers line, as `platform-ca-sign` in docs/TLS.md). Fetching the CA and
   checking its fingerprint stay unprivileged, and the Chromium NSS import
   needs no root. Set it up once in Part A of ACCEPTANCE-AGENT.md; the
   readiness check (C1a) verifies it with `sudo -n -l`. Then the run needs no

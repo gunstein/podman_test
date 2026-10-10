@@ -29,7 +29,7 @@ class PreflightHostPortTests(unittest.TestCase):
                 pass
 
         with patch.object(socket, "socket", FakeSocket), patch.dict(
-            os.environ, {"TODO_ALLOWED_PORTS": allowed}
+            os.environ, {"PLATFORM_ALLOWED_PORTS": allowed}
         ):
             exec(compile(PORT_CHECK, "deploy/offline/preflight.sh:port-check", "exec"), {})
         return checked

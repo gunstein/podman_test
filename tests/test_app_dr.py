@@ -403,7 +403,7 @@ class CheckTests(unittest.TestCase):
     def test_a_certificate_the_renewal_did_not_replace_fails_the_check(self):
         _lines, problems = self.check(notes={"certificate_days": 24})
         self.assertEqual(problems, ["notes: replication certificate expires in 24 days; "
-                                    "todo-replication-tls.timer has not renewed it"])
+                                    "platform-replication-tls.timer has not renewed it"])
         # 25 days left is still fine: the nightly renewal starts at 30.
         _lines, problems = self.check(notes={"certificate_days": 25})
         self.assertEqual(problems, [])
@@ -412,7 +412,7 @@ class CheckTests(unittest.TestCase):
         _lines, problems = self.check(todo={"streams": "0", "certificate_days": -3})
         self.assertEqual(problems, ["todo: no standby streams from this primary over TLS",
                                     "todo: replication certificate expires in -3 days; "
-                                    "todo-replication-tls.timer has not renewed it"])
+                                    "platform-replication-tls.timer has not renewed it"])
 
     def test_a_primary_without_a_readable_certificate_fails(self):
         missing = RuntimeError("todo: the primary has no replication certificate")
@@ -478,9 +478,9 @@ class CheckTests(unittest.TestCase):
         CheckHost(self, todo={}, notes={}, keycloak={})
         with mock.patch.object(app_dr.shutil, "disk_usage", return_value=self.DISK), \
                 mock.patch("sys.stdout") as stdout, mock.patch("sys.stderr") as stderr:
-            self.assertEqual(app_dr.main(["--config", "/nonexistent/todo-dr.json", "check"]), 1)
+            self.assertEqual(app_dr.main(["--config", "/nonexistent/platform-dr.json", "check"]), 1)
         self.assertIn("todo: primary", "".join(call.args[0] for call in stdout.write.call_args_list))
-        self.assertIn("ERROR: Cannot read valid DR configuration from /nonexistent/todo-dr.json",
+        self.assertIn("ERROR: Cannot read valid DR configuration from /nonexistent/platform-dr.json",
                       "".join(call.args[0] for call in stderr.write.call_args_list))
 
     def test_a_provided_pair_reports_this_hosts_nginx_certificate(self):
@@ -489,14 +489,14 @@ class CheckTests(unittest.TestCase):
             [], ["nginx could not start here with your CA's certificate: server.key is missing"])
         with mock.patch.object(app_dr.shutil, "disk_usage", return_value=self.DISK), \
                 mock.patch("sys.stdout"), mock.patch("sys.stderr") as stderr:
-            self.assertEqual(app_dr.main(["--config", "/nonexistent/todo-dr.json", "check"]), 1)
+            self.assertEqual(app_dr.main(["--config", "/nonexistent/platform-dr.json", "check"]), 1)
         self.assertIn("ERROR: nginx could not start here with your CA's certificate: server.key is missing",
                       "".join(call.args[0] for call in stderr.write.call_args_list))
         # A failure to look is a problem too, never a crash of the whole check.
         app_dr.nginx_tls.readiness.side_effect = RuntimeError("podman image inspect failed")
         with mock.patch.object(app_dr.shutil, "disk_usage", return_value=self.DISK), \
                 mock.patch("sys.stdout"), mock.patch("sys.stderr") as stderr:
-            self.assertEqual(app_dr.main(["--config", "/nonexistent/todo-dr.json", "check"]), 1)
+            self.assertEqual(app_dr.main(["--config", "/nonexistent/platform-dr.json", "check"]), 1)
         self.assertIn("ERROR: cannot check the nginx certificate: podman image inspect failed",
                       "".join(call.args[0] for call in stderr.write.call_args_list))
 
@@ -504,7 +504,7 @@ class CheckTests(unittest.TestCase):
         CheckHost(self, todo={}, notes={}, keycloak={})
         with tempfile.TemporaryDirectory() as directory:
             bundle = ReadinessTests.bundle(Path(directory))
-            config = Path(directory) / "todo-dr.json"
+            config = Path(directory) / "platform-dr.json"
             app_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 30, "a" * 40, str(bundle))
             with mock.patch.object(app_dr.shutil, "disk_usage", return_value=self.DISK), \
                     mock.patch.object(app_dr, "secret_exists", return_value=True), \
@@ -574,9 +574,9 @@ class ReadinessTests(unittest.TestCase):
 
     @staticmethod
     def bundle(directory, revision="a" * 40, archives=("images/postgres-17.11.tar", "images/keycloak-m12.tar")):
-        bundle = directory / "todo-offline-m12"
+        bundle = directory / "platform-offline-m12"
         (bundle / "images").mkdir(parents=True)
-        (bundle / "VERSION").write_text(f"package=todo-offline-m12\nsource_revision={revision}\nsource_state=clean\n")
+        (bundle / "VERSION").write_text(f"package=platform-offline-m12\nsource_revision={revision}\nsource_state=clean\n")
         (bundle / "SHA256SUMS").write_text("".join(f"{'0' * 64}  ./{name}\n" for name in archives)
                                            + f"{'0' * 64}  ./install.sh\n")
         for name in archives:
@@ -629,7 +629,7 @@ class ConfigureTests(unittest.TestCase):
 
     def test_writes_a_private_complete_group_config_that_the_tool_reads_back(self):
         with tempfile.TemporaryDirectory() as directory:
-            config = Path(directory) / "todo" / "todo-dr.json"
+            config = Path(directory) / "todo" / "platform-dr.json"
             with mock.patch("sys.stdout") as stdout:
                 self.assertEqual(self.configure(config), 0)
             self.assertIn('"changed": true', "".join(call.args[0] for call in stdout.write.call_args_list))
@@ -643,7 +643,7 @@ class ConfigureTests(unittest.TestCase):
 
     def test_repeat_is_unchanged_and_existing_ansible_written_config_is_byte_identical(self):
         with tempfile.TemporaryDirectory() as directory:
-            config = Path(directory) / "todo-dr.json"
+            config = Path(directory) / "platform-dr.json"
             # Exactly what the former Ansible to_json task wrote (ansible-core 2.14 and 2.20).
             config.write_text('{"applications": ["todo", "notes", "keycloak"], "primary_name": "todo-primary", '
                               '"primary_address": "192.0.2.10", "standby_name": "todo-standby", '
@@ -653,13 +653,13 @@ class ConfigureTests(unittest.TestCase):
             self.assertTrue(app_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 60))
             self.assertEqual(app_dr.load_config(config).rpo_target_seconds, 60)
             self.assertTrue(app_dr.write_config(config, "todo-primary", "192.0.2.10", "todo-standby", 60,
-                                                "a" * 40, "/home/u/todo-offline-m12"))
+                                                "a" * 40, "/home/u/platform-offline-m12"))
             loaded = app_dr.load_config(config)
-            self.assertEqual((loaded.revision, loaded.bundle), ("a" * 40, "/home/u/todo-offline-m12"))
+            self.assertEqual((loaded.revision, loaded.bundle), ("a" * 40, "/home/u/platform-offline-m12"))
 
     def test_invalid_values_are_refused_without_writing(self):
         with tempfile.TemporaryDirectory() as directory:
-            config = Path(directory) / "todo-dr.json"
+            config = Path(directory) / "platform-dr.json"
             for arguments in (("primary.example", "todo-standby", 30), ("192.0.2.10", "", 30),
                               ("192.0.2.10", "todo-standby", 0)):
                 with self.subTest(arguments=arguments), self.assertRaises(app_dr.DrError):

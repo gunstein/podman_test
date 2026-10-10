@@ -27,9 +27,9 @@ On the current primary (`--app` is todo, notes or keycloak; the time is when
 the data was still right, here 14:36 Oslo summer time):
 
 ```bash
-python3 /opt/todo/bin/app_backup.py status                     # archiving healthy?
-python3 /opt/todo/bin/app_backup.py --app notes restore --target-time 2026-10-04T14:36:00+02:00
-python3 /opt/todo/bin/app_backup.py --app notes restore-status  # t|t|on: paused at that time
+python3 /opt/platform/bin/app_backup.py status                     # archiving healthy?
+python3 /opt/platform/bin/app_backup.py --app notes restore --target-time 2026-10-04T14:36:00+02:00
+python3 /opt/platform/bin/app_backup.py --app notes restore-status  # t|t|on: paused at that time
 podman exec notes-postgres-restore psql -U notes -d notes -c "SELECT ... ;"
 ```
 
@@ -45,11 +45,11 @@ the live database with ordinary SQL, as the app's own role would. Then
 remove the copy:
 
 ```bash
-python3 /opt/todo/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore
+python3 /opt/platform/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore
 ```
 
 Before a risky change, a named point still helps: it names the moment
-exactly, `python3 /opt/todo/bin/app_backup.py mark --name before_cleanup`.
+exactly, `python3 /opt/platform/bin/app_backup.py mark --name before_cleanup`.
 
 **Never** point a restore at the live volume, and never stop the live
 database to restore it: the three databases are one group, and the standby

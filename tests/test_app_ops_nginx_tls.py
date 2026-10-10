@@ -57,7 +57,7 @@ class NginxTlsCommandTests(unittest.TestCase):
         # Each host's own address and offline bundle.
         self.assertEqual(world.option('todo-standby', ('nginx-tls', 'request'), '--node-address'), ['192.0.2.11'])
         self.assertEqual(world.option('todo-primary', ('nginx-tls', 'request'), '--bundle-dir'),
-                         ['/home/todo-primary/todo-offline-m12'])
+                         ['/home/todo-primary/platform-offline-m12'])
 
     def test_both_certificates_are_needed_before_anything_runs(self):
         world = TlsWorld()

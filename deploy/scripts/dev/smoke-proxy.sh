@@ -4,10 +4,10 @@
 set -euo pipefail
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 work_directory=$(mktemp -d)
-image="localhost/todo-proxy-smoke:$$"
-volume="todo-proxy-smoke-$$"
+image="localhost/platform-proxy-smoke:$$"
+volume="platform-proxy-smoke-$$"
 # The Podman secrets of this run only, never the host's own nginx secrets.
-secret_prefix="todo-proxy-smoke-$$-"
+secret_prefix="platform-proxy-smoke-$$-"
 cleanup() {
   podman secret ls --format '{{.Name}}' | grep "^$secret_prefix" | xargs -r podman secret rm >/dev/null 2>&1 || true
   podman volume rm --force "$volume" >/dev/null 2>&1 || true
@@ -29,25 +29,25 @@ for doc in yaml.safe_load_all((root / "shared-proxy.yaml").read_text()):
 PY
 podman build --file "$project_root/proxy/Containerfile" --tag "$image" "$project_root"
 podman volume create "$volume" >/dev/null
-podman run --rm --user root --volume "$volume:/var/lib/todo-tls" \
-  --entrypoint chown "$image" nginx:nginx /var/lib/todo-tls
+podman run --rm --user root --volume "$volume:/var/lib/platform-tls" \
+  --entrypoint chown "$image" nginx:nginx /var/lib/platform-tls
 for attempt in 1 2 3; do
   hostnames=todo.test
   if [[ "$attempt" != 1 ]]; then hostnames="todo.test notes.test"; fi
   podman run --rm \
-    --env TODO_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=$hostnames" \
-    --volume "$volume:/var/lib/todo-tls" \
-    --volume "$work_directory/nginx-config:/etc/todo-nginx:ro,Z" \
-    "$image" nginx -t -c /etc/todo-nginx/nginx.conf
+    --env PLATFORM_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=$hostnames" \
+    --volume "$volume:/var/lib/platform-tls" \
+    --volume "$work_directory/nginx-config:/etc/platform-nginx:ro,Z" \
+    "$image" nginx -t -c /etc/platform-nginx/nginx.conf
   podman run --rm --env "APP_TLS_HOSTNAMES=$hostnames" \
-    --volume "$volume:/var/lib/todo-tls:ro" --entrypoint sh "$image" -ec '
+    --volume "$volume:/var/lib/platform-tls:ro" --entrypoint sh "$image" -ec '
     for name in $APP_TLS_HOSTNAMES; do
-      openssl verify -CAfile /var/lib/todo-tls/ca.crt -verify_hostname "$name" \
-        /var/lib/todo-tls/server.crt >/dev/null
+      openssl verify -CAfile /var/lib/platform-tls/ca.crt -verify_hostname "$name" \
+        /var/lib/platform-tls/server.crt >/dev/null
     done
-    test "$(stat -c "%a" /var/lib/todo-tls/ca.key)" = 600
-    test "$(stat -c "%a" /var/lib/todo-tls/server.key)" = 600
-    sha256sum /var/lib/todo-tls/ca.crt /var/lib/todo-tls/server.crt
+    test "$(stat -c "%a" /var/lib/platform-tls/ca.key)" = 600
+    test "$(stat -c "%a" /var/lib/platform-tls/server.key)" = 600
+    sha256sum /var/lib/platform-tls/ca.crt /var/lib/platform-tls/server.crt
   ' > "$work_directory/tls-$attempt"
 done
 # Expanding the SAN renews only the leaf; the next start changes neither certificate.
@@ -61,13 +61,13 @@ fi
 cmp "$work_directory/tls-2" "$work_directory/tls-3"
 cat "$work_directory/tls-3"
 
-# nginx itself, as in the pod: TODO_TLS_ROLE=serve with the volume read-only.
+# nginx itself, as in the pod: PLATFORM_TLS_ROLE=serve with the volume read-only.
 serve_read_only() {
-  podman run --rm --env TODO_TLS_ROLE=serve \
-    --env TODO_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
-    --volume "$volume:/var/lib/todo-tls:ro" \
-    --volume "$work_directory/nginx-config:/etc/todo-nginx:ro,Z" \
-    "$image" nginx -t -c /etc/todo-nginx/nginx.conf
+  podman run --rm --env PLATFORM_TLS_ROLE=serve \
+    --env PLATFORM_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
+    --volume "$volume:/var/lib/platform-tls:ro" \
+    --volume "$work_directory/nginx-config:/etc/platform-nginx:ro,Z" \
+    "$image" nginx -t -c /etc/platform-nginx/nginx.conf
 }
 serve_read_only
 
@@ -91,7 +91,7 @@ where = {'volume': volume, 'image': image, 'hostnames': ['todo.test', 'notes.tes
 if step == 'request':
     print(json.dumps(tls.request(work / 'host.csr', **where)))
 elif step == 'status':
-    # The image's own entrypoint check (TODO_TLS_ROLE=check): mode and problem, not the days.
+    # The image's own entrypoint check (PLATFORM_TLS_ROLE=check): mode and problem, not the days.
     current, days, problem = tls.status(where.pop('hostnames'), **where)
     print(current, days is not None, problem or 'fits')
 else:
@@ -106,16 +106,16 @@ test "$(tls install)" = true
 test "$(tls install)" = false
 test "$(tls status)" = 'provided True fits'
 podman run --rm \
-  --env TODO_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
-  --volume "$volume:/var/lib/todo-tls" \
-  --volume "$work_directory/nginx-config:/etc/todo-nginx:ro,Z" \
-  "$image" nginx -t -c /etc/todo-nginx/nginx.conf
-podman run --rm --volume "$volume:/var/lib/todo-tls:ro" --entrypoint sh "$image" -ec '
-  test "$(cat /var/lib/todo-tls/tls-mode)" = provided
-  test ! -e /var/lib/todo-tls/ca.key
-  test ! -e /var/lib/todo-tls/request.key
-  test "$(stat -c "%a" /var/lib/todo-tls/server.key)" = 600
-  cat /var/lib/todo-tls/server.crt
+  --env PLATFORM_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
+  --volume "$volume:/var/lib/platform-tls" \
+  --volume "$work_directory/nginx-config:/etc/platform-nginx:ro,Z" \
+  "$image" nginx -t -c /etc/platform-nginx/nginx.conf
+podman run --rm --volume "$volume:/var/lib/platform-tls:ro" --entrypoint sh "$image" -ec '
+  test "$(cat /var/lib/platform-tls/tls-mode)" = provided
+  test ! -e /var/lib/platform-tls/ca.key
+  test ! -e /var/lib/platform-tls/request.key
+  test "$(stat -c "%a" /var/lib/platform-tls/server.key)" = 600
+  cat /var/lib/platform-tls/server.crt
 ' > "$work_directory/provided.crt"
 cmp "$work_directory/provided.crt" "$work_directory/host.crt"
 serve_read_only
@@ -142,7 +142,7 @@ if step == 'provision':
     print(json.dumps(tls_secrets.provision(names)))
 elif step == 'mounts':
     # What the pod's Kube secret volume would hold, as --secret mounts.
-    print(' '.join(f'--secret={tls_secrets.FILES[name]},type=mount,target=/var/lib/todo-tls/{name},'
+    print(' '.join(f'--secret={tls_secrets.FILES[name]},type=mount,target=/var/lib/platform-tls/{name},'
                    'uid=101,gid=101,mode=0444' for name in tls_secrets.SERVED))
 elif step == 'request':
     print(json.dumps(tls_secrets.request(work / 'secret-host.csr', hostnames=names)))
@@ -157,11 +157,11 @@ PY
 }
 serve_secrets() {
   # shellcheck disable=SC2046 # one --secret option per word
-  podman run --rm --env TODO_TLS_ROLE=serve \
-    --env TODO_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
+  podman run --rm --env PLATFORM_TLS_ROLE=serve \
+    --env PLATFORM_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
     $(secrets_step mounts) \
-    --volume "$work_directory/nginx-config:/etc/todo-nginx:ro,Z" \
-    "$image" nginx -t -c /etc/todo-nginx/nginx.conf
+    --volume "$work_directory/nginx-config:/etc/platform-nginx:ro,Z" \
+    "$image" nginx -t -c /etc/platform-nginx/nginx.conf
 }
 test "$(secrets_step provision)" = true
 test "$(secrets_step provision)" = false
@@ -177,7 +177,7 @@ test "$(secrets_step install)" = false
 test "$(secrets_step status)" = 'provided True fits'
 # The demo CA's key and the waiting key are gone; nginx serves the issued certificate.
 test "$(secrets_step present)" = 'ca.crt server.crt server.key tls-mode'
-test "$(podman secret inspect --showsecret --format '{{.SecretData}}' "${secret_prefix}todo-proxy-tls-cert" \
+test "$(podman secret inspect --showsecret --format '{{.SecretData}}' "${secret_prefix}platform-proxy-tls-cert" \
   | openssl x509 -noout -fingerprint -sha256)" = \
   "$(openssl x509 -in "$work_directory/secret-host.crt" -noout -fingerprint -sha256)"
 serve_secrets

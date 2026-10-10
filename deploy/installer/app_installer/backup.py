@@ -1,7 +1,7 @@
 """Nightly base backups of every installed database, and restoring the latest one.
 
 A single host installed with install.sh gets them without becoming a DR
-host: install() writes todo-backup.timer, which runs
+host: install() writes platform-backup.timer, which runs
 
   python3 -m app_installer backup nightly --keep-days 7
 
@@ -34,8 +34,8 @@ BACKUP_NAME = re.compile(r'base-[0-9]{8}T[0-9]{6}Z')
 # The nightly run fails when less than this share of the disk under the home
 # directory (Podman's volumes) is free, so a filling disk shows as a failed unit.
 MIN_FREE_FRACTION = 0.10
-UNIT = 'todo-backup'
-# The same schedule as the DR timer (deploy/dr/systemd/todo-backup.timer), so a
+UNIT = 'platform-backup'
+# The same schedule as the DR timer (deploy/dr/systemd/platform-backup.timer), so a
 # DR host that takes over the unit keeps it.
 TIMER = """[Unit]
 Description=Run the Todo backup every night
@@ -210,7 +210,7 @@ def restore(confirm_restore, quadlet_dir=None):
 
 
 def service_unit(installer_directory):
-    """todo-backup.service for a single host: the installer in installer_directory runs the nightly backup."""
+    """platform-backup.service for a single host: the installer in installer_directory runs the nightly backup."""
     return f"""# The nightly backup of a single host: a verified base backup
 # of every database, keeping the last 7 days. A failure fails the unit:
 #   journalctl --user -u {UNIT}.service
@@ -228,7 +228,7 @@ TimeoutStartSec=3h
 
 
 def install_timer(installer_directory, unit_directory=None):
-    """Write todo-backup.service and .timer as user units and turn the timer on; True if anything changed."""
+    """Write platform-backup.service and .timer as user units and turn the timer on; True if anything changed."""
     directory = Path(unit_directory or settings.SYSTEMD_USER_DIR)
     directory.mkdir(parents=True, exist_ok=True)
     changed = quadlet.write(directory / f'{UNIT}.service', service_unit(installer_directory).encode(), 0o644)

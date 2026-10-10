@@ -29,7 +29,7 @@ product() {
 
 # A command on a VM, and an app-ops command on the controller VM.
 vm() { product "$1" ssh -o BatchMode=yes gunstein@"$2" "$3"; }
-ops() { vm "$1" "$2" "cd ~/todo-operations && PYTHONPATH=\$PWD/deploy/dr PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops $3"; }
+ops() { vm "$1" "$2" "cd ~/platform-operations && PYTHONPATH=\$PWD/deploy/dr PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops $3"; }
 
 # The base backup that step 08-4 logged for one database (todo or notes),
 # such as base-20260928T191946Z; empty if the log has none.

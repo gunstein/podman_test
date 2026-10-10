@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the offline bundle on a connected build machine: render every target
 # file, build or pull and save every image, add the installer and the docs,
-# and checksum it all. Writes dist/todo-offline-<tag>.tar.gz and its .sha256.
+# and checksum it all. Writes dist/platform-offline-<tag>.tar.gz and its .sha256.
 set -euo pipefail
 
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -9,7 +9,7 @@ project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # app-ops also looks for it on a host (steps.paths): one place, no drift.
 image_tag=$(PYTHONPATH="$project_root/deploy/installer" python3 -c \
   'from app_installer import settings; print(settings.IMAGE_TAG)')
-bundle_name="todo-offline-$image_tag"
+bundle_name="platform-offline-$image_tag"
 output=${1:-"$project_root/dist/$bundle_name.tar.gz"}
 work_directory=$(mktemp -d)
 bundle_directory="$work_directory/$bundle_name"

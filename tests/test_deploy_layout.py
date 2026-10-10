@@ -26,7 +26,7 @@ class DeployLayoutTests(unittest.TestCase):
                 config = list(yaml.safe_load_all((output / "todo-config.yaml").read_text()))
                 proxy = list(yaml.safe_load_all((output / "shared-proxy.yaml").read_text()))
                 proxy_env = next(d for d in proxy if d["metadata"]["name"] == "shared-nginx-env")
-                self.assertEqual(proxy_env["data"]["TODO_TLS_HOSTNAME"], hostname)
+                self.assertEqual(proxy_env["data"]["PLATFORM_TLS_HOSTNAME"], hostname)
                 self.assertIn(f"https://{hostname}:8443", str(config))
                 pods = [d for p in output.glob("*.yaml") for d in yaml.safe_load_all(p.read_text())
                         if d["kind"] == "Pod"]

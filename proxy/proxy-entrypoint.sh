@@ -1,6 +1,6 @@
 #!/bin/sh
 # Entry point of the proxy image. It writes Podman's DNS server as nginx's
-# resolver, makes sure /var/lib/todo-tls holds a certificate for every public
+# resolver, makes sure /var/lib/platform-tls holds a certificate for every public
 # hostname, then runs the command it was given. That directory is a Kube
 # secret the installer made (app_installer/tls_secrets.py, the default), which
 # nginx serves read-only, or the persistent TLS volume (app_installer/tls.py). The volume's tls-mode
@@ -11,7 +11,7 @@
 #   provided: app_installer tls-install put a certificate from a separate CA
 #     process here. It is only checked, never issued or replaced, and a
 #     missing or wrong file stops the start: never a silent demo CA.
-# TODO_TLS_ROLE says what this container may do with the volume:
+# PLATFORM_TLS_ROLE says what this container may do with the volume:
 #   provision (the default): it may write. The shared-proxy pod runs this
 #     role in its init container, nginx-tls, which then runs `true`.
 #   serve: nginx itself, with the volume mounted read-only. It never writes
@@ -21,20 +21,20 @@
 #     and exits, running nothing.
 set -efu
 
-tls_directory=${TODO_TLS_DIRECTORY:-/var/lib/todo-tls}
-tls_role=${TODO_TLS_ROLE:-provision}
+tls_directory=${PLATFORM_TLS_DIRECTORY:-/var/lib/platform-tls}
+tls_role=${PLATFORM_TLS_ROLE:-provision}
 case "$tls_role" in
     provision|serve|check) ;;
     *)
-        echo "ERROR: invalid TODO_TLS_ROLE: $tls_role" >&2
+        echo "ERROR: invalid PLATFORM_TLS_ROLE: $tls_role" >&2
         exit 1
         ;;
 esac
-tls_hostname=${TODO_TLS_HOSTNAME:-localhost}
+tls_hostname=${PLATFORM_TLS_HOSTNAME:-localhost}
 
 case "$tls_hostname" in
     ""|*[!A-Za-z0-9.-]*)
-        echo "ERROR: invalid TODO_TLS_HOSTNAME: $tls_hostname" >&2
+        echo "ERROR: invalid PLATFORM_TLS_HOSTNAME: $tls_hostname" >&2
         exit 1
         ;;
 esac

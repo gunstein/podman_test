@@ -95,23 +95,23 @@ class OperationsDistributionTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            verify_package(self, archive, "todo-operations")
+            verify_package(self, archive, "platform-operations")
             with tarfile.open(archive) as package:
-                names = {name.removeprefix("todo-operations/") for name in package.getnames()}
+                names = {name.removeprefix("platform-operations/") for name in package.getnames()}
             for path in (
                 "deploy/installer/app_installer/workloads.py",
                 "deploy/dr/scripts/app_dr.py",
                 "deploy/dr/scripts/app_backup.py",
                 "deploy/dr/scripts/app-quarantine.sh",
-                "deploy/dr/systemd/todo-dr-check.service",
-                "deploy/dr/systemd/todo-dr-check.timer",
-                "deploy/dr/systemd/todo-backup.service",
-                "deploy/dr/systemd/todo-backup.timer",
-                "deploy/dr/systemd/todo-replication-tls.service",
-                "deploy/dr/systemd/todo-replication-tls.timer",
+                "deploy/dr/systemd/platform-dr-check.service",
+                "deploy/dr/systemd/platform-dr-check.timer",
+                "deploy/dr/systemd/platform-backup.service",
+                "deploy/dr/systemd/platform-backup.timer",
+                "deploy/dr/systemd/platform-replication-tls.service",
+                "deploy/dr/systemd/platform-replication-tls.timer",
                 "deploy/scripts/trust-files.sh",
                 "deploy/scripts/app_ca.py",
-                "deploy/scripts/todo-ca-sign",
+                "deploy/scripts/platform-ca-sign",
                 "deploy/dr/README.md",
                 "deploy/dr/app_ops/cli.py",
                 "deploy/dr/app_ops/transport.py",
@@ -131,7 +131,7 @@ class OperationsDistributionTests(unittest.TestCase):
                 package.extractall(directory, filter="data")
             sys.path.insert(0, str(ROOT / "deploy/installer"))
             from app_installer import target_render
-            target = target_render.load(Path(directory) / "todo-operations",
+            target = target_render.load(Path(directory) / "platform-operations",
                                         {target_render.PUBLISH_ADDRESS: "192.0.2.10"}, environment={}, recorded={})
             self.assertEqual(target.hostnames, {"todo": "todo.test", "notes": "notes.test"})
             self.assertIn(b"192.0.2.10:5432:5432", target.replicated["todo-postgres.kube"])
@@ -159,7 +159,7 @@ class OperationsDistributionTests(unittest.TestCase):
         # Build the real package, unpack it outside the checkout, and lay it out
         # as it is used: app-ops runs from the package on the controller, and
         # on a host app-ops puts app_installer and app_dr_host side by side in
-        # /opt/todo/lib (trust.stage_installer) and the tools in /opt/todo/bin.
+        # /opt/platform/lib (trust.stage_installer) and the tools in /opt/platform/bin.
         # Every entry point must start without reaching back into the checkout.
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
@@ -168,7 +168,7 @@ class OperationsDistributionTests(unittest.TestCase):
                            check=True, capture_output=True)
             with tarfile.open(archive) as package:
                 package.extractall(directory / "unpacked", filter="data")
-            package = directory / "unpacked/todo-operations"
+            package = directory / "unpacked/platform-operations"
             host = directory / "opt/todo"
             for name, source in (("app_installer", "deploy/installer/app_installer"),
                                  ("app_dr_host", "deploy/dr/app_dr_host")):
@@ -217,8 +217,8 @@ class OperationsDistributionTests(unittest.TestCase):
                            check=True, capture_output=True,
                            env={**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"]})
             from app_installer import settings
-            files = verify_package(self, archive, f"todo-offline-{settings.IMAGE_TAG}")
-            for image in ("todo-backend-m12", "todo-frontend-m12", "todo-proxy-m12",
+            files = verify_package(self, archive, f"platform-offline-{settings.IMAGE_TAG}")
+            for image in ("todo-backend-m12", "todo-frontend-m12", "platform-proxy-m12",
                           "keycloak-m12", "postgres-17.11", "notes-backend-m12", "notes-frontend-m12"):
                 self.assertIn(f"images/{image}.tar", files)
             self.assertIn("generated/target/quadlet/shared-proxy.kube", files)

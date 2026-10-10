@@ -35,7 +35,7 @@ class AcceptanceGuideTests(unittest.TestCase):
             self.assertEqual(set(command[3:]), set(apps.services()))
         for line in commands.splitlines():
             if "podman exec nginx nginx -t" in line:
-                self.assertIn("-c /etc/todo-nginx/nginx.conf", line)
+                self.assertIn("-c /etc/platform-nginx/nginx.conf", line)
 
 
     def test_agent_commands_have_nothing_to_fill_in_by_hand(self):
@@ -132,7 +132,7 @@ class AcceptanceGuideTests(unittest.TestCase):
         self.assertIn('do quarantine-stop 107 todo-primary', guide)
         tool = (ROOT / 'deploy/scripts/lab/acceptance.py').read_text()
         self.assertIn("pve(step, 'fence', vmid)", tool)
-        self.assertIn("'/opt/todo/bin/app-quarantine.sh', action, name, step.user", tool)
+        self.assertIn("'/opt/platform/bin/app-quarantine.sh', action, name, step.user", tool)
 
     def test_every_acceptance_tool_line_in_the_agent_guide_is_a_valid_command(self):
         sys.path.insert(0, str(ROOT / 'deploy/scripts/lab'))

@@ -276,7 +276,7 @@ class InstallTests(TlsTest):
         self.podman.running = True
         request, _ = self.request()
         self.install(self.sign(request))
-        self.assertIn(['podman', 'exec', 'nginx', 'nginx', '-c', '/etc/todo-nginx/nginx.conf', '-s', 'reload'],
+        self.assertIn(['podman', 'exec', 'nginx', 'nginx', '-c', '/etc/platform-nginx/nginx.conf', '-s', 'reload'],
                       self.podman.calls)
         # nginx that still serves an old certificate after the reload is an error.
         self.podman.served = 'SHA256 Fingerprint=OLD'

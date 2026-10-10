@@ -2,8 +2,8 @@
 # then pruning that keeps the backups of the last 7 days and only the WAL
 # they need. On a standby it does nothing: the primary takes the backups.
 # A failure fails the unit, so it shows in `systemctl --user --failed`:
-#   journalctl --user -u todo-backup.service
-# app-ops configure-backup installs it with todo-backup.timer; on a host
+#   journalctl --user -u platform-backup.service
+# app-ops configure-backup installs it with platform-backup.timer; on a host
 # installed with install.sh it replaces the installer's own service.
 [Unit]
 Description=Todo nightly base backup and pruning
@@ -11,5 +11,5 @@ Description=Todo nightly base backup and pruning
 [Service]
 Type=oneshot
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/usr/bin/python3 /opt/todo/bin/app_backup.py nightly --keep-days 7
+ExecStart=/usr/bin/python3 /opt/platform/bin/app_backup.py nightly --keep-days 7
 TimeoutStartSec=3h

@@ -25,13 +25,13 @@ class WorkloadsTests(unittest.TestCase):
              ['notes-postgres-data', 'notes-postgres-backup']),
             (partial(workloads.install_application, app=apps.APPS[1]), ['notes-app'], []),
             (workloads.install_keycloak, ['keycloak'], []),
-            (workloads.install_shared_proxy, ['shared-proxy'], ['todo-nginx-data']),
+            (workloads.install_shared_proxy, ['shared-proxy'], ['platform-nginx-data']),
         ):
             with self.subTest(function=str(function)), tempfile.TemporaryDirectory() as temp:
                 base = Path(temp)
                 directory = base / 'quadlet'
                 directory.mkdir()
-                runtime = directory / 'todo-kube-runtime'
+                runtime = directory / 'platform-kube-runtime'
                 rendered = base / 'rendered'
                 rendered.mkdir()
                 for name in ('todo-postgres', 'keycloak', 'todo-app', 'shared-proxy', 'todo-config',
@@ -73,7 +73,7 @@ class WorkloadsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
             directory, rendered = base / 'quadlet', base / 'rendered'
-            runtime = directory / 'todo-kube-runtime'
+            runtime = directory / 'platform-kube-runtime'
             runtime.mkdir(parents=True)
             rendered.mkdir()
             for name in ('todo-postgres', 'todo-config'):
@@ -94,7 +94,7 @@ class WorkloadsTests(unittest.TestCase):
             offline_bundle.build(base / 'bundle', apps.APPS)
             target = target_render.load(base / 'bundle', {target_render.PUBLISH_ADDRESS: '192.0.2.10'},
                                         environment={}, recorded={})
-            runtime = base / 'quadlet/todo-kube-runtime'
+            runtime = base / 'quadlet/platform-kube-runtime'
             (base / 'quadlet').mkdir()
             database = apps.KEYCLOAK_DATABASE
             with FakeHost():
@@ -124,12 +124,12 @@ class WorkloadsTests(unittest.TestCase):
         for wildcard in ('0.0.0.0', '::'):
             with patch('subprocess.run') as run:
                 with self.assertRaisesRegex(ValueError, 'wildcard address'):
-                    workloads.install_shared_proxy(ROOT, '/tmp/q', '/tmp/q/todo-kube-runtime',
+                    workloads.install_shared_proxy(ROOT, '/tmp/q', '/tmp/q/platform-kube-runtime',
                                                    '/tmp/rendered', publish_address=wildcard)
                 run.assert_not_called()
         with patch('subprocess.run') as run:
             with self.assertRaises(ValueError):
-                workloads.install_shared_proxy(ROOT, '/tmp/q', '/tmp/q/todo-kube-runtime',
+                workloads.install_shared_proxy(ROOT, '/tmp/q', '/tmp/q/platform-kube-runtime',
                                                '/tmp/rendered', publish_address='not-an-address')
             run.assert_not_called()
 
@@ -148,7 +148,7 @@ class WorkloadsTests(unittest.TestCase):
             self.assertIn(f'PublishPort=192.0.2.50:{app.replication_port}:5432\n', rendered)
         with patch('subprocess.run') as run:
             with self.assertRaisesRegex(ValueError, 'verified DR group'):
-                workloads.install_postgres(ROOT, '/q', '/q/todo-kube-runtime', '/rendered',
+                workloads.install_postgres(ROOT, '/q', '/q/platform-kube-runtime', '/rendered',
                                            publish_address='192.0.2.1',
                                            database=stack.Database(name='third'))
             run.assert_not_called()

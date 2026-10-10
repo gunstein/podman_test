@@ -21,7 +21,7 @@ journalctl --disk-usage
 - **A lost slot holding WAL** (pg_wal far above its usual size, about 64 MB
   in the lab): see [standby-rebuild.md](standby-rebuild.md). Each slot keeps
   at most 1 GB per database.
-- **A leftover PITR test**: `python3 /opt/todo/bin/app_backup.py --app todo
+- **A leftover PITR test**: `python3 /opt/platform/bin/app_backup.py --app todo
   restore-status`; if one exists, remove it with `cleanup-restore --confirm
   todo-postgres-restore` (likewise for notes).
 - **Old images** from earlier bundles: `podman image prune` (only unused

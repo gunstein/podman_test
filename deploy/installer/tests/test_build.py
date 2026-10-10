@@ -21,7 +21,7 @@ class BuildInstallTests(unittest.TestCase):
                 for part in ('deploy/quadlet', 'deploy/environments'):
                     shutil.copytree(ROOT / part, root / part)
                 directory = root / 'quadlet'
-                runtime = directory / 'todo-kube-runtime'
+                runtime = directory / 'platform-kube-runtime'
                 with RenderingHost(images_present=False, unit_directory=runtime) as host, \
                         patch('app_installer.keycloak.configure'):
                     install.install(root, mode=mode, quadlet_dir=directory)
@@ -45,7 +45,7 @@ class BuildInstallTests(unittest.TestCase):
             for part in ('deploy/quadlet', 'deploy/environments'):
                 shutil.copytree(ROOT / part, root / part)
             directory = root / 'quadlet'
-            with RenderingHost(unit_directory=directory / 'todo-kube-runtime') as host, \
+            with RenderingHost(unit_directory=directory / 'platform-kube-runtime') as host, \
                     patch('app_installer.keycloak.configure'):
                 install.install(root, mode='server', quadlet_dir=directory, refresh_images=True)
             self.assertEqual(host.ran('podman', 'pull'), [['podman', 'pull', 'docker.io/library/postgres:17.11']])

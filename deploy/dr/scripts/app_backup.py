@@ -1,12 +1,12 @@
 """Independent physical PostgreSQL backups and scoped disposable PITR per database.
 
-Installed as /opt/todo/bin/app_backup.py on the current primary and run there:
+Installed as /opt/platform/bin/app_backup.py on the current primary and run there:
 
   app_backup.py configure              turn on WAL archiving for every database
   app_backup.py status | create        archive status, or a verified base backup
   app_backup.py nightly --keep-days N  create, then delete backups older than N
                                        days and the WAL only they needed
-                                       (todo-backup.timer; nothing on a standby)
+                                       (platform-backup.timer; nothing on a standby)
   app_backup.py mark --name N          a named restore point, archived at once
   app_backup.py --app A restore ...    point-in-time restore into a throwaway
                                        container with no network: to a named
@@ -31,8 +31,8 @@ from pathlib import Path
 from typing import Callable, Optional, Sequence
 
 # This DR tool reuses the installer (app_installer) and the DR building
-# blocks (app_dr_host). app-ops installs it in /opt/todo/bin and both
-# packages side by side in /opt/todo/lib, so they are found in lib next to
+# blocks (app_dr_host). app-ops installs it in /opt/platform/bin and both
+# packages side by side in /opt/platform/lib, so they are found in lib next to
 # bin. In a checkout, set PYTHONPATH=deploy/installer:deploy/dr instead.
 # deploy/dr/README.md ("Where DR finds the installer") has the whole rule.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
@@ -611,7 +611,7 @@ def require_backups_possible(tools: Sequence[DatabaseBackup]) -> None:
 
 
 def nightly(tools: Sequence[DatabaseBackup], keep_days: int) -> list[str]:
-    """The nightly backup (todo-backup.timer): a verified base backup of every database, then pruning.
+    """The nightly backup (platform-backup.timer): a verified base backup of every database, then pruning.
 
     Returns what it did. On a standby group it does nothing: the primary
     takes the backups (backups on the standby are backlog D2). A group that is neither, or a primary that does not archive,

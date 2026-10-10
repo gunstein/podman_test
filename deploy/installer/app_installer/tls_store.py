@@ -2,7 +2,7 @@
 
   secret  Podman secrets (tls_secrets.py), the default: nginx mounts a Kube
           secret, and the installer makes and renews its files.
-  volume  the TLS volume todo-nginx-data (tls.py): the shared-proxy pod's
+  volume  the TLS volume platform-nginx-data (tls.py): the shared-proxy pod's
           init container makes them, nginx mounts the volume read-only.
 
 Both modules offer the same commands (request, install, status, check and

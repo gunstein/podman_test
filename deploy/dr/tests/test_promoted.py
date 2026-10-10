@@ -118,7 +118,7 @@ class PromotedDeployTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             host = PromotedHost()
             self.assertTrue(self.deploy(host, directory))
-            certificate = Path(directory) / 'todo-nginx-root.crt'
+            certificate = Path(directory) / 'platform-nginx-root.crt'
             self.assertEqual(certificate.read_text(), CERTIFICATE + '\n')
             self.assertEqual(stat.S_IMODE(certificate.stat().st_mode), 0o644)
             host = PromotedHost()

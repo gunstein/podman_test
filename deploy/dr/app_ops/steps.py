@@ -24,7 +24,7 @@ def paths(host):
     quadlet = f'{home}/.config/containers/systemd'
     return {'target': f'{home}/.local/share/app-installer', 'quadlet': quadlet,
             'runtime': f'{quadlet}/{settings.KUBE_RUNTIME}', 'config': f'{home}/{settings.DR_CONFIG}',
-            'bundle': host.spec.bundle or f'{home}/todo-offline-{settings.IMAGE_TAG}'}
+            'bundle': host.spec.bundle or f'{home}/platform-offline-{settings.IMAGE_TAG}'}
 
 
 def package_revision(project_root):

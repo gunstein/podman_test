@@ -49,7 +49,7 @@ class BundleContentTests(unittest.TestCase):
     def test_metadata_names_every_rendered_file(self):
         data = json.loads((self.bundle / 'bundle.json').read_text())
         self.assertEqual(data, self.metadata)
-        self.assertEqual((data['format'], data['format_version']), ('todo-offline-bundle', 4))
+        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 4))
         self.assertEqual(data['applications'], ['todo', 'notes'])
         self.assertEqual(data['defaults'], {EXTERNAL_HOSTNAME: 'todo.test', 'TARGET_NOTES_HOSTNAME': 'notes.test'})
         manifests, units = install.offline_files(apps.APPS)
@@ -66,7 +66,7 @@ class BundleContentTests(unittest.TestCase):
     def test_every_public_hostname_is_a_placeholder_wherever_it_is_used(self):
         manifests = self.bundle / 'generated/target/manifests'
         proxy = (manifests / 'shared-proxy.yaml').read_text()
-        for line in ('TODO_TLS_HOSTNAME: "${TARGET_EXTERNAL_HOSTNAME}"',
+        for line in ('PLATFORM_TLS_HOSTNAME: "${TARGET_EXTERNAL_HOSTNAME}"',
                      'APP_TLS_HOSTNAMES: "${TARGET_EXTERNAL_HOSTNAME} ${TARGET_NOTES_HOSTNAME}"',
                      'server_name ${TARGET_EXTERNAL_HOSTNAME};', 'server_name ${TARGET_NOTES_HOSTNAME};',
                      "connect-src 'self' https://${TARGET_EXTERNAL_HOSTNAME}:8443;"):
@@ -112,7 +112,7 @@ class OfflineInstallTests(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(subprocess.run, ['rm', '-rf', str(self.root)])
         self.bundle, self.quadlet = self.root / 'bundle', self.root / 'quadlet'
-        self.runtime = self.quadlet / 'todo-kube-runtime'
+        self.runtime = self.quadlet / 'platform-kube-runtime'
         offline_bundle.build(self.bundle, apps.APPS)
 
     def install(self, host, hostname=HOSTNAME, address=ADDRESS, notes=None):
@@ -133,12 +133,12 @@ class OfflineInstallTests(unittest.TestCase):
         app.write_text(app.read_text() + '# cd $HOME; psql "password=${DATABASE_PASSWORD}" $$ ${target_lower}\n')
         with FakeHost(unit_directory=self.runtime) as host:
             changed, configure = self.install(host)
-            service = (host.units / 'todo-backup.service').read_text()
+            service = (host.units / 'platform-backup.service').read_text()
         self.assertTrue(changed)
         files = self.installed()
         self.assertFalse([name for name, text in files.items() if '${TARGET_' in text])
         proxy = files['shared-proxy.yaml']
-        self.assertIn(f'TODO_TLS_HOSTNAME: "{HOSTNAME}"', proxy)
+        self.assertIn(f'PLATFORM_TLS_HOSTNAME: "{HOSTNAME}"', proxy)
         self.assertIn(f'APP_TLS_HOSTNAMES: "{HOSTNAME} notes.test"', proxy)
         self.assertIn(f'server_name {HOSTNAME};', proxy)
         self.assertIn(f'OIDC_ISSUER: "https://{HOSTNAME}:8443/auth/realms/todo"', files['todo-config.yaml'])
@@ -159,7 +159,7 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertTrue((self.quadlet / 'app-network.network').is_file())
         # Every server install backs itself up every night.
         self.assertIn(f'Environment=PYTHONPATH={TESTS.parent}\n', service)
-        self.assertIn(['systemctl', '--user', 'enable', '--now', 'todo-backup.timer'], host.calls)
+        self.assertIn(['systemctl', '--user', 'enable', '--now', 'platform-backup.timer'], host.calls)
 
     def test_a_host_published_only_on_loopback_gets_the_local_only_proxy_unit(self):
         with FakeHost(unit_directory=self.runtime) as host:
@@ -282,7 +282,7 @@ from unittest.mock import patch
 from app_installer import cli, keycloak
 from fake_host import FakeHost
 
-with FakeHost(unit_directory=__import__('pathlib').Path(quadlet) / 'todo-kube-runtime') as host, \
+with FakeHost(unit_directory=__import__('pathlib').Path(quadlet) / 'platform-kube-runtime') as host, \
         patch.object(keycloak, 'configure', return_value=False):
     code = cli.main(['install', '--mode', 'server', '--deployment-mode', 'offline',
                      '--project-root', bundle, '--bundle-dir', bundle, '--publish-address', '192.0.2.10',
@@ -311,7 +311,7 @@ class WithoutJinjaTests(unittest.TestCase):
             self.assertEqual(outcome['code'], 0, result.stderr)
             self.assertEqual(outcome['loaded'], [])
             self.assertEqual(outcome['started'][-1], 'shared-proxy.service')
-            runtime = quadlet / 'todo-kube-runtime'
+            runtime = quadlet / 'platform-kube-runtime'
             manifests, units = install.offline_files(apps.APPS)
             self.assertEqual({path.name for path in runtime.iterdir()}, manifests | units)
             self.assertIn('server_name shop.example.org;', (runtime / 'shared-proxy.yaml').read_text())

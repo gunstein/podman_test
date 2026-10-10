@@ -59,7 +59,7 @@ for item in "$@"; do
   echo "Keeping the journal across reboots, bounded (docs/LOGGING.md, backlog L4)"
   ssh -o BatchMode=yes "$vm_user@$ip" "sudo -n mkdir -p /etc/systemd/journald.conf.d &&
     printf '%s\n' '[Journal]' 'Storage=persistent' 'SystemMaxUse=1G' 'MaxRetentionSec=3month' |
-    sudo -n tee /etc/systemd/journald.conf.d/50-todo.conf >/dev/null && sudo -n systemctl restart systemd-journald"
+    sudo -n tee /etc/systemd/journald.conf.d/50-platform.conf >/dev/null && sudo -n systemctl restart systemd-journald"
 
   pve task "/nodes/{node}/qemu/$vmid/status/shutdown" >/dev/null
   pve task "/nodes/{node}/qemu/$vmid/snapshot" snapname="$new_snapshot" \

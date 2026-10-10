@@ -41,7 +41,7 @@ class BackupTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.quadlet = Path(temporary.name)
-        self.runtime = self.quadlet / 'todo-kube-runtime'
+        self.runtime = self.quadlet / 'platform-kube-runtime'
         self.runtime.mkdir()
 
     def install_units(self, databases=apps.REPLICATED_DATABASES, applications=apps.APPS):
@@ -198,12 +198,12 @@ class TimerTests(unittest.TestCase):
     def test_the_installer_writes_the_units_once_and_keeps_the_dr_schedule(self):
         with FakeHost() as host:
             self.assertTrue(backup.install_timer('/bundle/deploy/installer'))
-            service = (host.units / 'todo-backup.service').read_text()
+            service = (host.units / 'platform-backup.service').read_text()
             self.assertIn('Environment=PYTHONPATH=/bundle/deploy/installer\n', service)
             self.assertIn('ExecStart=/usr/bin/python3 -m app_installer backup nightly --keep-days 7\n', service)
-            self.assertEqual((host.units / 'todo-backup.timer').read_text(),
-                             (ROOT / 'deploy/dr/systemd/todo-backup.timer').read_text())
-            self.assertIn(['systemctl', '--user', 'enable', '--now', 'todo-backup.timer'], host.calls)
+            self.assertEqual((host.units / 'platform-backup.timer').read_text(),
+                             (ROOT / 'deploy/dr/systemd/platform-backup.timer').read_text())
+            self.assertIn(['systemctl', '--user', 'enable', '--now', 'platform-backup.timer'], host.calls)
             host.calls.clear()
             self.assertFalse(backup.install_timer('/bundle/deploy/installer'))
             self.assertFalse(host.ran('systemctl', '--user', 'enable'))

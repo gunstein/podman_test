@@ -33,7 +33,7 @@ class ReseedHost:
 
     def __init__(self, root):
         self.quadlet = root / 'quadlet'
-        self.runtime = self.quadlet / 'todo-kube-runtime'
+        self.runtime = self.quadlet / 'platform-kube-runtime'
         self.runtime.mkdir(parents=True)
         self.target = dr_target.load('192.0.2.11')
         self.rootless, self.running, self.pod_prefix = 'true', '', True

@@ -18,7 +18,7 @@ from app_installer.commands import exists, run
 
 from . import nginx_tls, replication, transfer
 
-CA_CERTIFICATE = '/var/lib/todo-tls/ca.crt'
+CA_CERTIFICATE = '/var/lib/platform-tls/ca.crt'
 DISCOVERY = '/auth/realms/todo/.well-known/openid-configuration'
 
 
@@ -86,7 +86,7 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
     Keycloak and nginx (stopping the tier first if anything changed), start
     them, wait for each app and the expected issuer, correct the Keycloak
     clients, record the hostnames, and save the nginx CA certificate as
-    config_dir/todo-nginx-root.crt (the demo CA for the operator to hand to
+    config_dir/platform-nginx-root.crt (the demo CA for the operator to hand to
     clients, or the organisation's root they already trust).
 
     The application files are the operations package's (project_root),
@@ -122,5 +122,5 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
                                          install.clients(apps.APPS, hostnames))
     target_render.write_record(target.values)
     certificate = run('podman', 'exec', 'nginx', 'cat', CA_CERTIFICATE).stdout.strip() + '\n'
-    certificate_changed = quadlet.write(config_dir / 'todo-nginx-root.crt', certificate.encode(), 0o644)
+    certificate_changed = quadlet.write(config_dir / 'platform-nginx-root.crt', certificate.encode(), 0o644)
     return images_changed or workloads_changed or tls_changed or clients_changed or certificate_changed

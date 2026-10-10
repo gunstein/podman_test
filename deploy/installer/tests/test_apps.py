@@ -92,7 +92,7 @@ class AppRegistryTests(unittest.TestCase):
         self.assertEqual([image.source for image in images], ["notes-backend", "notes-frontend"])
         # PostgreSQL runs every database, so it is shared, not one per app.
         self.assertEqual([image.reference for image in shared_images()], [
-            "docker.io/library/postgres:17.11", "localhost/todo-proxy:m12", "localhost/keycloak:m12"])
+            "docker.io/library/postgres:17.11", "localhost/platform-proxy:m12", "localhost/keycloak:m12"])
 
     def test_secret_names_are_isolated_between_apps(self):
         from app_installer.secrets import application_secret_mapping, postgres_secret_mapping

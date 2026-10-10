@@ -52,7 +52,7 @@ guest unless stated otherwise.
 | `todo-app.service`, `notes-app.service` | Migration init container, backend, nginx frontend | Migration gates startup; backend and frontend share app lifecycle |
 
 Read `todo-app.yaml`, `keycloak.yaml`, `todo-postgres.yaml` and their `.kube` units in
-the installed `~/.config/containers/systemd/todo-kube-runtime/` (or a
+the installed `~/.config/containers/systemd/platform-kube-runtime/` (or a
 temporary render as above); Notes and Keycloak's database use the same templates with
 `notes-` and `keycloak-` prefixed files. A seventh unit, `shared-proxy.service`,
 owns container `nginx`, which reads its certificate read-only from a Podman
@@ -139,7 +139,7 @@ terminates HTTPS. OpenSSL provides a local demo CA, not managed production PKI.
 Client CA trust and server private-key protection are separate obligations.
 
 ```bash
-podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf
+podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf
 curl --fail https://todo.test:8443/ready
 curl --fail https://todo.test:8443/auth/realms/todo/.well-known/openid-configuration
 ```
@@ -193,24 +193,24 @@ The disposable restore has no network and never targets the live volume.
 On-VM backup does not protect against loss of that VM or its host.
 
 Every server install also gets a nightly verified base backup of each
-database from `todo-backup.timer`, with 7 days kept; a single host can restore
+database from `platform-backup.timer`, with 7 days kept; a single host can restore
 the latest one (`app_installer backup restore --confirm-restore <this host>`), which loses
 everything written since that night because it has no WAL archive. On the DR
-pair, `todo-dr-check.timer` runs `app_dr.py check` every 15 minutes and turns a
+pair, `platform-dr-check.timer` runs `app_dr.py check` every 15 minutes and turns a
 stopped replication, a failing archive, a filling disk or a replication
-certificate close to expiry into a failed unit, and `todo-replication-tls.timer`
+certificate close to expiry into a failed unit, and `platform-replication-tls.timer`
 renews those certificates every night before they expire.
 
 ```bash
 systemctl --user list-timers 'todo-*'
-journalctl --user -u todo-backup.service -u todo-dr-check.service -u todo-replication-tls.service -n 20
+journalctl --user -u platform-backup.service -u platform-dr-check.service -u platform-replication-tls.service -n 20
 ```
 
 For observation on the configured standby / promoted primary respectively:
 
 ```bash
-python3 /opt/todo/bin/app_dr.py status
-python3 /opt/todo/bin/app_backup.py status
+python3 /opt/platform/bin/app_dr.py status
+python3 /opt/platform/bin/app_backup.py status
 ```
 
 Follow [the operator checklist](ACCEPTANCE.md) for the correct machine

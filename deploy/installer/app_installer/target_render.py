@@ -16,7 +16,7 @@ There are two kinds of value (TARGETS):
       They are the service's names: nginx server_name, the TLS certificate,
       the OIDC issuer, KC_HOSTNAME and each Keycloak client. They must be
       the same on primary and standby, so a host records them
-      (~/.config/todo/target-values.json) and the DR tools copy them from
+      (~/.config/platform/target-values.json) and the DR tools copy them from
       one host to the other. Never the machine's own hostname: a host's
       name is not the name users reach a service by.
   TARGET_PUBLISH_ADDRESS: the host's own IPv4 address, which nginx publishes
@@ -49,7 +49,7 @@ from pathlib import Path
 from . import apps, manifests, quadlet, settings
 
 BUNDLE_METADATA = 'bundle.json'
-BUNDLE_FORMAT = 'todo-offline-bundle'
+BUNDLE_FORMAT = 'platform-offline-bundle'
 BUNDLE_FORMAT_VERSION = 4
 PLACEHOLDER = re.compile(r'\$\{(TARGET_[A-Z0-9_]+)\}')
 EXTERNAL_HOSTNAME = 'TARGET_EXTERNAL_HOSTNAME'
@@ -150,7 +150,7 @@ def hostnames(values):
 # The record of the public hostnames a host was installed with.
 
 def record_path():
-    """~/.config/todo/target-values.json of the user running the install."""
+    """~/.config/platform/target-values.json of the user running the install."""
     return Path.home() / settings.DR_CONFIG / settings.TARGET_RECORD
 
 

@@ -1,7 +1,7 @@
 # A single host must go back to last night
 
 For a host installed with `install.sh` only, without DR. Every night at 02:30
-`todo-backup.timer` takes a verified base backup of every database and keeps
+`platform-backup.timer` takes a verified base backup of every database and keeps
 7 days. There is no WAL archive on a single host: a restore goes back to the
 **latest** backup, and everything written since is lost. Tested in every
 acceptance run (phase 3).
@@ -9,7 +9,7 @@ acceptance run (phase 3).
 ## 1. Check that last night's backup is there
 
 ```bash
-journalctl --user -u todo-backup.service -n 10 -o cat   # "verified base backup base-..."
+journalctl --user -u platform-backup.service -n 10 -o cat   # "verified base backup base-..."
 podman exec todo-postgres cat /var/lib/postgresql/backup/LATEST
 ```
 
@@ -19,7 +19,7 @@ If the latest backup is older than you expect, the timer failed: see
 ## 2. Restore, from the bundle the host was installed from
 
 ```bash
-cd ~/todo-offline-m12
+cd ~/platform-offline-m12
 PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore "$(hostname)"
 ```
 

@@ -25,7 +25,7 @@ packages on both hosts before an incident; verify checksums and matching clean
 VERSION values before running extracted code.
 
 With `sudo -n`, app-ops refreshes exact source-file trust on the controller,
-installs root-owned `/opt/todo/bin/app_dr.py` on the standby, registers only
+installs root-owned `/opt/platform/bin/app_dr.py` on the standby, registers only
 that exact target file, and waits until fapolicyd serves it. It never trusts
 the operations directory or disables `fapolicyd`.
 
@@ -36,7 +36,7 @@ python3 -m app_ops --inventory initial.yaml install-dr-tool
 ```
 
 The non-secret DR configuration remains
-`~/.config/todo/todo-dr.json`. app-ops writes it with
+`~/.config/platform/platform-dr.json`. app-ops writes it with
 `app_dr.py configure`, so the same tool writes and reads it; the primary
 address must be a literal IPv4 address. See
 [../offline/FAPOLICYD.md](../offline/FAPOLICYD.md) for denial diagnosis and
@@ -47,7 +47,7 @@ exact-file cleanup.
 On standby, while primary is healthy:
 
 ```bash
-python3 /opt/todo/bin/app_dr.py status
+python3 /opt/platform/bin/app_dr.py status
 ```
 
 Expected output includes `Database role: standby`, `Writable: no`, zero local

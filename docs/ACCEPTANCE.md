@@ -180,8 +180,8 @@ require changing the realm, frontend, certificate hostname or manifest templates
 |---|---|---|
 | VM network | Guest OS or DHCP reservation | Fixed address per VM; verify with `ip -brief -4 address` |
 | Initial HTTPS binding | Primary: `sh ./install.sh --publish-address PRIMARY_IP` | Primary's own IPv4, on every install/rerun |
-| Replication and SSH | Primary's `todo-operations/initial.yaml` | Each host's own IPv4 (`address`), matching `ip -4 address` on that host |
-| Recovery/rebuild | Promoted host's `todo-operations/recovery.yaml` | Same machine IPs, reversed roles (`current_primary`, `rebuild_standby`) |
+| Replication and SSH | Primary's `platform-operations/initial.yaml` | Each host's own IPv4 (`address`), matching `ip -4 address` on that host |
+| Recovery/rebuild | Promoted host's `platform-operations/recovery.yaml` | Same machine IPs, reversed roles (`current_primary`, `rebuild_standby`) |
 | Browser destination | Client DNS or `/etc/hosts` | `PRIMARY_IP todo.test notes.test`; change to promoted host after failover |
 | Firewall | VM firewalld and manual hypervisor fencing/quarantine | Replace source/destination IPs in the rules; HTTPS 8443 from client, replication 5432-5434 from peer |
 
@@ -222,7 +222,7 @@ podman volume ls
 podman secret ls
 podman network ls
 find "$HOME/.config/containers/systemd" -type f \( -name 'todo*' -o -name 'notes*' -o -name 'keycloak*' -o -name 'shared-proxy*' -o -name 'app-network*' \) -print
-ls -ld "$HOME/.config/todo" /opt/todo/bin/app_dr.py /opt/todo/bin/app_backup.py
+ls -ld "$HOME/.config/platform" /opt/platform/bin/app_dr.py /opt/platform/bin/app_backup.py
 ```
 
 For a clean baseline, require distinct machine IDs and expected hostnames/IPs,
@@ -275,10 +275,10 @@ git rev-parse HEAD
 deploy/offline/build-bundle.sh
 deploy/scripts/build-operations-package.sh
 cd dist
-sha256sum -c todo-offline-m12.tar.gz.sha256
-sha256sum -c todo-operations.tar.gz.sha256
-tar -xOf todo-offline-m12.tar.gz todo-offline-m12/VERSION
-tar -xOf todo-operations.tar.gz todo-operations/VERSION
+sha256sum -c platform-offline-m12.tar.gz.sha256
+sha256sum -c platform-operations.tar.gz.sha256
+tar -xOf platform-offline-m12.tar.gz platform-offline-m12/VERSION
+tar -xOf platform-operations.tar.gz platform-operations/VERSION
 ```
 
 After extraction, run `sha256sum -c SHA256SUMS` inside each package before
@@ -288,12 +288,12 @@ On both VMs:
 
 ```bash
 cd "$HOME"
-sha256sum -c todo-offline-m12.tar.gz.sha256
-sha256sum -c todo-operations.tar.gz.sha256
-tar -xzf todo-offline-m12.tar.gz
-tar -xzf todo-operations.tar.gz
-cat todo-offline-m12/VERSION
-cat todo-operations/VERSION
+sha256sum -c platform-offline-m12.tar.gz.sha256
+sha256sum -c platform-operations.tar.gz.sha256
+tar -xzf platform-offline-m12.tar.gz
+tar -xzf platform-operations.tar.gz
+cat platform-offline-m12/VERSION
+cat platform-operations/VERSION
 ```
 
 Stop if an extracted package and its archive identify different revisions.
@@ -309,7 +309,7 @@ Stop if an extracted package and its archive identify different revisions.
 On `todo-primary`:
 
 ```bash
-cd "$HOME/todo-offline-m12"
+cd "$HOME/platform-offline-m12"
 # First register the verified installer Python files using the exact-file
 # trust recipe in deploy/offline/README.md (fapolicyd remains active).
 sh ./preflight.sh
@@ -321,9 +321,9 @@ zone containing its LAN interface (the lab uses `public`). Allow HTTPS only
 from the client. Confirm its actual source IPv4 address before entering it:
 
 ```bash
-read -rp "Client IPv4 address: " TODO_CLIENT_IP
+read -rp "Client IPv4 address: " PLATFORM_CLIENT_IP
 sudo firewall-cmd --permanent --zone=public \
-  --add-rich-rule="rule family=\"ipv4\" source address=\"${TODO_CLIENT_IP}/32\" destination address=\"192.168.0.102\" port port=\"8443\" protocol=\"tcp\" accept"
+  --add-rich-rule="rule family=\"ipv4\" source address=\"${PLATFORM_CLIENT_IP}/32\" destination address=\"192.168.0.102\" port port=\"8443\" protocol=\"tcp\" accept"
 sudo firewall-cmd --reload
 ```
 
@@ -344,9 +344,9 @@ systemctl --user is-active \
   notes-postgres.service \
   keycloak-postgres.service
 systemctl --user --failed --no-pager
-podman image inspect localhost/todo-proxy:m12 \
+podman image inspect localhost/platform-proxy:m12 \
   --format '{{index .Labels "io.todo.proxy"}}'
-podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf
+podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf
 curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/health
 curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/ready
 curl --fail -H 'Host: notes.test' http://127.0.0.1:8080/health
@@ -376,25 +376,25 @@ On the client, inspect the existing `todo.test` and `notes.test` mappings and
 replace only those entries with the current serving host's IP. Initially this is `.102`; after
 promotion it is `.108`. Do not leave two competing mappings. Retrieve only the
 public CA over verified SSH and compare its SHA-256 with the serving host's copy.
-On the initial host the public CA is in `nginx:/var/lib/todo-tls/ca.crt`;
-the promoted application role also exports it to `~/.config/todo/todo-nginx-root.crt`.
+On the initial host the public CA is in `nginx:/var/lib/platform-tls/ca.crt`;
+the promoted application role also exports it to `~/.config/platform/platform-nginx-root.crt`.
 Never export the private key. See [TLS](TLS.md) for the trust model.
 
 Example from the client, using the verified current serving address:
 
 ```bash
-read -rp "Current serving host IPv4: " TODO_SERVING_IP
-ssh -o StrictHostKeyChecking=yes "gunstein@${TODO_SERVING_IP}" \
-  'podman exec nginx cat /var/lib/todo-tls/ca.crt' > /tmp/todo-public-root.crt
-openssl x509 -in /tmp/todo-public-root.crt -noout -fingerprint -sha256
+read -rp "Current serving host IPv4: " PLATFORM_SERVING_IP
+ssh -o StrictHostKeyChecking=yes "gunstein@${PLATFORM_SERVING_IP}" \
+  'podman exec nginx cat /var/lib/platform-tls/ca.crt' > /tmp/platform-public-root.crt
+openssl x509 -in /tmp/platform-public-root.crt -noout -fingerprint -sha256
 ```
 
 Compare that fingerprint with `podman exec nginx openssl x509 -in
-/var/lib/todo-tls/ca.crt -noout -fingerprint -sha256` on the serving host before
+/var/lib/platform-tls/ca.crt -noout -fingerprint -sha256` on the serving host before
 import. On the Debian-family test client, after reviewing the existing target:
 
 ```bash
-sudo cp /tmp/todo-public-root.crt /usr/local/share/ca-certificates/todo-nginx-root.crt
+sudo cp /tmp/platform-public-root.crt /usr/local/share/ca-certificates/platform-nginx-root.crt
 sudo update-ca-certificates
 curl --fail https://todo.test:8443/ready
 curl --fail https://notes.test:8443/ready
@@ -450,7 +450,7 @@ Run all three browser flows from the client, entering the test password locally:
     todo-backend/.venv/bin/python -m pytest e2e/test_todo_flow.py --browser chromium -q
   E2E_NOTES_URL=https://notes.test:8443 E2E_IGNORE_HTTPS_ERRORS=false \
     todo-backend/.venv/bin/python -m pytest e2e/test_notes_flow.py --browser chromium -q
-  E2E_MULTI_APP=1 E2E_CA_FILE=/tmp/todo-public-root.crt E2E_IGNORE_HTTPS_ERRORS=false \
+  E2E_MULTI_APP=1 E2E_CA_FILE=/tmp/platform-public-root.crt E2E_IGNORE_HTTPS_ERRORS=false \
     todo-backend/.venv/bin/python -m pytest e2e/test_multi_app.py -q
 )
 ```
@@ -463,10 +463,10 @@ reboot checks.
 
 Reboot the VM. Repeat the seven-service and nginx configuration checks above;
 verify both markers and unchanged TLS CA fingerprint (the secret
-`todo-proxy-ca-cert`, as nginx serves it from `/var/lib/todo-tls/ca.crt`).
+`platform-proxy-ca-cert`, as nginx serves it from `/var/lib/platform-tls/ca.crt`).
 
-The install turned on the nightly backup (`todo-backup.timer`). Start
-`todo-backup.service` once and require a verified base backup of todo, notes
+The install turned on the nightly backup (`platform-backup.timer`). Start
+`platform-backup.service` once and require a verified base backup of todo, notes
 and keycloak in its journal. Then write one Todo row, restore the three
 databases from that backup with
 `PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore todo-primary`
@@ -496,7 +496,7 @@ Python that must be trusted before it runs. On the initial primary now, and on
 the initial standby before phase 7:
 
 ```bash
-cd "$HOME/todo-operations"
+cd "$HOME/platform-operations"
 sha256sum -c SHA256SUMS
 sudo sh deploy/scripts/trust-files.sh trust todo \
   "$PWD"/deploy/dr/app_ops/*.py "$PWD"/deploy/installer/app_installer/*.py
@@ -506,7 +506,7 @@ This is the one step where sudo still asks for a password, typed by the
 operator. Require `changed` the first time and `unchanged` when repeated. The
 trust applies to these exact files; repeat it after replacing the package.
 
-**Inventories.** Two small YAML files in `$HOME/todo-operations`. Host names must
+**Inventories.** Two small YAML files in `$HOME/platform-operations`. Host names must
 match `hostname` on each VM exactly, and addresses must match `ip -4 address`;
 app-ops checks both and refuses a mismatch. `initial.yaml` on the initial
 primary:
@@ -528,11 +528,11 @@ hosts:
   todo-primary: {role: rebuild_standby, address: 192.168.0.102}
 ```
 
-Home and bundle default to `/home/<user>` and `<home>/todo-offline-m12`, as in
+Home and bundle default to `/home/<user>` and `<home>/platform-offline-m12`, as in
 phase 2. Every app-ops command below starts from the package directory with:
 
 ```bash
-cd "$HOME/todo-operations"
+cd "$HOME/platform-operations"
 export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
 ```
 
@@ -626,7 +626,7 @@ python3 -m app_ops --inventory initial.yaml replication-status
 
 `replication-status` must report `{"changed": false}` both times. The standby
 secrets travel stdin to stdin and are never written on the controller:
-`find "$HOME/todo-operations" -newer SHA256SUMS -type f` lists only the two
+`find "$HOME/platform-operations" -newer SHA256SUMS -type f` lists only the two
 inventory files. Pass when, for every database, primary reports `streaming|async`, the slot is
 active and usable, measured lag is zero, and standby reports recovery with
 matching receive/replay LSNs. Verify both markers directly on the standby
@@ -656,12 +656,12 @@ python3 -m app_ops --inventory initial.yaml install-dr-tool
 
 Require `{"changed": true}` and then `{"changed": false}`. app-ops keeps
 `fapolicyd` active, trusts only the verified source and the root-owned file
-under `/opt/todo/bin`, and keeps the non-secret
-configuration under `~/.config/todo`. Require, for each database, healthy
+under `/opt/platform/bin`, and keeps the non-secret
+configuration under `~/.config/platform`. Require, for each database, healthy
 standby, read-only database, reachable primary and zero local apply lag:
 
 ```bash
-python3 /opt/todo/bin/app_dr.py status
+python3 /opt/platform/bin/app_dr.py status
 ```
 
 Zero local apply lag means nothing received is left to replay. Right after a
@@ -670,8 +670,8 @@ PostgreSQL restarts the walreceiver at the start of the current WAL segment;
 `app_dr.py status` then reports 0 bytes with a note. That is expected.
 
 `install-dr-tool` also turns on the scheduled DR check on both hosts:
-`todo-dr-check.timer` runs `app_dr.py check` every 15 minutes, and a problem
-leaves `todo-dr-check.service` failed, with the reason in the journal. Besides
+`platform-dr-check.timer` runs `app_dr.py check` every 15 minutes, and a problem
+leaves `platform-dr-check.service` failed, with the reason in the journal. Besides
 replication and disk space it checks that the host could take over: the
 offline bundle of the same revision, its image archives and every DR secret.
 The check also prints how many days each primary's replication certificate
@@ -679,20 +679,20 @@ and the replication CA are valid. Start it once on each host and require that
 it passes and ends with `Ready to take over: ...`:
 
 ```bash
-systemctl --user list-timers todo-dr-check.timer   # enabled, with its next run
-systemctl --user start todo-dr-check.service
-journalctl _SYSTEMD_USER_UNIT=todo-dr-check.service -o cat --no-pager | tail -n 5
+systemctl --user list-timers platform-dr-check.timer   # enabled, with its next run
+systemctl --user start platform-dr-check.service
+journalctl _SYSTEMD_USER_UNIT=platform-dr-check.service -o cat --no-pager | tail -n 5
 ```
 
-It turns on the nightly certificate renewal too, `todo-replication-tls.timer`.
+It turns on the nightly certificate renewal too, `platform-replication-tls.timer`.
 Start it once on each host and require that it passes: the primary prints
 `replication certificate kept, valid N more days` for todo, notes and
 keycloak, the standby `standby, nothing to renew`:
 
 ```bash
-systemctl --user list-timers todo-replication-tls.timer
-systemctl --user start todo-replication-tls.service
-journalctl _SYSTEMD_USER_UNIT=todo-replication-tls.service -o cat --no-pager | tail -n 3
+systemctl --user list-timers platform-replication-tls.timer
+systemctl --user start platform-replication-tls.service
+journalctl _SYSTEMD_USER_UNIT=platform-replication-tls.service -o cat --no-pager | tail -n 3
 ```
 
 Prepare and rehearse [Proxmox quarantine](PROXMOX-QUARANTINE.md) now, while
@@ -722,7 +722,7 @@ unreachable before continuing.
 On standby, check read-only that promotion is safe now:
 
 ```bash
-python3 /opt/todo/bin/app_dr.py preflight \
+python3 /opt/platform/bin/app_dr.py preflight \
   --confirm-primary-fenced 'todo-primary is fenced'
 ```
 
@@ -736,7 +736,7 @@ sudo firewall-cmd --permanent --zone=public \
 sudo firewall-cmd --reload
 python3 -m app_ops --inventory recovery.yaml failover \
   --confirm-primary-fenced 'todo-primary is fenced' --confirm-promotion todo-standby
-python3 /opt/todo/bin/app_dr.py status
+python3 /opt/platform/bin/app_dr.py status
 ```
 
 `failover` runs on the standby itself and stops at the first failed step,
@@ -751,7 +751,7 @@ log a user in; the browser test in phase 7 does. Its promotion step is
 exactly:
 
 ```bash
-python3 /opt/todo/bin/app_dr.py promote \
+python3 /opt/platform/bin/app_dr.py promote \
   --confirm-primary-fenced 'todo-primary is fenced' \
   --confirm-promotion todo-standby
 ```
@@ -775,7 +775,7 @@ Pass when every database reports `f|off`, the rolled-back writes succeed and all
 markers remain. Keep old primary fenced.
 
 The DR check must now fail on the promoted host: no standby streams from it
-until the rebuild. Start `todo-dr-check.service` once and require that it
+until the rebuild. Start `platform-dr-check.service` once and require that it
 fails with `no standby streams from this primary over TLS` in the journal.
 `check services` does not count this failed check as a failed service.
 
@@ -804,7 +804,7 @@ SSO tests, and a persistent authenticated failover marker in each app.
 
 Rerun `deploy-promoted-application` and require `{"changed": false}`. Reboot promoted host and verify all
 seven workload services listed in phase 3, writable PostgreSQL,
-`podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf`, marker data
+`podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf`, marker data
 and unchanged CA hash. Each app pod shares loopback between frontend and backend,
 but the proxy reaches both over DNS; frontend serves HTTP only and holds no TLS keys.
 
@@ -830,8 +830,8 @@ prefix each line with the database name. Require, for each, writable database,
 failures:
 
 ```bash
-python3 /opt/todo/bin/app_backup.py status
-python3 /opt/todo/bin/app_backup.py create
+python3 /opt/platform/bin/app_backup.py status
+python3 /opt/platform/bin/app_backup.py create
 ```
 
 Record the returned backup name for each database; they are separate backups.
@@ -845,22 +845,22 @@ podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP
   --command "INSERT INTO todos (title, completed) VALUES ('PITR before restore point', false);"
 podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 \
   --command "INSERT INTO notes (title) VALUES ('PITR before restore point');"
-python3 /opt/todo/bin/app_backup.py mark --name acceptance_before_after
+python3 /opt/platform/bin/app_backup.py mark --name acceptance_before_after
 podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 \
   --command "INSERT INTO todos (title, completed) VALUES ('PITR after restore point', false);"
 podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 \
   --command "INSERT INTO notes (title) VALUES ('PITR after restore point');"
-python3 /opt/todo/bin/app_backup.py --app todo restore \
+python3 /opt/platform/bin/app_backup.py --app todo restore \
   --backup base-YYYYMMDDTHHMMSSZ --target acceptance_before_after
-python3 /opt/todo/bin/app_backup.py --app todo restore-status
+python3 /opt/platform/bin/app_backup.py --app todo restore-status
 podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}'
 podman exec todo-postgres-restore psql --username todo --dbname todo \
   --command "SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;"
 podman exec todo-postgres psql --username todo --dbname todo \
   --command "SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;"
-python3 /opt/todo/bin/app_backup.py --app notes restore \
+python3 /opt/platform/bin/app_backup.py --app notes restore \
   --target-time 2026-10-04T12:36:05Z
-python3 /opt/todo/bin/app_backup.py --app notes restore-status
+python3 /opt/platform/bin/app_backup.py --app notes restore-status
 podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}'
 podman exec notes-postgres-restore psql --username notes --dbname notes \
   --command "SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;"
@@ -881,8 +881,8 @@ it using troubleshooting before authorizing any replacement.
 After explicit cleanup approval:
 
 ```bash
-python3 /opt/todo/bin/app_backup.py --app todo cleanup-restore --confirm todo-postgres-restore
-python3 /opt/todo/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore
+python3 /opt/platform/bin/app_backup.py --app todo cleanup-restore --confirm todo-postgres-restore
+python3 /opt/platform/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore
 ```
 
 Verify that only disposable restore resources disappeared; live data and all
@@ -893,10 +893,10 @@ Rerun `configure-backup` and require `{"changed": false}`. Reboot current primar
 application readiness, writable database, backup persistence, zero archive
 failures and bounded WAL use.
 
-`failover` turned on the nightly backup (`todo-backup.timer`, `app_backup.py
+`failover` turned on the nightly backup (`platform-backup.timer`, `app_backup.py
 nightly --keep-days 7`): a verified base backup of every database, then
 deletion of backups older than 7 days and of the WAL only they needed. Start
-`todo-backup.service` once and require that it passes with a verified base
+`platform-backup.service` once and require that it passes with a verified base
 backup of todo, notes and keycloak in the journal.
 
 ## 9. Rebuild old primary as standby
@@ -1006,7 +1006,7 @@ after a failure.
 3. Run `cluster-status`.
 4. Reboot only current primary.
 5. Require all seven workload services from phase 3,
-   `podman exec nginx nginx -t -c /etc/todo-nginx/nginx.conf`, `f|off|on|1h` for
+   `podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf`, `f|off|on|1h` for
    every database, persistent backups, unchanged TLS CA and readiness of both apps.
 6. Run `cluster-status` again.
 7. Verify trusted HTTPS for both hostnames, stable issuer and all markers from the client.

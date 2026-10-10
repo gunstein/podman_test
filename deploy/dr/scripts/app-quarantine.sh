@@ -32,7 +32,7 @@ until as_user systemctl --user show --property=Version --value > /dev/null 2>&1;
   sleep "${MANAGER_DELAY:-1}"
 done
 # One trusted registry owns the complete group; never leave another app running.
-units=$(PYTHONPATH=/opt/todo/lib PYTHONDONTWRITEBYTECODE=1 python3 -c \
+units=$(PYTHONPATH=/opt/platform/lib PYTHONDONTWRITEBYTECODE=1 python3 -c \
   'from app_installer.apps import services; print("\n".join(services()))')
 set -f
 # Intentional splitting of the registry's newline-separated, validated unit names.

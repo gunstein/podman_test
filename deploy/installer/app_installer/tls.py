@@ -43,7 +43,7 @@ from pathlib import Path
 from . import apps, target_render
 from .commands import exists, run
 
-DIRECTORY = '/var/lib/todo-tls'
+DIRECTORY = '/var/lib/platform-tls'
 CONTAINER = 'nginx'
 MODE_FILE = 'tls-mode'
 PROVIDED = 'provided'
@@ -255,7 +255,7 @@ def reload(names, expected):
     if not exists('container', CONTAINER) or run(
             'podman', 'inspect', '--format', '{{.State.Running}}', CONTAINER).stdout.strip() != 'true':
         return
-    run('podman', 'exec', CONTAINER, 'nginx', '-c', '/etc/todo-nginx/nginx.conf', '-s', 'reload')
+    run('podman', 'exec', CONTAINER, 'nginx', '-c', '/etc/platform-nginx/nginx.conf', '-s', 'reload')
     for name in names:
         for _ in range(SERVE_TIMEOUT):
             served = run('podman', 'exec', CONTAINER, 'sh', '-c', SERVED, 'served', name,
@@ -271,14 +271,14 @@ def reload(names, expected):
 def status(names, **where):
     """How nginx would start with this volume: (mode, days left, problem or '').
 
-    It runs the entrypoint's own check (TODO_TLS_ROLE=check), the one nginx
+    It runs the entrypoint's own check (PLATFORM_TLS_ROLE=check), the one nginx
     runs before it serves: the files are there, the key fits, and the
     certificate names every one of names from ca.crt. A volume without a
     certificate is ('local', None, '').
     """
     if not exists('volume', where.get('volume', apps.NGINX_TLS_VOLUME)) or not present('server.crt', **where):
         return 'local', None, ''
-    result = proxy('env', 'TODO_TLS_ROLE=check', 'TODO_TLS_DIRECTORY=.', f'TODO_TLS_HOSTNAME={names[0]}',
+    result = proxy('env', 'PLATFORM_TLS_ROLE=check', 'PLATFORM_TLS_DIRECTORY=.', f'PLATFORM_TLS_HOSTNAME={names[0]}',
                    'APP_TLS_HOSTNAMES=' + ' '.join(names), ENTRYPOINT, allowed=(0, 1), **where)
     output = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
     if result.returncode:
@@ -306,6 +306,6 @@ def check(hostnames=None, **where):
         return lines, []
     if current == PROVIDED:
         return lines, [f'the nginx certificate expires in {days} days; run tls-request, have the CA sign '
-                       'the request (app_ca.py sign, or sudo todo-ca-sign), then tls-install']
+                       'the request (app_ca.py sign, or sudo platform-ca-sign), then tls-install']
     return lines, [f'the nginx demo certificate expires in {days} days; '
                    'systemctl --user restart shared-proxy.service renews it']

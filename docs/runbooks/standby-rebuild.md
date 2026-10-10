@@ -35,7 +35,7 @@ helper, allow only replication to the new primary, then, on the current
 primary with `recovery.yaml` (see [primary-lost.md](primary-lost.md)):
 
 ```bash
-cd ~/todo-operations && export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
+cd ~/platform-operations && export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
 python3 -m app_ops --inventory recovery.yaml preflight-standby-rebuild \
   --confirm-fenced 'todo-primary is fenced' --confirm-reseed todo-primary
 python3 -m app_ops --inventory recovery.yaml rebuild-standby \
@@ -59,7 +59,7 @@ naming the current primary as `primary` and the standby as `standby`
 (`initial.yaml`):
 
 ```bash
-cd ~/todo-operations && export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
+cd ~/platform-operations && export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
 python3 -m app_ops --inventory initial.yaml reseed-standby --confirm-reseed todo-standby
 ```
 

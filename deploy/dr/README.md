@@ -14,7 +14,7 @@ Everything DR lives here, apart from the single-host installer it builds on:
 |---|---|---|
 | `app_ops/` | `python3 -m app_ops`: one command per DR operation, over SSH | the controller |
 | `app_dr_host/` | `python3 -m app_dr_host`: the building blocks app-ops runs on each host (replication, replication TLS, nginx's certificate from your CA, reseed, promoted deploy, secret transfer, pair checks) | each host, staged by app-ops |
-| `scripts/` | `app_dr.py` (promotion), `app_backup.py` (backup and PITR), `app-quarantine.sh`, `bootstrap-ssh-key.sh` | the hosts (`/opt/todo/bin`), the controller for the last |
+| `scripts/` | `app_dr.py` (promotion), `app_backup.py` (backup and PITR), `app-quarantine.sh`, `bootstrap-ssh-key.sh` | the hosts (`/opt/platform/bin`), the controller for the last |
 
 ## Where DR finds the installer
 
@@ -27,9 +27,9 @@ the code runs:
 | Code | Runs on | Finds `app_installer` (and `app_dr_host`) |
 |---|---|---|
 | `app_ops` | the controller, from a checkout or the operations package | `deploy/installer` in the same tree, added by `app_ops/__init__.py` |
-| `app_dr_host` | each host | `PYTHONPATH`, which app-ops sets to the directory it staged both packages in: `/opt/todo/lib` when fapolicyd is active |
-| `app_dr.py`, `app_backup.py` | each host, in `/opt/todo/bin` | `/opt/todo/lib`, the `lib` next to their own `bin`; in a checkout, set `PYTHONPATH=deploy/installer:deploy/dr` |
-| `app-quarantine.sh` | the old primary | `PYTHONPATH=/opt/todo/lib` in the script |
+| `app_dr_host` | each host | `PYTHONPATH`, which app-ops sets to the directory it staged both packages in: `/opt/platform/lib` when fapolicyd is active |
+| `app_dr.py`, `app_backup.py` | each host, in `/opt/platform/bin` | `/opt/platform/lib`, the `lib` next to their own `bin`; in a checkout, set `PYTHONPATH=deploy/installer:deploy/dr` |
+| `app-quarantine.sh` | the old primary | `PYTHONPATH=/opt/platform/lib` in the script |
 
 `tests/test_operations_distribution.py` unpacks the operations package, lays
 it out as app-ops does on a host, and starts every entry point, so a broken
@@ -86,9 +86,9 @@ Addresses must be literal IPv4 addresses. Mark the host you run on with
 
 ```yaml
 user: ops
-# Optional; defaults to /home/<user> and <home>/todo-offline-m12.
+# Optional; defaults to /home/<user> and <home>/platform-offline-m12.
 home: /home/ops
-bundle: /home/ops/todo-offline-m12
+bundle: /home/ops/platform-offline-m12
 hosts:
   todo-primary: {role: primary, address: 192.0.2.10, local: true}
   todo-standby: {role: standby, address: 192.0.2.11}
@@ -155,18 +155,18 @@ run leaves its service failed: that is the alert, seen with
 
 | Timer | Installed by | Runs | What it does |
 |---|---|---|---|
-| `todo-dr-check.timer` | `install-dr-tool` on both hosts, `rebuild-standby` on the rebuilt one | every 15 minutes | `app_dr.py check`: each database's role, read live. A primary needs a standby streaming over TLS, slots that keep their WAL and, if archiving is on, a healthy archive; a standby must receive WAL. The group must not be split, and the disk under the home directory must be at least 10 % free. And the host must be ready to take over: its offline bundle is the revision of the operations package that ran `install-dr-tool`, every image archive the bundle lists is there, and it holds every DR secret, the replication CA included; it then prints `Ready to take over: ...`. |
-| `todo-replication-tls.timer` | `install-dr-tool` on both hosts, `rebuild-standby` on the rebuilt one | every night at 03:30 (+ up to 30 min), and at boot if a night was missed | `app_dr.py renew-tls`: on the primary, a new replication certificate for every database with fewer than 30 days left, for the same address and from the same replication CA, then a PostgreSQL reload (no restart; the standby needs nothing new). On a standby it does nothing. The DR check above also fails once a certificate has fewer than 25 days left, or the replication CA fewer than 180 (the CA is replaced by hand). For a pair with [nginx certificates from your CA](#nginx-certificates-from-your-ca), the DR check fails below 30 days or when a host's certificate does not fit; renewing it is the two app-ops commands. |
-| `todo-backup.timer` | `install.sh` on every server install; `configure-backup` (so `failover`) replaces its service on the current primary | every night at 02:30 (+ up to 30 min), and at boot if a night was missed | `app_backup.py nightly --keep-days 7`: a verified base backup of every database, then deletion of the backups older than 7 days (never the latest) and of the archived WAL older than the oldest kept backup (`pg_archivecleanup`). On a standby it does nothing. |
+| `platform-dr-check.timer` | `install-dr-tool` on both hosts, `rebuild-standby` on the rebuilt one | every 15 minutes | `app_dr.py check`: each database's role, read live. A primary needs a standby streaming over TLS, slots that keep their WAL and, if archiving is on, a healthy archive; a standby must receive WAL. The group must not be split, and the disk under the home directory must be at least 10 % free. And the host must be ready to take over: its offline bundle is the revision of the operations package that ran `install-dr-tool`, every image archive the bundle lists is there, and it holds every DR secret, the replication CA included; it then prints `Ready to take over: ...`. |
+| `platform-replication-tls.timer` | `install-dr-tool` on both hosts, `rebuild-standby` on the rebuilt one | every night at 03:30 (+ up to 30 min), and at boot if a night was missed | `app_dr.py renew-tls`: on the primary, a new replication certificate for every database with fewer than 30 days left, for the same address and from the same replication CA, then a PostgreSQL reload (no restart; the standby needs nothing new). On a standby it does nothing. The DR check above also fails once a certificate has fewer than 25 days left, or the replication CA fewer than 180 (the CA is replaced by hand). For a pair with [nginx certificates from your CA](#nginx-certificates-from-your-ca), the DR check fails below 30 days or when a host's certificate does not fit; renewing it is the two app-ops commands. |
+| `platform-backup.timer` | `install.sh` on every server install; `configure-backup` (so `failover`) replaces its service on the current primary | every night at 02:30 (+ up to 30 min), and at boot if a night was missed | `app_backup.py nightly --keep-days 7`: a verified base backup of every database, then deletion of the backups older than 7 days (never the latest) and of the archived WAL older than the oldest kept backup (`pg_archivecleanup`). On a standby it does nothing. |
 
 The units are in `deploy/dr/systemd` and go to `~/.config/systemd/user` on the
-host. A host installed with `install.sh` already has `todo-backup.timer` from
+host. A host installed with `install.sh` already has `platform-backup.timer` from
 the installer (`app_installer backup nightly`: base backups only, no WAL
 archive); the timer has the same schedule and name, so `configure-backup`
 only swaps its service for `app_backup.py nightly`, which adds the WAL
 archive. A primary that was never promoted keeps the installer's nightly
 backups, and a standby's skip: the primary takes the backups. The DR units run
-the trusted tools in `/opt/todo/bin`. After a
+the trusted tools in `/opt/platform/bin`. After a
 failover the check fails on the promoted host until `rebuild-standby` gives it
 a standby again, which is what it should report. WAL archiving, and so the
 nightly backup with the WAL archive, starts with `configure-backup` after a
@@ -189,8 +189,8 @@ host (with the TLS volume: in the volume), which nginx gets after a failover.
 # On the controller: a CSR from each host (each key stays in that host's Podman secrets).
 python3 -m app_ops --inventory initial.yaml nginx-tls-request --output ~/nginx-requests
 #   -> ~/nginx-requests/todo-primary.csr, ~/nginx-requests/todo-standby.csr
-# With the CA (app_ca.py sign, or sudo todo-ca-sign in v1), for each host:
-python3 deploy/scripts/app_ca.py sign --directory /media/ca-usb/todo-ca \
+# With the CA (app_ca.py sign, or sudo platform-ca-sign in v1), for each host:
+python3 deploy/scripts/app_ca.py sign --directory /media/ca-usb/platform-ca \
   --request todo-standby.csr --output todo-standby.crt
 # Back on the controller, with both <host>.crt in one directory:
 python3 -m app_ops --inventory initial.yaml nginx-tls-install --certificates ~/nginx-signed --ca ~/ca.crt
@@ -203,7 +203,7 @@ host's record, the ones the primary serves. `nginx-tls-install` needs both
 certificates before it changes anything, checks and installs the
 standby's, then the primary's (nginx restarts, a few seconds; with the TLS
 volume it reloads), and then sets the pair's mode to provided on both hosts
-(`~/.config/todo/nginx-tls-mode`). From then on:
+(`~/.config/platform/nginx-tls-mode`). From then on:
 
 - `app_dr.py check` (every 15 minutes, both hosts) fails unless this host
   holds a certificate from your CA that fits its recorded hostnames, with
@@ -259,21 +259,21 @@ For full validation, follow [ACCEPTANCE.md](../../docs/ACCEPTANCE.md).
 
 The operator tools were renamed from `todo_dr.py`, `todo_backup.py` and
 `todo-quarantine.sh` to `app_dr.py`, `app_backup.py` and `app-quarantine.sh`.
-Host state keeps its names (`/opt/todo`, `~/.config/todo`, volumes and the
+Host state keeps its names (`/opt/platform`, `~/.config/platform`, volumes and the
 `todo` fapolicyd trust file). On a host that already has the old files:
 
 1. Run `install-dr-tool`, `configure-backup` or `install-quarantine-tool`
    again so the new names are installed and trusted.
-2. Point hypervisor-side quarantine calls at `/opt/todo/bin/app-quarantine.sh`.
+2. Point hypervisor-side quarantine calls at `/opt/platform/bin/app-quarantine.sh`.
    With `--enable-selinux-entrypoint`, remove the old file context with
-   `sudo semanage fcontext -d '/opt/todo/bin/todo-quarantine\.sh'`.
+   `sudo semanage fcontext -d '/opt/platform/bin/todo-quarantine\.sh'`.
 3. Remove the old copies and their trust entries:
 
    ```bash
-   cd /opt/todo/bin
-   sudo fapolicyd-cli --file delete /opt/todo/bin/todo_dr.py --trust-file todo
-   sudo fapolicyd-cli --file delete /opt/todo/bin/todo_backup.py --trust-file todo
-   sudo fapolicyd-cli --file delete /opt/todo/bin/todo-quarantine.sh --trust-file todo
+   cd /opt/platform/bin
+   sudo fapolicyd-cli --file delete /opt/platform/bin/todo_dr.py --trust-file todo
+   sudo fapolicyd-cli --file delete /opt/platform/bin/todo_backup.py --trust-file todo
+   sudo fapolicyd-cli --file delete /opt/platform/bin/todo-quarantine.sh --trust-file todo
    sudo fapolicyd-cli --update
    sudo rm -f todo_dr.py todo_backup.py todo-quarantine.sh
    ```

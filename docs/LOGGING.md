@@ -17,10 +17,10 @@ Commands run as the service user on the host unless they say `sudo`.
 |---|---|---|
 | A container's output: nginx's access and error log, PostgreSQL, the backends, Keycloak, the migration init container | journald, through `LogDriver=journald` in every `.kube` unit; field `CONTAINER_NAME` | `podman logs nginx`, or `journalctl CONTAINER_NAME=nginx` |
 | A pod's unit: start, stop, failure, restart | journald, the user unit (`todo-app.service`, ...) | `journalctl --user -u todo-app.service` |
-| The timers' runs: nightly backup, DR check, replication certificate renewal | journald, their user services | `journalctl --user -u todo-backup.service -n 30 -o cat` |
+| The timers' runs: nightly backup, DR check, replication certificate renewal | journald, their user services | `journalctl --user -u platform-backup.service -n 30 -o cat` |
 | `app_installer`, `app_dr_host`, `app-ops`, `app_dr.py`, `app_backup.py`: that they ran | one journald line per run, tagged with the tool | `journalctl -t app-installer -t app-dr-host -t app-ops -t app-dr -t app-backup` |
-| The same: what they printed | stdout (one JSON result) and stderr of the command | the terminal; app-ops also in `~/.local/state/todo/app-ops/<time>-<command>.log` on the controller |
-| A promotion's decisions | the promotion record `~/.config/todo/promotion.json` on the promoted host, a file, not journald | `cat ~/.config/todo/promotion.json` |
+| The same: what they printed | stdout (one JSON result) and stderr of the command | the terminal; app-ops also in `~/.local/state/platform/app-ops/<time>-<command>.log` on the controller |
+| A promotion's decisions | the promotion record `~/.config/platform/promotion.json` on the promoted host, a file, not journald | `cat ~/.config/platform/promotion.json` |
 | An acceptance run | `~/todo-acceptance-runs/<run ID>/logs/` on the client, one file per step | `REPORT.md` and `EVIDENCE.md` in the same folder |
 | fapolicyd and SELinux denials | the system journal and the audit log | `sudo ausearch --start recent -m fanotify` and `-m avc` ([FAPOLICYD.md](../deploy/offline/FAPOLICYD.md)) |
 
@@ -58,7 +58,7 @@ as root:
 ```bash
 sudo mkdir -p /etc/systemd/journald.conf.d
 printf '%s\n' '[Journal]' 'Storage=persistent' 'SystemMaxUse=1G' 'MaxRetentionSec=3month' |
-  sudo tee /etc/systemd/journald.conf.d/50-todo.conf
+  sudo tee /etc/systemd/journald.conf.d/50-platform.conf
 sudo systemctl restart systemd-journald
 journalctl --disk-usage; ls -d /var/log/journal
 ```
@@ -95,9 +95,9 @@ The timers ([runbook](runbooks/timer-failed.md)):
 
 ```bash
 systemctl --user list-timers 'todo-*'
-journalctl --user -u todo-dr-check.service -n 30 -o cat
-journalctl --user -u todo-backup.service -n 30 -o cat
-journalctl --user -u todo-replication-tls.service -n 30 -o cat
+journalctl --user -u platform-dr-check.service -n 30 -o cat
+journalctl --user -u platform-backup.service -n 30 -o cat
+journalctl --user -u platform-replication-tls.service -n 30 -o cat
 ```
 
 Development (`dev-up.sh`, direct `podman kube play` without systemd): there

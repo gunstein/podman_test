@@ -62,8 +62,8 @@ network where users or Trondheim can reach it while its stack runs.
    root:
 
    ```bash
-   sudo /opt/todo/bin/app-quarantine.sh stop todo-primary gunstein
-   sudo /opt/todo/bin/app-quarantine.sh check todo-primary gunstein
+   sudo /opt/platform/bin/app-quarantine.sh stop todo-primary gunstein
+   sudo /opt/platform/bin/app-quarantine.sh check todo-primary gunstein
    ```
 
    (host name and service user as installed). Stopping does not disable the

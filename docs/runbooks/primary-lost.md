@@ -17,7 +17,7 @@ says what counts as fenced, and what to do when Oslo comes back.
 ## 2. Check on Trondheim that promotion is safe
 
 ```bash
-python3 /opt/todo/bin/app_dr.py preflight --confirm-primary-fenced 'todo-primary is fenced'
+python3 /opt/platform/bin/app_dr.py preflight --confirm-primary-fenced 'todo-primary is fenced'
 ```
 
 It refuses if any database is unhealthy, has unreplayed WAL, or if the Oslo
@@ -25,7 +25,7 @@ database still answers. Do not work around a refusal.
 
 ## 3. Fail over, on Trondheim
 
-Write `~/todo-operations/recovery.yaml`, with Trondheim as `local: true`:
+Write `~/platform-operations/recovery.yaml`, with Trondheim as `local: true`:
 
 ```yaml
 user: gunstein
@@ -39,7 +39,7 @@ run the one command:
 
 ```bash
 sudo firewall-cmd --permanent --zone=public --add-port=8443/tcp && sudo firewall-cmd --reload
-cd ~/todo-operations && export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
+cd ~/platform-operations && export PYTHONPATH="$PWD/deploy/dr" PYTHONDONTWRITEBYTECODE=1
 python3 -m app_ops --inventory recovery.yaml failover \
   --confirm-primary-fenced 'todo-primary is fenced' --confirm-promotion todo-standby
 ```
@@ -53,8 +53,8 @@ address and the CA fingerprint.
 If a step fails, it says which. Fix the cause and run the same command again:
 a completed promotion is skipped. If it says the promotion record is
 `failed` or `promoting`, **stop**: some databases may be promoted and others
-not. Inspect `python3 /opt/todo/bin/app_dr.py status` and
-`~/.config/todo/promotion.json` before anything else.
+not. Inspect `python3 /opt/platform/bin/app_dr.py status` and
+`~/.config/platform/promotion.json` before anything else.
 
 ## 4. Send users to Trondheim
 
@@ -62,7 +62,7 @@ Have the DNS owner point the public names at Trondheim's address. If the
 JSON says `"client_trust": "unchanged"`, the pair uses certificates from your
 CA and clients need nothing new. If it says `"required"` (the demo CA),
 clients must trust Trondheim's CA (fingerprint in the JSON; the file is
-`~/.config/todo/todo-nginx-root.crt`). Log in to each app in a browser:
+`~/.config/platform/platform-nginx-root.crt`). Log in to each app in a browser:
 `failover` checks the login page, not a real login.
 
 ## Afterwards

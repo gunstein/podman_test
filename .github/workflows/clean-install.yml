@@ -50,26 +50,26 @@ jobs:
           deploy/scripts/build-operations-package.sh
           (
             cd dist
-            sha256sum -c todo-operations.tar.gz.sha256
+            sha256sum -c platform-operations.tar.gz.sha256
           )
-          archive=dist/todo-operations.tar.gz
+          archive=dist/platform-operations.tar.gz
           for required in \
-            todo-operations/deploy/dr/app_ops/cli.py \
-            todo-operations/deploy/dr/app_dr_host/cli.py \
-            todo-operations/deploy/dr/README.md \
-            todo-operations/deploy/installer/app_installer/cli.py \
-            todo-operations/deploy/dr/scripts/app_dr.py \
-            todo-operations/deploy/dr/scripts/app_backup.py \
-            todo-operations/deploy/scripts/wait-ready.sh \
-            todo-operations/deploy/offline/FAPOLICYD.md \
-            todo-operations/docs/SECRETS.md \
-            todo-operations/docs/TLS.md \
-            todo-operations/VERSION
+            platform-operations/deploy/dr/app_ops/cli.py \
+            platform-operations/deploy/dr/app_dr_host/cli.py \
+            platform-operations/deploy/dr/README.md \
+            platform-operations/deploy/installer/app_installer/cli.py \
+            platform-operations/deploy/dr/scripts/app_dr.py \
+            platform-operations/deploy/dr/scripts/app_backup.py \
+            platform-operations/deploy/scripts/wait-ready.sh \
+            platform-operations/deploy/offline/FAPOLICYD.md \
+            platform-operations/docs/SECRETS.md \
+            platform-operations/docs/TLS.md \
+            platform-operations/VERSION
           do
             tar -tzf "$archive" | grep -Fx "$required" >/dev/null
           done
-          version=$(tar -xOf "$archive" todo-operations/VERSION)
-          grep -Fx "package=todo-operations" <<<"$version" >/dev/null
+          version=$(tar -xOf "$archive" platform-operations/VERSION)
+          grep -Fx "package=platform-operations" <<<"$version" >/dev/null
           grep -Eq "^source_revision=[0-9a-f]{40}$" <<<"$version"
           grep -Fx "source_state=clean" <<<"$version" >/dev/null
 
@@ -118,7 +118,7 @@ jobs:
             deploy/scripts/dev/run-e2e.sh \
             deploy/dr/scripts/app-quarantine.sh \
             deploy/scripts/trust-files.sh \
-            deploy/scripts/todo-ca-sign \
+            deploy/scripts/platform-ca-sign \
             deploy/scripts/lab/trust-serving-ca.sh \
             deploy/scripts/lab/helpers.sh \
             deploy/scripts/lab/provision-user.sh \
@@ -183,10 +183,10 @@ jobs:
         run: |
           set -euo pipefail
           ca_file=$(mktemp)
-          podman exec nginx cat /var/lib/todo-tls/ca.crt > "$ca_file"
+          podman exec nginx cat /var/lib/platform-tls/ca.crt > "$ca_file"
           mkdir -p ~/.pki/nssdb
           certutil -N -d sql:"$HOME/.pki/nssdb" --empty-password
-          certutil -A -d sql:"$HOME/.pki/nssdb" -n todo-ci-ca -t 'C,,' -i "$ca_file"
+          certutil -A -d sql:"$HOME/.pki/nssdb" -n platform-ci-ca -t 'C,,' -i "$ca_file"
           E2E_PASSWORD=$(python -c 'import secrets; print(secrets.token_urlsafe(24))')
           KEYCLOAK_ADMIN_PASSWORD=$(PYTHONPATH=deploy/installer python -c \
             'from app_installer import apps, secrets; print(secrets.read(apps.KEYCLOAK_ADMIN_SECRET))')

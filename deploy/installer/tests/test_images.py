@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class WrongLabelHost(FakeHost):
-    """A host whose localhost/todo-proxy image is some other image, without the nginx label."""
+    """A host whose localhost/platform-proxy image is some other image, without the nginx label."""
 
     def answer(self, argv, input):
         if argv[:3] == ['podman', 'image', 'inspect']:

@@ -52,6 +52,14 @@ class ImageErrorTests(unittest.TestCase):
 
 
 class BuildTests(unittest.TestCase):
+    def test_an_app_image_named_proxy_is_not_the_shared_proxy(self):
+        # Only the shared nginx image must carry the nginx label, whatever an app calls its images.
+        app = apps.App(name='shop', hostname='shop.test', keycloak_client='shop-frontend',
+                       images=(apps.AppImage(name='proxy', context='.'),))
+        with WrongLabelHost(images_present=False) as host:
+            self.assertEqual(images.prepare('/project', 'build', app=app, include_shared=False), {'proxy': True})
+        self.assertFalse(host.ran('podman', 'image', 'inspect'))
+
     def test_each_image_builds_from_its_declared_context_and_containerfile(self):
         app = apps.App(name='shop', hostname='shop.test', keycloak_client='shop-frontend',
                        images=(apps.AppImage(name='backend', context='.', containerfile='shop-backend/Containerfile'),

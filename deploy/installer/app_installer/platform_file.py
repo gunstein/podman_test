@@ -26,6 +26,10 @@ ENVIRONMENTS = ('local', 'prod')
 # An app's name becomes resource names (shop-app, shop-postgres, the shop_migrator role).
 NAME = re.compile(r'[a-z][a-z0-9]{0,29}')
 WORD = re.compile(r'[a-z][a-z0-9-]{0,62}')
+# The images the shared app pod template runs (deploy/manifests/app.yaml.j2: the
+# migration and the backend, and the frontend), so every app declares them until
+# it brings its own pod template (docs/PLATFORM-PLAN.md, section 5.9).
+TEMPLATE_IMAGES = ('backend', 'frontend')
 
 
 @dataclass(frozen=True)
@@ -104,6 +108,10 @@ def _images(data, path, root):
         directory = os.path.normpath(path.parent / context)
         images.append(apps.AppImage(name=name, context=Path(os.path.relpath(directory, root)).as_posix(),
                                     containerfile=containerfile))
+    missing = [name for name in TEMPLATE_IMAGES if name not in data]
+    if missing:
+        raise ValueError(f'{path}: images: the shared app pod template (deploy/manifests/app.yaml.j2) runs '
+                         f'{" and ".join(TEMPLATE_IMAGES)}; declare {", ".join(missing)}')
     return tuple(images)
 
 
@@ -175,11 +183,14 @@ def _require_distinct(path, entries, app_list):
                              "which is Keycloak's database's")
 
 
+# This checkout's own platform.yaml, in a Git checkout (app_installer is deploy/installer/app_installer).
+CHECKOUT_FILE = Path(__file__).resolve().parents[3] / FILE
+
+
 @functools.lru_cache(maxsize=None)
 def checkout():
-    """The platform of this checkout's own platform.yaml: the example apps, for the tests and the lab tools.
+    """The platform of this checkout's platform.yaml (prod): the example apps, for the tests and the lab tools.
 
-    Only in a Git checkout, where app_installer is deploy/installer/app_installer.
     Read once per process: a long-running tool does not see later edits.
     """
-    return load(Path(__file__).resolve().parents[3] / FILE)[0]
+    return load(CHECKOUT_FILE)[0]

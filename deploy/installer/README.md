@@ -5,7 +5,7 @@ dev mode also need Jinja2 and PyYAML, and the DR tools need PyYAML. Podman runs 
 server mode also needs a working user systemd manager. Rendering only runs in
 build mode, where the install renders the platform it installs
 (`render.render`), and for a bundle through `app_installer.bundle`;
-`deploy/scripts/render-kube-runtime.sh` renders the registry's apps by hand.
+`deploy/scripts/render-kube-runtime.sh` renders `platform.yaml`'s apps by hand.
 An offline install never renders: it fills the target values into
 files the build rendered (`target_render.py`, standard library only), and so
 do the DR tools on a primary and a standby.
@@ -199,6 +199,6 @@ install, which never renders, does without it and without Jinja2, and DR
 needs no Jinja2. Jinja2 and
 PyYAML are imported only where rendering happens (`manifests.py`, `quadlet.render`,
 `render.py`, `bundle.py`); `test_offline_install.py` runs the whole offline install in
-a Python process where neither can be imported. The replication
-registry contains all three databases; see the
+a Python process where neither can be imported. The replicated
+group (`Platform.replicated_databases`) holds all three databases; see the
 [phased DR checkpoints](../../docs/MULTI-APP-DR-VERIFICATION.md).

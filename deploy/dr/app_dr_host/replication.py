@@ -601,6 +601,8 @@ def reseed_check(database, primary_address, *, project_root, quadlet_dir, kube_r
                  target, confirm_fenced, confirm_reseed):
     """Local-only checks; never contacts the primary.
 
+    It takes the same path arguments as bootstrap_standby (reseed_standby
+    passes them on to both), so project_root is accepted and not used.
     A rebuild's read-only preflight runs this before the primary has
     published its LAN replication endpoint (that happens later, in the
     same rebuild run). Only ``reseed_standby`` authenticates, immediately

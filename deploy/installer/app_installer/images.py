@@ -72,7 +72,7 @@ def _prepare(project_root, deployment_mode, bundle_directory, refresh_images, sp
                     "--file", context / image.containerfile, "--tag", image.reference, context,
                     timeout=settings.IMAGE_TIMEOUT)
             changed[image.component] = True
-        if image.component == "proxy":
+        if image.reference == apps.PROXY_IMAGE:
             inspection = json.loads(run("podman", "image", "inspect", image.reference).stdout)
             if (inspection[0].get("Labels") or {}).get("io.todo.proxy") != "nginx":
                 raise RuntimeError(

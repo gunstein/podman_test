@@ -13,14 +13,17 @@ def main():
     host = Host(inventory.HostSpec(name="ci", role="current_primary", address="127.0.0.1",
                                    user="runner", home="/home/runner", local=True))
     # The build-mode install serves platform.yaml's hostnames and Keycloak's.
-    platform = platform_file.checkout()
-    failover.login_page(host, platform, {app.name: app.hostname for app in platform.apps}, platform.identity_hostname)
+    platform, environment = platform_file.load(platform_file.CHECKOUT_FILE, "local")
+    port = environment.public_port
+    failover.login_page(host, platform, {app.name: app.hostname for app in platform.apps}, platform.identity_hostname,
+                        port)
     # A redirect Keycloak does not know must be refused, or the check proves nothing.
     query = failover.urlencode({"client_id": "todo-frontend", "redirect_uri": "https://evil.test/",
                                 "response_type": "code", "scope": "openid",
                                 "code_challenge": failover.PKCE_CHALLENGE, "code_challenge_method": "S256"})
     try:
-        page = failover.https(host, platform.identity_hostname, "/auth/realms/todo/protocol/openid-connect/auth?" + query)
+        page = failover.https(host, platform.identity_hostname, "/auth/realms/todo/protocol/openid-connect/auth?" + query,
+                              port=port)
     except RuntimeError:
         page = ""
     if 'id="username"' in page:

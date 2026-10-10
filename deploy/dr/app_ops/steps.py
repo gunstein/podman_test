@@ -20,6 +20,11 @@ def platform(project_root):
     return target_render.bundle_platform(project_root)
 
 
+def public_port(project_root):
+    """The HTTPS port the operations package's bundle was built for (platform.yaml's publicPort)."""
+    return target_render.metadata(project_root)['public_port']
+
+
 def copy_step_timeout(group):
     """The backstop for a step that copies every database of the group."""
     return len(group) * settings.DATA_COPY_TIMEOUT + STEP_TIMEOUT

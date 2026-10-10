@@ -106,6 +106,19 @@ class FailoverTests(unittest.TestCase):
         self.assertIn("Clients already trust your CA (provided mode)", report["users"]["next"])
         self.assertNotIn("Have clients trust", report["users"]["next"])
 
+    def test_the_checks_and_the_deploy_use_the_bundles_https_port(self):
+        world = FailoverWorld()
+        with unittest.mock.patch.object(failover.steps, "public_port", return_value=9443), \
+                unittest.mock.patch.object(failover, "connect_sources", return_value=["https://auth.test:9443"]):
+            self.run_failover(world)
+        checks = [command for _host, command in world.commands if command[:2] == ["bash", "-c"] and command[3] == "https"]
+        self.assertTrue(checks)
+        self.assertEqual({command[5] for command in checks}, {"9443"})
+        logins = [command[7] for command in checks if "openid-connect/auth" in command[7]]
+        self.assertTrue(all("redirect_uri=https%3A%2F%2F" in path and "%3A9443%2F" in path for path in logins))
+        deploys = [command for _host, command in world.commands if "deploy-promoted" in command]
+        self.assertTrue(deploys and all(command[command.index("--service-port") + 1] == "9443" for command in deploys))
+
     def test_the_checks_use_the_public_hostnames_the_host_recorded(self):
         world = FailoverWorld(hostnames={"TARGET_IDENTITY_HOSTNAME": "auth.example.org",
                                          "TARGET_TODO_HOSTNAME": "shop.example.org",

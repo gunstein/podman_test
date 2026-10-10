@@ -13,7 +13,7 @@ from app_installer.cli import main  # noqa: E402
 
 
 def setUpModule():
-    # The host commands take the platform the host recorded at install; here, the registry's.
+    # The host commands take the platform the host recorded at install; here, this checkout's platform.yaml.
     patcher = patch('app_installer.target_render.installed_platform', return_value=platform_file.checkout())
     patcher.start()
     unittest.addModuleCleanup(patcher.stop)

@@ -89,12 +89,13 @@ the phase.
 
 ## 4. One resolved model
 
-Where it stands after phase 3: `apps.Platform` has two fields, the apps in
+Where it stands after phase 4a: `apps.Platform` has two fields, the apps in
 start order and Keycloak's default hostname, and derives the rest (the DR
-group, workloads, services). A build reads it from `platform.yaml` and each
-app's `examples/<app>/app.yaml` (`platform_file.load`, which also gives the
+group, workloads, services); each app holds the images it builds
+(`apps.AppImage`). A build reads it from `platform.yaml` and each app's
+`examples/<app>/app.yaml` (`platform_file.load`, which also gives the
 environment's port and log level); there is no list of apps in the code.
-`bundle.json` (format version 6) carries it, and a host records it in
+`bundle.json` (format version 7) carries it, and a host records it in
 `~/.config/platform/platform.json`. The richer tree below grows with phases
 4 and 5 (images, routes, checks, database and login as app fields).
 
@@ -117,10 +118,12 @@ Writing more to JSON is not enough: the readers must stop reconstructing.
   argument. No YAML loading at import time, no module-level app lists, no
   default arguments that bind an app list. Two different platforms in one
   Python process must not share state (tested).
-- **Versions**: `bundle.json` keeps `format_version` (6 since phase 2) and adds the
-  image IDs of every image it carries. The operations package records the
-  bundle format versions it supports and refuses others. The installer
-  compares installed image IDs, not tags, with the bundle's.
+- **Versions**: `bundle.json` keeps `format_version` (7 since phase 4a); the
+  installer and the DR tools refuse any other. Not yet built: `bundle.json`
+  recording the image IDs of every image it carries, and the installer
+  comparing installed image IDs with them. Today an image that is present
+  under the same reference is kept, so a new bundle needs a new image tag
+  (`settings.IMAGE_TAG`).
 
 ## 5. Contracts
 
@@ -157,7 +160,8 @@ and checks follow today's conventions: the shared app pod template uses its
 - Each image is either built (`name`, `context` relative to the app
   directory, `containerfile` relative to the context) or prebuilt
   (`reference`, pulled when the bundle is built). Init containers and setup
-  jobs use declared images only.
+  jobs use declared images only. Phase 4a built the first kind; prebuilt
+  images come with the first app that needs one.
 - The model decides exactly which images the bundle carries. A static-only
   installation carries nginx, Keycloak only if some app needs login, and
   PostgreSQL only if some app needs a database.
@@ -567,4 +571,32 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
 - Not yet: prebuilt images (`reference`, pulled): no app needs one, so they
   come with the first that does. Which shared images a bundle carries
   (Keycloak and PostgreSQL only when needed) is phase 4c.
+- Understandability check of phases 3b and 4a (fresh agent, at 200941c):
+  **YELLOW**. The scripts' inputs and an image's way from `app.yaml` to an
+  offline host were traceable in two or three file hops, the image errors
+  name the file and field, and a small change (a `platform databases`
+  part) was local. Adding an app is still repository-wide knowledge: the
+  per-app `.kube` templates, the example apps' acceptance checks and
+  default-installation test assertions. Its findings and what was done:
+  1. Per-app `.kube` template copies: phase 4d generates the units.
+  2. An app image named `proxy` was taken for the shared nginx image (its
+     label check): fixed, the check goes by the proxy's reference.
+  3. Failover's HTTPS and login-page checks, and `deploy-promoted`, used
+     the default port 8443 instead of the bundle's: fixed, app-ops takes the
+     port from the operations package's `bundle.json` (`steps.public_port`),
+     and a test runs a failover on 9443.
+  4. Tests of the operator's `platform.yaml` and of a fixed sample platform
+     are mixed (`runtime_fixture.py` and others): noted, to separate when a
+     third app makes it worth it.
+  5. The plan named format 6 and image-ID comparison as current: fixed,
+     section 4 says format 7 and that image IDs are not compared yet;
+     section 5.2 says prebuilt images come later.
+  Also: an `app.yaml` without the `backend` and `frontend` images the shared
+  pod template runs is refused when it is read, naming the file
+  (`platform_file.TEMPLATE_IMAGES`), not later while rendering; `cli.py` says
+  `platform` prints plain text; README and test wording no longer say
+  "registry"; `reseed_check` says why it takes `project_root`. Noted: the lab
+  tool reads `platform.yaml` at import (a lab tool, not platform code), and
+  `Platform.ready` still names the template's backend and frontend
+  containers (phase 5, the apps' own pod templates).
 

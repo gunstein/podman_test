@@ -26,7 +26,7 @@ def deploy_promoted(project_root, controller, current):
     return steps.changed(app_dr_host(
         current, pythonpath, 'deploy-promoted', '--quadlet-dir', p['quadlet'],
         '--bundle-dir', p['bundle'], '--inventory-hostname', current.name, '--node-address', current.spec.address,
-        '--service-port', str(settings.HTTPS_PORT), '--journal', steps.promotion_record(current),
+        '--service-port', str(steps.public_port(project_root)), '--journal', steps.promotion_record(current),
         '--config-dir', p['config']))
 
 

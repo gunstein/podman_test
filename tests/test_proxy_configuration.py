@@ -154,7 +154,8 @@ class ProxyConfigurationTests(unittest.TestCase):
 
         from app_installer import platform_file
         self.assertEqual(platform_file.checkout().identity_hostname, 'auth.test')
-        self.assertIn("'--service-port', str(settings.HTTPS_PORT)", read("deploy/dr/app_ops/recovery.py"))
+        # The promoted host publishes the port the bundle was built for (platform.yaml's publicPort).
+        self.assertIn("'--service-port', str(steps.public_port(project_root))", read("deploy/dr/app_ops/recovery.py"))
         self.assertIn(
             "PublishPort={{ publish_address }}:"
             "{{ service_port }}:8443",

@@ -1,4 +1,4 @@
-"""Command line interface; workload commands emit exactly one JSON result."""
+"""Command line interface; workload commands emit exactly one JSON result, `platform PART` plain text."""
 import argparse
 import json
 import sys
@@ -154,7 +154,8 @@ def main(argv=None):
     the other host commands take the one the host recorded at install.
     The DR tools import the installer's functions instead, and their own
     commands live in app_dr_host (deploy/dr). Each command prints one JSON
-    result on stdout (backup prints lines for the journal). Errors print one
+    result on stdout (backup prints lines for the journal, platform plain text
+    for a shell script). Errors print one
     "app-installer: ..." line on stderr and return 1.
     """
     parser = argparse.ArgumentParser(description='Rootless Podman platform installer')

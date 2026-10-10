@@ -54,17 +54,17 @@ def promote(host, confirm_fenced, confirm_promotion):
     return True
 
 
-def https(host, hostname, path, *curl_options):
+def https(host, hostname, path, *curl_options, port):
     """GET https://hostname:port/path from the host's own address, trusting only the host's CA."""
     script = ('curl --silent --show-error --fail --max-time 10 '
               '--cacert <(podman exec nginx cat /var/lib/platform-tls/ca.crt) '
               '--resolve "$1:$2:$3" "${@:5}" "https://$1:$2$4"')
-    return host.run(['bash', '-c', script, 'https', hostname, str(settings.HTTPS_PORT), host.spec.address,
+    return host.run(['bash', '-c', script, 'https', hostname, str(port), host.spec.address,
                      path, *curl_options]).stdout
 
 
-def services(project_root, host, platform, hostnames):
-    """Raise unless every service of the platform is ready and each app answers over HTTPS with the host's CA."""
+def services(project_root, host, platform, hostnames, port):
+    """Raise unless every service of the platform is ready and each app answers over HTTPS on port with the host's CA."""
     wait_ready = (Path(project_root) / 'deploy/scripts/wait-ready.sh').read_text()
     pods, containers = platform.ready('app')
     waited = host.run(['bash', '-s', '--', 'app', ' '.join(pods), ' '.join(containers), *hostnames.values()],
@@ -72,7 +72,7 @@ def services(project_root, host, platform, hostnames):
     if waited.returncode:
         raise RuntimeError(waited.stdout.strip().splitlines()[-1] if waited.stdout.strip() else 'not ready')
     for hostname in hostnames.values():
-        https(host, hostname, '/ready')
+        https(host, hostname, '/ready', port=port)
 
 
 def connect_sources(headers):
@@ -87,24 +87,24 @@ def connect_sources(headers):
     return []
 
 
-def login_page(host, platform, hostnames, identity):
+def login_page(host, platform, hostnames, identity, port):
     """Raise unless each app's login can start: Keycloak accepts its redirect, and its CSP allows the token.
 
-    hostnames is {app name: hostname}, identity Keycloak's hostname.
+    hostnames is {app name: hostname}, identity Keycloak's hostname, port the HTTPS port.
     """
-    identity_origin = f'https://{identity}:{settings.HTTPS_PORT}'
+    identity_origin = f'https://{identity}:{port}'
     for app in platform.apps:
-        origin = f'https://{hostnames[app.name]}:{settings.HTTPS_PORT}'
+        origin = f'https://{hostnames[app.name]}:{port}'
         query = urlencode({'client_id': app.keycloak_client, 'redirect_uri': origin + '/', 'response_type': 'code',
                            'scope': 'openid', 'code_challenge': PKCE_CHALLENGE, 'code_challenge_method': 'S256'})
         try:
-            page = https(host, identity, '/auth/realms/todo/protocol/openid-connect/auth?' + query)
+            page = https(host, identity, '/auth/realms/todo/protocol/openid-connect/auth?' + query, port=port)
         except RuntimeError as error:
             raise RuntimeError(f'{app.name}: Keycloak refused the login request of client '
                                f'{app.keycloak_client} with redirect {origin}/: {error}') from error
         if 'id="username"' not in page:
             raise RuntimeError(f'{app.name}: Keycloak did not show its login form for {app.keycloak_client}')
-        sources = connect_sources(https(host, hostnames[app.name], '/', '--head'))
+        sources = connect_sources(https(host, hostnames[app.name], '/', '--head', port=port))
         if identity_origin not in sources:
             raise RuntimeError(f'{app.name}: Content-Security-Policy connect-src {" ".join(sources) or "(none)"} '
                                f'does not allow {identity_origin}, so the browser cannot fetch the login token')
@@ -144,7 +144,7 @@ def failover(project_root, controller, current, old_primary, confirm_fenced, con
         raise RuntimeError(f'confirmations must be exactly --confirm-primary-fenced "{old_primary.name} is fenced" '
                            f'--confirm-promotion {current.name}')
     recovery.require_identity(current)
-    platform = steps.platform(project_root)
+    platform, port = steps.platform(project_root), steps.public_port(project_root)
     report = {}
     # The public hostnames the deploy installed: the ones this host recorded as a standby.
     hostnames, identity = {}, []
@@ -160,8 +160,8 @@ def failover(project_root, controller, current, old_primary, confirm_fenced, con
             ('promote', lambda: promote(current, confirm_fenced, confirm_promotion)),
             ('deploy', deploy),
             ('backup', lambda: recovery.configure_backup(project_root, controller, current)),
-            ('services', lambda: services(project_root, current, platform, hostnames)),
-            ('login-page', lambda: login_page(current, platform, hostnames, identity[0])),
+            ('services', lambda: services(project_root, current, platform, hostnames, port)),
+            ('login-page', lambda: login_page(current, platform, hostnames, identity[0], port)),
             ('users', lambda: users(current, hostnames, identity[0]))):
         say(f'{name} ...')
         try:

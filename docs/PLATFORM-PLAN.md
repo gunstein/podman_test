@@ -579,7 +579,7 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
   range from the lowest to the highest replication port, as app-ops'
   standby rule does. Name guard: 48 known files left.
 
-**Phase 4a, code done; acceptance run with the next phase that changes a host.**
+**Phase 4a, done: accepted in run 2026-10-10-run-52 on `41a2af0`** ([record](history/ACCEPTANCE-41a2af0.md)).
 - Each `app.yaml` declares the images the app builds (`images: {NAME:
   {context, containerfile}}`, section 5.2): `context` relative to the app's
   directory, possibly outside it (a source tree elsewhere), kept relative to
@@ -624,7 +624,7 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
   `Platform.ready` still names the template's backend and frontend
   containers (phase 5, the apps' own pod templates).
 
-**Phase 4b, code done; acceptance run with the next phase that changes a host.**
+**Phase 4b, done: accepted in run 2026-10-10-run-52 on `41a2af0`** ([record](history/ACCEPTANCE-41a2af0.md)).
 - Each `app.yaml` declares its `endpoints` (a name and the `port` in its pod
   nginx sends requests to) and its `routes` (`path`, `to` an endpoint, and
   `exact` for a whole-path match), section 5.3. `apps.Endpoint` and
@@ -642,7 +642,7 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
 - Not yet: `rewrite` and the header policy (phase 4f, for Help), and an
   endpoint's container (with pod templates, 5.9).
 
-**Phase 4c-1, code done; acceptance run with the next phase that changes a host.**
+**Phase 4c-1, done: accepted in run 2026-10-10-run-52 on `41a2af0`** ([record](history/ACCEPTANCE-41a2af0.md)).
 Phase 4c is split: 4c-1 makes PostgreSQL and Keycloak run only when an app
 needs them; 4c-2 brings readiness and checks into the model (5.4). The
 start order (`requires`) comes with the generated units in 4d.
@@ -676,7 +676,7 @@ start order (`requires`) comes with the generated units in 4d.
   Keycloak's units from a host whose platform no longer needs it is app
   removal (5.8).
 
-**Phase 4c-2, code done; acceptance run with the next phase that changes a host.**
+**Phase 4c-2, done: accepted in run 2026-10-10-run-52 on `41a2af0`** ([record](history/ACCEPTANCE-41a2af0.md)).
 - An `app.yaml` may declare `ready`, the HTTP path on its hostname that
   answers 200 once the app can serve, and `checks`, GET requests with the
   status each must answer (`apps.Check`). The loader refuses a path no route

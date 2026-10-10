@@ -1,0 +1,103 @@
+"""platform.yaml and app.yaml: what they may say, and what a mistake in them says back."""
+import shutil
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app_installer import apps, platform_file  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[3]
+PLATFORM = {
+    'identityHostname': 'login.example.org', 'publicPort': 8443, 'logLevel': 'info',
+    'environments': {'local': {'logLevel': 'debug'}, 'prod': {}},
+    'apps': [{'path': 'apps/shop', 'hostname': 'shop.example.org', 'replicationPort': 5440}],
+}
+SHOP = {'name': 'shop', 'keycloakClient': 'shop-frontend'}
+
+
+class PlatformFileTests(unittest.TestCase):
+    def write(self, platform=None, app=None):
+        """A platform.yaml and apps/shop/app.yaml in a new directory; return platform.yaml's path."""
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory)
+        (directory / 'apps/shop').mkdir(parents=True)
+        (directory / 'apps/shop/app.yaml').write_text(yaml.safe_dump(SHOP if app is None else app))
+        (directory / 'platform.yaml').write_text(yaml.safe_dump(PLATFORM if platform is None else platform))
+        return directory / 'platform.yaml'
+
+    def refused(self, message, **files):
+        with self.assertRaisesRegex(ValueError, message):
+            platform_file.load(self.write(**files))
+
+    def test_the_repository_describes_todo_and_notes(self):
+        platform, local = platform_file.load(ROOT / 'platform.yaml', 'local')
+        self.assertEqual([app.name for app in platform.apps], ['todo', 'notes'])
+        self.assertEqual([(app.hostname, app.keycloak_client, app.replication_port, app.api_path())
+                          for app in platform.apps],
+                         [('todo.test', 'todo-frontend', 5432, '/api/todos'),
+                          ('notes.test', 'notes-frontend', 5433, '/api/notes')])
+        self.assertEqual(platform.identity_hostname, 'auth.test')
+        self.assertEqual(local, platform_file.Environment(public_port=8443, log_level='debug'))
+        self.assertEqual(platform_file.load(ROOT / 'platform.yaml', 'prod')[1].log_level, 'info')
+        self.assertEqual(platform_file.checkout(), platform)
+
+    def test_an_app_comes_from_its_directory_relative_to_platform_yaml(self):
+        platform, prod = platform_file.load(self.write())
+        self.assertEqual(platform, apps.Platform(apps=(apps.App(
+            name='shop', hostname='shop.example.org', keycloak_client='shop-frontend', replication_port=5440),),
+            identity_hostname='login.example.org'))
+        self.assertEqual(prod, platform_file.Environment(public_port=8443, log_level='info'))
+
+    def test_unknown_and_missing_fields_are_errors_that_name_the_file(self):
+        self.refused(r'platform.yaml: unknown field realm', platform={**PLATFORM, 'realm': 'todo'})
+        self.refused(r'platform.yaml: missing identityHostname',
+                     platform={key: value for key, value in PLATFORM.items() if key != 'identityHostname'})
+        self.refused(r'app.yaml: unknown field database', app={**SHOP, 'database': True})
+        self.refused(r'app.yaml: missing keycloakClient', app={'name': 'shop'})
+        self.refused(r'apps\[0\]: unknown field name',
+                     platform={**PLATFORM, 'apps': [{**PLATFORM['apps'][0], 'name': 'shop'}]})
+
+    def test_an_environment_changes_only_the_port_and_the_log_level(self):
+        self.refused(r'environments.local: unknown field identityHostname',
+                     platform={**PLATFORM, 'environments': {'local': {'identityHostname': 'x.test'}, 'prod': {}}})
+        self.refused(r'environments: missing prod', platform={**PLATFORM, 'environments': {'local': {}}})
+        with self.assertRaisesRegex(ValueError, "no environment 'staging'"):
+            platform_file.load(self.write(), 'staging')
+        platform = {**PLATFORM, 'environments': {'local': {'publicPort': 9443}, 'prod': {}}}
+        self.assertEqual(platform_file.load(self.write(platform=platform), 'local')[1].public_port, 9443)
+
+    def test_values_are_checked(self):
+        for platform, message in (
+            ({**PLATFORM, 'publicPort': 443}, r'publicPort: must be a port number, 1024-65535'),
+            ({**PLATFORM, 'logLevel': ''}, r'logLevel: must be a word'),
+            ({**PLATFORM, 'identityHostname': 'evil.test; return 200'}, r'identityHostname: not a hostname'),
+            ({**PLATFORM, 'apps': []}, r'apps must be a list of at least one app'),
+            ({**PLATFORM, 'apps': [{**PLATFORM['apps'][0], 'hostname': 'Shop.test'}]}, r'apps\[0\].hostname'),
+            ({**PLATFORM, 'apps': [{**PLATFORM['apps'][0], 'replicationPort': '5440'}]}, r'replicationPort'),
+            ({**PLATFORM, 'apps': [{**PLATFORM['apps'][0], 'path': 'apps/none'}]}, r'apps/none/app.yaml: cannot be read'),
+        ):
+            with self.subTest(message=message):
+                self.refused(message, platform=platform)
+        for app, message in (({**SHOP, 'name': 'my-shop'}, r'app.yaml: name: must be a word matching'),
+                             ({**SHOP, 'name': 'identity'}, r'platform.yaml: The app name identity is reserved'),
+                             ({**SHOP, 'apiCollection': '/api'}, r'apiCollection')):
+            with self.subTest(message=message):
+                self.refused(message, app=app)
+
+    def test_two_apps_may_not_share_a_hostname(self):
+        platform = {**PLATFORM, 'apps': [PLATFORM['apps'][0], {**PLATFORM['apps'][0], 'replicationPort': 5441}]}
+        self.refused(r'platform.yaml: Two apps share a name', platform=platform)
+
+    def test_not_yaml_is_an_error_that_names_the_file(self):
+        path = self.write()
+        path.write_text('apps: [\n')
+        with self.assertRaisesRegex(ValueError, r'platform.yaml: not valid YAML'):
+            platform_file.load(path)
+
+
+if __name__ == '__main__':
+    unittest.main()

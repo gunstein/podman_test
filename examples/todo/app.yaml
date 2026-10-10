@@ -1,0 +1,10 @@
+# The app developer's file: what the Todo app is (docs/PLATFORM-PLAN.md,
+# section 5.1). It never names other apps or installation choices; those are
+# in the operator's platform.yaml. The source is still in todo-backend/ and
+# todo-frontend/ at the repository root; phase 5 moves it here.
+
+name: todo
+# The OAuth client its frontend logs in with (todo-frontend/keycloak-adapter.js).
+keycloakClient: todo-frontend
+# nginx routes /api/<apiCollection> to the backend.
+apiCollection: todos

@@ -1,0 +1,27 @@
+# The operator's file: what this installation runs, and where
+# (docs/PLATFORM-PLAN.md, section 5.1). Each app's own app.yaml says what the
+# app is; this file says which apps run, on which hostnames and replication
+# ports. app_installer.platform_file reads both; only a build reads them.
+
+# Keycloak's public hostname, the OIDC issuer's; every app logs in there.
+identityHostname: auth.test
+# HTTPS on this port (1024-65535: rootless Podman) and the apps' log level.
+publicPort: 8443
+logLevel: info
+
+# An environment may change publicPort and logLevel, nothing else.
+# local: development (install.py --mode dev); prod: the server and the bundle.
+environments:
+  local:
+    logLevel: debug
+  prod: {}
+
+# The apps, in start order. path is the app's directory, relative to this
+# file; replicationPort is its database's port for DR replication.
+apps:
+  - path: examples/todo
+    hostname: todo.test
+    replicationPort: 5432
+  - path: examples/notes
+    hostname: notes.test
+    replicationPort: 5433

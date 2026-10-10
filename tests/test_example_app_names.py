@@ -40,7 +40,6 @@ KNOWN = {
     "deploy/dr/systemd/platform-replication-tls.timer",
     "deploy/installer/app_installer/apps.py",
     "deploy/installer/app_installer/backup.py",
-    "deploy/installer/app_installer/cli.py",
     "deploy/installer/app_installer/commands.py",
     "deploy/installer/app_installer/images.py",
     "deploy/installer/app_installer/install.py",

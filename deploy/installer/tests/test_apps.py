@@ -118,6 +118,15 @@ class PlatformTests(unittest.TestCase):
         return Platform(apps=(App(name="shop", hostname="shop.example.org", keycloak_client="shop-frontend"),),
                         identity_hostname="login.example.org")
 
+    def test_identity_is_reserved_for_keycloak(self):
+        app = App(name="identity", hostname="identity-app.test", keycloak_client="identity-frontend")
+        with self.assertRaisesRegex(ValueError, "identity is reserved"):
+            Platform(apps=(app,), identity_hostname="auth.test")
+        data = self.shop().to_json()
+        data["apps"][0]["name"] = "identity"
+        with self.assertRaisesRegex(ValueError, "identity is reserved"):
+            Platform.from_json(data)
+
     def test_two_platforms_in_one_process_share_nothing(self):
         today, shop = registry(), self.shop()
         self.assertEqual([app.name for app in today.apps], ["todo", "notes"])

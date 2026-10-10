@@ -84,20 +84,20 @@ def files(project_root, platform, hostnames, identity_hostname, port, log_level)
     return result
 
 
-def render(project_root, values_file, output_directory, application_names=()):
-    """Render every Kube YAML file for the selected apps into output_directory.
+def render(project_root, values_file, output_directory, platform):
+    """Render every Kube YAML file of platform into output_directory.
 
-    Runs at build time. Values come from the environment's values.yaml
-    (Keycloak's hostname, port and log level); names come from the app
-    registry. Every file is rendered and checked first. Then the whole
-    output directory is replaced (see _replace_directory), so it holds
-    exactly this render: no file from an earlier render stays behind, and a
-    failed render leaves the earlier output as it was.
+    Runs at build time: install.py renders the platform it installs, and
+    render-kube-runtime.sh the registry's (see platform). The port and the
+    log level come from the environment's values.yaml. Every file is
+    rendered and checked first. Then the whole output directory is replaced
+    (see _replace_directory), so it holds exactly this render: no file from
+    an earlier render stays behind, and a failed render leaves the earlier
+    output as it was.
     """
-    selected = platform(values_file, application_names)
     _identity, port, log_level = read_values(values_file)
-    _replace_directory(Path(output_directory), files(project_root, selected, hostnames(selected),
-                                                     selected.identity_hostname, port, log_level))
+    _replace_directory(Path(output_directory), files(project_root, platform, hostnames(platform),
+                                                     platform.identity_hostname, port, log_level))
 
 
 def _replace_directory(output, files):
@@ -125,7 +125,8 @@ def _replace_directory(output, files):
 
 if __name__ == '__main__':
     try:
-        render(*sys.argv[1:4], application_names=sys.argv[4].split(',') if len(sys.argv) > 4 and sys.argv[4] else ())
+        project_root, values_file, output_directory = sys.argv[1:]
+        render(project_root, values_file, output_directory, platform(values_file))
     except (OSError, ValueError, RuntimeError) as error:
         print(f'Rendering failed: {error}', file=sys.stderr)
         sys.exit(1)

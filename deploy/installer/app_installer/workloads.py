@@ -23,11 +23,6 @@ def postgres_variables(database, publish_address=""):
     return {"postgres_publish_address": publish_address, "postgres_publish_port": database.replication_port}
 
 
-def application_variables(publish_address, service_port):
-    """The unit template's values for an app pod."""
-    return {"publish_address": publish_address, "service_port": service_port}
-
-
 # todo's Kube YAML files before every app's got its name's prefix (todo-postgres.yaml,
 # todo-config.yaml, todo-app.yaml); an install removes them from the runtime
 # directory, whose units now name the new files.
@@ -116,15 +111,14 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
     )
 
 
-def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-                        publish_address="127.0.0.1", service_port=settings.HTTPS_PORT, *,
+def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir, *,
                         app: apps.App, target=None):
     """Install one app's pod (migration, backend and frontend)."""
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         manifests=(app.manifest, app.config_manifest), units=(app.unit,), obsolete=(),
         capability="application", mapping=secrets.application_secret_mapping(app),
-        variables=application_variables(publish_address, service_port), target=target,
+        variables={}, target=target,
     )
 
 

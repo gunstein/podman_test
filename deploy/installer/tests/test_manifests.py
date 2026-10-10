@@ -148,14 +148,12 @@ class StrictUndefinedTests(unittest.TestCase):
 
 class RenderErrorTests(unittest.TestCase):
     def test_unknown_application_name_is_rejected(self):
-        with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(ValueError, "Unknown apps: bogus"):
-                render.render(ROOT, VALUES, directory, ("bogus",))
+        with self.assertRaisesRegex(ValueError, "Unknown apps: bogus"):
+            render.platform(VALUES, ("bogus",))
 
     def test_mixed_known_and_unknown_application_names_are_rejected(self):
-        with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(ValueError, "Unknown apps: bogus"):
-                render.render(ROOT, VALUES, directory, ("todo", "bogus"))
+        with self.assertRaisesRegex(ValueError, "Unknown apps: bogus"):
+            render.platform(VALUES, ("todo", "bogus"))
 
     def test_broken_template_syntax_fails_before_any_output(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -164,7 +162,7 @@ class RenderErrorTests(unittest.TestCase):
             (project_root / "deploy/manifests/postgres.yaml.j2").write_text("{% broken\n")
             output = Path(directory) / "output"
             with self.assertRaises(jinja2.TemplateSyntaxError):
-                render.render(project_root, VALUES, output)
+                render.render(project_root, VALUES, output, render.platform(VALUES))
             self.assertFalse(output.exists())
 
     def test_valid_jinja_producing_invalid_yaml_raises_a_clear_error(self):
@@ -174,17 +172,17 @@ class RenderErrorTests(unittest.TestCase):
             (project_root / "deploy/manifests/postgres.yaml.j2").write_text("foo: [1, 2\n")
             output = Path(directory) / "output"
             with self.assertRaisesRegex(RuntimeError, "is not valid YAML"):
-                render.render(project_root, VALUES, output)
+                render.render(project_root, VALUES, output, render.platform(VALUES))
             self.assertFalse(output.exists())
 
     def test_render_replaces_the_whole_output_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             todo, notes = apps.registry().apps
             output = Path(directory) / "output"
-            render.render(ROOT, VALUES, output)
+            render.render(ROOT, VALUES, output, render.platform(VALUES))
             self.assertTrue((output / notes.manifest).is_file())
             (output / "left-over.yaml").write_text("stale")
-            render.render(ROOT, VALUES, output, (todo.name,))
+            render.render(ROOT, VALUES, output, render.platform(VALUES, (todo.name,)))
             self.assertFalse((output / "left-over.yaml").exists())
             self.assertFalse((output / notes.manifest).exists())
             self.assertTrue((output / todo.manifest).is_file())
@@ -193,11 +191,11 @@ class RenderErrorTests(unittest.TestCase):
     def test_failed_render_leaves_the_earlier_output_as_it_was(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
-            render.render(ROOT, VALUES, output)
+            render.render(ROOT, VALUES, output, render.platform(VALUES))
             before = {path.name: path.read_bytes() for path in output.iterdir()}
             with patch.object(Path, "write_bytes", side_effect=OSError("disk full")):
                 with self.assertRaisesRegex(OSError, "disk full"):
-                    render.render(ROOT, VALUES, output)
+                    render.render(ROOT, VALUES, output, render.platform(VALUES))
             self.assertEqual({path.name: path.read_bytes() for path in output.iterdir()}, before)
             self.assertEqual(sorted(path.name for path in Path(directory).iterdir()), ["output"])
 
@@ -223,7 +221,7 @@ class RenderErrorTests(unittest.TestCase):
                 with self.subTest(message=message, text=text):
                     values.write_text(text)
                     with self.assertRaisesRegex(ValueError, "values.yaml: .*" + message):
-                        render.render(ROOT, values, output)
+                        render.render(ROOT, values, output, render.platform(values))
                     self.assertFalse(output.exists())
 
     def test_only_dns_names_are_hostnames(self):
@@ -243,5 +241,5 @@ class RenderErrorTests(unittest.TestCase):
                 "identityHostname": "evil.test; return 200 pwned", "publicPort": 8443, "logLevel": "info"}}))
             output = Path(directory) / "output"
             with self.assertRaisesRegex(ValueError, "safe hostname"):
-                render.render(ROOT, values, output)
+                render.render(ROOT, values, output, render.platform(values))
             self.assertFalse(output.exists())

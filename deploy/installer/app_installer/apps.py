@@ -165,6 +165,9 @@ class Platform:
     def __post_init__(self):
         if not self.apps:
             raise ValueError("A platform needs at least one app")
+        # identity names Keycloak in --target-hostname and TARGET_IDENTITY_HOSTNAME (target_render.name_target).
+        if any(app.name == "identity" for app in self.apps):
+            raise ValueError("The app name identity is reserved for Keycloak's hostname")
         for field in ("name", "hostname", "keycloak_client", "replication_port"):
             values = [getattr(app, field) for app in self.apps]
             if len(values) != len(set(values)):

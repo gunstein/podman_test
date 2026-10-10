@@ -127,7 +127,7 @@ def main(argv=None):
     result on stdout (backup prints lines for the journal). Errors print one
     "app-installer: ..." line on stderr and return 1.
     """
-    parser = argparse.ArgumentParser(description='Rootless Podman Todo installer')
+    parser = argparse.ArgumentParser(description='Rootless Podman platform installer')
     subcommands = parser.add_subparsers(dest='command', required=True)
     deploy = subcommands.add_parser('install')
     paths(deploy)
@@ -201,11 +201,9 @@ def main(argv=None):
         elif args.command.startswith('tls-'):
             return tls_command(args)
         elif args.command == 'down':
-            try:
-                platform = target_render.installed_platform()
-            except target_render.TargetError:
-                platform = None
-            if platform is None or not kube_play.down(args.rendered_manifest_dir, platform):
+            # No record: nothing was installed. A broken one is an error (installed_platform), never "nothing".
+            installed = target_render.platform_record_path().exists()
+            if not installed or not kube_play.down(args.rendered_manifest_dir, target_render.installed_platform()):
                 print('No installed development manifests were found under '
                       f'{args.rendered_manifest_dir}; nothing was torn down.', file=sys.stderr)
     except (OSError, RuntimeError, ValueError, KeyError, *RENDER_ERRORS) as error:

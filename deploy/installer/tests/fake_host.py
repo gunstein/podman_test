@@ -202,15 +202,26 @@ class FakeHost:
 
 
 class RenderingHost(FakeHost):
-    """A host where the build-mode render script writes the manifests an install reads."""
+    """A host where a build-mode install's render (render.render) writes placeholder manifests.
 
-    def answer(self, argv, input):
-        if argv[0].endswith('render-kube-runtime.sh'):  # script, values file, output directory[, apps]
-            target = Path(argv[2])
-            target.mkdir(parents=True)
-            for name in ('todo-postgres', 'todo-app', 'keycloak', 'shared-proxy', 'todo-config',
-                         'notes-app', 'notes-postgres', 'notes-config',
-                         'keycloak-postgres', 'keycloak-config'):
-                (target / (name + '.yaml')).write_text('fixture: true\n')
-            return 0, ''
-        return super().answer(argv, input)
+    rendered holds each render's (values file, output directory, platform).
+    """
+
+    def __enter__(self):
+        self.rendered = []
+        super().__enter__()
+        patcher = mock.patch('app_installer.render.render', side_effect=self._render)
+        patcher.start()
+        self._patchers.append(patcher)
+        return self
+
+    def _render(self, project_root, values_file, output_directory, platform):
+        self.rendered.append((Path(values_file), Path(output_directory), platform))
+        target = Path(output_directory)
+        target.mkdir(parents=True)
+        names = ['keycloak.yaml', 'shared-proxy.yaml', apps.KEYCLOAK_DATABASE.manifest,
+                 apps.KEYCLOAK_DATABASE.config_manifest]
+        for app in platform.apps:
+            names += [app.manifest, app.database.manifest, app.config_manifest]
+        for name in names:
+            (target / name).write_text('fixture: true\n')

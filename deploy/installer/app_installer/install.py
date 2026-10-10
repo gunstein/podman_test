@@ -185,9 +185,9 @@ def prepare(root, mode, deployment_mode, bundle_directory, refresh_images, platf
     # An offline install takes its files from the bundle (target); the others render here.
     rendered = None if deployment_mode == 'offline' else root / 'generated' / ('dev' if mode == 'dev' else 'kube-runtime')
     if deployment_mode == 'build':
+        from . import render  # Jinja2 and PyYAML: build mode only
         profile = 'local' if mode == 'dev' else 'prod'
-        run(root / 'deploy/scripts/render-kube-runtime.sh', root / f'deploy/environments/{profile}/values.yaml',
-            rendered, ','.join(app.name for app in platform.apps))
+        render.render(root, root / f'deploy/environments/{profile}/values.yaml', rendered, platform)
     secrets.provision(platform)
     image_changes = {}
     for app in platform.apps:
@@ -225,8 +225,7 @@ def write_definitions(root, directory, runtime, rendered, platform, publish_addr
         changed = postgres_changed or changed
         if postgres_changed or postgres_image_changed:
             restart.add(app.database.container)
-        application_changed = workloads.install_application(
-            *arguments, publish_address, service_port, app=app, target=target)
+        application_changed = workloads.install_application(*arguments, app=app, target=target)
         changed = application_changed or changed
         config_changed = _contents(runtime / app.config_manifest) != configs_before[app.name]
         if (application_changed or config_changed or image_changes[app.name]['backend']

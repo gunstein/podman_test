@@ -44,8 +44,7 @@ def install_workloads(project_root, quadlet_dir, target, node_address, service_p
     arguments = (project_root, quadlet_dir, runtime, None)
     changed = False
     for app in target.platform.apps:
-        changed = workloads.install_application(*arguments, node_address, service_port, app=app,
-                                                target=target) or changed
+        changed = workloads.install_application(*arguments, app=app, target=target) or changed
     changed = workloads.install_keycloak(*arguments, target=target) or changed
     return workloads.install_shared_proxy(*arguments, node_address, service_port,
                                           applications=target.platform.apps, target=target) or changed

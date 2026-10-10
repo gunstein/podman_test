@@ -3,9 +3,10 @@
 Python 3.9+ is the only runtime dependency of an offline install; build and
 dev mode also need Jinja2 and PyYAML, and the DR tools need PyYAML. Podman runs rootless;
 server mode also needs a working user systemd manager. Rendering only runs in
-build mode through `deploy/scripts/render-kube-runtime.sh`, and for a bundle
-through `app_installer.bundle`. Both delegate workload selection to the App
-registry. An offline install never renders: it fills the target values into
+build mode, where the install renders the platform it installs
+(`render.render`), and for a bundle through `app_installer.bundle`;
+`deploy/scripts/render-kube-runtime.sh` renders the registry's apps by hand.
+An offline install never renders: it fills the target values into
 files the build rendered (`target_render.py`, standard library only), and so
 do the DR tools on a primary and a standby.
 
@@ -14,7 +15,10 @@ Keycloak's default hostname. `apps.registry()` builds today's (Todo and
 Notes); an offline bundle carries the one it was built for in `bundle.json`,
 and an install records it on the host (`~/.config/platform/platform.json`),
 which every later command on the host (backup, uninstall, the DR tools) reads
-instead of a list in the code. Each App owns its derived image, secret,
+instead of a list in the code. That record is written before an install
+changes anything, so it says what the host may hold, not that the install
+succeeded; the hostnames it was installed with are recorded only after
+success, in `target-values.json` (below). Each App owns its derived image, secret,
 manifest, service and volume names. Single-host installs run seven pods; Keycloak,
 its own `keycloak-postgres` database and the proxy run once. Both apps share the
 `todo` realm but have independent clients and PostgreSQL instances.

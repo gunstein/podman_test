@@ -53,9 +53,10 @@ def require_firewall(group, primary, standby):
 
 
 def preflight(project_root, controller, primary, standby):
-    """Read-only checks of both hosts before a standby is bootstrapped.
+    """Checks of both hosts before a standby is bootstrapped; they change nothing but the staged tool files.
 
-    Each host must match the inventory (hostname, address, machine ID); the
+    The installer and the bundle's target files are staged on each host
+    first (steps.stage_target_files), so app_dr_host runs there. Each host must match the inventory (hostname, address, machine ID); the
     primary needs the firewall rule; then the pair is checked together: the
     primary has every database, and the standby has none yet.
     """

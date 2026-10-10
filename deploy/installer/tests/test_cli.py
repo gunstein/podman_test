@@ -2,12 +2,13 @@ import contextlib
 import io
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import apps  # noqa: E402
+from app_installer import apps, target_render  # noqa: E402
 from app_installer.cli import main  # noqa: E402
 
 
@@ -107,7 +108,31 @@ class BackupAndTlsCLITests(unittest.TestCase):
         renew.assert_not_called()
 
     def test_down_says_when_nothing_was_installed(self):
-        with patch('app_installer.kube_play.down', return_value=False):
-            code, _, error = run(['down', '--rendered-manifest-dir', '/nowhere'])
-        self.assertEqual(code, 0)
-        self.assertIn('No installed development manifests were found under /nowhere', error)
+        with tempfile.TemporaryDirectory() as home:
+            record = Path(home) / 'platform.json'
+            with patch('app_installer.target_render.platform_record_path', return_value=record), \
+                    patch('app_installer.kube_play.down', return_value=False) as down:
+                # No platform record: nothing was installed.
+                code, _, error = run(['down', '--rendered-manifest-dir', '/nowhere'])
+                self.assertEqual(code, 0)
+                self.assertIn('No installed development manifests were found under /nowhere', error)
+                down.assert_not_called()
+                # A record, but no manifests.
+                record.write_text('{}')
+                code, _, error = run(['down', '--rendered-manifest-dir', '/nowhere'])
+                self.assertEqual(code, 0)
+                self.assertIn('nothing was torn down', error)
+                down.assert_called_once()
+
+    def test_down_fails_on_a_broken_platform_record(self):
+        with tempfile.TemporaryDirectory() as home:
+            record = Path(home) / 'platform.json'
+            record.write_text('not json')
+            with patch('app_installer.target_render.platform_record_path', return_value=record), \
+                    patch('app_installer.target_render.installed_platform',
+                          side_effect=target_render.TargetError(f'{record} is not a platform')), \
+                    patch('app_installer.kube_play.down') as down:
+                code, _, error = run(['down', '--rendered-manifest-dir', '/nowhere'])
+        self.assertEqual(code, 1)
+        self.assertIn('is not a platform', error)
+        down.assert_not_called()

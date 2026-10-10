@@ -10,10 +10,10 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `425f6b3` (`feature/platform`, platform
-phases 1 and 2) for the seven-pod, three-database
+**Current verdict: CLEAN PASS** on `8079d06` (`feature/platform`, platform
+phases 1 to 3b) for the seven-pod, three-database
 topology in a full two-VM run without an agent (`acceptance.py run`,
-[record](docs/history/ACCEPTANCE-425f6b3.md)),
+[record](docs/history/ACCEPTANCE-8079d06.md)),
 with nginx's TLS files as Podman secrets (local mode), replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 121 steps PASS
@@ -43,11 +43,18 @@ S2, S3, an earlier S5) was accepted in run 27, the new S5's phase 1 in run
 2026-10-09-run-3 and phase 2 in run 2026-10-10-run-1. The platform work
 (docs/PLATFORM-PLAN.md) was accepted through phase 2 in run 2026-10-10-run-50:
 shared `platform-` names, Keycloak on its own hostname (`auth.test`), and one
-`Platform` per installation, carried in `bundle.json` and recorded on each host.
+`Platform` per installation, carried in `bundle.json` and recorded on each host;
+phases 3 and 3b in run 2026-10-10-run-51: a build reads the platform from
+`platform.yaml` and each app's `app.yaml`, and the scripts read it too.
 Final topology: VM 108 primary with application and backup, VM 107
 database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
+
+- `8079d06` run 2026-10-10-run-51: CLEAN PASS
+  ([record](docs/history/ACCEPTANCE-8079d06.md)), accepting platform phases 3
+  and 3b: 121 steps, failover 3 min 39 s, the whole run 36 min 31 s, no
+  deviations.
 
 - `425f6b3` run 2026-10-10-run-50: CLEAN PASS
   ([record](docs/history/ACCEPTANCE-425f6b3.md)), accepting platform phases 1

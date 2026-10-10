@@ -477,7 +477,7 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
   contract), and the proxy entrypoint tests need a writable `/tmp`.
   Name guard: 51 known files left.
 
-**Phase 3, code done; acceptance run with phase 3b.** Commits `048fa3d`
+**Phase 3, done: accepted with phase 3b in run 2026-10-10-run-51.** Commits `048fa3d`
 (the files and the loader) and `d74b768` (the callers; its subject says
 "Phase 3b" by mistake: it is phase 3, and phase 3b is still to come).
 - `platform.yaml` (the operator's: Keycloak's hostname, the public port and
@@ -528,7 +528,8 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
   `app.yaml` (sources until phase 5), the setup still assumes Python entry
   points (phase 5), and the proxy entrypoint tests need a writable `/tmp`.
 
-**Phase 3b, code done; acceptance run pending (with phase 3).**
+**Phase 3b, done: accepted in run 2026-10-10-run-51 on `8079d06`**
+([record](history/ACCEPTANCE-8079d06.md)); understandability check pending.
 - `wait-ready.sh` keeps no list: its callers pass the pods, containers and
   hostnames (`apps.Platform.ready(role)`), failover from the promoted host's
   platform, the lab tool from `platform.yaml`.

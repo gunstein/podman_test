@@ -527,3 +527,25 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
   once per process. Noted, not changed: `apps[].path` locates only
   `app.yaml` (sources until phase 5), the setup still assumes Python entry
   points (phase 5), and the proxy entrypoint tests need a writable `/tmp`.
+
+**Phase 3b, code done; acceptance run pending (with phase 3).**
+- `wait-ready.sh` keeps no list: its callers pass the pods, containers and
+  hostnames (`apps.Platform.ready(role)`), failover from the promoted host's
+  platform, the lab tool from `platform.yaml`.
+- `python3 -m app_installer platform PART` prints what a shell script needs
+  (`hostnames`, `hostname NAME`, `public-port`, `host-ports`) from
+  `platform.yaml`, or with `--bundle-dir` from `bundle.json` with the
+  standard library alone. `preflight.sh` takes the bundle's host ports
+  (`apps.Platform.host_ports`); `run-e2e.sh` and the clean-install workflow
+  take the hostnames and the port of `platform.yaml`'s local environment.
+- The lab tools (`acceptance.py`, `acceptance_preflight.py`) take the
+  databases, hostnames, public port, the replication port range of the
+  firewall rules and the containers from `platform.yaml`. What stays named
+  is the example apps' own checks: browser flows, markers, write probes
+  and PITR rows test Todo and Notes themselves.
+- Still hand-kept: the nginx smoke test's hostnames
+  (`deploy/scripts/dev/smoke-proxy.sh`), the per-app `.kube` templates
+  (phase 4d) and the example apps' CI jobs. The firewall rules allow the
+  range from the lowest to the highest replication port, as app-ops'
+  standby rule does. Name guard: 48 known files left.
+

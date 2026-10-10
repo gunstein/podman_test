@@ -50,7 +50,7 @@ users logging in on the promoted host (07-8); over 30 minutes needs attention.
 Commands:
   do    rollback VMID SNAPSHOT HOST      reset the VM, start it, wait for SSH
   check clean-host HOST                  no Todo state, security services on
-  do    firewall-https HOST CLIENT_IP    permanent rich rule for 8443, reloaded
+  do    firewall-https HOST CLIENT_IP    permanent rich rule for the public port (platform.yaml), reloaded
   check services HOST app|standby        wait-ready.sh, no failed units; nginx -t (app)
                                          or no serving service active (standby)
   check ca HOST                          saves the public CA; same as last time
@@ -65,7 +65,7 @@ Commands:
   check disk HOST                        backup and WAL sizes, at least 2 GiB free
   check monitor HOST ok|alert            the DR check timer is on; one run passes, ready to take over,
                                          or names a problem
-  do    firewall-replication SOURCE HOST add|remove   5432-5434 from SOURCE to HOST
+  do    firewall-replication SOURCE HOST add|remove   the replication ports (platform.yaml) from SOURCE to HOST
   do    proxmox-firewall VMID on|off     VM firewall switch, then a 20 s wait
   do    replication-exception VMID on|off   the todo-quarantine-replication rule, then 20 s
   do    fence VMID                       pve_lab.py fence, every field checked
@@ -97,19 +97,24 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'deploy/installer'))
-# platform.yaml of this checkout, read-only, until phase 3b
 from app_installer import platform_file  # noqa: E402
 
-TODO_URL = 'https://todo.test:8443'
-NOTES_URL = 'https://notes.test:8443'
-IDENTITY_ORIGIN = 'https://auth.test:8443'
+# What the lab installs: this checkout's platform.yaml, the one the bundle is built from (02-1).
+PLATFORM, PROD = platform_file.load(ROOT / platform_file.FILE, 'prod')
+PUBLIC_PORT = PROD.public_port
+HOSTNAMES = (PLATFORM.identity_hostname, *(app.hostname for app in PLATFORM.apps))
+DATABASES = tuple(database.name for database in PLATFORM.replicated_databases)  # user and container share the name
+REPLICATION_PORTS = sorted(database.replication_port for database in PLATFORM.replicated_databases)
+IDENTITY_ORIGIN = f'https://{PLATFORM.identity_hostname}:{PUBLIC_PORT}'
+# The example apps' own checks (browser flows, markers, write probes, PITR rows) name them.
+TODO_URL = f'https://{PLATFORM.app("todo").hostname}:{PUBLIC_PORT}'
+NOTES_URL = f'https://{PLATFORM.app("notes").hostname}:{PUBLIC_PORT}'
 ZONE = 'public'  # the firewalld zone of the lab VMs' LAN interface (ACCEPTANCE.md phase 3)
 CA_PATH = '/var/lib/platform-tls/ca.crt'
 PYTHON = ROOT / 'todo-backend/.venv/bin/python'
 REBOOT_TIMEOUT = 600
 POLL_SECONDS = 10
 FIREWALL_SETTLE_SECONDS = 20  # the Proxmox firewall applies changes about every 10 s
-DATABASES = ('todo', 'notes', 'keycloak')  # platform_file.checkout().replicated_databases; user and container share the name
 MIN_FREE_KIB = 2 * 1024 * 1024
 
 
@@ -269,9 +274,8 @@ def check_services(step, host, mode):
     already requires every container to be healthy, and the probe allows
     single failed runs while a container starts (run 19).
     """
-    platform = platform_file.checkout()
-    pods, containers = platform.ready(mode)
-    hostnames = [app.hostname for app in platform.apps] if mode == 'app' else []
+    pods, containers = PLATFORM.ready(mode)
+    hostnames = [app.hostname for app in PLATFORM.apps] if mode == 'app' else []
     ready = step.ssh(host, (ROOT / 'deploy/scripts/wait-ready.sh').read_text(), mode, ' '.join(pods),
                      ' '.join(containers), *hostnames, timeout=400)
     step.expect(ready.returncode == 0 and 'READY:' in ready.stdout, f'wait-ready.sh {mode} printed READY')
@@ -290,7 +294,7 @@ def check_services(step, host, mode):
         nginx = step.ssh(host, 'podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf')
         step.expect(nginx.returncode == 0, 'nginx configuration is valid')
     else:
-        serving = platform.services(databases=False)
+        serving = PLATFORM.services(databases=False)
         states = step.ssh(host, 'systemctl --user is-active ' + ' '.join(serving)).stdout.split()
         step.expect(len(states) == len(serving) and 'active' not in states,
                     'a database-only standby runs none of: ' + ', '.join(serving))
@@ -571,7 +575,7 @@ def do_rollback(step, vmid, snapshot, host):
 def do_firewall_https(step, host, client):
     """Phase 3: the client's HTTPS rule, permanent and reloaded, found in both configurations."""
     rule = (f'rule family="ipv4" source address="{client}/32" destination address="{host}" '
-            'port port="8443" protocol="tcp" accept')
+            f'port port="{PUBLIC_PORT}" protocol="tcp" accept')
     step.ssh(host, f"sudo -n firewall-cmd --permanent --zone={ZONE} --add-rich-rule='{rule}' && "
                    'sudo -n firewall-cmd --reload')
     running = step.ssh(host, f'sudo -n firewall-cmd --zone={ZONE} --list-rich-rules').stdout.splitlines()
@@ -604,7 +608,7 @@ def do_reboot(step, vmid, host, mode):
 
 def replication_rule(source, host):
     return (f'rule family="ipv4" source address="{source}/32" destination address="{host}" '
-            'port port="5432-5434" protocol="tcp" accept')
+            f'port port="{REPLICATION_PORTS[0]}-{REPLICATION_PORTS[-1]}" protocol="tcp" accept')
 
 
 def do_firewall_replication(step, source, host, change):
@@ -643,8 +647,9 @@ def do_replication_exception(step, vmid, switch):
     if not step.expect(len(matches) == 1, 'exactly one rule commented todo-quarantine-replication'):
         return
     rule = matches[0]
-    step.expect(rule.get('type') == 'out' and rule.get('dport') == '5432:5434',
-                'it is the outbound replication rule for ports 5432:5434')
+    ports = f'{REPLICATION_PORTS[0]}:{REPLICATION_PORTS[-1]}'
+    step.expect(rule.get('type') == 'out' and rule.get('dport') == ports,
+                f'it is the outbound replication rule for ports {ports}')
     if step.failures:
         return
     pve(step, 'set', f'{path}/{rule["pos"]}', f'enable={wanted}')
@@ -684,7 +689,7 @@ def do_fence(step, vmid):
     step.values.update(data)
 
 
-PORTS = ('22', '5432', '5433', '5434', '8443')
+PORTS = ('22', *map(str, REPLICATION_PORTS), str(PUBLIC_PORT))
 
 
 def check_ports_closed(step, host, source):
@@ -727,7 +732,7 @@ def do_quarantine_stop(step, vmid, name):
 
 def check_stopped(step, host):
     """Every registered service inactive or failed with no process, and no running container."""
-    services = platform_file.checkout().services()
+    services = PLATFORM.services()
     # One property per call: systemctl show does not keep the order properties were asked in.
     script = ''.join(f'echo "{unit}' + ''.join(f' $(systemctl --user show -p {name} --value {unit})'
                                               for name in ('ActiveState', 'MainPID', 'ControlPID')) + '"\n'
@@ -785,7 +790,8 @@ QUARANTINE_RULES = (
     ('todo-quarantine-ssh-client', {'type': 'in', 'action': 'ACCEPT', 'proto': 'tcp', 'dport': '22', 'enable': '1'}),
     ('todo-quarantine-ssh-peer', {'type': 'in', 'action': 'ACCEPT', 'proto': 'tcp', 'dport': '22', 'enable': '1'}),
     ('todo-quarantine-replication',
-     {'type': 'out', 'action': 'ACCEPT', 'proto': 'tcp', 'dport': '5432:5434', 'enable': '0'}),
+     {'type': 'out', 'action': 'ACCEPT', 'proto': 'tcp', 'dport': f'{REPLICATION_PORTS[0]}:{REPLICATION_PORTS[-1]}',
+      'enable': '0'}),
 )
 
 
@@ -1525,16 +1531,16 @@ def client_trust(run_directory, text, address):
         return True
     record.parent.mkdir(exist_ok=True)
     block = re.sub(r'^IP=\S+$', f'IP={address}', guide_block(text, 'trust-serving-ca.sh'), count=1, flags=re.M)
-    print(f'\nclient trust: auth.test, todo.test and notes.test at {address}, and its CA', flush=True)
+    print(f'\nclient trust: {", ".join(HOSTNAMES)} at {address}, and its CA', flush=True)
     result = subprocess.run(['bash', '-c', 'set -e\n' + SUDO_NO_PROMPT + block], cwd=ROOT, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     hosts = HOSTS.read_text()
     answered = all(subprocess.run(['curl', '--silent', '--fail', '--max-time', '10', url],
                                   capture_output=True).returncode == 0
                    for url in (f'{TODO_URL}/ready', f'{NOTES_URL}/ready'))
-    mapped = f'{address} auth.test todo.test notes.test' in hosts
+    mapped = f'{address} {" ".join(HOSTNAMES)}' in hosts
     passed = result.returncode == 0 and mapped and answered
-    record.write_text(result.stdout + f'\n/etc/hosts maps the three names to {address}: {mapped}\n'
+    record.write_text(result.stdout + f'\n/etc/hosts maps {" ".join(HOSTNAMES)} to {address}: {mapped}\n'
                       f'both apps answer over trusted HTTPS: {answered}\n'
                       + ('exit=0' if passed else 'exit=1') + '\n')
     print('\n'.join(line for line in result.stdout.splitlines() if not NOISE.match(line)))

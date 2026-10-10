@@ -3,12 +3,15 @@
 One template per kind of workload; each unit's files and Requires= come
 from its Workload, so this test checks that the model and the units agree.
 """
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import apps, bundle, platform_file, quadlet, workloads  # noqa: E402
+from app_installer import apps, bundle, platform_file, quadlet, render, workloads  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -69,6 +72,23 @@ class WorkloadUnitTests(unittest.TestCase):
                          [('help-app', ()), ('shared-proxy', ('help-app.service',))])
         lines = unit_lines(quadlet.render(ROOT, 'app.kube', workloads.app_variables(help_)).decode())
         self.assertNotIn('Requires', lines)
+
+
+    def test_a_workload_that_requires_a_later_one_is_refused(self):
+        late = lambda app: apps.Workload(app.pod, app.manifest, template='app.kube',  # noqa: E731
+                                         requires=('shared-proxy.service',))
+        with patch.object(apps, 'app_workload', late), \
+                self.assertRaisesRegex(ValueError, 'todo-app requires shared-proxy.service, which does not start '
+                                                   'before it'):
+            apps.Platform(apps=platform_file.checkout().apps, identity_hostname='auth.test')
+
+    def test_a_missing_unit_template_is_named_before_anything_is_written(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shutil.copytree(ROOT / 'deploy/quadlet', Path(directory) / 'deploy/quadlet')
+            (Path(directory) / 'deploy/quadlet/postgres.kube.j2').unlink()
+            with self.assertRaisesRegex(ValueError, 'todo-postgres needs the unit template '
+                                                    'deploy/quadlet/postgres.kube.j2'):
+                render.require_supported(directory, platform_file.checkout())
 
 
 if __name__ == '__main__':

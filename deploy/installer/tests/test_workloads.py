@@ -9,7 +9,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import apps, images, platform_file, quadlet, stack, workloads  # noqa: E402
+from app_installer import (  # noqa: E402
+    apps,
+    bundle,
+    images,
+    platform_file,
+    quadlet,
+    stack,
+    workloads,
+)
 from fake_host import FakeHost  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -65,8 +73,10 @@ class WorkloadsTests(unittest.TestCase):
                 self.assertEqual({tuple(a) for a in first_run + host.calls if a[:2] != ['podman', 'secret']}
                                  - {('podman', 'kube', 'play', '--help')},
                                  {('systemctl', '--user', 'daemon-reload')})
+                # Build mode writes the very unit an offline bundle carries.
+                units = bundle.quadlets(ROOT, platform_file.checkout(), 8443, '127.0.0.1')
                 for name in names:
-                    self.assertTrue((runtime / f'{name}.kube').is_file())
+                    self.assertEqual((runtime / f'{name}.kube').read_bytes(), units[f'{name}.kube'])
                 self.assertEqual(list(directory.glob('*.volume')), [directory / 'unrelated.volume'])
                 self.assertEqual(runtime.stat().st_mode & 0o777, 0o700)
                 self.assertEqual((runtime / config).stat().st_mode & 0o777, 0o600)

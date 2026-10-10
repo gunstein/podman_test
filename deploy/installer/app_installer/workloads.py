@@ -21,6 +21,11 @@ from .commands import run
 # workload itself (its files, pod and requires) and what else that kind needs.
 
 
+def unit_file(project_root, variables):
+    """The unit of variables["workload"], rendered from its template: the one way build and bundle render a unit."""
+    return quadlet.render(Path(project_root), variables["workload"].template, variables)
+
+
 def postgres_variables(database, publish_address=""):
     """postgres.kube's values for one database: its replication port, and the LAN address if any."""
     return {"workload": apps.database_workload(database), "name": database.name,
@@ -78,7 +83,7 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                  for name in manifests]
         files += [(directory / "app-network.network",
                    (root / "deploy/quadlet/app-network.network").read_bytes(), 0o644)]
-        files += [(runtime / workload.unit, quadlet.render(root, workload.template, variables), 0o644)]
+        files += [(runtime / workload.unit, unit_file(root, variables), 0o644)]
     else:
         files = [(runtime / name, target.manifests[name], 0o600) for name in manifests]
         files += [(directory / target.network_name, target.network, 0o644)]

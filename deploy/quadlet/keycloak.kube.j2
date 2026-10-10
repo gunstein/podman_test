@@ -7,7 +7,7 @@ Requires={{ workload.requires | join(' ') }}
 After={{ workload.requires | join(' ') }}
 
 [Kube]
-Yaml=keycloak.yaml
+Yaml={{ workload.yaml }}
 Network=app-network.network
 PodmanArgs=--no-pod-prefix
 ExitCodePropagation=any

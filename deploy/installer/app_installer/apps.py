@@ -267,6 +267,13 @@ class Platform:
                 raise ValueError(f"Two apps share a {field}: {values}")
         if KEYCLOAK_DATABASE.replication_port in (app.replication_port for app in self.database_apps):
             raise ValueError(f"Port {KEYCLOAK_DATABASE.replication_port} is Keycloak's database's")
+        # workloads() is the start order: each workload may require only those before it.
+        started = set()
+        for workload in self.workloads():
+            later = [service for service in workload.requires if service not in started]
+            if later:
+                raise ValueError(f"{workload.pod} requires {', '.join(later)}, which does not start before it")
+            started.add(workload.service)
 
     @property
     def database_apps(self):

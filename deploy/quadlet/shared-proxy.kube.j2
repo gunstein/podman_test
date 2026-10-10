@@ -4,7 +4,7 @@ Requires={{ workload.requires | join(' ') }}
 After={{ workload.requires | join(' ') }}
 
 [Kube]
-Yaml=shared-proxy.yaml
+Yaml={{ workload.yaml }}
 Network=app-network.network
 PodmanArgs=--no-pod-prefix
 {# Always on loopback: plain HTTP 8080 for the host's own readiness checks and

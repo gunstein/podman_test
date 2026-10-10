@@ -22,17 +22,29 @@ def hostnames(platform):
     return {app.name: app.hostname for app in platform.apps}
 
 
-def require_supported(platform):
+def require_shared_template(platform):
     """Raise unless the one shared app pod template (app.yaml.j2) can run every app of platform.
 
     It runs a migration and an OIDC backend, so an app needs database: true
     and a keycloakClient until apps bring pod templates of their own (4f).
-    install.check and bundle.build call this before anything is written.
     """
     for app in platform.apps:
         if not (app.has_database and app.has_login):
             raise ValueError(f'The app {app.name} needs database: true and a keycloakClient: the shared app pod '
                              'template is the only one so far, and it uses both')
+
+
+def require_supported(project_root, platform):
+    """Raise unless every workload of platform can be rendered, naming what is missing.
+
+    The shared pod template must fit each app (require_shared_template), and
+    each workload's unit template must exist. install.check and bundle.build
+    call this before anything is written.
+    """
+    require_shared_template(platform)
+    for workload in platform.workloads():
+        if not (Path(project_root) / 'deploy/quadlet' / (workload.template + '.j2')).is_file():
+            raise ValueError(f'{workload.pod} needs the unit template deploy/quadlet/{workload.template}.j2')
 
 
 def files(project_root, platform, hostnames, identity_hostname, port, log_level):
@@ -44,7 +56,7 @@ def files(project_root, platform, hostnames, identity_hostname, port, log_level)
     the files are otherwise the same.
     """
     root = Path(project_root)
-    require_supported(platform)
+    require_shared_template(platform)
     hostname = identity_hostname
     result = {}
     for app in platform.apps:

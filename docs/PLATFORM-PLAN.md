@@ -757,4 +757,27 @@ start order (`requires`) comes with the generated units in 4d.
 - `render.require_supported` no longer looks for an app's own unit
   templates (there are none); it checks only that the shared pod template
   can run the app.
+- Understandability check of phase 4d (fresh agent, at 3383c09): **YELLOW**.
+  One template per kind of workload made a global unit change local, the
+  workload functions state the dependencies directly, and start, the DR
+  tier and stop all take the one list. Its findings and what was done:
+  1. Build mode took the template from the workload, the bundle named it
+     again in `bundle.py`: fixed, both render through
+     `workloads.unit_file`, which takes the template from the workload.
+  2. That each workload requires only earlier ones was checked only by
+     tests: fixed, `Platform` refuses itself otherwise (the list stays
+     explicit, with no dependency sort).
+  3. The baseline's build output came from the bundle's rendering, so it
+     did not prove that a build-mode install writes the same unit: fixed,
+     the workload install test compares each unit `_install` writes with
+     the bundle's.
+  4. A missing unit template was found only when that workload was
+     installed, after others had changed: fixed, `render.require_supported`
+     also checks every workload's template, before `install.check` and
+     `bundle.build` write anything. Each workload is still written in turn,
+     not all at once.
+  5. `keycloak.kube.j2` and `shared-proxy.kube.j2` named their Kube YAML
+     literally: fixed, `Yaml=` comes from the workload in all four.
+  Noted: per-app unit settings (such as a longer start timeout for one
+  app) would be a small explicit field when an app needs one.
 

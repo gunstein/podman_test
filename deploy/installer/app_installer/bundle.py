@@ -25,7 +25,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import platform_file, quadlet, render, target_render, workloads
+from . import platform_file, render, target_render, workloads
 from .target_render import (
     IDENTITY_HOSTNAME,
     LOOPBACK,
@@ -40,16 +40,12 @@ TARGET = 'generated/target'
 def quadlets(project_root, platform, port, publish_address):
     """Every Quadlet unit of the platform's apps, Keycloak and the proxy, rendered: {file name: bytes}."""
     root = Path(project_root)
-    units = {}
-    for database in platform.replicated_databases:
-        units[database.unit] = quadlet.render(root, 'postgres.kube', workloads.postgres_variables(database))
-    for app in platform.apps:
-        units[app.unit] = quadlet.render(root, 'app.kube', workloads.app_variables(app))
+    variables = [workloads.postgres_variables(database) for database in platform.replicated_databases]
+    variables += [workloads.app_variables(app) for app in platform.apps]
     if platform.has_identity:
-        units['keycloak.kube'] = quadlet.render(root, 'keycloak.kube', workloads.keycloak_variables())
-    units['shared-proxy.kube'] = quadlet.render(
-        root, 'shared-proxy.kube', workloads.proxy_variables(publish_address, port, platform))
-    return units
+        variables.append(workloads.keycloak_variables())
+    variables.append(workloads.proxy_variables(publish_address, port, platform))
+    return {values['workload'].unit: workloads.unit_file(root, values) for values in variables}
 
 
 def build(project_root, environment_name, bundle_directory, application_names=()):
@@ -67,7 +63,7 @@ def build(project_root, environment_name, bundle_directory, application_names=()
     root, bundle = Path(project_root), Path(bundle_directory)
     platform, environment = platform_file.load(root / platform_file.FILE, environment_name)
     platform = platform.select(application_names)
-    render.require_supported(platform)
+    render.require_supported(root, platform)
     port, log_level = environment.public_port, environment.log_level
     normal = render.hostnames(platform)
     manifest_files = render.files(root, platform,
@@ -81,7 +77,7 @@ def build(project_root, environment_name, bundle_directory, application_names=()
         raise RuntimeError('The placeholder render differs from the normal render in more than the hostnames.')
     published = quadlets(root, platform, port, placeholder(PUBLISH_ADDRESS))
     local_only = {'shared-proxy.kube': quadlets(root, platform, port, LOOPBACK)['shared-proxy.kube']}
-    replicated = {database.unit: quadlet.render(root, 'postgres.kube', workloads.postgres_variables(
+    replicated = {database.unit: workloads.unit_file(root, workloads.postgres_variables(
         database, placeholder(PUBLISH_ADDRESS))) for database in platform.replicated_databases}
     network = (root / 'deploy/quadlet/app-network.network').read_bytes()
 

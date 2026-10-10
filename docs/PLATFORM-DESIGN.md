@@ -9,8 +9,8 @@ as the phases below land, and this document records the decisions.
 Turn this branch into an open source platform for running small web apps on
 rootless Podman, with offline delivery and DR, so that **adding an app means
 adding an app directory and one entry in one configuration file**, and
-**adding a new kind of configuration (a logging server, a new way to serve
-help) means adding one well-defined module**, never edits spread through the
+**adding a new kind of app or shared service (one we do not know of yet)
+means adding one well-defined module**, never edits spread through the
 installer, proxy and DR code.
 
 Decided:
@@ -25,8 +25,8 @@ Decided:
   separate pod.
 - Static apps exist: no login, backend or database. The first use is help
   text for the other apps, and there will be several ways to use help.
-- Shared infrastructure beyond nginx and Keycloak is coming, the first being
-  a log server such as Seq, and the list will grow.
+- More shared services and more kinds of apps will come later; which ones
+  is not known yet. The platform must take new ones without redesign.
 - Apps with a backend but no database come later; the design leaves room.
 - Todo, Notes and Help stay in this repository as example apps.
 - Abstraction is acceptable, but a moderately experienced Python developer
@@ -41,9 +41,9 @@ whole replicated database group.
 | Term | Meaning | Examples |
 |---|---|---|
 | **platform** | The whole product, and the prefix of everything shared | `platform.yaml`, `platform-proxy`, `platform-offline-<tag>.tar.gz` |
-| **component** | Shared infrastructure, at most one of each per installation | `proxy` (nginx), `identity` (Keycloak), `logging` (Seq) |
+| **component** | Shared infrastructure, at most one of each per installation | `proxy` (nginx), `identity` (Keycloak), later others |
 | **app** | A user workload, configured by its own `app.yaml` | `todo`, `notes`, `help` |
-| **feature** | Something an app uses from the platform | `database`, `login`, `logging`, `help` |
+| **feature** | Something an app uses from the platform | `database`, `login`, `help` |
 
 Why "app" for user workloads: the code already says app (`app_installer`,
 `app-ops`, `app_dr_host`, `app-network`, the `App` dataclass, `todo-app`
@@ -65,7 +65,7 @@ the app owns its own pod.**
 | Owned by the platform | Owned by the app |
 |---|---|
 | PostgreSQL pods, roles, secrets, volumes, replication ports | Pod template (`pod.yaml.j2`) |
-| Components: proxy, identity, logging, ... | Source code and Containerfiles |
+| Components: proxy, identity, later others | Source code and Containerfiles |
 | Realms and OIDC clients | Migrations and `setup_roles.py` |
 | The routing table and TLS | Its help pages, if it has any |
 | `app-network`, generated `.kube` units | Optional `.kube` override |
@@ -87,10 +87,6 @@ components:
     realms:
       main: {}
       partner: { import: realms/partner.json }   # optional extras
-  logging:                        # optional component; omit to turn it off
-    provider: seq
-    hostname: logs.example.test
-    retention: 30d
 
 apps:
   todo:
@@ -123,7 +119,6 @@ images: [backend, frontend]       # built from <app dir>/<image>/Containerfile
 features:
   database: {}
   login: { api: /api/todos }
-  logging: {}                     # ignored if the platform has no logging component
   help: { from: help, path: /help/ }   # see section 7
 ```
 
@@ -161,7 +156,7 @@ questions; each lives in its own module, and a fixed dictionary lists them
 class Feature:
     """Something an app uses from the platform."""
     name = ""
-    requires_component = None          # e.g. "identity", "logging"
+    requires_component = None          # e.g. "identity"
 
     def validate(self, app, settings, platform): ...   # plain error messages
     def workloads(self, app, settings): return ()      # extra pods, e.g. its database
@@ -185,8 +180,8 @@ class Component:
 ```
 
 ```python
-FEATURES = {"database": Database(), "login": Login(), "logging": Logging(), "help": Help()}
-COMPONENTS = {"proxy": Proxy(), "identity": Identity(), "logging": Logging()}
+FEATURES = {"database": Database(), "login": Login(), "help": Help()}
+COMPONENTS = {"proxy": Proxy(), "identity": Identity()}
 ```
 
 Everything else only collects answers: the replicated database group is
@@ -209,7 +204,6 @@ Route(hostname="todo.example.test", path="/api/", upstream="todo-backend:8000")
 Route(hostname="todo.example.test", path="/help/", upstream="help-site:8080")
 Route(hostname="todo.example.test", path="/", upstream="todo-frontend:8080")
 Route(hostname="auth.example.test", path="/auth/", upstream="keycloak:8080")
-Route(hostname="logs.example.test", path="/", upstream="seq:80")
 ```
 
 The proxy template loops over hostnames and their routes. Every hostname is
@@ -230,29 +224,35 @@ proxy code:
 
 New ways are new options on the `help` feature, not new proxy code.
 
-## 8. Logging component (Seq as the first provider)
+## 8. Adding a new kind of shared service or app
 
-- journald stays the base: every container keeps `LogDriver=journald`, and
-  `docs/LOGGING.md` stays true. The log server is an extra, never the only
-  copy.
-- `logging` is a component with a `provider`; Seq is the first, so another
-  provider (for example an open source one) is a second class, not a
-  redesign.
-- It adds a pod (the Seq server and its data volume), a route to its UI on
-  its own hostname and a secret (the ingestion API key).
-- Getting logs into it, two options:
-  1. **A forwarder** on the host: a small standard-library Python program as
-     a user systemd service that follows `journalctl --user -o json` and
-     posts to Seq. Covers every container (nginx, PostgreSQL, Keycloak,
-     the apps) with no app code changes.
-  2. **The app sends directly**: the `logging` feature gives the backend the
-     Seq URL and API key, and the backend logs structured events.
-  Recommendation: the forwarder first; direct sending as an option on the
-  feature later.
-- Data policy: log data is **local**, not part of the replicated database
-  group. A promoted standby starts with its own, empty log server.
-- Seq is not open source and has its own license terms; check them before
-  making it the documented default in an open source project.
+Which shared services and app kinds will come is not known yet. The design
+does not guess; it fixes what a new one must answer, so it fits without
+changes elsewhere:
+
+| Question | Answered by |
+|---|---|
+| Which pods does it run, and what must start first? | `workloads()`, `requires()` |
+| Which hostnames and paths does it serve? | `routes()` |
+| Which secrets does it need? | `secrets()` |
+| What does an app's pod template get from it? | `template_values()` |
+| What must be set up after it starts? | `configure()` |
+| What happens to its data in DR? | its data policy, below |
+
+Every component and feature states one **data policy**, because DR must
+never be guessed:
+
+- **replicated**: its data is PostgreSQL in the replicated group
+  (`replicated_databases()`), promoted, backed up and rebuilt with the rest.
+- **local**: it keeps data in its own volume that is not replicated; a
+  promoted standby starts it empty, and the documentation says so.
+- **none**: it keeps no data.
+
+journald stays the base for every container's output whatever is added
+(`LogDriver=journald` in every generated unit, `docs/LOGGING.md`).
+
+The "add a component or feature" guide (phase 8) walks through one complete
+example with its tests, so the next developer copies a working pattern.
 
 ## 9. Realms
 
@@ -290,11 +290,9 @@ Every phase keeps all tests green and ends with a working installation.
    generating them reverses that choice, and the same test checks the
    generated units.
 6. **Help.** A static example app and the `help` feature (section 7).
-7. **Logging.** The `logging` component with Seq and the forwarder
-   (section 8).
-8. **Scripts read `bundle.json`.** `wait-ready`, `preflight`, acceptance and
+7. **Scripts read `bundle.json`.** `wait-ready`, `preflight`, acceptance and
    firewall ranges.
-9. **Documentation.** "Add an app" and "add a component or feature" guides,
+8. **Documentation.** "Add an app" and "add a component or feature" guides,
    skeletons, updated ARCHITECTURE and LEARNING-GUIDE, then a full
    acceptance run.
 
@@ -303,8 +301,8 @@ Every phase keeps all tests green and ends with a working installation.
 Replace the Todo-centred goal with something like:
 
 > Maintain a reusable rootless Podman Kube platform for small web apps. The
-> platform owns databases, identity, routing, shared components such as
-> logging, installation and DR; an app is a directory with `app.yaml`, a pod
+> platform owns databases, identity, routing, other shared components,
+> installation and DR; an app is a directory with `app.yaml`, a pod
 > template and its source, plus one entry in `platform.yaml`. Adding an app
 > must not require platform code changes; a new kind of configuration is a
 > new feature or component module. Todo, Notes and Help are example apps.
@@ -320,9 +318,3 @@ And replace "Prefer simple, pedagogical solutions over abstraction" with:
 
 1. **Names.** `platform` as the shared prefix and "app" for user workloads,
    as proposed in section 2?
-2. **Seq.** Is its license acceptable as the documented default, or should
-   the first provider be an open source log server with Seq as the second?
-3. **Log delivery.** Forwarder first (section 8), or must apps send
-   structured events from the start?
-4. **Logging UI access.** Seq's own login, or behind Keycloak if the chosen
-   provider supports OIDC?

@@ -9,7 +9,7 @@ rebuilds the Todo, Notes and Keycloak databases as one group.
 | Path | Responsibility |
 |---|---|
 | `manifests/` | Jinja2 workload templates, one per workload type, shared by every app |
-| `quadlet/` | One source for the network and seven systemd workload templates |
+| `quadlet/` | One source for the network and one systemd unit template per kind of workload |
 | `installer/` | Single-host Python installer, shared workload functions and nightly backups |
 | `dr/` | app-ops (controller) and app_dr_host (each host): guarded DR/backup operations over plain SSH, the DR and backup tools, their timers (`dr/systemd`) and documentation |
 | `scripts/` | Rendering, direct development, the acceptance lab (`scripts/lab`) and shared tools |

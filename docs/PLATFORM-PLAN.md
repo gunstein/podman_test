@@ -89,14 +89,15 @@ the phase.
 
 ## 4. One resolved model
 
-Where it stands after phase 4c-2: `apps.Platform` has two fields, the apps in
+Where it stands after phase 4d: `apps.Platform` has two fields, the apps in
 start order and Keycloak's default hostname, and derives the rest (the DR
 group, workloads, services, and `database_apps`, `login_apps` and
 `has_identity`, so PostgreSQL and Keycloak run only when an app needs
 them); each app holds whether it has a database and login, the images it
 builds (`apps.AppImage`), its endpoints and routes (`apps.Endpoint`,
 `apps.Route`), and its ready path and checks (`apps.Check`, run by
-`checks.py`). A build reads it from `platform.yaml` and each app's
+`checks.py`); each workload names its unit template and the services it
+requires (`apps.Workload`), from which every unit is rendered. A build reads it from `platform.yaml` and each app's
 `examples/<app>/app.yaml` (`platform_file.load`, which also gives the
 environment's port and log level); there is no list of apps in the code.
 `bundle.json` (format version 10) carries it, and a host records it in
@@ -216,8 +217,16 @@ Phase 4c-2 built readiness as an HTTP path (`ready`, optional: an app
 without one is ready when its containers run) and checks as GET requests
 with a status (`checks`, optional), both on the app's own hostname through
 nginx and each matched by one of its routes. Container health checks stay
-in the pod templates (5.9); start order comes with the generated units
-(4d) and setup tasks with phase 5.
+in the pod templates (5.9); setup tasks come with phase 5.
+
+Phase 4d built the start order: each `apps.Workload` has its `requires`
+(an app needs its database and, with login, Keycloak; Keycloak its
+database; nginx every app and Keycloak), and its unit's `Requires=` and
+`After=` are rendered from them; `Platform.workloads()` lists them in an
+order where each requires only earlier ones (tested), and development
+mode's `kube play` and every start follow that order. The model makes them,
+not YAML, so there is nothing for a user to get wrong (no missing
+reference or cycle to report).
 
 Identity setup waits only for Keycloak, never for the apps; app checks run
 after identity setup. This removes the possible cycle where identity setup
@@ -728,4 +737,24 @@ start order (`requires`) comes with the generated units in 4d.
   recorded platform has no version of its own, which matters once a field
   is added after an installation (no backward compatibility so far, as
   decided).
+
+**Phase 4d, code done; acceptance run with the next phase that changes a host.**
+- One unit template per kind of workload: `app.kube.j2` and
+  `postgres.kube.j2` replace the five copies (`todo-app`, `notes-app`,
+  `todo-postgres`, `notes-postgres`, `keycloak-postgres`); `keycloak.kube.j2`
+  and `shared-proxy.kube.j2` stay. Adding an app adds no file in
+  `deploy/quadlet`.
+- `apps.Workload` gains `template` and `requires`; `apps.database_workload`,
+  `apps.app_workload`, `apps.KEYCLOAK_WORKLOAD` and
+  `Platform.proxy_workload` make them, and `Platform.workloads()` lists them
+  in start order. Each template gets its workload (`workloads.*_variables`)
+  and renders `Yaml=`, `ConfigMap=`, `Requires=` and `After=` from it; an app
+  without a database or login requires neither, and nginx needs no Keycloak
+  without login.
+- Every rendered unit is byte for byte as before, but for Keycloak's
+  description ("Shared Keycloak", no longer "Todo Keycloak"), the only
+  change in the render baseline. The name guard shrinks by five files.
+- `render.require_supported` no longer looks for an app's own unit
+  templates (there are none); it checks only that the shared pod template
+  can run the app.
 

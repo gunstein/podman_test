@@ -191,12 +191,18 @@ class Workload:
     from todo-postgres.kube as todo-postgres.service. yaml is the unit's
     Yaml= file, config its ConfigMap= file ("" for none). wait_healthy: a
     start waits until the pod is healthy before the next one starts.
+    template is the unit's template in deploy/quadlet (without .j2), shared
+    by every workload of its kind; requires are the services it needs,
+    which its unit names in Requires= and After=, all earlier in
+    Platform.workloads().
     """
 
     pod: str
     yaml: str
     config: str = ""
     wait_healthy: bool = False
+    template: str = ""
+    requires: tuple = ()
 
     @property
     def unit(self) -> str:
@@ -210,6 +216,23 @@ class Workload:
     def manifests(self) -> tuple:
         """Its Kube YAML files: the pod's, then its ConfigMap's if it has one."""
         return (self.yaml, self.config) if self.config else (self.yaml,)
+
+
+def database_workload(database):
+    """A PostgreSQL pod: an app's or Keycloak's. It needs nothing else."""
+    return Workload(database.container, database.manifest, database.config_manifest, wait_healthy=True,
+                    template="postgres.kube")
+
+
+def app_workload(app):
+    """An app's pod. It needs its own database, if it has one, and Keycloak, if it has login."""
+    requires = ((app.database.service,) if app.has_database else ()) + (("keycloak.service",) if app.has_login else ())
+    return Workload(app.pod, app.manifest, app.config_manifest, template="app.kube", requires=requires)
+
+
+# Keycloak needs its own database; it runs when some app has login (Platform.has_identity).
+KEYCLOAK_WORKLOAD = Workload("keycloak", "keycloak.yaml", template="keycloak.kube",
+                             requires=(KEYCLOAK_DATABASE.service,))
 
 
 @dataclass(frozen=True)
@@ -289,21 +312,24 @@ class Platform:
 
         Each app's database first, then Keycloak's and Keycloak (if some app
         has login), the apps, and nginx last: each starts after what it needs
-        (deploy/quadlet/*.kube.j2 say the same in Requires= and After=). A
+        (its requires, which its unit names in Requires= and After=). A
         database is healthy before the next workload starts. An app shares its
         ConfigMap file with its database; nginx's ConfigMaps are in its own
         shared-proxy.yaml.
         """
-        identity = (Workload(KEYCLOAK_DATABASE.container, KEYCLOAK_DATABASE.manifest,
-                             KEYCLOAK_DATABASE.config_manifest, wait_healthy=True),
-                    Workload("keycloak", "keycloak.yaml")) if self.has_identity else ()
+        identity = (database_workload(KEYCLOAK_DATABASE), KEYCLOAK_WORKLOAD) if self.has_identity else ()
         return (
-            *(Workload(app.database.container, app.database.manifest, app.database.config_manifest,
-                       wait_healthy=True) for app in self.database_apps),
+            *(database_workload(app.database) for app in self.database_apps),
             *identity,
-            *(Workload(app.pod, app.manifest, app.config_manifest) for app in self.apps),
-            Workload("shared-proxy", "shared-proxy.yaml"),
+            *(app_workload(app) for app in self.apps),
+            self.proxy_workload(),
         )
+
+    def proxy_workload(self):
+        """nginx's pod: it needs every app and, if it runs, Keycloak."""
+        return Workload("shared-proxy", "shared-proxy.yaml", template="shared-proxy.kube",
+                        requires=tuple(app.service for app in self.apps)
+                        + (("keycloak.service",) if self.has_identity else ()))
 
     def serving_workloads(self):
         """The serving tier in start order: workloads() without the databases.

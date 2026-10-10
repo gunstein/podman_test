@@ -171,9 +171,7 @@ class KubeRuntimeTests(unittest.TestCase):
             self.assertNotIn("shared-proxy.service", read(RUNTIME / (name + ".kube")))
         self.assertEqual(
             {path.name for path in (ROOT / "deploy/quadlet").glob("*.kube.j2")},
-            {"todo-app.kube.j2", "keycloak.kube.j2",
-             "todo-postgres.kube.j2", "shared-proxy.kube.j2",
-             "notes-app.kube.j2", "notes-postgres.kube.j2", "keycloak-postgres.kube.j2"},
+            {"app.kube.j2", "postgres.kube.j2", "keycloak.kube.j2", "shared-proxy.kube.j2"},
         )
 
     def test_superseded_separate_app_workloads_are_removed(self):

@@ -214,8 +214,8 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(static.ready("standby"), ([], []))
         self.assertEqual(static.host_ports(), {"nginx": (8080, 8443)})
         self.assertEqual((secrets.kube_mappings(static), secrets.installed_names(static)), ({}, []))
-        self.assertEqual(workloads.proxy_variables("127.0.0.1", 8443, static)["required_services"],
-                         ["help-app.service"])
+        self.assertEqual(workloads.proxy_variables("127.0.0.1", 8443, static)["workload"].requires,
+                         ("help-app.service",))
         self.assertEqual(Platform.from_json(json.loads(json.dumps(static.to_json()))), static)
         # The one shared app pod template needs both, until an app brings its own (phase 4f).
         with self.assertRaisesRegex(ValueError, "help needs database: true and a keycloakClient"):

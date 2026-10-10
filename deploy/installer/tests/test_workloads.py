@@ -138,17 +138,16 @@ class WorkloadsTests(unittest.TestCase):
                                                platform=platform_file.checkout())
             run.assert_not_called()
 
-    def test_default_postgres_address_is_optional_in_plain_jinja(self):
-        rendered = quadlet.render(ROOT, 'todo-postgres.kube', {}).decode()
+    def test_a_database_without_a_lan_address_publishes_only_on_loopback(self):
+        database = platform_file.checkout().apps[0].database
+        rendered = quadlet.render(ROOT, 'postgres.kube', workloads.postgres_variables(database)).decode()
         self.assertEqual(rendered.count('PublishPort='), 1)
         self.assertIn('PublishPort=127.0.0.1:5432:5432\n', rendered)
 
     def test_databases_publish_distinct_ports_from_platform_yaml(self):
         for app in platform_file.checkout().apps:
-            rendered = quadlet.render(ROOT, app.database.unit, {
-                'postgres_publish_port': app.replication_port,
-                'postgres_publish_address': '192.0.2.50',
-            }).decode()
+            rendered = quadlet.render(ROOT, 'postgres.kube',
+                                      workloads.postgres_variables(app.database, '192.0.2.50')).decode()
             self.assertIn(f'PublishPort=127.0.0.1:{app.replication_port}:5432\n', rendered)
             self.assertIn(f'PublishPort=192.0.2.50:{app.replication_port}:5432\n', rendered)
         with patch('subprocess.run') as run:

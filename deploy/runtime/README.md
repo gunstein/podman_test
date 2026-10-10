@@ -40,7 +40,7 @@ deploy/manifests/app-config.yaml.j2     shared app backend ConfigMap
 deploy/manifests/keycloak.yaml.j2       shared identity Pod and ConfigMap
 deploy/manifests/shared-proxy.yaml.j2   independent proxy and ConfigMaps
 platform.yaml, examples/*/app.yaml    the apps, hostnames and environments (platform_file.py)
-deploy/quadlet/*.kube.j2               seven systemd workload templates
+deploy/quadlet/*.kube.j2               one systemd unit template per kind of workload
 deploy/quadlet/app-network.network           shared rootless network
 ```
 

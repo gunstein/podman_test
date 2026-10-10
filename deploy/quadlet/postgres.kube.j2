@@ -1,0 +1,32 @@
+{# Every PostgreSQL pod's unit, an app's or Keycloak's (apps.database_workload,
+   workloads.postgres_variables). The loopback port is for the host's own
+   tools; the LAN port exists only in the bundle's replicated variant
+   (postgres_publish_address set), on a DR primary that a standby streams
+   from. #}
+[Unit]
+Description={{ name | capitalize }} PostgreSQL Podman Kube workload
+
+[Kube]
+Yaml={{ workload.yaml }}
+ConfigMap={{ workload.config }}
+Network=app-network.network
+PublishPort=127.0.0.1:{{ postgres_publish_port }}:5432
+{% if postgres_publish_address | length > 0 %}
+PublishPort={{ postgres_publish_address }}:{{ postgres_publish_port }}:5432
+{% endif %}
+PodmanArgs=--no-pod-prefix
+ExitCodePropagation=any
+LogDriver=journald
+SetWorkingDirectory=yaml
+
+[Service]
+{# Kube YAML cannot ask Podman to act on a failed health check: kill the
+   container then, so the unit fails and Restart= starts it again. #}
+ExecStartPost=/usr/bin/podman update --health-on-failure=kill {{ workload.pod }}
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=180
+TimeoutStopSec=90
+
+[Install]
+WantedBy=default.target

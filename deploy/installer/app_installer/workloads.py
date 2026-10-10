@@ -17,10 +17,24 @@ from pathlib import Path
 from . import apps, quadlet, secrets, settings, stack
 from .commands import run
 
+# Each unit template's values (deploy/quadlet/<workload.template>.j2): the
+# workload itself (its files, pod and requires) and what else that kind needs.
+
 
 def postgres_variables(database, publish_address=""):
-    """The unit template's values for one database: its replication port, and the LAN address if any."""
-    return {"postgres_publish_address": publish_address, "postgres_publish_port": database.replication_port}
+    """postgres.kube's values for one database: its replication port, and the LAN address if any."""
+    return {"workload": apps.database_workload(database), "name": database.name,
+            "postgres_publish_address": publish_address, "postgres_publish_port": database.replication_port}
+
+
+def app_variables(app):
+    """app.kube's values for one app."""
+    return {"workload": apps.app_workload(app), "name": app.name}
+
+
+def keycloak_variables():
+    """keycloak.kube's values."""
+    return {"workload": apps.KEYCLOAK_WORKLOAD}
 
 
 # todo's Kube YAML files before every app's got its name's prefix (todo-postgres.yaml,
@@ -30,19 +44,19 @@ RENAMED_MANIFESTS = ("postgres.yaml", "config.yaml", "app.yaml")
 
 
 def proxy_variables(publish_address, service_port, platform):
-    """The unit template's values for nginx: where it publishes HTTPS and the services it needs."""
-    return {"publish_address": publish_address, "service_port": service_port,
-            "required_services": [app.service for app in platform.apps]
-            + (["keycloak.service"] if platform.has_identity else [])}
+    """shared-proxy.kube's values: where nginx publishes HTTPS, and its workload (the services it needs)."""
+    return {"workload": platform.proxy_workload(), "publish_address": publish_address,
+            "service_port": service_port}
 
 
 def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir, *,
-             manifests, units, obsolete, capability, mapping, variables, values=None, target=None,
+             manifests, obsolete, capability, mapping, variables, values=None, target=None,
              replicated=False):
     """Write one workload's Kube YAML and Quadlet unit, and reload user systemd.
 
-    Every file is read and rendered before the first write, so a missing
-    file stops the install with nothing changed. With target, the files are
+    The unit is variables["workload"]'s, rendered from its template. Every
+    file is read and rendered before the first write, so a missing file
+    stops the install with nothing changed. With target, the files are
     the bundle's, already filled in (see the module docstring); replicated
     picks the database unit that also publishes replication. Kube
     secrets are created from the raw Podman secrets; YAML is written 0600,
@@ -51,6 +65,7 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
     stops a service: the caller decides that.
     """
     root, directory, runtime = map(Path, (project_root, quadlet_dir, kube_runtime_dir))
+    workload = variables["workload"]
     if runtime != directory / settings.KUBE_RUNTIME or runtime.is_symlink():
         raise ValueError(f"kube_runtime_dir must be quadlet_dir/{settings.KUBE_RUNTIME}")
     if "--no-pod-prefix" not in run("podman", "kube", "play", "--help").stdout:
@@ -63,12 +78,12 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                  for name in manifests]
         files += [(directory / "app-network.network",
                    (root / "deploy/quadlet/app-network.network").read_bytes(), 0o644)]
-        files += [(runtime / name, quadlet.render(root, name, variables), 0o644) for name in units]
+        files += [(runtime / workload.unit, quadlet.render(root, workload.template, variables), 0o644)]
     else:
         files = [(runtime / name, target.manifests[name], 0o600) for name in manifests]
         files += [(directory / target.network_name, target.network, 0o644)]
-        files += [(runtime / name, (target.replicated if replicated else target.quadlets)[name], 0o644)
-                  for name in units]
+        files += [(runtime / workload.unit,
+                   (target.replicated if replicated else target.quadlets)[workload.unit], 0o644)]
     secrets.create_kube(mapping, values)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     runtime.mkdir(exist_ok=True, mode=0o700)
@@ -103,7 +118,7 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
                          f"not on {publish_address}.")
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        manifests=(database.manifest, database.config_manifest), units=(database.unit,),
+        manifests=(database.manifest, database.config_manifest),
         obsolete=(database.volume("data"), database.volume("backup")),
         capability="PostgreSQL", mapping=secrets.postgres_secret_mapping(database),
         variables=postgres_variables(database, publish_address),
@@ -117,9 +132,9 @@ def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_ma
     """Install one app's pod (migration, backend and frontend)."""
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        manifests=(app.manifest, app.config_manifest), units=(app.unit,), obsolete=(),
+        manifests=(app.manifest, app.config_manifest), obsolete=(),
         capability="application", mapping=secrets.application_secret_mapping(app),
-        variables={}, target=target,
+        variables=app_variables(app), target=target,
     )
 
 
@@ -127,8 +142,9 @@ def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
     """Install the shared Keycloak workload."""
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        manifests=("keycloak.yaml",), units=("keycloak.kube",), obsolete=(),
-        capability="identity", mapping=secrets.keycloak_secret_mapping(), variables={}, target=target,
+        manifests=("keycloak.yaml",), obsolete=(),
+        capability="identity", mapping=secrets.keycloak_secret_mapping(), variables=keycloak_variables(),
+        target=target,
     )
 
 
@@ -151,7 +167,7 @@ def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_m
         )
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        manifests=("shared-proxy.yaml",), units=("shared-proxy.kube",),
+        manifests=("shared-proxy.yaml",),
         obsolete=(apps.NGINX_TLS_VOLUME,),
         capability="shared proxy", mapping={},
         variables=proxy_variables(publish_address, service_port, platform), target=target,

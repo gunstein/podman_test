@@ -1,5 +1,5 @@
 [Unit]
-Description=Todo Keycloak Podman Kube workload
+Description=Shared Keycloak Podman Kube workload
 Requires=keycloak-postgres.service
 After=keycloak-postgres.service
 

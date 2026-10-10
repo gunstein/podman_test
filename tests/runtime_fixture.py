@@ -19,16 +19,16 @@ subprocess.run(
 
 
 def render_units(destination, publish_address, postgres_address=""):
-    from app_installer.quadlet import render
+    """Every unit of this checkout's platform, as a bundle renders them; each database also on postgres_address."""
+    from app_installer import bundle, platform_file, quadlet, workloads
     destination.mkdir(parents=True, exist_ok=True)
-    for unit in ("todo-app", "notes-app", "keycloak", "todo-postgres", "notes-postgres",
-                "keycloak-postgres", "shared-proxy"):
-        (destination / (unit + ".kube")).write_bytes(render(ROOT, unit + ".kube", {
-            "publish_address": publish_address,
-            "service_port": 8443,
-            "postgres_publish_address": postgres_address,
-            "required_services": ["todo-app.service", "notes-app.service", "keycloak.service"],
-        }))
+    platform = platform_file.checkout()
+    units = bundle.quadlets(ROOT, platform, 8443, publish_address)
+    for database in platform.replicated_databases:
+        units[database.unit] = quadlet.render(ROOT, "postgres.kube",
+                                              workloads.postgres_variables(database, postgres_address))
+    for name, content in units.items():
+        (destination / name).write_bytes(content)
 
 
 render_units(RUNTIME, "192.0.2.10")

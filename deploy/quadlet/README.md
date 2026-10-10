@@ -1,7 +1,11 @@
 # Shared Quadlet resources and historical reference
 
-This directory contains `app-network.network` and the seven canonical `.kube.j2`
-templates. The bundle build renders them with Jinja2 into `generated/target/quadlet`,
+This directory contains `app-network.network` and one `.kube.j2` template per
+kind of workload: `app.kube.j2` (every app's pod), `postgres.kube.j2` (every
+database, an app's or Keycloak's), `keycloak.kube.j2` and `shared-proxy.kube.j2`.
+Each unit's files and `Requires=`/`After=` come from its workload in the model
+(`apps.Platform.workloads()`, `Workload.requires`), so adding an app adds no file
+here. The bundle build renders them with Jinja2 into `generated/target/quadlet`,
 which an offline install and the DR tools fill in and install without Jinja2; build
 mode renders the same files on the host. There are no role-local copies.
 Host-specific units live beside the rendered YAML in

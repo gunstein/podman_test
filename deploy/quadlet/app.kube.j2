@@ -1,0 +1,30 @@
+{# Every app's unit (apps.app_workload, workloads.app_variables): the app
+   pod of the shared pod template, its migration init container, backend and
+   frontend. Requires= and After= name what it needs, its database and
+   Keycloak, from the model; systemd starts those first. #}
+[Unit]
+Description={{ name | capitalize }} frontend and backend Podman Kube workload
+{% if workload.requires %}
+Requires={{ workload.requires | join(' ') }}
+After={{ workload.requires | join(' ') }}
+{% endif %}
+
+[Kube]
+Yaml={{ workload.yaml }}
+{% if workload.config %}
+ConfigMap={{ workload.config }}
+{% endif %}
+Network=app-network.network
+PodmanArgs=--no-pod-prefix
+ExitCodePropagation=any
+LogDriver=journald
+SetWorkingDirectory=yaml
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=180
+TimeoutStopSec=60
+
+[Install]
+WantedBy=default.target

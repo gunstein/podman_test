@@ -186,7 +186,7 @@ def check(project_root, mode, deployment_mode, bundle_directory, refresh_images,
         configured, environment = build_settings(root, mode, service_port)
         platform, port = platform or configured, environment.public_port
         from . import render  # Jinja2 and PyYAML: build mode only
-        render.require_supported(root, platform)
+        render.require_supported(platform)
     else:
         platform, port = target.platform, target.public_port
     require_single_host('install', platform)

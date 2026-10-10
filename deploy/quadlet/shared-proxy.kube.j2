@@ -1,7 +1,7 @@
 [Unit]
 Description=Shared Nginx proxy for Kube workloads
-Requires={{ required_services | join(' ') }}
-After={{ required_services | join(' ') }}
+Requires={{ workload.requires | join(' ') }}
+After={{ workload.requires | join(' ') }}
 
 [Kube]
 Yaml=shared-proxy.yaml

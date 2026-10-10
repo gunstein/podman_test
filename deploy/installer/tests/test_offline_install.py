@@ -101,11 +101,11 @@ class BundleContentTests(unittest.TestCase):
         units = self.bundle / 'generated/target/quadlet'
         for database in platform_file.checkout().replicated_databases:
             self.assertEqual((units / database.unit).read_bytes(),
-                             quadlet.render(ROOT, database.unit, workloads.postgres_variables(database)))
+                             quadlet.render(ROOT, 'postgres.kube', workloads.postgres_variables(database)))
         for database in platform_file.checkout().replicated_databases:
             replicated = (units / 'replicated' / database.unit).read_text().replace('${TARGET_PUBLISH_ADDRESS}', ADDRESS)
             self.assertEqual(replicated.encode(), quadlet.render(
-                ROOT, database.unit, workloads.postgres_variables(database, ADDRESS)))
+                ROOT, 'postgres.kube', workloads.postgres_variables(database, ADDRESS)))
         published = (units / 'shared-proxy.kube').read_text().replace('${TARGET_PUBLISH_ADDRESS}', ADDRESS)
         self.assertEqual(published.encode(), quadlet.render(
             ROOT, 'shared-proxy.kube', workloads.proxy_variables(ADDRESS, prod.public_port, platform_file.checkout())))

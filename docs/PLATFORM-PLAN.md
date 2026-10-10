@@ -1,7 +1,9 @@
 # Platform plan: from the Todo demo to a small reusable app platform
 
-Status: **revised plan for review (version 2)**. Nothing in it is implemented.
-This one document holds scope, rules, contracts and phases; version 1 of the
+Status: **version 2, being implemented one phase at a time** on
+`feature/platform`; section 10 records what each phase has done. Sections 4
+to 9 describe the target: where they say "today", they mean the code before
+phase 0. This one document holds scope, rules, contracts and phases; version 1 of the
 plan and the separate design document are in Git history (`836a176`).
 Version 2 follows an external review: one resolved model, explicit
 contracts, a narrower first version, and simplicity as an acceptance
@@ -87,7 +89,14 @@ the phase.
 
 ## 4. One resolved model
 
-Today bundling, installation and DR each rebuild the installation from the
+Where it stands after phase 2: `apps.Platform` has two fields, the apps in
+start order and Keycloak's default hostname, and derives the rest (the DR
+group, workloads, services). `apps.registry()` builds it in code;
+`bundle.json` (format version 6) carries it, and a host records it in
+`~/.config/platform/platform.json`. Loading it from `platform.yaml` and
+`app.yaml` is phase 3; the richer tree below grows with phases 3 to 5.
+
+Before phase 2, bundling, installation and DR each rebuild the installation from the
 Python registry (`apps.APPS`, `apps.IDENTITY_APP`, default arguments such as
 `workloads(applications=APPS)` and `setup_roles(app=apps.APPS[0])`);
 `target_render.py` uses the registry even when it reads `bundle.json`.
@@ -106,7 +115,7 @@ Writing more to JSON is not enough: the readers must stop reconstructing.
   argument. No YAML loading at import time, no module-level app lists, no
   default arguments that bind an app list. Two different platforms in one
   Python process must not share state (tested).
-- **Versions**: `bundle.json` keeps `format_version` (today 4) and adds the
+- **Versions**: `bundle.json` keeps `format_version` (6 since phase 2) and adds the
   image IDs of every image it carries. The operations package records the
   bundle format versions it supports and refuses others. The installer
   compares installed image IDs, not tags, with the bundle's.
@@ -287,9 +296,12 @@ loader and its validation messages. Delete the Python app list and
 `deploy/environments/*/values.yaml`. Rendered output unchanged.
 
 **Phase 3b: Scripts read the model.** `wait-ready.sh`, `preflight.sh`,
-acceptance and the replication firewall range read the model instead of
-hand-kept lists (moved forward from 4e after the phase 1 understandability
-check, where these copied lists were the main friction).
+acceptance (`acceptance.py`, `acceptance_preflight.py`), `run-e2e.sh`, the
+clean-install workflow and the replication firewall range read the model
+(the bundle's or the host's record, through a small explicit Python
+command) instead of hand-kept lists. Moved forward from 4e after the phase 1
+understandability check, where these copied lists were the main friction;
+the phase 2 check found them again.
 
 **Phase 4: A static app end to end.** The first proof of generality, split
 in small deliveries, each driven by what Help needs:
@@ -399,7 +411,7 @@ and what to do.
   contract), checksum and shell preflight run only in `install.sh`, and
   the proxy entrypoint tests need a writable `/tmp`.
 
-**Phase 2, code done; understandability check pending.**
+**Phase 2, code done; acceptance run pending (together with phase 1).**
 - `apps.Platform` (apps in start order, Keycloak's default hostname) answers
   the DR group, workloads and services; `apps.registry()` is the only list
   of apps in the code, used by build and dev mode, `replication-apps`, the
@@ -420,3 +432,31 @@ and what to do.
   its own database container; `preflight_rebuild` checks the confirmations
   before it stages anything; a missing record or an unknown app is a clear
   error. The render baseline changes only in `bundle.json`.
+- Understandability check (fresh agent, at 49e8804): **YELLOW**. The five
+  installer paths to the platform were traceable (two to four file hops),
+  and a small change (refusing an app named `identity`) was local, with its
+  test easy to find. Adding a third app is still repository-wide knowledge:
+  the installer follows the model, but readiness, preflight, acceptance, e2e
+  and CI keep their own lists. Its findings and what was done:
+  1. Build mode rendered through `render-kube-runtime.sh`, which rebuilt
+     the platform from the registry by app names, so `install(platform=...)`
+     was not what got rendered: fixed, an install renders the platform it
+     installs (`render.render(..., platform)`); the script renders the
+     registry's and no longer takes app names.
+  2. Hand-kept lists in scripts, acceptance and CI: phase 3b, now naming
+     every one it found.
+  3. `down` treated a broken platform record as "nothing installed": fixed,
+     only a missing record means that, a broken one is an error.
+  4. Unused plumbing: the app units' `publish_address`/`service_port`
+     variables are gone. `replication.reseed_check` keeps `project_root`,
+     because it takes the same path arguments as `bootstrap_standby`.
+  5. This plan said nothing was implemented and described the code before
+     phase 2 as today's: fixed (status line, section 4).
+  Also done: the app name `identity` is reserved (it names Keycloak in
+  `--target-hostname`), the installer's CLI is no longer the "Todo
+  installer", standby preflight says it stages files, and the installer
+  README tells the two host records apart (`platform.json` before an install
+  changes anything, `target-values.json` after it succeeded). Noted, not
+  changed: setup and migration still assume Python entry points (phase 5
+  contract), and the proxy entrypoint tests need a writable `/tmp`.
+  Name guard: 51 known files left.

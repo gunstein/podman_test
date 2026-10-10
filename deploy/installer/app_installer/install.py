@@ -207,13 +207,14 @@ def prepare(root, mode, deployment_mode, bundle_directory, refresh_images, platf
     the shared images' changes from images.prepare, each app's public
     hostname, Keycloak's, and whether nginx's TLS secret changed.
     """
-    # Before anything on the host changes: what this host may now hold, for uninstall and the DR tools.
-    target_render.record_platform(platform)
-    # An offline install takes its files from the bundle (target); the others render here.
+    # An offline install takes its files from the bundle (target); the others render here, into the
+    # checkout's generated/, which also checks each app's pod (pod_contract) before the host changes.
     rendered = None if deployment_mode == 'offline' else root / 'generated' / ('dev' if mode == 'dev' else 'kube-runtime')
     if deployment_mode == 'build':
         from . import render  # Jinja2 and PyYAML: build mode only
         render.render(root, environment, rendered, platform)
+    # Before anything on the host changes: what this host may now hold, for uninstall and the DR tools.
+    target_render.record_platform(platform)
     secrets.provision(platform)
     image_changes = {}
     for app in platform.apps:

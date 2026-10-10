@@ -49,8 +49,10 @@ class ManifestFunctionTests(unittest.TestCase):
         self.assertEqual(doc["data"], {"POSTGRES_DB": "widget", "POSTGRES_USER": "widget"})
 
     def test_render_app_groups_migrate_backend_and_frontend(self):
-        docs = list(yaml.safe_load_all(manifests.render_app(
-            ROOT, _app(), "localhost/widget-backend:m12", "localhost/widget-frontend:m12")))
+        widget = apps.App(name="widget", hostname="widget.test", keycloak_client="widget-frontend",
+                          images=(apps.AppImage(name="backend", context="."), apps.AppImage(name="frontend", context=".")),
+                          pod_template="examples/todo/pod.yaml.j2")
+        docs = list(yaml.safe_load_all(manifests.render_app(ROOT, widget)))
         pod = docs[0]
         self.assertEqual(pod["metadata"]["name"], "widget-app")
         self.assertEqual([c["name"] for c in pod["spec"]["initContainers"]], ["widget-migrate"])
@@ -208,6 +210,7 @@ class RenderErrorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             project_root = Path(directory) / "project"
             shutil.copytree(ROOT / "deploy/manifests", project_root / "deploy/manifests")
+            shutil.copytree(ROOT / "examples", project_root / "examples")
             (project_root / "deploy/manifests/postgres.yaml.j2").write_text("{% broken\n")
             output = Path(directory) / "output"
             with self.assertRaises(jinja2.TemplateSyntaxError):
@@ -218,6 +221,7 @@ class RenderErrorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             project_root = Path(directory) / "project"
             shutil.copytree(ROOT / "deploy/manifests", project_root / "deploy/manifests")
+            shutil.copytree(ROOT / "examples", project_root / "examples")
             (project_root / "deploy/manifests/postgres.yaml.j2").write_text("foo: [1, 2\n")
             output = Path(directory) / "output"
             with self.assertRaisesRegex(RuntimeError, "is not valid YAML"):

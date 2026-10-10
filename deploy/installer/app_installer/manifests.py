@@ -31,15 +31,15 @@ def validate_hostname(hostname):
         raise ValueError(f'Not a safe hostname: {hostname!r}')
 
 
-def _environment(project_root):
-    """A Jinja2 environment for deploy/manifests; undefined variables are an error.
+def _environment(project_root, directory="deploy/manifests"):
+    """A Jinja2 environment for the templates in project_root/directory; undefined variables are an error.
 
     Jinja2 is imported here, not at the top, so validate_hostname and the
     offline install (target_render) work on a host without it.
     """
     from jinja2 import Environment, FileSystemLoader, StrictUndefined
     return Environment(
-        loader=FileSystemLoader(Path(project_root) / "deploy/manifests"),
+        loader=FileSystemLoader(Path(project_root) / directory),
         undefined=StrictUndefined, trim_blocks=True, keep_trailing_newline=True,
         autoescape=False,
     )
@@ -60,10 +60,20 @@ def render_postgres_config(project_root, database):
     return _render(project_root, "postgres-config.yaml.j2", database=database)
 
 
-def render_app(project_root, app, backend_image, frontend_image):
-    """One app's pod: the migration init container, the backend and the frontend."""
-    return _render(project_root, "app.yaml.j2", app=app,
-                   backend_image=backend_image, frontend_image=frontend_image)
+def render_app(project_root, app):
+    """One app's pod, from the app's own pod template (app.pod_template).
+
+    The template gets these variables, and only these:
+    - app: the App. app.pod is the pod's name, app.names.resource(part) a
+      container's (<app>-<part>), app.names.kube_secret(component) one of its
+      Kube secrets, app.names.resource("backend-config") its ConfigMap, and
+      with database: true app.database.role(...) a database role.
+    - images: {name: reference} of the images its app.yaml declares.
+    pod_contract.check then holds the result to the platform's rules.
+    """
+    template = Path(app.pod_template)
+    return _environment(project_root, str(template.parent)).get_template(template.name).render(
+        app=app, images={image.name: app.image(image.name) for image in app.images}).encode()
 
 
 def render_app_config(project_root, app, hostname, port, log_level):

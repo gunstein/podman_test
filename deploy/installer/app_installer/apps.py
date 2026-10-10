@@ -70,6 +70,9 @@ class App:
     database: code that works on the replicated database group asks
     Platform.replicated_databases. has_login: its users log in at the shared
     Keycloak with the OAuth client keycloak_client ("" without login).
+    pod_template is its own pod template (POD_TEMPLATE in its directory),
+    relative to the project root; manifests.render_app renders it and
+    pod_contract checks the result.
     ready is the HTTP path that answers 200 once the app can serve ("" for
     none: nothing waits for it beyond its started unit), checks the requests (Check) that must
     answer as declared after an install and a DR promotion (checks.py).
@@ -88,6 +91,7 @@ class App:
     routes: tuple = ()
     ready: str = ""
     checks: tuple = ()
+    pod_template: str = ""
 
     @property
     def names(self) -> stack.Names:
@@ -391,7 +395,7 @@ class Platform:
                           "endpoints": [{"name": endpoint.name, "port": endpoint.port} for endpoint in app.endpoints],
                           "routes": [{"path": route.path, "to": route.to, "exact": route.exact}
                                      for route in app.routes],
-                          "ready": app.ready,
+                          "ready": app.ready, "pod_template": app.pod_template,
                           "checks": [{"path": check.path, "status": check.status} for check in app.checks]}
                          for app in self.apps]}
 
@@ -400,7 +404,8 @@ class Platform:
         """The platform to_json wrote; anything else is a ValueError that says what is wrong."""
         fields = {"name": str, "hostname": str, "keycloak_client": str, "has_database": bool,
                   "replication_port": int,
-                  "images": list, "endpoints": list, "routes": list, "ready": str, "checks": list}
+                  "images": list, "endpoints": list, "routes": list, "ready": str, "checks": list,
+                  "pod_template": str}
         parts = {"images": (AppImage, {"name": str, "context": str, "containerfile": str}),
                  "endpoints": (Endpoint, {"name": str, "port": int}),
                  "routes": (Route, {"path": str, "to": str, "exact": bool}),

@@ -59,8 +59,8 @@ and is no longer part of the active tree.
 
 | Boundary | Files |
 |---|---|
-| Grouped application | `deploy/manifests/app.yaml.j2`; Python renders `todo-app.kube` |
-| Notes app and database | `deploy/manifests/app.yaml.j2`, `postgres.yaml.j2`; `notes-app.kube`, `notes-postgres.kube` |
+| Grouped application | `examples/todo/pod.yaml.j2` (the app's own pod template); Python renders `todo-app.kube` |
+| Notes app and database | `examples/notes/pod.yaml.j2`, `deploy/manifests/postgres.yaml.j2`; `notes-app.kube`, `notes-postgres.kube` |
 | Shared identity | `deploy/manifests/keycloak.yaml.j2`; `keycloak.kube` |
 | Persistent databases | `deploy/manifests/postgres.yaml.j2`; `todo-postgres.kube`, `notes-postgres.kube`, `keycloak-postgres.kube` |
 | Shared ingress | `deploy/manifests/shared-proxy.yaml.j2`; `shared-proxy.kube`, container `nginx` |

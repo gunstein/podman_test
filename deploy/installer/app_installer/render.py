@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from . import apps, manifests, platform_file
+from . import apps, manifests, platform_file, pod_contract
 
 
 def _validate(name, content):
@@ -22,26 +22,27 @@ def hostnames(platform):
     return {app.name: app.hostname for app in platform.apps}
 
 
-def require_shared_template(platform):
-    """Raise unless the one shared app pod template (app.yaml.j2) can run every app of platform.
+def require_database_and_login(platform):
+    """Raise unless every app of platform has a database and login, which an install still needs.
 
-    It runs a migration and an OIDC backend, so an app needs database: true
-    and a keycloakClient until apps bring pod templates of their own (4f).
+    The Kube secrets, the role setup and the app's ConfigMap assume both
+    until phase 4f-2 makes them optional there too.
     """
     for app in platform.apps:
         if not (app.has_database and app.has_login):
-            raise ValueError(f'The app {app.name} needs database: true and a keycloakClient: the shared app pod '
-                             'template is the only one so far, and it uses both')
+            raise ValueError(f'The app {app.name} needs database: true and a keycloakClient: installing an app '
+                             'without them comes with phase 4f-2')
 
 
 def require_supported(project_root, platform):
     """Raise unless every workload of platform can be rendered, naming what is missing.
 
-    The shared pod template must fit each app (require_shared_template), and
-    each workload's unit template must exist. install.check and bundle.build
+    Every app needs a database and login (require_database_and_login), and
+    each workload's unit template must exist; each app's pod template is
+    checked once it is rendered (pod_contract). install.check and bundle.build
     call this before anything is written.
     """
-    require_shared_template(platform)
+    require_database_and_login(platform)
     for workload in platform.workloads():
         if not (Path(project_root) / 'deploy/quadlet' / (workload.template + '.j2')).is_file():
             raise ValueError(f'{workload.pod} needs the unit template deploy/quadlet/{workload.template}.j2')
@@ -56,14 +57,16 @@ def files(project_root, platform, hostnames, identity_hostname, port, log_level)
     the files are otherwise the same.
     """
     root = Path(project_root)
-    require_shared_template(platform)
+    require_database_and_login(platform)
     hostname = identity_hostname
     result = {}
     for app in platform.apps:
         result[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
         result[app.config_manifest] = (manifests.render_postgres_config(root, app.database) + b'---\n'
                                        + manifests.render_app_config(root, app, hostname, port, log_level))
-        result[app.manifest] = manifests.render_app(root, app, app.image('backend'), app.image('frontend'))
+        result[app.manifest] = manifests.render_app(root, app)
+        _validate(app.manifest, result[app.manifest])
+        pod_contract.check(app, result[app.manifest])
 
     if platform.has_identity:
         result['keycloak.yaml'] = manifests.render_keycloak(

@@ -1,3 +1,10 @@
+{# This app's pod (docs/PLATFORM-PLAN.md, section 5.9): its migration init
+   container, backend and frontend. The platform renders it with app (the
+   App: app.pod, app.names, app.database) and images ({name: reference} of
+   the images app.yaml declares), then checks it (pod_contract.py): the pod
+   and its containers named after the app, only declared images, only its own
+   secrets, no host access or added capabilities, memory limits, and a
+   container port for each endpoint. Todo has the same file. #}
 apiVersion: v1
 kind: Pod
 metadata:
@@ -16,7 +23,7 @@ spec:
    migration stops the pod from starting. #}
   initContainers:
     - name: {{ app.names.resource("migrate") | tojson }}
-      image: {{ backend_image | tojson }}
+      image: {{ images.backend | tojson }}
       imagePullPolicy: Never
       args: [python, -m, backend.migrate, --connect-timeout, "120", up]
       envFrom:
@@ -43,7 +50,7 @@ spec:
           drop: [ALL]
   containers:
     - name: {{ app.names.resource("backend") | tojson }}
-      image: {{ backend_image | tojson }}
+      image: {{ images.backend | tojson }}
       imagePullPolicy: Never
       ports:
         - name: backend-http
@@ -84,7 +91,7 @@ spec:
           drop: [ALL]
 
     - name: {{ app.names.resource("frontend") | tojson }}
-      image: {{ frontend_image | tojson }}
+      image: {{ images.frontend | tojson }}
       imagePullPolicy: Never
       ports:
         - name: frontend-http

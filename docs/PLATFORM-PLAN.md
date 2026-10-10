@@ -89,7 +89,7 @@ the phase.
 
 ## 4. One resolved model
 
-Where it stands after phase 4d: `apps.Platform` has two fields, the apps in
+Where it stands after phase 4f-1: `apps.Platform` has two fields, the apps in
 start order and Keycloak's default hostname, and derives the rest (the DR
 group, workloads, services, and `database_apps`, `login_apps` and
 `has_identity`, so PostgreSQL and Keycloak run only when an app needs
@@ -97,10 +97,12 @@ them); each app holds whether it has a database and login, the images it
 builds (`apps.AppImage`), its endpoints and routes (`apps.Endpoint`,
 `apps.Route`), and its ready path and checks (`apps.Check`, run by
 `checks.py`); each workload names its unit template and the services it
-requires (`apps.Workload`), from which every unit is rendered. A build reads it from `platform.yaml` and each app's
+requires (`apps.Workload`), from which every unit is rendered; and each app
+has its own pod template (`App.pod_template`), checked once rendered
+(`pod_contract.py`). A build reads it from `platform.yaml` and each app's
 `examples/<app>/app.yaml` (`platform_file.load`, which also gives the
 environment's port and log level); there is no list of apps in the code.
-`bundle.json` (format version 10) carries it, and a host records it in
+`bundle.json` (format version 11) carries it, and a host records it in
 `~/.config/platform/platform.json`. The richer tree below grows with phases
 4 and 5 (images, routes, checks, database and login as app fields).
 
@@ -123,7 +125,7 @@ Writing more to JSON is not enough: the readers must stop reconstructing.
   argument. No YAML loading at import time, no module-level app lists, no
   default arguments that bind an app list. Two different platforms in one
   Python process must not share state (tested).
-- **Versions**: `bundle.json` keeps `format_version` (10 since phase 4c-2); the
+- **Versions**: `bundle.json` keeps `format_version` (11 since phase 4f-1); the
   installer and the DR tools refuse any other. Not yet built: `bundle.json`
   recording the image IDs of every image it carries, and the installer
   comparing installed image IDs with them. Today an image that is present
@@ -137,7 +139,7 @@ tested.
 
 ### 5.1 Configuration files
 
-Implemented so far (phases 3 to 4c-2): `platform.yaml` with
+Implemented so far (phases 3 to 4f-1): `platform.yaml` with
 `identityHostname`, `publicPort`, `logLevel`, the `local` and `prod`
 environments and each app's `path`, `hostname` and, exactly when the app
 has a database, `replicationPort`; `app.yaml` with `name`, `database`
@@ -145,12 +147,12 @@ has a database, `replicationPort`; `app.yaml` with `name`, `database`
 the app has no login), `images` (each built image's `context` and
 `containerfile`, section 5.2), `endpoints` (each one's `port`), `routes`
 (`path`, `to`, `exact`, section 5.3), `ready` and `checks` (`path`,
-`status`, section 5.4). Everything
-else below comes with the phase that needs it; until then an app's setup and
-checks follow today's conventions: the shared app pod template uses its
-`backend` and `frontend` images (`app.yaml.j2`), and the backend's
-`python -m backend.migrate` and `python -m backend.setup_roles`
-(`install.setup_roles`).
+`status`, section 5.4); beside `app.yaml`, the app's own pod template
+`pod.yaml.j2` (section 5.9). Everything else below comes with the phase that
+needs it; until then an app's setup follows today's convention: an app with
+a database declares a `backend` image whose `python -m backend.setup_roles`
+creates its roles (`install.setup_roles`), and its pod runs its own
+migrations.
 
 - `platform.yaml` is the operator's: hostnames, which realm each app uses,
   each database's `replicationPort`, which app serves another app's help
@@ -290,6 +292,18 @@ privilege stays per table, and the app no longer ships role code.
   a sandbox: it does not make arbitrary templates or images safe.
 - `.kube` units are generated from the model. No app overrides in version 1;
   a declarative setting (such as a start timeout) is added when needed.
+- Phase 4f-1 built the template and its check: `pod.yaml.j2` beside the
+  app's `app.yaml`, rendered with `app` (the App: `app.pod`, `app.names`,
+  `app.database`) and `images` ({name: reference}), then held by
+  `pod_contract.check` to: exactly one Pod named `app.pod`; containers named
+  `<app>-...` running only declared images; no `hostNetwork`, `hostPID`,
+  `hostIPC`, `privileged` or added capabilities; a memory limit on each
+  container; only the app's own secrets and ConfigMap, and otherwise only
+  `emptyDir` volumes (an app's data is in PostgreSQL, 5.6); and a container
+  port for each endpoint. A build install renders and checks before the
+  host records anything. Not yet: the variables an app without a database
+  or login gets (4f-2), `hostPath` and others by name (they are refused as
+  not one of the allowed kinds), and resource limits other than memory.
 
 ### 5.10 Dependencies by host role
 
@@ -362,7 +376,10 @@ in small deliveries, each driven by what Help needs:
 - 4d generated `.kube` units and `kube play` order from the model;
 - 4e (moved to phase 3b);
 - 4f `examples/help`: build, bundle, install, check and stop an
-  installation **with Help only**, then with all three apps.
+  installation **with Help only**, then with all three apps. In three
+  deliveries: 4f-1 each app's own pod template and its check (5.9); 4f-2
+  an app without a database or login installs (Help alone); 4f-3 the three
+  apps together, `rewrite` and the header policy (5.3), and a lab run.
 
 **Phase 5: Database and login through the same model.**
 Database and login are app fields since phase 4c-1; here come the setup task and
@@ -780,4 +797,20 @@ start order (`requires`) comes with the generated units in 4d.
      literally: fixed, `Yaml=` comes from the workload in all four.
   Noted: per-app unit settings (such as a longer start timeout for one
   app) would be a small explicit field when an app needs one.
+
+**Phase 4f-1, code done; acceptance run with phase 4f-3.**
+- Each app brings its own pod template, `pod.yaml.j2` beside its
+  `app.yaml` (`App.pod_template`); `deploy/manifests/app.yaml.j2` is gone,
+  and Todo and Notes each have a copy (some duplication is fine; Help's
+  will differ).
+- `manifests.render_app` renders it with `app` and `images`, and
+  `pod_contract.check` holds the result to the platform's rules (section
+  5.9) in `render.files`, so a bundle and a build install both check it; a
+  build install now renders before the host records the platform.
+- The loader requires the pod template, and a `backend` image only for an
+  app with a database (its `backend.setup_roles`), no longer `backend` and
+  `frontend` for every app.
+- Every rendered Kube YAML file is byte for byte as before; `bundle.json`
+  carries `pod_template` (format version 11), the only change in the render
+  baseline.
 

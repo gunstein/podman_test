@@ -56,7 +56,7 @@ class BundleContentTests(unittest.TestCase):
     def test_metadata_names_every_rendered_file(self):
         data = json.loads((self.bundle / 'bundle.json').read_text())
         self.assertEqual(data, self.metadata)
-        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 10))
+        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 11))
         self.assertEqual(data['platform'], platform_file.checkout().to_json())
         self.assertEqual(data['defaults'], {IDENTITY_HOSTNAME: 'auth.test', TODO_HOSTNAME: 'todo.test',
                                             NOTES_HOSTNAME: 'notes.test'})

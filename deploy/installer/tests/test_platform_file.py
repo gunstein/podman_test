@@ -22,6 +22,9 @@ SHOP = {'name': 'shop', 'database': True, 'keycloakClient': 'shop-frontend',
         'routes': [{'path': '/api/', 'to': 'api'}, {'path': '/ready', 'to': 'api', 'exact': True},
                    {'path': '/', 'to': 'site'}]}
 
+# Any pod template: the loader only needs it to be there (pod_contract checks what it renders).
+POD = 'kind: Pod\n'
+
 
 class PlatformFileTests(unittest.TestCase):
     def write(self, platform=None, app=None):
@@ -30,6 +33,7 @@ class PlatformFileTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, directory)
         (directory / 'apps/shop').mkdir(parents=True)
         (directory / 'apps/shop/app.yaml').write_text(yaml.safe_dump(SHOP if app is None else app, sort_keys=False))
+        (directory / 'apps/shop/pod.yaml.j2').write_text(POD)
         (directory / 'platform.yaml').write_text(yaml.safe_dump(PLATFORM if platform is None else platform))
         return directory / 'platform.yaml'
 
@@ -57,9 +61,15 @@ class PlatformFileTests(unittest.TestCase):
                     apps.AppImage(name='frontend', context='apps/shop')),
             endpoints=(apps.Endpoint(name='site', port=8080), apps.Endpoint(name='api', port=8000)),
             routes=(apps.Route(path='/api/', to='api'), apps.Route(path='/ready', to='api', exact=True),
-                    apps.Route(path='/', to='site'))),),
+                    apps.Route(path='/', to='site')),
+            pod_template='apps/shop/pod.yaml.j2'),),
             identity_hostname='login.example.org'))
         self.assertEqual(prod, platform_file.Environment(public_port=8443, log_level='info'))
+        path = self.write()
+        (path.parent / 'apps/shop/pod.yaml.j2').unlink()
+        with self.assertRaisesRegex(ValueError, r'apps/shop/app.yaml: the app needs its pod template .*apps/shop/'
+                                                r'pod.yaml.j2'):
+            platform_file.load(path)
 
     def test_unknown_and_missing_fields_are_errors_that_name_the_file(self):
         self.refused(r'platform.yaml: unknown field realm', platform={**PLATFORM, 'realm': 'todo'})
@@ -108,6 +118,7 @@ class PlatformFileTests(unittest.TestCase):
                 path = self.write(platform={**PLATFORM, 'apps': [PLATFORM['apps'][0], {**second, **change}]})
                 (path.parent / 'apps/other').mkdir()
                 (path.parent / 'apps/other/app.yaml').write_text(yaml.safe_dump(other))
+                (path.parent / 'apps/other/pod.yaml.j2').write_text(POD)
                 with self.assertRaisesRegex(ValueError, rf'the apps apps/shop/app.yaml and apps/other/app.yaml share {field}'):
                     platform_file.load(path)
         for change, field in (({'name': 'shop'}, 'name'), ({'keycloakClient': 'shop-frontend'}, 'keycloakClient')):
@@ -115,6 +126,7 @@ class PlatformFileTests(unittest.TestCase):
                 path = self.write(platform={**PLATFORM, 'apps': [PLATFORM['apps'][0], second]})
                 (path.parent / 'apps/other').mkdir()
                 (path.parent / 'apps/other/app.yaml').write_text(yaml.safe_dump({**other, **change}))
+                (path.parent / 'apps/other/pod.yaml.j2').write_text(POD)
                 with self.assertRaisesRegex(ValueError, rf'share {field}'):
                     platform_file.load(path)
 
@@ -172,7 +184,7 @@ class PlatformFileTests(unittest.TestCase):
             ({'site': {'context': '.', 'tag': 'x'}}, r'images.site: unknown field tag'),
             ({'site': {'context': '.', 'containerfile': '../Containerfile'}}, r'must be a path inside the context'),
             ({'site': {'context': '.', 'containerfile': '/etc/Containerfile'}}, r'must be a path inside the context'),
-            ({'backend': {'context': '.'}}, r'app.yaml: images: the shared app pod template .* declare frontend'),
+            ({'frontend': {'context': '.'}}, r'app.yaml: images: an app with database: true declares a backend image'),
         ):
             with self.subTest(message=message):
                 app = {key: value for key, value in SHOP.items() if key != 'images'}
@@ -208,6 +220,7 @@ class PlatformFileTests(unittest.TestCase):
         for name in ('other', 'third'):
             (path.parent / 'apps' / name).mkdir()
             (path.parent / 'apps' / name / 'app.yaml').write_text(yaml.safe_dump({**static, 'name': name}))
+            (path.parent / 'apps' / name / 'pod.yaml.j2').write_text(POD)
         platform = platform_file.load(path)[0]
         self.assertEqual([app.name for app in platform.database_apps], ['shop'])
         self.assertEqual([app.name for app in platform.login_apps], ['shop'])

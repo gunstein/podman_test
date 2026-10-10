@@ -26,10 +26,8 @@ ENVIRONMENTS = ('local', 'prod')
 # An app's name becomes resource names (shop-app, shop-postgres, the shop_migrator role).
 NAME = re.compile(r'[a-z][a-z0-9]{0,29}')
 WORD = re.compile(r'[a-z][a-z0-9-]{0,62}')
-# The images the shared app pod template runs (deploy/manifests/app.yaml.j2: the
-# migration and the backend, and the frontend), so every app declares them until
-# it brings its own pod template (docs/PLATFORM-PLAN.md, section 5.9).
-TEMPLATE_IMAGES = ('backend', 'frontend')
+# Each app's own pod template, in its directory beside app.yaml (section 5.9).
+POD_TEMPLATE = 'pod.yaml.j2'
 # A route's path goes into nginx.conf as written: a slash, then only letters,
 # digits and . _ ~ / - (no spaces, quotes, ; { } or $ that could change nginx).
 PATH = re.compile(r'/[A-Za-z0-9._~/-]*')
@@ -113,10 +111,6 @@ def _images(data, path, root):
         directory = os.path.normpath(path.parent / context)
         images.append(apps.AppImage(name=name, context=Path(os.path.relpath(directory, root)).as_posix(),
                                     containerfile=containerfile))
-    missing = [name for name in TEMPLATE_IMAGES if name not in data]
-    if missing:
-        raise ValueError(f'{path}: images: the shared app pod template (deploy/manifests/app.yaml.j2) runs '
-                         f'{" and ".join(TEMPLATE_IMAGES)}; declare {", ".join(missing)}')
     return tuple(images)
 
 
@@ -199,7 +193,8 @@ def _app(directory, hostname, replication_port, root, where):
 
     database: true in app.yaml gives the app its own PostgreSQL, and then
     platform.yaml must give it a replicationPort (replication_port, None if
-    absent; where names that entry); keycloakClient gives it login.
+    absent; where names that entry); keycloakClient gives it login. The
+    directory holds the app's pod template too (POD_TEMPLATE).
     """
     path = directory / APP_FILE
     data = _fields(_yaml(path), path, ('name', 'images', 'endpoints', 'routes'),
@@ -211,16 +206,25 @@ def _app(directory, hostname, replication_port, root, where):
         raise ValueError(f'{where}: replicationPort is required: {path} says database: true')
     if not database and replication_port is not None:
         raise ValueError(f'{where}: replicationPort is only for an app with a database, and {path} has none')
+    images = _images(data['images'], path, root)
+    if database and 'backend' not in (image.name for image in images):
+        # install.setup_roles runs the backend's backend.setup_roles until phase 5.
+        raise ValueError(f'{path}: images: an app with database: true declares a backend image, whose '
+                         'backend.setup_roles creates its database roles')
     endpoints = _endpoints(data['endpoints'], path)
     routes = _routes(data['routes'], path, endpoints)
+    ready = _routed(data['ready'], f'{path}: ready', routes) if 'ready' in data else ''
+    checks = _checks(data['checks'], path, routes) if 'checks' in data else ()
+    pod_template = directory / POD_TEMPLATE
+    if not pod_template.is_file():
+        raise ValueError(f'{path}: the app needs its pod template {pod_template} (docs/PLATFORM-PLAN.md, section 5.9)')
     return apps.App(name=_text(data['name'], f'{path}: name', NAME), hostname=hostname,
                     keycloak_client=_text(data['keycloakClient'], f'{path}: keycloakClient', WORD)
                     if 'keycloakClient' in data else '',
                     has_database=database, replication_port=replication_port or 0,
-                    images=_images(data['images'], path, root), endpoints=endpoints,
+                    images=images, endpoints=endpoints,
                     routes=routes,
-                    ready=_routed(data['ready'], f'{path}: ready', routes) if 'ready' in data else '',
-                    checks=_checks(data['checks'], path, routes) if 'checks' in data else ())
+                    ready=ready, checks=checks, pod_template=Path(os.path.relpath(pod_template, root)).as_posix())
 
 
 def load(path, environment='prod'):

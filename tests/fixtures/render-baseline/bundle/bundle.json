@@ -1,6 +1,6 @@
 {
   "format": "platform-offline-bundle",
-  "format_version": 10,
+  "format_version": 11,
   "manifests": {
     "directory": "generated/target/manifests",
     "files": [
@@ -97,6 +97,7 @@
           }
         ],
         "ready": "/ready",
+        "pod_template": "examples/todo/pod.yaml.j2",
         "checks": [
           {
             "path": "/health",
@@ -159,6 +160,7 @@
           }
         ],
         "ready": "/ready",
+        "pod_template": "examples/notes/pod.yaml.j2",
         "checks": [
           {
             "path": "/health",

@@ -35,7 +35,7 @@ The source definitions, relative to the repository root, are:
 ```text
 deploy/manifests/postgres.yaml.j2       shared database Pod and PVCs (todo, notes, keycloak)
 deploy/manifests/postgres-config.yaml.j2 shared database ConfigMap
-deploy/manifests/app.yaml.j2            shared app Pod (todo, notes)
+examples/<app>/pod.yaml.j2              each app's own Pod (pod_contract.py checks it)
 deploy/manifests/app-config.yaml.j2     shared app backend ConfigMap
 deploy/manifests/keycloak.yaml.j2       shared identity Pod and ConfigMap
 deploy/manifests/shared-proxy.yaml.j2   independent proxy and ConfigMaps

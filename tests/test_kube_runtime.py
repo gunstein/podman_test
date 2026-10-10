@@ -191,12 +191,12 @@ class KubeRuntimeTests(unittest.TestCase):
     def test_jinja_manifests_are_the_single_workload_template_source(self):
         manifests_dir = ROOT / "deploy/manifests"
         self.assertEqual({path.name for path in manifests_dir.glob("*.yaml.j2")}, {
-            "postgres.yaml.j2", "postgres-config.yaml.j2", "app.yaml.j2", "app-config.yaml.j2",
+            "postgres.yaml.j2", "postgres-config.yaml.j2", "app-config.yaml.j2",
             "keycloak.yaml.j2", "shared-proxy.yaml.j2",
         })
         self.assertFalse((ROOT / "deploy/charts").exists())
 
-        # One postgres.yaml.j2 backs every database, and one app.yaml.j2 every application.
+        # One postgres.yaml.j2 backs every database; each app brings its own pod template.
         rendered = "\n".join(
             read(RUNTIME / filename) for filename in
             ("todo-postgres.yaml", "notes-postgres.yaml", "keycloak-postgres.yaml", "todo-app.yaml", "notes-app.yaml")
@@ -204,8 +204,8 @@ class KubeRuntimeTests(unittest.TestCase):
         for pod_name in ("todo-postgres", "notes-postgres", "keycloak-postgres", "todo-app", "notes-app"):
             self.assertIn(f'name: "{pod_name}"', rendered)
 
-        app_template = read(manifests_dir / "app.yaml.j2")
-        self.assertIn("{{ backend_image | tojson }}", app_template)
+        app_template = read(ROOT / "examples/todo/pod.yaml.j2")
+        self.assertIn("{{ images.backend | tojson }}", app_template)
         proxy_template = read(manifests_dir / "shared-proxy.yaml.j2")
         self.assertIn("{{ image | tojson }}", proxy_template)
 

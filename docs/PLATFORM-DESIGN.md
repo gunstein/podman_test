@@ -1,6 +1,7 @@
 # Platform design: from the Todo demo to a reusable app platform
 
-Status: **proposal for discussion**. Nothing here is implemented yet. When the
+Status: **proposal for discussion**. Nothing here is implemented yet. The
+order of work is in [PLATFORM-PLAN.md](PLATFORM-PLAN.md). When the
 design is agreed, ARCHITECTURE.md, LEARNING-GUIDE.md and AGENTS.md are updated
 as the phases below land, and this document records the decisions.
 

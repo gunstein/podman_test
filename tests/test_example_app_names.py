@@ -54,7 +54,6 @@ KNOWN = {
     "deploy/manifests/app-config.yaml.j2",
     "deploy/manifests/keycloak.yaml.j2",
     "deploy/offline/install.sh",
-    "deploy/offline/preflight.sh",
     "deploy/quadlet/keycloak.kube.j2",
     "deploy/quadlet/notes-app.kube.j2",
     "deploy/quadlet/notes-postgres.kube.j2",

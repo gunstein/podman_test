@@ -66,22 +66,29 @@ if ! systemctl --user show-environment >/dev/null 2>&1; then
     failed=1
 fi
 
+# The host ports the bundle's workloads may publish, "CONTAINER PORT..." per
+# line, from bundle.json (apps.Platform.host_ports; standard library only).
+# A port its own container already holds is fine: this is a reinstall.
+bundle_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+if ! host_ports=$(PYTHONPATH="$bundle_directory/deploy/installer" python3 -m app_installer \
+    platform host-ports --bundle-dir "$bundle_directory"); then
+    echo "ERROR: cannot read the bundle's platform from $bundle_directory/bundle.json." >&2
+    exit 1
+fi
+platform_ports=""
 allowed_ports=""
-for container_ports in \
-    "todo-postgres:5432" \
-    "notes-postgres:5433" \
-    "keycloak-postgres:5434" \
-    "nginx:8080,8443"
-do
-    container=${container_ports%%:*}
-    ports=${container_ports#*:}
+while read -r container ports; do
+    ports=$(printf '%s' "$ports" | tr ' ' ',')
+    platform_ports="${platform_ports}${platform_ports:+,}${ports}"
     if podman container exists "$container" && \
         [ "$(podman inspect --format '{{.State.Running}}' "$container")" = true ]; then
         allowed_ports="${allowed_ports}${allowed_ports:+,}${ports}"
     fi
-done
+done <<PORTS
+$host_ports
+PORTS
 
-if ! PLATFORM_ALLOWED_PORTS="$allowed_ports" python3 - <<'PY'
+if ! PLATFORM_PORTS="$platform_ports" PLATFORM_ALLOWED_PORTS="$allowed_ports" python3 - <<'PY'
 import os
 import socket
 import subprocess
@@ -94,7 +101,7 @@ allowed = {
 }
 failed = []
 # Backend port 8000 is pod-local, not a published host port.
-for port in (5432, 5433, 5434, 8080, 8443):
+for port in (int(port) for port in os.environ["PLATFORM_PORTS"].split(",")):
     sock = socket.socket()
     try:
         # Only a listener counts: SO_REUSEADDR lets the bind pass over connections

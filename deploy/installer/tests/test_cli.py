@@ -136,3 +136,29 @@ class BackupAndTlsCLITests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('is not a platform', error)
         down.assert_not_called()
+
+
+class PlatformPartTests(unittest.TestCase):
+    """`platform PART`: what the shell scripts read instead of keeping lists."""
+
+    def test_parts_from_platform_yaml(self):
+        self.assertEqual(run(['platform', 'hostnames']), (0, 'auth.test todo.test notes.test\n', ''))
+        self.assertEqual(run(['platform', 'hostname', 'notes']), (0, 'notes.test\n', ''))
+        self.assertEqual(run(['platform', 'hostname', 'identity']), (0, 'auth.test\n', ''))
+        self.assertEqual(run(['platform', 'public-port', '--environment', 'local']), (0, '8443\n', ''))
+        self.assertEqual(run(['platform', 'host-ports'])[1],
+                         'todo-postgres 5432\nnotes-postgres 5433\nkeycloak-postgres 5434\nnginx 8080 8443\n')
+
+    def test_parts_from_a_bundle(self):
+        import offline_bundle
+        with tempfile.TemporaryDirectory() as bundle:
+            offline_bundle.build(bundle, platform_file.checkout().apps[1:])
+            self.assertEqual(run(['platform', 'hostnames', '--bundle-dir', bundle])[1], 'auth.test notes.test\n')
+            self.assertEqual(run(['platform', 'host-ports', '--bundle-dir', bundle])[1],
+                             'notes-postgres 5433\nkeycloak-postgres 5434\nnginx 8080 8443\n')
+
+    def test_a_wrong_name_is_an_error(self):
+        code, output, error = run(['platform', 'hostname', 'shop'])
+        self.assertEqual((code, output), (1, ''))
+        self.assertIn("No hostname named 'shop'; the names are identity, todo, notes", error)
+        self.assertEqual(run(['platform', 'hostnames', 'todo'])[0], 1)

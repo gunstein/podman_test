@@ -16,6 +16,8 @@ sys.path.insert(0, str(ROOT / "deploy/installer"))
 from app_installer import platform_file  # noqa: E402
 
 PORT_CHECK = PREFLIGHT.split("python3 - <<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+# What preflight.sh gives the port check for today's platform (apps.Platform.host_ports).
+PLATFORM_PORTS = ",".join(str(port) for ports in platform_file.checkout().host_ports().values() for port in ports)
 
 
 class PreflightHostPortTests(unittest.TestCase):
@@ -40,7 +42,7 @@ class PreflightHostPortTests(unittest.TestCase):
                 pass
 
         with patch.object(socket, "socket", FakeSocket), patch.dict(
-            os.environ, {"PLATFORM_ALLOWED_PORTS": allowed}
+            os.environ, {"PLATFORM_PORTS": PLATFORM_PORTS, "PLATFORM_ALLOWED_PORTS": allowed}
         ), patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")), \
                 contextlib.redirect_stderr(io.StringIO()):
             exec(compile(PORT_CHECK, "deploy/offline/preflight.sh:port-check", "exec"), {})
@@ -64,11 +66,15 @@ class PreflightHostPortTests(unittest.TestCase):
             [5432, 5433, 5434, 8080, 8443],
         )
 
-    def test_every_registered_database_port_is_checked(self):
+    def test_every_database_port_of_the_bundle_is_checked(self):
+        # preflight.sh reads the ports from the bundle; it keeps no list of its own.
+        self.assertIn("platform host-ports --bundle-dir", PREFLIGHT)
+        self.assertNotRegex(PREFLIGHT, r"(?<![a-z])(todo|notes)(?![a-z])")
         checked = self.check_ports(set())
         for database in platform_file.checkout().replicated_databases:
             self.assertIn(database.replication_port, checked)
-            self.assertIn(f'"{database.container}:{database.replication_port}"', PREFLIGHT)
+        self.assertEqual(platform_file.checkout().host_ports(), {
+            "todo-postgres": (5432,), "notes-postgres": (5433,), "keycloak-postgres": (5434,), "nginx": (8080, 8443)})
 
     def test_allowing_one_port_does_not_allow_another(self):
         with self.assertRaisesRegex(SystemExit, "8443"):

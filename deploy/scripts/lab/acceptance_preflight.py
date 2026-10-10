@@ -12,6 +12,7 @@ Prints PASS/WARN/FAIL per check and exits 1 if anything FAILed.
 import argparse
 import os
 import re
+import shlex
 import shutil
 import socket
 import stat
@@ -19,10 +20,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(ROOT / 'deploy/installer'))
 import pve_lab  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[3]
+# platform.yaml of this checkout: the hostnames and containers the lab installs.
+from app_installer import platform_file  # noqa: E402
+
 REQUIRED_PRIVILEGES = ('VM.Audit', 'VM.PowerMgmt', 'VM.Config.Network', 'VM.Config.Options',
                        'VM.Snapshot.Rollback')
 GUEST_EXEC_PRIVILEGES = ('VM.Monitor', 'VM.GuestAgent.Unrestricted')
@@ -136,8 +141,9 @@ def check_local(report, args):
     nssdb = [path for path in (Path.home() / '.pki/nssdb', Path.home() / '.local/share/pki/nssdb') if path.is_dir()]
     report.check(bool(nssdb), 'Chromium NSS database', str(nssdb[0]) if nssdb else
                  'none yet; created on first Chromium start', level='WARN')
-    hosts = [line for line in Path('/etc/hosts').read_text().splitlines()
-             if 'todo.test' in line or 'notes.test' in line]
+    platform = platform_file.checkout()
+    hostnames = {platform.identity_hostname, *(app.hostname for app in platform.apps)}
+    hosts = [line for line in Path('/etc/hosts').read_text().splitlines() if hostnames & set(line.split()[1:])]
     report.line('INFO', '/etc/hosts entries', '; '.join(hosts) or 'none')
     code, _, _ = run(['curl', '-sS', '-o', '/dev/null', '--max-time', '10', 'https://pypi.org/simple/'])
     report.check(code == 0, 'Internet access for pip/Playwright downloads', level='WARN')
@@ -235,7 +241,8 @@ echo "ntp_synchronized=$(timedatectl show -p NTPSynchronized --value 2>/dev/null
 echo "journal=$(test -d /var/log/journal && echo persistent || echo volatile)"
 echo "mem_mib=$(free -m | awk '/^Mem:/ {print $2}')"
 echo "home_free=$(df -h --output=avail "$HOME" | tail -1 | tr -d ' ')"
-echo "todo_state=$(podman ps -a --format '{{.Names}}' 2>/dev/null | grep -cE '^(todo|notes|keycloak|nginx)') containers"
+# The arguments are the platform's containers (apps.Platform.ready('app')).
+echo "todo_state=$(podman ps -a --format '{{.Names}}' 2>/dev/null | grep -cxF "$(printf '%s\n' "$@")") containers"
 '''
 
 
@@ -292,7 +299,8 @@ def _ssh(args, address):
     try:
         result = subprocess.run(
             ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10',
-             f'{args.user}@{address}', 'bash -s'],
+             f'{args.user}@{address}',
+             'bash -s -- ' + ' '.join(shlex.quote(name) for name in platform_file.checkout().ready('app')[1])],
             input=SSH_CHECKS, capture_output=True, text=True, timeout=60, check=False)
     except (OSError, subprocess.TimeoutExpired) as error:
         return 1, '', str(error)

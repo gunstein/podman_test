@@ -167,7 +167,9 @@ jobs:
           command -v certutil >/dev/null || { sudo apt-get update; sudo apt-get install -y libnss3-tools; }
           podman --version
           test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
-          echo '127.0.0.1 auth.test todo.test notes.test' | sudo tee -a /etc/hosts
+          # The development stack's hostnames, from platform.yaml (its local environment).
+          echo "127.0.0.1 $(PYTHONPATH=deploy/installer python -m app_installer platform hostnames --environment local)" |
+            sudo tee -a /etc/hosts
 
       - name: Start the stack with dev-up.sh
         run: deploy/scripts/dev/dev-up.sh
@@ -194,8 +196,12 @@ jobs:
           echo "::add-mask::$KEYCLOAK_ADMIN_PASSWORD"
           export E2E_PASSWORD KEYCLOAK_ADMIN_PASSWORD E2E_USERNAME=testuser E2E_IGNORE_HTTPS_ERRORS=false
           python e2e/provision_user.py
-          E2E_BASE_URL=https://todo.test:8443 python -m pytest e2e/test_todo_flow.py --browser chromium -rs
-          E2E_NOTES_URL=https://notes.test:8443 python -m pytest e2e/test_notes_flow.py --browser chromium -rs
+          origin() {  # an app's origin on the development stack: platform.yaml's local environment
+            local platform=(env PYTHONPATH=deploy/installer python -m app_installer platform)
+            echo "https://$("${platform[@]}" hostname "$1" --environment local):$("${platform[@]}" public-port --environment local)"
+          }
+          E2E_BASE_URL=$(origin todo) python -m pytest e2e/test_todo_flow.py --browser chromium -rs
+          E2E_NOTES_URL=$(origin notes) python -m pytest e2e/test_notes_flow.py --browser chromium -rs
           E2E_MULTI_APP=1 E2E_CA_FILE="$ca_file" python -m pytest e2e/test_multi_app.py -rs
 
       - name: Show pods and logs on failure

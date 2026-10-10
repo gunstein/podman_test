@@ -253,6 +253,15 @@ class Platform:
                       *(app.names.resource(part) for app in self.apps for part in ("backend", "frontend")), "nginx"]
         return [workload.pod for workload in self.workloads()], containers
 
+    def host_ports(self):
+        """The host ports each container may publish, {container: ports}: preflight.sh checks they are free.
+
+        Each database its replication port (a DR primary publishes it), nginx
+        the fixed local HTTP and HTTPS ports it always binds on 127.0.0.1.
+        """
+        ports = {database.container: (database.replication_port,) for database in self.replicated_databases}
+        return {**ports, "nginx": (settings.LOCAL_HTTP_PORT, settings.HTTPS_PORT)}
+
     def to_json(self):
         """This platform as plain data, for bundle.json and a host's record."""
         return {"identity_hostname": self.identity_hostname,

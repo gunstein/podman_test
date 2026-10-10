@@ -31,6 +31,36 @@ def paths(parser):
     parser.add_argument('--kube-runtime-dir', type=Path)
 
 
+def platform_part(args):
+    """What `platform PART` prints, from a bundle (--bundle-dir) or platform.yaml (--project-root).
+
+    For shell scripts, one value per line or a space-separated list, so they
+    read the installation instead of keeping a list of their own:
+    hostnames        Keycloak's, then each app's, on one line
+    hostname NAME    one of them: NAME is identity or an app
+    public-port      the HTTPS port
+    host-ports       "CONTAINER PORT..." per line (apps.Platform.host_ports)
+    """
+    if args.bundle_dir:
+        platform = target_render.bundle_platform(args.bundle_dir)
+        port = target_render.metadata(args.bundle_dir)['public_port']
+    else:
+        platform, environment = platform_file.load(args.project_root / platform_file.FILE, args.environment)
+        port = environment.public_port
+    names = {'identity': platform.identity_hostname, **{app.name: app.hostname for app in platform.apps}}
+    if args.part == 'hostname':
+        if args.name not in names:
+            raise ValueError(f'No hostname named {args.name!r}; the names are {", ".join(names)}')
+        return names[args.name]
+    if args.name:
+        raise ValueError(f'platform {args.part} takes no name')
+    if args.part == 'hostnames':
+        return ' '.join(names.values())
+    if args.part == 'public-port':
+        return str(port)
+    return '\n'.join(f'{container} {" ".join(map(str, ports))}' for container, ports in platform.host_ports().items())
+
+
 def _details(database):
     """One database's names as the table in docs/ACCEPTANCE.md lists them, for comparing the two."""
     return {'name': database.name, 'container': database.container,
@@ -144,6 +174,12 @@ def main(argv=None):
     registry = subcommands.add_parser('replication-apps')
     registry.add_argument('--details', action='store_true')
     registry.add_argument('--project-root', type=Path, default=Path(__file__).resolve().parents[3])
+    part = subcommands.add_parser('platform', help='print part of the platform for a script (platform_part)')
+    part.add_argument('part', choices=('hostnames', 'hostname', 'public-port', 'host-ports'))
+    part.add_argument('name', nargs='?', help='for hostname: identity or an app')
+    part.add_argument('--bundle-dir', type=Path, help="read the bundle's bundle.json, not platform.yaml")
+    part.add_argument('--project-root', type=Path, default=Path(__file__).resolve().parents[3])
+    part.add_argument('--environment', choices=platform_file.ENVIRONMENTS, default='prod')
     remove = subcommands.add_parser('uninstall')
     remove.add_argument('--remove-data', action='store_true')
     remove.add_argument('--remove-backups', action='store_true',
@@ -171,7 +207,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     oplog.describe(args.command, getattr(args, 'backup_command', None))
     try:
-        if args.command == 'replication-apps':
+        if args.command == 'platform':
+            print(platform_part(args))
+        elif args.command == 'replication-apps':
             print(json.dumps([_details(d) if args.details else d.name
                               for d in platform_file.load(args.project_root / platform_file.FILE)[0]
                               .replicated_databases]))

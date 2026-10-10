@@ -112,6 +112,22 @@ podman ps -a; podman volume ls; podman secret ls   # nothing of the project
 Nothing can be restored afterwards. The PostgreSQL image stays (it is not the
 project's own), and on a DR host the command refuses like every uninstall.
 
+## What scripts read from the platform
+
+Shell scripts ask the installer instead of keeping their own list of apps:
+
+```bash
+python3 -m app_installer platform hostnames                  # auth.test todo.test notes.test
+python3 -m app_installer platform hostname notes             # one: identity or an app
+python3 -m app_installer platform public-port --environment local
+python3 -m app_installer platform host-ports --bundle-dir .  # "CONTAINER PORT..." per line
+```
+
+Without `--bundle-dir` they read `platform.yaml` (PyYAML); with it, the
+bundle's `bundle.json` (standard library only, as `preflight.sh` does on an
+offline host). `wait-ready.sh` gets its pods, containers and hostnames as
+arguments from its Python callers (`apps.Platform.ready`).
+
 ## Nightly backups
 
 A server install turns on `platform-backup.timer`, which runs

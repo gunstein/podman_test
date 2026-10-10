@@ -24,6 +24,8 @@ export default class Keycloak {
 }
 """
 
+DISCOVERY = '{"issuer": "https://auth.adapter.test/auth/realms/todo"}'
+
 
 def serve(page):
     requests = []
@@ -32,6 +34,9 @@ def serve(page):
         path = route.request.url.split("https://adapter.test", 1)[1].split("?")[0]
         if path == "/vendor/keycloak.js":
             route.fulfill(content_type="text/javascript", body=FAKE_SDK)
+        elif path == "/auth/realms/todo/.well-known/openid-configuration":
+            # Keycloak's own hostname, discovered through the app's origin (keycloak-adapter.js).
+            route.fulfill(content_type="application/json", body=DISCOVERY)
         elif path == "/api/todos":
             requests.append(route.request.headers)
             route.fulfill(content_type="application/json", body="[]")
@@ -54,6 +59,9 @@ def test_public_adapter_and_redirects(page):
     page.goto("https://adapter.test/")
     expect(page.get_by_text("Reading publicly")).to_be_visible()
     assert requests and "authorization" not in requests[0]
+    assert page.evaluate("window.sdkConfig") == {
+        "url": "https://auth.adapter.test/auth", "realm": "todo", "clientId": "todo-frontend"
+    }
     assert page.evaluate("window.initOptions") == {
         "onLoad": "check-sso", "pkceMethod": "S256", "checkLoginIframe": False
     }

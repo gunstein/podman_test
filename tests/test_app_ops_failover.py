@@ -8,6 +8,7 @@ from tests import test_app_ops_commands as commands
 from tests.test_app_ops_commands import World, spec
 
 sys.path.insert(0, "deploy/dr")
+from app_installer import platform_file  # noqa: E402
 from app_ops import cli, failover  # noqa: E402
 from app_ops.transport import Host  # noqa: E402
 
@@ -116,7 +117,9 @@ class FailoverTests(unittest.TestCase):
         self.assertEqual([step[1] for step in world.steps() if step[0] == "https"],
                          ["shop.example.org", "notes.example.org"])
         wait_ready = next(command for _host, command in world.commands if command[:2] == ["bash", "-s"])
-        self.assertEqual(wait_ready[-3:], ["app", "shop.example.org", "notes.example.org"])
+        pods, containers = platform_file.checkout().ready("app")
+        self.assertEqual(wait_ready[-5:], ["app", " ".join(pods), " ".join(containers),
+                                           "shop.example.org", "notes.example.org"])
         self.assertEqual(report["users"]["hostnames"], ["auth.example.org", "shop.example.org", "notes.example.org"])
         self.assertEqual({step[1] for step in world.steps() if step[0] == "login-form"}, {"auth.example.org"})
 

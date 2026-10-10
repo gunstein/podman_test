@@ -269,7 +269,11 @@ def check_services(step, host, mode):
     already requires every container to be healthy, and the probe allows
     single failed runs while a container starts (run 19).
     """
-    ready = step.ssh(host, (ROOT / 'deploy/scripts/wait-ready.sh').read_text(), mode, timeout=400)
+    platform = platform_file.checkout()
+    pods, containers = platform.ready(mode)
+    hostnames = [app.hostname for app in platform.apps] if mode == 'app' else []
+    ready = step.ssh(host, (ROOT / 'deploy/scripts/wait-ready.sh').read_text(), mode, ' '.join(pods),
+                     ' '.join(containers), *hostnames, timeout=400)
     step.expect(ready.returncode == 0 and 'READY:' in ready.stdout, f'wait-ready.sh {mode} printed READY')
     failed = step.ssh(host, 'systemctl --user --failed --no-legend --plain')
     units = [line.split()[0] for line in failed.stdout.splitlines() if line.strip()]
@@ -286,7 +290,7 @@ def check_services(step, host, mode):
         nginx = step.ssh(host, 'podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf')
         step.expect(nginx.returncode == 0, 'nginx configuration is valid')
     else:
-        serving = platform_file.checkout().services(databases=False)
+        serving = platform.services(databases=False)
         states = step.ssh(host, 'systemctl --user is-active ' + ' '.join(serving)).stdout.split()
         step.expect(len(states) == len(serving) and 'active' not in states,
                     'a database-only standby runs none of: ' + ', '.join(serving))

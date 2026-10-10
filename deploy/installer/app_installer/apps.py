@@ -236,6 +236,23 @@ class Platform:
         return [workload.service for workload in
                 reversed(self.workloads() if databases else self.serving_workloads())]
 
+    def ready(self, role):
+        """What wait-ready.sh waits for on a host in role "app" or "standby": (pods, containers).
+
+        An app host runs every workload; a database-only standby only the
+        databases. The containers are the long-running ones: each database,
+        Keycloak, each app's backend and frontend, and nginx (their names in
+        deploy/manifests, kept by podman kube play --no-pod-prefix).
+        """
+        databases = [database.container for database in self.replicated_databases]
+        if role == "standby":
+            return databases, databases
+        if role != "app":
+            raise ValueError(f"role must be app or standby, not {role!r}")
+        containers = [*databases, "keycloak",
+                      *(app.names.resource(part) for app in self.apps for part in ("backend", "frontend")), "nginx"]
+        return [workload.pod for workload in self.workloads()], containers
+
     def to_json(self):
         """This platform as plain data, for bundle.json and a host's record."""
         return {"identity_hostname": self.identity_hostname,

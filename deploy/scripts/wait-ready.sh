@@ -2,30 +2,26 @@
 # Wait until a host's workloads are really up, not only started, after a boot
 # or an install. A systemd unit is active as soon as its pod starts; the
 # containers, health checks and HTTP answers follow a few seconds later.
-# Usage: wait-ready.sh app [HOSTNAME...] | standby
-#   app:     all seven services, their containers running and healthy, and
-#            /ready answering on 127.0.0.1:8080 for each app's public hostname:
-#            the ones given (app-ops passes the host's recorded hostnames),
-#            else todo.test and notes.test.
-#   standby: the three PostgreSQL services and containers only.
+# Usage: wait-ready.sh app|standby PODS CONTAINERS [HOSTNAME...]
+#   PODS and CONTAINERS are space-separated names; apps.Platform.ready(role)
+#   gives them, from the installation's platform (callers pass them, so this
+#   script keeps no list of its own).
+#   app:     the pods' services active, the containers running and healthy, and
+#            /ready answering on 127.0.0.1:8080 for each HOSTNAME given (each
+#            app's public hostname).
+#   standby: the same for the databases; no HOSTNAME.
 # Prints what it still waits for every 10 seconds, READY when done, and exits 1
 # after WAIT_TIMEOUT seconds (default 300). It only reads; it changes nothing.
-# Runs on the host itself, also over SSH: ssh HOST 'bash -s' -- app < wait-ready.sh
+# Runs on the host itself, also over SSH: ssh HOST 'bash -s' -- app PODS CONTAINERS < wait-ready.sh
 set -u
-databases="todo-postgres notes-postgres keycloak-postgres"
 mode=${1:-}
-case $mode in
-  app)
-    services="shared-proxy todo-app notes-app keycloak $databases"
-    containers="nginx todo-backend todo-frontend notes-backend notes-frontend keycloak $databases"
-    shift
-    hostnames=${*:-todo.test notes.test} ;;
-  standby)
-    services=$databases containers=$databases hostnames="" ;;
-  *)
-    echo "usage: $0 app|standby" >&2
-    exit 2 ;;
-esac
+if [ $# -lt 3 ] || { [ "$mode" != app ] && [ "$mode" != standby ]; }; then
+  echo "usage: $0 app|standby PODS CONTAINERS [HOSTNAME...]" >&2
+  exit 2
+fi
+services=$2 containers=$3
+shift 3
+hostnames=$*
 
 # Print the first thing that is not ready yet, or nothing.
 missing() {

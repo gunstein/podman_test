@@ -114,6 +114,16 @@ class AppRegistryTests(unittest.TestCase):
 
 
 class PlatformTests(unittest.TestCase):
+    def test_ready_names_what_each_role_runs(self):
+        databases = ["todo-postgres", "notes-postgres", "keycloak-postgres"]
+        self.assertEqual(checkout().ready("standby"), (databases, databases))
+        pods, containers = checkout().ready("app")
+        self.assertEqual(pods, [*databases, "keycloak", "todo-app", "notes-app", "shared-proxy"])
+        self.assertEqual(containers, [*databases, "keycloak", "todo-backend", "todo-frontend",
+                                      "notes-backend", "notes-frontend", "nginx"])
+        with self.assertRaisesRegex(ValueError, "role must be app or standby"):
+            checkout().ready("primary")
+
     def shop(self):
         return Platform(apps=(App(name="shop", hostname="shop.example.org", keycloak_client="shop-frontend"),),
                         identity_hostname="login.example.org")

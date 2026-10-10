@@ -514,7 +514,8 @@ every 10 seconds for up to 10 minutes until the boot ID differs.
 its pod starts; containers, health checks and HTTP answers follow seconds
 later. `$A check services` and `$A do reboot` wait for that with
 `deploy/scripts/wait-ready.sh` (`app` on a host with the application,
-`standby` on a database-only standby), up to 5 minutes. Do not write your own
+`standby` on a database-only standby; the tool passes the pods, containers and
+hostnames from `platform.yaml`), up to 5 minutes. Do not write your own
 wait loops around `systemctl` or `podman`. A failed `platform-dr-check.service`
 (the scheduled DR check) does not fail `check services`: it fails on purpose
 while DR is degraded, as after the failover until the rebuild, and

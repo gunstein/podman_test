@@ -72,7 +72,6 @@ KNOWN = {
     "deploy/scripts/lab/provision-user.sh",
     "deploy/scripts/lab/pve_lab.py",
     "deploy/scripts/lab/trust-serving-ca.sh",
-    "deploy/scripts/wait-ready.sh",
     "keycloak/Containerfile",
     "keycloak/todo-realm.json",
     "proxy/Containerfile",

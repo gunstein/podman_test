@@ -6,6 +6,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "deploy/scripts/wait-ready.sh"
+# What the callers pass for today's platform (apps.Platform.ready, tested in test_apps).
+DATABASES = "todo-postgres notes-postgres keycloak-postgres"
+ARGUMENTS = {
+    "app": ["app", f"{DATABASES} keycloak todo-app notes-app shared-proxy",
+            f"{DATABASES} keycloak todo-backend todo-frontend notes-backend notes-frontend nginx",
+            "todo.test", "notes.test"],
+    "standby": ["standby", DATABASES, DATABASES],
+}
 
 # Each fake reads its last argument (unit, container or URL options) and fails
 # for the names listed in the matching environment variable.
@@ -30,7 +38,8 @@ def run(mode, **faults):
         environment = {"PATH": f"{directory}:/usr/bin:/bin", "WAIT_TIMEOUT": "0",
                        "INACTIVE": "", "ABSENT": "", "STARTING": "", "NOT_READY": "none"}
         environment.update(faults)
-        return subprocess.run(["bash", str(SCRIPT), *mode], capture_output=True, text=True,
+        arguments = ARGUMENTS.get(mode[0], mode) if mode else mode
+        return subprocess.run(["bash", str(SCRIPT), *arguments], capture_output=True, text=True,
                               env=environment, timeout=30)
 
 
@@ -61,6 +70,15 @@ class WaitReadyTests(unittest.TestCase):
     def test_usage_needs_a_mode(self):
         self.assertEqual(run([]).returncode, 2)
         self.assertEqual(run(["primary"]).returncode, 2)
+
+    def test_names_come_from_the_caller(self):
+        self.assertEqual(run(["app"]).returncode, 0)
+        for arguments in (["app"], ["app", "a"], ["standby", "a"], ["dev", "a", "b"]):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(["bash", str(SCRIPT), *arguments], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("usage:", result.stderr)
+        self.assertNotRegex(SCRIPT.read_text(), r"(?<![a-z])(todo|notes)(?![a-z])")
 
 
 if __name__ == "__main__":

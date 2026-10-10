@@ -63,10 +63,12 @@ def https(host, hostname, path, *curl_options):
                      path, *curl_options]).stdout
 
 
-def services(project_root, host, hostnames):
-    """Raise unless every service is ready and each app answers over HTTPS with the host's CA."""
+def services(project_root, host, platform, hostnames):
+    """Raise unless every service of the platform is ready and each app answers over HTTPS with the host's CA."""
     wait_ready = (Path(project_root) / 'deploy/scripts/wait-ready.sh').read_text()
-    waited = host.run(['bash', '-s', '--', 'app', *hostnames.values()], input=wait_ready, allowed=(0, 1))
+    pods, containers = platform.ready('app')
+    waited = host.run(['bash', '-s', '--', 'app', ' '.join(pods), ' '.join(containers), *hostnames.values()],
+                      input=wait_ready, allowed=(0, 1))
     if waited.returncode:
         raise RuntimeError(waited.stdout.strip().splitlines()[-1] if waited.stdout.strip() else 'not ready')
     for hostname in hostnames.values():
@@ -158,7 +160,7 @@ def failover(project_root, controller, current, old_primary, confirm_fenced, con
             ('promote', lambda: promote(current, confirm_fenced, confirm_promotion)),
             ('deploy', deploy),
             ('backup', lambda: recovery.configure_backup(project_root, controller, current)),
-            ('services', lambda: services(project_root, current, hostnames)),
+            ('services', lambda: services(project_root, current, platform, hostnames)),
             ('login-page', lambda: login_page(current, platform, hostnames, identity[0])),
             ('users', lambda: users(current, hostnames, identity[0]))):
         say(f'{name} ...')

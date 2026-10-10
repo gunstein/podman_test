@@ -1,274 +1,350 @@
-# Platform plan: from the Todo demo to a reusable app platform
+# Platform plan: from the Todo demo to a small reusable app platform
 
-Status: **plan for review**. Nothing in it is implemented yet. The design it
-carries out is [PLATFORM-DESIGN.md](PLATFORM-DESIGN.md); this document is the
-order of work, what each step touches and how we know it is done. It is
-written to be read on its own, including by a reviewer without the
-repository, and ends with the questions we want challenged.
+Status: **revised plan for review (version 2)**. Nothing in it is implemented.
+This one document holds scope, rules, contracts and phases; version 1 of the
+plan and the separate design document are in Git history (`836a176`).
+Version 2 follows an external review: one resolved model, explicit
+contracts, a narrower first version, and simplicity as an acceptance
+criterion.
 
-## 1. Where we are
+## 1. The overriding requirement
 
-The repository (branch `feature/podman-kube`) runs a demo on **rootless
-Podman** with the Podman-supported subset of Kubernetes YAML as workload
-format, no Kubernetes cluster:
+> Maintainability for a moderately experienced Python developer is an
+> overriding requirement. The goal is a small, reusable Podman platform with
+> a clear control flow and few abstractions. The first version supports
+> today's apps and one static app. We do not build general support for
+> unknown future services. Every new abstraction must be justified by a
+> concrete need in existing code and must make common changes easier. It is
+> acceptable that new kinds of services later require bounded changes in
+> the core. The work is split into small deliveries, and understandability
+> is assessed after each phase.
 
-- **Seven pods** on one user-defined network `app-network`: `todo-app` and
-  `notes-app` (each a migration init container, a FastAPI backend and a plain
-  HTML/JS frontend), `todo-postgres` and `notes-postgres`, `keycloak` with
-  its own `keycloak-postgres`, and `shared-proxy` (nginx, TLS, routing by
-  hostname).
-- **Development**: `podman kube play/down`. **Production**: `.kube` Quadlet
-  units under user systemd.
-- **Installer** (`deploy/installer/app_installer`, Python): renders Jinja2
-  templates (`deploy/manifests/*.yaml.j2`, `deploy/quadlet/*.kube.j2`) at
-  build time. The **offline bundle** carries rendered YAML with
-  `${TARGET_*}` placeholders, OCI image archives and `bundle.json`; the
-  target fills them in with the Python standard library only.
-- **DR** (`deploy/dr`): `app-ops` on a controller and `app_dr_host` on each
-  host, over plain SSH. PostgreSQL streaming replication, fencing,
-  promotion, backup, PITR and standby rebuild, always on the **whole group**
-  of databases (todo, notes, keycloak). DR may import the installer, never
-  the reverse (`tests/test_dr_boundary.py`).
-- **Secrets** are Podman secrets, never plaintext YAML. SELinux and rootless
-  storage, failure semantics and persistence are covered by tests and by a
-  recorded acceptance run (`docs/ACCEPTANCE.md`).
-- **Registry**: apps are listed in Python (`apps.py`: `APPS`,
-  `IDENTITY_APP`, `REPLICATED_DATABASES`, and since S5 one ordered workload
-  table `workloads()`). Much is already driven by it, but the platform is not
-  generic: about 70 files of platform code (installer, DR, templates,
-  scripts, proxy, Keycloak) still name `todo` or `notes`; the Keycloak realm
-  `todo` is hard-coded in 17 places; shared resources carry a `todo-`
-  prefix; quadlet units are written per app; the proxy template assumes every
-  app is frontend + backend + database.
+Where anything below conflicts with this, this wins.
 
-## 2. Where we are going
+## 2. Scope of the first version
 
-An open source platform where:
+In scope:
 
-- **adding an app** = an app directory (`app.yaml`, `pod.yaml.j2`, source and
-  Containerfiles) + one entry in `platform.yaml`, with **no platform code
-  changes**;
-- **adding a new kind of shared service or app** (not known yet) = one new
-  *component* or *feature* class with its templates and tests, with **no
-  changes** to the installer core, proxy template or DR code.
+- **Login apps with a database**, as Todo and Notes are today: frontend and
+  backend in one pod, PostgreSQL in its own pod, login through the shared
+  Keycloak.
+- **One static app**: Help, with no login, backend or database; served on its
+  own hostname first and under another app's path (`/help/`) last.
+- **PostgreSQL is the only storage with DR support**, through today's
+  replication, promotion, backup, PITR and rebuild of the whole group.
+- One shared Keycloak on its own hostname; each app chooses a realm, shared
+  or its own.
+- **One installation per Unix user.** The fixed `platform-` prefix names
+  shared resources; two installations under one user are not supported.
+- Apps may live in a directory outside the repository.
 
-Decisions already taken by the owner:
+Not in scope, deliberately:
 
-1. No backward compatibility with existing installations or names.
-2. One shared Keycloak, on its own hostname (`auth.<domain>`). Each app picks
-   a realm; apps may share one realm (shared users, SSO) or have their own.
-3. A login app: frontend + backend in one pod, PostgreSQL in its own pod.
-4. Static apps exist (no login, backend or database), first for help text,
-   which will be used in several ways (own hostname, under an app's path, ...).
-5. More shared services and app kinds will come; which ones is not known.
-6. Todo, Notes and Help stay in the repository as examples.
-7. `todo` is never a general name. Proposed: prefix `platform` for shared
-   resources, "app" for user workloads (pending confirmation).
-8. Abstraction is acceptable, but a moderately experienced Python developer
-   must be able to maintain and extend it.
+- Unknown future service kinds, generic component or feature mechanisms,
+  plugins. A new kind of service later may need bounded core changes.
+- Storage other than PostgreSQL with DR. A future service with another
+  storage engine needs its own DR implementation.
+- Apps with a backend but no database (nothing prevents it later).
+- Arbitrary `.kube` overrides, realm import files, multiple installations
+  per user, Kubernetes, Docker, Compose, automatic HA.
 
-Design summary (details in PLATFORM-DESIGN.md):
+What does not change: rootless Podman, Kubernetes YAML as a Podman workload
+format, `podman kube play/down` for development, Quadlet `.kube` units under
+user systemd for production, offline bundles with rendered YAML, the DR
+safety boundaries, external secrets.
 
-- **Ownership**: the platform owns everything DR, routing and identity depend
-  on (databases, Keycloak, realms and clients, nginx, TLS, network,
-  generated units, installer, bundle, DR). The app owns its pod template,
-  source, migrations and `app.yaml`. An app declares a database; it never
-  brings database YAML.
-- **Two configuration files**: `platform.yaml` (operator: components,
-  realms, apps with hostname, realm and replication port, environments) and
-  `app.yaml` (app developer: images and features).
-- **Components** (shared, one each: `proxy`, `identity`, later others) and
-  **features** (what an app uses: `database`, `login`, `help`, later others)
-  are plain Python classes answering the same questions: `workloads()`,
-  `requires()`, `routes()`, `secrets()`, `template_values()`,
-  `replicated_databases()`, `configure()`, plus a **data policy**
-  (`replicated`, `local`, `none`). A fixed dictionary lists them; no plugins
-  or dynamic imports. There are no app kinds in code, only skeleton
-  directories.
-- **Routing table**: nginx is rendered from `Route(hostname, path,
-  upstream)` collected from components and features.
-- Build mode reads YAML and writes the resolved model into `bundle.json`;
-  offline targets still need only the standard library.
+## 3. Simplicity rules
 
-## 3. Rules for the work
+These rules apply to planning and to every code review.
 
-- Every phase ends with all unit tests green and a working install from an
-  offline bundle. Phases that change behaviour say so explicitly.
-- Phase 0 pins today's rendered output; later phases diff against it and
-  explain every difference.
-- One commit per task, pushed per phase. Old code is deleted, not aliased.
-- The safety boundaries are not weakened at any point: external secrets,
-  rootless SELinux storage, failure semantics, persistence, fencing,
-  promotion, backup, PITR and rebuild of the whole group.
-- `tests/test_dr_boundary.py` keeps holding: DR imports the installer,
-  never the reverse. Components and features live in the installer.
-- A full acceptance run (`docs/ACCEPTANCE.md`) at the milestones in section 5.
-
-## 4. Phases
-
-Size: S = a day or less, M = a few days, L = a week or more, for one
-developer with an AI assistant.
-
-### Phase 0: Baseline (S)
-
-- Snapshot the rendered Kube YAML, quadlet units and `bundle.json` for build
-  mode and an offline bundle, as test fixtures to diff against.
-- Guard test: platform code (installer, DR, templates, scripts, proxy,
-  Keycloak image) must not contain `todo` or `notes`. It starts with an
-  allow-list of today's ~70 files; each phase shrinks it; it is empty at the
-  end.
-- Update AGENTS.md: new goal and the abstraction rule (proposed text in
-  PLATFORM-DESIGN.md section 11).
-
-Done when: fixtures and guard test in place, AGENTS.md agreed.
-
-### Phase 1: Names and identity hostname (M, changes behaviour)
-
-- Replace the `todo-` prefix of shared resources with `platform-`: proxy
-  image and archive, nginx TLS secrets and Kube secret, TLS volume, bundle
-  and operations package names, `~/.config/todo` and `~/.local/state/todo`,
-  the DR timers (`todo-backup`, `todo-dr-check`,
-  `todo-replication-tls`).
-- Give Keycloak its own hostname instead of `IDENTITY_APP`'s: proxy server
-  block, TLS certificate names, OIDC issuer, `TARGET_*` placeholders,
-  failover and promotion checks.
-- Files: `apps.py`, `tls*.py`, `uninstall.py`, `bundle.py`,
-  `target_render.py`, `deploy/dr/systemd/*`, `deploy/dr/app_ops/failover.py`,
-  `deploy/dr/app_dr_host/promoted.py`, `shared-proxy.yaml.j2`,
-  `deploy/offline/*`, `deploy/scripts/*`, docs.
-
-Done when: install and DR work with the new names; no `todo-` shared names
-remain; guard allow-list shrunk.
-
-### Phase 2: Configuration from YAML (M)
-
-- `platform.yaml` and `examples/<app>/app.yaml` with today's values; a loader
-  with clear validation messages (unknown realm, duplicate port or hostname,
-  missing template, feature without its component).
-- `apps.py` builds `APPS`, `REPLICATED_DATABASES` and `workloads()` from the
-  loaded model; `deploy/environments/*/values.yaml` merge into
-  `platform.yaml`.
-- Build mode writes the resolved model into `bundle.json`; `target_render.py`
-  and DR hosts read it from there.
-
-Done when: rendered output equals the phase 1 output; no app is listed in
-Python.
-
-### Phase 3: Components and features (L)
-
-- Introduce `Component` and `Feature` and the data policy. Move today's
-  behaviour into `proxy`, `identity`, `database` and `login`.
-- Installer, workload table, secrets, image list and DR group are collected
-  from them instead of written per concept.
-- Routing table: `shared-proxy.yaml.j2` loops over routes instead of one
-  fixed server block per app.
-
-Done when: rendered output equals phase 2 apart from explained ordering in
-nginx; adding a fake feature in a test needs no change outside its class.
-
-### Phase 4: Realms as configuration (M, changes behaviour)
-
-- `identity` creates every realm in `platform.yaml` and secures it
-  (`REALM_SECURITY`); `login` creates one client per app in its realm from
-  platform defaults. The "copy the Todo client" logic goes away.
-- Realm, issuer, JWKS URL and client ID reach backends through ConfigMaps
-  and frontends through configuration or discovery; no realm constants.
-- Promotion, failover and backup checks verify every realm's issuer.
-- Example: Todo and Notes share `main`; a test install with a second realm.
-
-Done when: the 17 hard-coded `realms/todo` are gone; SSO across a shared
-realm and isolation across realms are tested end to end.
-
-### Phase 5: App directories and generated units (M)
-
-- Move Todo and Notes to `examples/todo` and `examples/notes` with their own
-  `pod.yaml.j2`. Document the template variables as a contract and test it.
-- Generate `.kube` units from one template per workload type; an app may
-  override. (S5 chose literal units tested against the workload table; this
-  reverses that choice, and the same test checks generated units.)
-- **Validate app pod templates**: since apps bring their own YAML, the
-  installer rejects what breaks platform guarantees (privileged, hostNetwork,
-  hostPath, other apps' secrets, missing resource limits).
-
-Done when: `deploy/quadlet` holds no per-app units; guard allow-list holds
-only example apps.
-
-### Phase 6: Static apps and help (M)
-
-- Skeleton for a static app; `examples/help`.
-- The `help` feature: own hostname, or a route under an app's hostname
-  (`/help/`), and the help URL in the app's template values.
-
-Done when: Help runs both ways in an end-to-end test, with no change to the
-proxy template.
-
-### Phase 7: Scripts read the model (S)
-
-- `wait-ready.sh`, `preflight.sh`, acceptance and the replication firewall
-  range read pods, hostnames and ports from `bundle.json`.
-
-Done when: the guard allow-list is empty.
-
-### Phase 8: Documentation and acceptance (M)
-
-- Guides: "Add an app" and "Add a component or feature", each with one
-  complete worked example and its tests. Skeletons for each app shape.
-- ARCHITECTURE.md, LEARNING-GUIDE.md and the DR docs rewritten for the
-  platform; Todo/Notes/Help described as examples.
-- A full acceptance run; record the verdict.
-
-## 5. Milestones
-
-| Milestone | After phase | Proof |
-|---|---|---|
-| Neutral names | 1 | Full acceptance run (names touch DR and TLS) |
-| Configuration-driven | 3 | Unit tests and offline install; rendered diff explained |
-| Multi-realm | 4 | Full acceptance run plus multi-realm end-to-end tests |
-| Open source ready | 8 | Full acceptance run; a third app added by following the guide alone |
-
-The last proof matters most: someone adds a new app using only the guide and
-touches no platform code.
-
-## 6. Risks
-
-| Risk | Mitigation |
+| Rule | In practice |
 |---|---|
-| The abstraction grows beyond what a mid-level developer reads easily | One fixed interface, one module per component/feature, no metaclasses or dynamic imports; review each phase against AGENTS.md |
-| DR regressions while code moves | Phase 0 fixtures, existing DR tests, acceptance at milestones; data policy is mandatory |
-| App-supplied pod YAML weakens rootless/SELinux/secret guarantees | Template validation in phase 5 |
-| Identity hostname change breaks TLS or failover | Done early (phase 1) and proven by acceptance before other work builds on it |
-| Long-running branch drifts from ongoing backlog work | Phases are small and merged one by one |
-| Path-based help on an app's hostname conflicts with app routes or CSP | Route conflicts are validation errors; security headers per route |
+| An abstraction needs an existing need | No extension mechanism because it may be useful later. |
+| Prefer functions and dataclasses | A class only when it gives a clear responsibility, never to build a framework. |
+| Keep the control flow visible | Easy to follow: validate → prepare → install → start → check. |
+| No hidden behaviour | No dynamic imports, plugin discovery, metaclasses or registration by import side effects. |
+| One model, few layers | YAML → loader → `Platform` → the functions that act. No near-identical representations, no adapter chains. |
+| Allow some duplication | A few similar lines can beat an abstraction with many options. |
+| Bounded configuration | YAML describes supported choices; it is not a programming language. |
+| Small deliveries | Each change has one purpose and can be reviewed without understanding the whole refactoring. |
 
-## 7. Not in scope
+No class hierarchy is decided in advance. Optional capabilities of an app
+are optional fields (`app.database`, `app.login`); code says
+`if app.database:`. A shared interface is introduced only when two or more
+concrete implementations show what is actually common.
 
-Kubernetes orchestration, Docker or Compose, a plugin marketplace or dynamic
-loading, apps without PostgreSQL that still have a backend (room is left,
-not built), specific shared services beyond proxy and identity, automatic
-HA.
+**Understandability check, after every phase.** A developer or an agent
+without the implementation history does three tasks:
 
-## 8. Questions for the reviewer
+1. Explain what happens when an installation starts.
+2. Find where a new app is registered and how it gets routes and images.
+3. Make a small behaviour change and find the right test.
 
-We want these challenged, not confirmed:
+If this requires following many indirect calls or learning an internal
+framework, simplify before the next phase. Documentation does not
+compensate for needlessly complicated code. The result is recorded with
+the phase.
 
-1. **Features and components instead of app kinds.** Is one interface for
-   both right, or should they differ? Is the method list (section 2)
-   complete and minimal?
-2. **Data policy** (`replicated`, `local`, `none`). Is it enough for DR to
-   handle unknown future services safely?
-3. **Apps bring their own pod YAML.** Is template validation enough to keep
-   platform guarantees, or should the platform generate the pod from
-   `app.yaml` and let apps only fill in containers?
-4. **Two configuration files** (`platform.yaml` operator, `app.yaml`
-   developer). Right split, or should everything be in `platform.yaml`?
-5. **Generated `.kube` units** instead of literal ones tested against the
-   workload table. Worth the loss of readability?
-6. **Realms created through the Keycloak admin API** instead of realm import
-   files. Right default for repeatable installs and DR?
-7. **Phase order.** Names and identity hostname first (behaviour change
-   early, proven by acceptance), then configuration, then abstraction. Would
-   another order reduce risk?
-8. **Names.** `platform` as shared prefix, "app" for user workloads,
-   "component" and "feature" for the extension points.
-9. What is missing that will hurt when the first unknown service type
-   arrives?
+## 4. One resolved model
+
+Today bundling, installation and DR each rebuild the installation from the
+Python registry (`apps.APPS`, `apps.IDENTITY_APP`, default arguments such as
+`workloads(applications=APPS)` and `setup_roles(app=apps.APPS[0])`);
+`target_render.py` uses the registry even when it reads `bundle.json`.
+Writing more to JSON is not enough: the readers must stop reconstructing.
+
+- `Platform` is one frozen dataclass tree: apps, workloads in start order,
+  images, routes, secret names, the replicated database group, realms and
+  clients, setup tasks and checks. It is the **only** description of an
+  installation.
+- **Build mode** creates it from `platform.yaml` and the apps' `app.yaml`
+  (`load_platform(path) -> Platform`), validates it, and writes it into
+  `bundle.json` (`platform_to_json`).
+- **Offline install and DR hosts** read it back (`platform_from_json`),
+  standard library only, and pass it to the same functions build mode uses.
+- Every function that acts takes the `Platform` (or a part of it) as an
+  argument. No YAML loading at import time, no module-level app lists, no
+  default arguments that bind an app list. Two different platforms in one
+  Python process must not share state (tested).
+- **Versions**: `bundle.json` keeps `format_version` (today 4) and adds the
+  image IDs of every image it carries. The operations package records the
+  bundle format versions it supports and refuses others. The installer
+  compares installed image IDs, not tags, with the bundle's.
+
+## 5. Contracts
+
+Each contract is short, documented next to the code that enforces it, and
+tested.
+
+### 5.1 Configuration files
+
+- `platform.yaml` is the operator's: hostnames, which realm each app uses,
+  each database's `replicationPort`, which app serves another app's help
+  path, environments (`publicPort`, `logLevel`).
+- `app.yaml` is the app developer's: images, HTTP endpoints and routes,
+  whether it needs a database or login, the help path it wants, its setup
+  command and checks. It never names other apps or installation choices.
+- Relative paths resolve from the directory of the file that contains them.
+  Unknown fields are errors. An environment may override only `publicPort`
+  and `logLevel`. No templating inside YAML.
+- `publicPort` must be 1024–65535 (rootless; the same rule DR already
+  enforces in `promoted.py`). Examples use 8443.
+
+### 5.2 Images
+
+- Each image is either built (`name`, `context` relative to the app
+  directory, `containerfile` relative to the context) or prebuilt
+  (`reference`, pulled when the bundle is built). Init containers and setup
+  jobs use declared images only.
+- The model decides exactly which images the bundle carries. A static-only
+  installation carries nginx, Keycloak only if some app needs login, and
+  PostgreSQL only if some app needs a database.
+
+### 5.3 Endpoints and routes
+
+- The app declares named endpoints (`frontend: {container: frontend, port:
+  8080}`) and routes on its own hostname (`/` → `frontend`, `/api/` →
+  `backend`). The operator chooses the hostname. A static app declares its
+  `/` route itself; no route depends on login.
+- A route has a few explicit fields: `path` (prefix match), `to` (an
+  endpoint), `rewrite` (`keep` or `strip`; `/help/` → `/<app>/` is
+  `strip` plus a target prefix), and a header policy (`app` or `static`).
+- One hostname may have many paths; the same hostname and path twice is an
+  error. Tested together: `/`, `/api/`, `/help/`, with and without trailing
+  slash, static assets and redirects.
+
+### 5.4 Start, readiness, setup and checks
+
+Four separate things, all in the model, used the same way by development,
+production and DR:
+
+1. **Start order**: each workload's `requires`. Generated `Requires=` and
+   `After=`, and the `kube play` order in development, come from it. Missing
+   references and cycles are validation errors.
+2. **Readiness**: when a workload is ready (a container health check, or an
+   HTTP path that must answer).
+3. **Setup tasks**: one-shot commands with an image, a command and when they
+   run (after the database is ready, after the app has started). They
+   replace `install.setup_roles()` running `backend.setup_roles` by
+   convention.
+4. **Checks**: declared HTTP requests with an expected status, run after
+   install and by DR after promotion. They replace
+   `promoted.require_application()` expecting a list from `/api/...`.
+
+Identity setup waits only for Keycloak, never for the apps; app checks run
+after identity setup. This removes the possible cycle where identity setup
+waits for an app that waits for identity.
+
+### 5.5 Database roles
+
+The two `setup_roles.py` files are identical apart from names and two
+table grants. Proposal: the **platform** creates the three roles (bootstrap
+owner, migrator, runtime), their secrets, `CONNECT` and schema usage, in a
+setup task using the PostgreSQL image; the **app's migrations** grant the
+runtime role its table rights (the migrator owns the tables). Least
+privilege stays per table, and the app no longer ships role code.
+
+### 5.6 Data and DR
+
+- Version 1 knows two data classes: **PostgreSQL in the replicated group**
+  and **no persistent data**. Every volume in an app's pod template must be
+  declared and classified.
+- Anything else (local files, uploads, caches) is rejected when DR is set
+  up, unless the operator sets an explicit, documented loss acceptance for
+  that volume in `platform.yaml`. A rebuildable-cache class is added when
+  an app needs it.
+- **Membership of the DR group is explicit.** Adding an app with a database
+  changes the group; app-ops refuses DR operations while the standby's group
+  differs from the model, and the documented way to change it is a standby
+  rebuild (today's operation).
+
+### 5.7 Keycloak
+
+- The platform owns: each realm's existence, the login protection fields
+  (`REALM_SECURITY`), and one client per login app (client ID, redirect URIs,
+  web origins, audience mapper). It never overwrites other fields; users,
+  themes and other settings belong to the operator in Keycloak.
+- Setup is idempotent: create what is missing, correct owned fields, report
+  what changed. A partial failure is fixed by running again.
+- No realm import files in version 1, so users and secrets never travel in
+  bundle metadata. Clients are created from platform defaults; copying the
+  Todo client goes away.
+- DR verifies every realm's issuer and each client after promotion and only
+  corrects owned fields; it never recreates a realm or touches users.
+
+### 5.8 Adding, changing and removing apps
+
+- Adding: a new directory and entry; install renders, installs and starts
+  it. If it has a database, see the DR group rule (5.6).
+- Removing an app from `platform.yaml` stops and removes its units and
+  YAML, and **keeps** its database volume, secrets and Keycloak client. A
+  separate, explicit command purges them.
+
+### 5.9 App pod templates
+
+- Apps keep their own `pod.yaml.j2`, rendered with documented variables
+  (names, images, secret names, OIDC values, database host).
+- After rendering, before bundling and before any side effect in a direct
+  install, the installer validates: pod and container names match the
+  model, only declared images, only the app's own secrets, only declared
+  and classified volumes, no `privileged`, `hostNetwork`, `hostPID`,
+  `hostPath` or added capabilities, resource limits present.
+- This checks the platform contract for **trusted** app packages. It is not
+  a sandbox: it does not make arbitrary templates or images safe.
+- `.kube` units are generated from the model. No app overrides in version 1;
+  a declarative setting (such as a start timeout) is added when needed.
+
+### 5.10 Dependencies by host role
+
+| Role | Needs |
+|---|---|
+| Build host | Python, Jinja2, PyYAML, Podman |
+| Offline target (installer) | Python standard library, Podman |
+| DR host (`app_dr_host`) | Python standard library and PyYAML, Podman |
+| Controller (`app-ops`) | Python and PyYAML (inventory), SSH |
+
+## 6. Names
+
+- **platform**: the shared prefix (`platform.yaml`, `platform-proxy`,
+  `platform-offline-<tag>.tar.gz`, `~/.config/platform`). Fixed in code,
+  not the project's name.
+- **app**: a user workload with its own `app.yaml` (`todo`, `notes`, `help`).
+  "Service" is avoided because of systemd's `*.service`.
+- Keycloak is `identity`, nginx is `proxy`. They are fields of `Platform`,
+  not instances of a generic component type.
+
+## 7. Phases
+
+Each phase: one purpose, all tests green, a working offline install, and the
+understandability check (section 3) recorded. Phases marked *behaviour*
+change what is installed and end with a full acceptance run.
+
+**Phase 0: Baseline.**
+Fixtures of today's rendered YAML, units and `bundle.json` (build mode and
+offline bundle). Make `tests/test_dr_boundary.py` recursive (today it uses
+`glob("*.py")`, top level only). A name guard (`todo`/`notes` outside the
+example apps) as support only; it does not prove generality. Update
+AGENTS.md: the new goal, section 1 and 3 as rules, and the FastAPI and
+plain HTML/JS requirements scoped to the example apps.
+
+**Phase 1: Names and identity hostname.** *Behaviour.*
+`todo-` shared names become `platform-` (proxy image and archive, TLS
+secrets and volume, bundle and operations package, `~/.config` and
+`~/.local/state` directories, DR timers). Keycloak gets its own hostname
+instead of `IDENTITY_APP`'s: proxy, certificate names, issuer, `TARGET_*`
+placeholders, failover and promotion checks.
+
+**Phase 2: The model, from today's registry.**
+Introduce `Platform` and build it from today's Python registry (no YAML
+yet). Pass it explicitly everywhere; remove module-level app lists and
+binding default arguments; `target_render.py` and DR read it from
+`bundle.json`. Test two platforms in one process. Rendered output equals
+phase 1's.
+
+**Phase 3: The model, from YAML.**
+`platform.yaml` and `examples/<app>/app.yaml` with today's values; the
+loader and its validation messages. Delete the Python app list and
+`deploy/environments/*/values.yaml`. Rendered output unchanged.
+
+**Phase 4: A static app end to end.** The first proof of generality, split
+in small deliveries, each driven by what Help needs:
+- 4a images contract (5.2), including external context paths;
+- 4b endpoints and routes (5.3), nginx rendered from routes;
+- 4c start, readiness and checks in the model (5.4), with Keycloak and
+  PostgreSQL only when needed;
+- 4d generated `.kube` units and `kube play` order from the model;
+- 4e `wait-ready.sh`, `preflight.sh`, acceptance and the replication
+  firewall range read the model;
+- 4f `examples/help`: build, bundle, install, check and stop an
+  installation **with Help only**, then with all three apps.
+
+**Phase 5: Database and login through the same model.**
+`app.database` and `app.login` as optional fields; the setup task and
+migration grants (5.5); checks replace `require_application`; pod template
+validation (5.9). Todo and Notes move to `examples/`.
+
+**Phase 6: Keycloak semantics and multi-realm.** *Behaviour.*
+Section 5.7: owned fields, idempotent setup, clients from defaults, every
+`realms/todo` gone, DR verification per realm. Todo and Notes share a realm;
+a test installation adds an app in its own realm.
+
+**Phase 7: Lifecycle of apps.**
+An app from a directory outside the repository; removal that keeps data and
+an explicit purge (5.8); the DR group rule (5.6).
+
+**Phase 8: Help under a path.**
+Help also served at `/help/` on Todo and Notes, chosen in `platform.yaml`;
+`strip` rewrite; the route tests in 5.3.
+
+**Phase 9: Documentation and acceptance.** *Behaviour.*
+"Add an app" guide with a skeleton for each app shape; ARCHITECTURE,
+LEARNING-GUIDE and DR docs for the platform; full acceptance run; final
+understandability check by an agent without history, including adding a
+fourth app by the guide alone.
+
+## 8. Acceptance criteria
+
+Existing security and DR tests stay. In addition:
+
+- **Simplicity**: the understandability check passes after every phase, and
+  the install control flow reads top to bottom in one module.
+- An installation with only the static app and the components it needs.
+- An app from a directory outside the repository.
+- Two different platform models in the same process.
+- Offline installation without Jinja2, PyYAML or network access.
+- Running install again changes nothing.
+- An interrupted Keycloak or install step can be run again and converges.
+- Multi-realm: SSO within a shared realm, isolation across realms.
+- Help on its own hostname and under a path.
+- DR refuses to proceed when required data recovery is missing (an
+  unclassified volume, a group mismatch).
+- A new app added without changes to platform code.
+
+## 9. Open questions
+
+1. Section 5.5: may the platform own role creation, with table grants in
+   the apps' migrations?
+2. Section 5.6: is a standby rebuild the right way to change the DR group in
+   version 1?
+3. Section 5.8: is "remove keeps data, purge is explicit" the wanted
+   default?

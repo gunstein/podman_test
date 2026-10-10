@@ -1,7 +1,26 @@
 Project goal:
-Maintain and demonstrate the accepted rootless Podman Kube Todo architecture
-as a shared development and production workload format. Preserve the historical
-per-container reference in Git for comparison.
+Turn the accepted rootless Podman Kube Todo architecture into a small,
+reusable platform for web apps: the platform owns databases, identity,
+routing, installation and DR; an app is a directory with its own description
+and pod template, plus one entry in the platform's configuration. Todo and
+Notes (and later Help) are example apps. Rootless Podman, Kubernetes YAML as
+the workload format, podman kube play for development and Quadlet in
+production stay. Preserve the historical per-container reference in Git for
+comparison.
+
+Platform work:
+- docs/PLATFORM-PLAN.md is the plan: scope, simplicity rules, contracts and
+  phases. Work one phase at a time on feature/platform, in small commits.
+- Maintainability for a moderately experienced Python developer overrides
+  everything else in the plan. Version 1 supports today's apps and one static
+  app, with PostgreSQL as the only storage with DR. Do not build support for
+  unknown future service kinds; a new kind may later need bounded core changes.
+- After each phase, record the understandability check (plan, section 3).
+- tests/test_render_baseline.py pins the rendered output: update it
+  (python3 tests/render_baseline.py --update) only for an intended change and
+  explain the diff. tests/test_example_app_names.py lists the platform files
+  that still name todo or notes; shrink it, never grow it.
+- Until a phase changes it, the section below describes what runs today.
 
 Current architecture and workflow:
 - docs/ARCHITECTURE.md describes the current design; docs/LEARNING-GUIDE.md
@@ -30,8 +49,9 @@ Current architecture and workflow:
   record; do not restate it here, to avoid this file drifting from that one.
 
 Constraints:
-- Frontend: plain HTML, CSS and JavaScript. No Node.js framework.
-- Backend: Python with FastAPI.
+- Example apps: plain HTML, CSS and JavaScript frontends (no Node.js
+  framework) and Python FastAPI backends. Other apps may choose otherwise; the
+  platform makes no assumption about an app's languages.
 - Database: PostgreSQL with separate bootstrap, migration and runtime roles.
 - Runtime: rootless Podman.
 - Application definition: the Podman-supported subset of Kubernetes YAML,
@@ -51,9 +71,9 @@ Constraints:
 - Reverse proxy: nginx.
 - Offline delivery: rendered YAML and OCI images in the offline bundle;
   separate operations package contains tools and docs, not image archives.
-- Authentication: Keycloak is implemented behind each app's auth.js
-  (todo-frontend/, notes-frontend/) and its
-  provider adapter. Other IdPs require implementation and integration testing.
+- Authentication: one shared Keycloak. The example apps use it behind their
+  auth.js (todo-frontend/, notes-frontend/) and provider adapter. Other IdPs
+  require implementation and integration testing.
 - Keep Bash scripts small and simple.
 - Do not add Kubernetes orchestration, Docker Engine, Docker Compose,
   podman-compose or unnecessary dependencies.
@@ -65,4 +85,9 @@ Constraints:
 - Preserve the complete fencing, promotion, backup, PITR and standby-rebuild
   safety boundaries.
 - Never commit secrets.
-- Prefer simple, pedagogical solutions over abstraction.
+- Simplicity (docs/PLATFORM-PLAN.md, section 3): an abstraction needs an
+  existing need; prefer functions and dataclasses; keep the control flow
+  visible (validate, prepare, install, start, check); no dynamic imports,
+  plugin discovery, metaclasses or registration by import side effects; one
+  model and few layers; some duplication is fine; YAML describes supported
+  choices and is not a programming language; small deliveries.

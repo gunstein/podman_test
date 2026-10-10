@@ -348,3 +348,12 @@ Existing security and DR tests stay. In addition:
    version 1?
 3. Section 5.8: is "remove keeps data, purge is explicit" the wanted
    default?
+
+## 10. Phase log
+
+**Phase 0, done.** Baseline of rendered output (`tests/test_render_baseline.py`,
+57 files), name guard with 67 known platform files
+(`tests/test_example_app_names.py`), recursive DR boundary test, AGENTS.md
+updated. Understandability check: not needed, no installer or DR code
+changed; the three new tests each explain in their docstring why they fail
+and what to do.

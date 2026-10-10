@@ -11,8 +11,6 @@ database: true
 # (notes-frontend/keycloak-adapter.js). Without keycloakClient the app has no
 # login; Keycloak runs only when some app has one.
 keycloakClient: notes-frontend
-# apiCollection is left out: the DR tools check the app by reading /api/notes,
-# the name (see examples/todo/app.yaml).
 # The images it builds (section 5.2), each localhost/notes-<name>; see
 # examples/todo/app.yaml.
 images:
@@ -42,3 +40,15 @@ routes:
     to: backend
   - path: /
     to: frontend
+# The app is ready when this path on its hostname answers 200: its backend's
+# /ready answers 503 until the database takes a query. The platform waits for
+# it after a start.
+ready: /ready
+# Checked once it is ready, after an install and after a DR promotion: each a
+# GET on its hostname and the status it must answer. /api/notes is a
+# public read through the backend.
+checks:
+  - path: /health
+    status: 200
+  - path: /api/notes
+    status: 200

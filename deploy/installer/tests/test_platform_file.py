@@ -40,10 +40,10 @@ class PlatformFileTests(unittest.TestCase):
     def test_the_repository_describes_todo_and_notes(self):
         platform, local = platform_file.load(ROOT / 'platform.yaml', 'local')
         self.assertEqual([app.name for app in platform.apps], ['todo', 'notes'])
-        self.assertEqual([(app.hostname, app.keycloak_client, app.replication_port, app.api_path())
-                          for app in platform.apps],
-                         [('todo.test', 'todo-frontend', 5432, '/api/todos'),
-                          ('notes.test', 'notes-frontend', 5433, '/api/notes')])
+        self.assertEqual([(app.hostname, app.keycloak_client, app.replication_port, app.ready,
+                           [(check.path, check.status) for check in app.checks]) for app in platform.apps],
+                         [('todo.test', 'todo-frontend', 5432, '/ready', [('/health', 200), ('/api/todos', 200)]),
+                          ('notes.test', 'notes-frontend', 5433, '/ready', [('/health', 200), ('/api/notes', 200)])])
         self.assertEqual(platform.identity_hostname, 'auth.test')
         self.assertEqual(local, platform_file.Environment(public_port=8443, log_level='debug'))
         self.assertEqual(platform_file.load(ROOT / 'platform.yaml', 'prod')[1].log_level, 'info')
@@ -211,6 +211,28 @@ class PlatformFileTests(unittest.TestCase):
         platform = platform_file.load(path)[0]
         self.assertEqual([app.name for app in platform.database_apps], ['shop'])
         self.assertEqual([app.name for app in platform.login_apps], ['shop'])
+
+    def test_ready_and_checks_are_paths_the_apps_routes_send_on(self):
+        app = {**SHOP, 'ready': '/ready', 'checks': [{'path': '/api/items', 'status': 200},
+                                                     {'path': '/missing', 'status': 404}]}
+        shop = platform_file.load(self.write(app=app))[0].apps[0]
+        self.assertEqual((shop.ready, shop.checks), ('/ready', (apps.Check(path='/api/items', status=200),
+                                                               apps.Check(path='/missing', status=404))))
+        self.assertEqual(platform_file.load(self.write())[0].apps[0].checks, ())
+        routes = [{'path': '/api/', 'to': 'api'}, {'path': '/ready', 'to': 'api', 'exact': True}]
+        for change, message in (
+            ({'ready': 'ready'}, r'app.yaml: ready: must be a path'),
+            ({'ready': '/ready/now', 'routes': routes}, r'ready: no route of the app matches /ready/now'),
+            ({'ready': '/', 'routes': routes}, r'ready: no route of the app matches /'),
+            ({'checks': []}, r'checks must be a list'),
+            ({'checks': [{'path': '/', 'status': 99}]}, r'checks\[0\].status: must be an HTTP status'),
+            ({'checks': [{'path': '/', 'status': '200'}]}, r'checks\[0\].status: must be an HTTP status'),
+            ({'checks': [{'path': '/', 'status': 200, 'body': 'ok'}]}, r'checks\[0\]: unknown field body'),
+            ({'checks': [{'path': '/x', 'status': 200}], 'routes': routes}, r'checks\[0\].path: no route'),
+            ({'apiCollection': 'items'}, r'unknown field apiCollection'),
+        ):
+            with self.subTest(message=message):
+                self.refused(message, app={**SHOP, **change})
 
     def test_keycloaks_database_port_is_taken(self):
         self.refused(r"apps/shop/app.yaml has replicationPort 5434, which is Keycloak's database's",

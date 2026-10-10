@@ -4,6 +4,7 @@ from pathlib import Path
 from . import (
     apps,
     backup,
+    checks,
     images,
     keycloak,
     platform_file,
@@ -292,11 +293,15 @@ def start_in_order(platform, restart):
 
 
 def finish(platform, runtime, target, hostnames, identity):
-    """Configure Keycloak (if it runs), check every unit's SourcePath, record the hostnames, turn the backup on.
+    """Configure Keycloak (if it runs), check each app and every unit's SourcePath, record the hostnames,
+    turn the backup on.
 
-    Returns (Keycloak changed, backup timer changed).
+    Each app is checked (checks.verify: ready, then its checks) after
+    Keycloak is set up, so a check may need login. Returns (Keycloak
+    changed, backup timer changed).
     """
     configured = configure_identity(platform, hostnames)
+    checks.verify(platform, hostnames)
     for workload in platform.workloads():
         source = quadlet.systemctl('show', workload.service, '--property=SourcePath', '--value').stdout.strip()
         if source != str(runtime / workload.unit):
@@ -356,6 +361,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         secrets.create_kube(secrets.kube_mappings(platform))
         changed = up(rendered, platform, settings.DEV_STATE_FILE, images_changed or tls_changed)
         configured = configure_identity(platform, hostnames)
+        checks.verify(platform, hostnames)
         return changed or configured or tls_changed
     changed, restart = write_definitions(root, directory, runtime, rendered, platform, publish_address,
                                          port, target, image_changes, shared_images, tls_changed)

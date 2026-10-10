@@ -335,8 +335,8 @@ class PublishPrimariesTests(unittest.TestCase):
                 patch.object(replication.replication_tls, 'install_server_tls', identity('install-tls')), \
                 patch.object(replication.workloads, 'install_postgres', install), \
                 patch.object(replication.quadlet, 'systemctl', lambda *args: steps.append(('systemctl',) + args)), \
-                patch.object(replication.keycloak, 'wait',
-                             lambda path, *a, hostname=None, **k: steps.append(('wait', path, hostname))):
+                patch.object(replication.checks, 'status',
+                             lambda path, hostname: (steps.append(('wait', path, hostname)), 200)[1]):
             result = replication.publish_primaries(
                 '192.0.2.10', bootstrap=bootstrap, project_root='/staged', quadlet_dir='/q',
                 kube_runtime_dir='/q/platform-kube-runtime', target=dr_target.load('192.0.2.10', **hostnames))

@@ -49,6 +49,14 @@ class Route:
 
 
 @dataclass(frozen=True)
+class Check:
+    """A GET request on the app's hostname and the HTTP status it must answer (checks.py runs it)."""
+
+    path: str
+    status: int
+
+
+@dataclass(frozen=True)
 class App:
     """One web application: its public hostname and, if it needs them, its database and login.
 
@@ -62,6 +70,9 @@ class App:
     database: code that works on the replicated database group asks
     Platform.replicated_databases. has_login: its users log in at the shared
     Keycloak with the OAuth client keycloak_client ("" without login).
+    ready is the HTTP path that answers 200 once the app can serve ("" for
+    none: it is ready when it runs), checks the requests (Check) that must
+    answer as declared after an install and a DR promotion (checks.py).
     Build an App with keyword arguments only (tests/test_apps.py checks it):
     the string fields are easy to mix up, and the hosts' Python 3.9 has no
     dataclass kw_only.
@@ -72,10 +83,11 @@ class App:
     keycloak_client: str = ""
     has_database: bool = True
     replication_port: int = 5432
-    api_collection: str = ""
     images: tuple = ()
     endpoints: tuple = ()
     routes: tuple = ()
+    ready: str = ""
+    checks: tuple = ()
 
     @property
     def names(self) -> stack.Names:
@@ -93,14 +105,6 @@ class App:
         if not self.has_database:
             raise ValueError(f"The app {self.name} has no database (its app.yaml says database: false)")
         return stack.Database(self.name, self.replication_port)
-
-    def api_path(self) -> str:
-        """The REST collection the DR tools read to check the app answers, e.g. /api/todos.
-
-        After a promotion, promoted.require_application expects a list there
-        (a public read). nginx itself forwards all of /api/ to the backend.
-        """
-        return "/api/" + (self.api_collection or self.name)
 
     # The app pod: migration, backend and frontend.
 
@@ -348,12 +352,14 @@ class Platform:
         """This platform as plain data, for bundle.json and a host's record."""
         return {"identity_hostname": self.identity_hostname,
                 "apps": [{"name": app.name, "hostname": app.hostname, "keycloak_client": app.keycloak_client,
-                          "has_database": app.has_database, "replication_port": app.replication_port, "api_collection": app.api_collection,
+                          "has_database": app.has_database, "replication_port": app.replication_port,
                           "images": [{"name": image.name, "context": image.context,
                                       "containerfile": image.containerfile} for image in app.images],
                           "endpoints": [{"name": endpoint.name, "port": endpoint.port} for endpoint in app.endpoints],
                           "routes": [{"path": route.path, "to": route.to, "exact": route.exact}
-                                     for route in app.routes]}
+                                     for route in app.routes],
+                          "ready": app.ready,
+                          "checks": [{"path": check.path, "status": check.status} for check in app.checks]}
                          for app in self.apps]}
 
     @classmethod
@@ -361,10 +367,11 @@ class Platform:
         """The platform to_json wrote; anything else is a ValueError that says what is wrong."""
         fields = {"name": str, "hostname": str, "keycloak_client": str, "has_database": bool,
                   "replication_port": int,
-                  "api_collection": str, "images": list, "endpoints": list, "routes": list}
+                  "images": list, "endpoints": list, "routes": list, "ready": str, "checks": list}
         parts = {"images": (AppImage, {"name": str, "context": str, "containerfile": str}),
                  "endpoints": (Endpoint, {"name": str, "port": int}),
-                 "routes": (Route, {"path": str, "to": str, "exact": bool})}
+                 "routes": (Route, {"path": str, "to": str, "exact": bool}),
+                 "checks": (Check, {"path": str, "status": int})}
         if not (isinstance(data, dict) and set(data) == {"identity_hostname", "apps"}
                 and isinstance(data["identity_hostname"], str) and isinstance(data["apps"], list)):
             raise ValueError("A platform needs exactly identity_hostname and a list of apps")

@@ -668,7 +668,9 @@ class ConfigureArchiveTests(unittest.TestCase):
                                   side_effect=lambda app: (self.hba.append((len(host.commands), app.name)), access_changed)[1]), \
                 mock.patch.object(app_backup.target_render, 'read_record', return_value=recorded or {}), \
                 mock.patch.object(app_backup.keycloak, 'wait',
-                                  side_effect=lambda path, *a, **k: self.waits.append((path, k.get('hostname')))):
+                                  side_effect=lambda path, *a, **k: self.waits.append((path, k.get('hostname')))), \
+                mock.patch.object(app_backup.checks, 'status',
+                                  side_effect=lambda path, hostname: (self.waits.append((path, hostname)), 200)[1]):
             return app_backup.configure(platform_file.checkout(), tools, Path('/journal.json'))
 
     def archive(self, archive, wal_name, content, env=None):

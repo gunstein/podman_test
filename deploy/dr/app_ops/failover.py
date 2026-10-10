@@ -26,6 +26,8 @@ import sys
 from pathlib import Path
 from urllib.parse import urlencode
 
+from app_installer import checks
+
 from . import recovery, steps
 from .steps import settings, target_render
 
@@ -67,12 +69,13 @@ def services(project_root, host, platform, hostnames, port):
     """Raise unless every service of the platform is ready and each app answers over HTTPS on port with the host's CA."""
     wait_ready = (Path(project_root) / 'deploy/scripts/wait-ready.sh').read_text()
     pods, containers = platform.ready('app')
-    waited = host.run(['bash', '-s', '--', 'app', ' '.join(pods), ' '.join(containers), *hostnames.values()],
-                      input=wait_ready, allowed=(0, 1))
+    waited = host.run(['bash', '-s', '--', 'app', ' '.join(pods), ' '.join(containers),
+                       *checks.ready_urls(platform, hostnames)], input=wait_ready, allowed=(0, 1))
     if waited.returncode:
         raise RuntimeError(waited.stdout.strip().splitlines()[-1] if waited.stdout.strip() else 'not ready')
-    for hostname in hostnames.values():
-        https(host, hostname, '/ready', port=port)
+    for app in platform.apps:
+        if app.ready:
+            https(host, hostnames[app.name], app.ready, port=port)
 
 
 def connect_sources(headers):

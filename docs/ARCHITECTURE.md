@@ -144,6 +144,10 @@ its own boot entrypoint to support a database-only host.
 
 Ordering is not readiness. Init-container success, health checks, systemd
 restart and installer/app-ops readiness assertions address different conditions.
+Each app's `app.yaml` declares its `ready` path and its `checks` (an HTTP GET
+and the status it must answer); `checks.py` waits for the one and runs the
+others through nginx after an install and after a DR promotion, once Keycloak
+is set up.
 The PostgreSQL unit applies health-on-failure kill so unhealthy database
 containers are replaced through the systemd lifecycle.
 

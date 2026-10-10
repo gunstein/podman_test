@@ -89,16 +89,17 @@ the phase.
 
 ## 4. One resolved model
 
-Where it stands after phase 4c-1: `apps.Platform` has two fields, the apps in
+Where it stands after phase 4c-2: `apps.Platform` has two fields, the apps in
 start order and Keycloak's default hostname, and derives the rest (the DR
 group, workloads, services, and `database_apps`, `login_apps` and
 `has_identity`, so PostgreSQL and Keycloak run only when an app needs
 them); each app holds whether it has a database and login, the images it
-builds (`apps.AppImage`) and its endpoints and routes (`apps.Endpoint`,
-`apps.Route`). A build reads it from `platform.yaml` and each app's
+builds (`apps.AppImage`), its endpoints and routes (`apps.Endpoint`,
+`apps.Route`), and its ready path and checks (`apps.Check`, run by
+`checks.py`). A build reads it from `platform.yaml` and each app's
 `examples/<app>/app.yaml` (`platform_file.load`, which also gives the
 environment's port and log level); there is no list of apps in the code.
-`bundle.json` (format version 9) carries it, and a host records it in
+`bundle.json` (format version 10) carries it, and a host records it in
 `~/.config/platform/platform.json`. The richer tree below grows with phases
 4 and 5 (images, routes, checks, database and login as app fields).
 
@@ -121,7 +122,7 @@ Writing more to JSON is not enough: the readers must stop reconstructing.
   argument. No YAML loading at import time, no module-level app lists, no
   default arguments that bind an app list. Two different platforms in one
   Python process must not share state (tested).
-- **Versions**: `bundle.json` keeps `format_version` (9 since phase 4c-1); the
+- **Versions**: `bundle.json` keeps `format_version` (10 since phase 4c-2); the
   installer and the DR tools refuse any other. Not yet built: `bundle.json`
   recording the image IDs of every image it carries, and the installer
   comparing installed image IDs with them. Today an image that is present
@@ -135,14 +136,15 @@ tested.
 
 ### 5.1 Configuration files
 
-Implemented so far (phases 3 to 4c-1): `platform.yaml` with
+Implemented so far (phases 3 to 4c-2): `platform.yaml` with
 `identityHostname`, `publicPort`, `logLevel`, the `local` and `prod`
 environments and each app's `path`, `hostname` and, exactly when the app
 has a database, `replicationPort`; `app.yaml` with `name`, `database`
 (true or false, default false), `keycloakClient` (optional: without it
-the app has no login), `apiCollection`, `images` (each built image's
-`context` and `containerfile`, section 5.2), `endpoints` (each one's
-`port`) and `routes` (`path`, `to`, `exact`, section 5.3). Everything
+the app has no login), `images` (each built image's `context` and
+`containerfile`, section 5.2), `endpoints` (each one's `port`), `routes`
+(`path`, `to`, `exact`, section 5.3), `ready` and `checks` (`path`,
+`status`, section 5.4). Everything
 else below comes with the phase that needs it; until then an app's setup and
 checks follow today's conventions: the shared app pod template uses its
 `backend` and `frontend` images (`app.yaml.j2`), and the backend's
@@ -209,6 +211,13 @@ production and DR:
 4. **Checks**: declared HTTP requests with an expected status, run after
    install and by DR after promotion. They replace
    `promoted.require_application()` expecting a list from `/api/...`.
+
+Phase 4c-2 built readiness as an HTTP path (`ready`, optional: an app
+without one is ready when its containers run) and checks as GET requests
+with a status (`checks`, optional), both on the app's own hostname through
+nginx and each matched by one of its routes. Container health checks stay
+in the pod templates (5.9); start order comes with the generated units
+(4d) and setup tasks with phase 5.
 
 Identity setup waits only for Keycloak, never for the apps; app checks run
 after identity setup. This removes the possible cycle where identity setup
@@ -348,7 +357,7 @@ in small deliveries, each driven by what Help needs:
 
 **Phase 5: Database and login through the same model.**
 Database and login are app fields since phase 4c-1; here come the setup task and
-migration grants (5.5); checks replace `require_application`; pod template
+migration grants (5.5); pod template
 validation (5.9). Todo and Notes move to `examples/`.
 
 **Phase 6: Keycloak semantics and multi-realm.** *Behaviour.*
@@ -666,4 +675,27 @@ start order (`requires`) comes with the generated units in 4d.
   when no app has login (it names nginx's default server). Removing
   Keycloak's units from a host whose platform no longer needs it is app
   removal (5.8).
+
+**Phase 4c-2, code done; acceptance run with the next phase that changes a host.**
+- An `app.yaml` may declare `ready`, the HTTP path on its hostname that
+  answers 200 once the app can serve, and `checks`, GET requests with the
+  status each must answer (`apps.Check`). The loader refuses a path no route
+  of the app matches and a status outside 100-599. `apiCollection` is gone:
+  Todo and Notes declare `ready: /ready` and check `/health` and
+  `/api/todos` or `/api/notes` for 200.
+- `checks.py` asks nginx on 127.0.0.1 with the app's hostname: `wait_ready`
+  polls the ready path, `run` the checks once, `verify` both for every app,
+  and `ready_urls` gives `wait-ready.sh` each `HOSTNAME/PATH` (it no longer
+  assumes `/ready`).
+- Install (server and development) and `deploy-promoted` run
+  `checks.verify` after Keycloak is set up; `keycloak.configure` no longer
+  waits for the apps, so identity setup never waits for an app.
+  `promoted.require_application` is gone. Publishing the primaries, the
+  backup's restart and failover's services check wait for each app's own
+  ready path.
+- The only change in the render baseline is `bundle.json`: `ready` and
+  `checks` instead of `api_collection` (format version 10).
+- Not yet: a check compares the status only, so the old "the public read
+  returns a list" is now "answers 200". Setup tasks (5.4 item 3) come with
+  phase 5, start order with 4d.
 

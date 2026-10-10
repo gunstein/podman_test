@@ -32,7 +32,7 @@ import socket
 import string
 from pathlib import Path
 
-from app_installer import apps, install, keycloak, quadlet, secrets, settings, workloads
+from app_installer import apps, checks, install, quadlet, secrets, settings, workloads
 from app_installer.commands import exists, run
 
 from . import replication_tls
@@ -304,8 +304,8 @@ def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kub
         run('podman', 'wait', '--condition=healthy', database.container,
             timeout=settings.HEALTH_TIMEOUT)
     quadlet.systemctl('start', 'shared-proxy.service')
-    for hostname in target.hostnames.values():
-        keycloak.wait('/ready', 30, 1, 'ready', hostname=hostname)
+    for app in platform.apps:
+        checks.wait_ready(app, target.hostnames[app.name])
     return {'changed': access_changed or bool(restart), 'restarted': [database.name for database in restart]}
 
 

@@ -1,6 +1,6 @@
 {
   "format": "platform-offline-bundle",
-  "format_version": 9,
+  "format_version": 10,
   "manifests": {
     "directory": "generated/target/manifests",
     "files": [
@@ -52,7 +52,6 @@
         "keycloak_client": "todo-frontend",
         "has_database": true,
         "replication_port": 5432,
-        "api_collection": "todos",
         "images": [
           {
             "name": "backend",
@@ -96,6 +95,17 @@
             "to": "frontend",
             "exact": false
           }
+        ],
+        "ready": "/ready",
+        "checks": [
+          {
+            "path": "/health",
+            "status": 200
+          },
+          {
+            "path": "/api/todos",
+            "status": 200
+          }
         ]
       },
       {
@@ -104,7 +114,6 @@
         "keycloak_client": "notes-frontend",
         "has_database": true,
         "replication_port": 5433,
-        "api_collection": "",
         "images": [
           {
             "name": "backend",
@@ -147,6 +156,17 @@
             "path": "/",
             "to": "frontend",
             "exact": false
+          }
+        ],
+        "ready": "/ready",
+        "checks": [
+          {
+            "path": "/health",
+            "status": 200
+          },
+          {
+            "path": "/api/notes",
+            "status": 200
           }
         ]
       }

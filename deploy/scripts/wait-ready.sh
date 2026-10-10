@@ -2,26 +2,26 @@
 # Wait until a host's workloads are really up, not only started, after a boot
 # or an install. A systemd unit is active as soon as its pod starts; the
 # containers, health checks and HTTP answers follow a few seconds later.
-# Usage: wait-ready.sh app|standby PODS CONTAINERS [HOSTNAME...]
+# Usage: wait-ready.sh app|standby PODS CONTAINERS [HOSTNAME/PATH...]
 #   PODS and CONTAINERS are space-separated names; apps.Platform.ready(role)
 #   gives them, from the installation's platform (callers pass them, so this
 #   script keeps no list of its own).
 #   app:     the pods' services active, the containers running and healthy, and
-#            /ready answering on 127.0.0.1:8080 for each HOSTNAME given (each
-#            app's public hostname).
-#   standby: the same for the databases; no HOSTNAME.
+#            each HOSTNAME/PATH answering 200 on 127.0.0.1:8080 (each app's
+#            public hostname and its ready path, checks.ready_urls).
+#   standby: the same for the databases; no HOSTNAME/PATH.
 # Prints what it still waits for every 10 seconds, READY when done, and exits 1
 # after WAIT_TIMEOUT seconds (default 300). It only reads; it changes nothing.
 # Runs on the host itself, also over SSH: ssh HOST 'bash -s' -- app PODS CONTAINERS < wait-ready.sh
 set -u
 mode=${1:-}
 if [ $# -lt 3 ] || { [ "$mode" != app ] && [ "$mode" != standby ]; }; then
-  echo "usage: $0 app|standby PODS CONTAINERS [HOSTNAME...]" >&2
+  echo "usage: $0 app|standby PODS CONTAINERS [HOSTNAME/PATH...]" >&2
   exit 2
 fi
 services=$2 containers=$3
 shift 3
-hostnames=$*
+urls=$*
 
 # Print the first thing that is not ready yet, or nothing.
 missing() {
@@ -37,9 +37,9 @@ missing() {
       *) echo "container $container ($state)"; return ;;
     esac
   done
-  for hostname in $hostnames; do
-    curl --silent --fail --max-time 5 -H "Host: $hostname" http://127.0.0.1:8080/ready >/dev/null ||
-      { echo "readiness of $hostname"; return; }
+  for url in $urls; do
+    curl --silent --fail --max-time 5 -H "Host: ${url%%/*}" "http://127.0.0.1:8080/${url#*/}" >/dev/null ||
+      { echo "readiness of $url"; return; }
   done
 }
 

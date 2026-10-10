@@ -96,6 +96,7 @@ class FakeHost:
         self.unit_directory = unit_directory
         self.source = source
         self.calls = []
+        self.requests = []  # (hostname, path) of each HTTP check through nginx
         self.timers = set()  # user timers that are enabled and running
 
     def __enter__(self):
@@ -115,10 +116,16 @@ class FakeHost:
                           mock.patch('app_installer.settings.SYSTEMD_USER_DIR', self.units),
                           # nginx's demo CA and leaf (tls_secrets): smaller keys only to keep the tests fast.
                           mock.patch('app_installer.tls_secrets.KEY_BITS', 2048),
-                          mock.patch('app_installer.tls_secrets.ENTRYPOINT', ENTRYPOINT)]
+                          mock.patch('app_installer.tls_secrets.ENTRYPOINT', ENTRYPOINT),
+                          # Each app's ready path and checks (checks.py) through nginx: every one answers 200.
+                          mock.patch('app_installer.checks.status', side_effect=self._status)]
         for patcher in self._patchers:
             patcher.start()
         return self
+
+    def _status(self, path, hostname):
+        self.requests.append((hostname, path))
+        return 200
 
     def __exit__(self, *error):
         for patcher in self._patchers:

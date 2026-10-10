@@ -22,14 +22,14 @@ class PromotedHost:
     """Records every step of promoted.deploy in order and answers like a healthy host."""
 
     def __init__(self, hostname='todo-standby', address='192.0.2.11', missing_secrets=(), workloads_changed=False,
-                 images_changed=False, issuers=(ISSUER,), reads=None, promoted=True, legacy=False,
+                 images_changed=False, issuers=(ISSUER,), statuses=None, promoted=True, legacy=False,
                  tls_changed=False):
         self.hostname, self.address = hostname, address
         self.missing_secrets = set(missing_secrets)
         self.workloads_changed, self.images_changed = workloads_changed, images_changed
         self.tls_changed = tls_changed
         self.issuers = list(issuers)
-        self.reads = reads or {}
+        self.statuses = statuses or {}  # {(hostname, path): the HTTP status it answers}, else 200
         self.promoted, self.legacy = promoted, legacy
         self.steps = []
 
@@ -61,7 +61,11 @@ class PromotedHost:
         self.steps.append(('request', path, hostname))
         if path == promoted.DISCOVERY:
             return {'issuer': self.issuers.pop(0) if len(self.issuers) > 1 else self.issuers[0]}
-        return self.reads.get(hostname, [])
+        return {}
+
+    def status(self, path, hostname):
+        self.steps.append(('get', path, hostname))
+        return self.statuses.get((hostname, path), 200)
 
     def configure(self, password, clients):
         self.steps.append(('clients',))
@@ -83,6 +87,7 @@ class PromotedHost:
             patch.object(promoted.keycloak, 'wait',
                          lambda path, *a, hostname=None, **k: self.steps.append(('wait', path, hostname))),
             patch.object(promoted.keycloak, 'request', self.request),
+            patch.object(promoted.checks, 'status', self.status),
             patch.object(promoted.keycloak, 'configure', self.configure),
             patch.object(promoted.install.secrets, 'read', lambda name: 'admin-password'),
             patch.object(promoted.time, 'sleep', lambda seconds: None),
@@ -128,11 +133,14 @@ class PromotedDeployTests(unittest.TestCase):
             # The serving tier in start order: Keycloak, the apps, nginx.
             self.assertEqual(starts, ['keycloak.service', 'todo-app.service', 'notes-app.service',
                                       'shared-proxy.service'])
+            # Keycloak first, then each app ready and its checks, through its own hostname.
+            self.assertLess(self.index(host, ('request', promoted.DISCOVERY, None)), self.index(host, ('clients',)))
             for app in platform_file.checkout().apps:
                 self.assertLess(self.index(host, ('systemctl', 'start', 'shared-proxy.service')),
-                                self.index(host, ('wait', '/health', app.hostname)))
-                self.assertIn(('request', app.api_path(), app.hostname), host.steps)
-            self.assertLess(self.index(host, ('request', promoted.DISCOVERY, None)), self.index(host, ('clients',)))
+                                self.index(host, ('get', app.ready, app.hostname)))
+                self.assertLess(self.index(host, ('clients',)), self.index(host, ('get', app.ready, app.hostname)))
+                for check in app.checks:
+                    self.assertIn(('get', check.path, app.hostname), host.steps)
 
     def test_any_image_or_workload_change_stops_the_whole_tier_once_before_starting(self):
         for changes in ({'workloads_changed': True}, {'images_changed': True}, {'tls_changed': True}):
@@ -190,10 +198,12 @@ class PromotedDeployTests(unittest.TestCase):
             self.assertLess(self.index(host, ('images',)), self.index(host, tls))
             self.assertLess(self.index(host, tls), self.index(host, ('install', 'application', 'todo')))
 
-    def test_a_failed_public_read_or_foreign_issuer_stops_the_deployment(self):
+    def test_a_failed_check_or_foreign_issuer_stops_the_deployment(self):
         with tempfile.TemporaryDirectory() as directory:
-            host = PromotedHost(reads={platform_file.checkout().apps[-1].hostname: {'detail': 'error'}})
-            with self.assertRaisesRegex(RuntimeError, 'did not return a list'):
+            app = platform_file.checkout().apps[-1]
+            host = PromotedHost(statuses={(app.hostname, app.checks[-1].path): 500})
+            with self.assertRaisesRegex(RuntimeError, f'{app.name}: GET {app.checks[-1].path} on {app.hostname} '
+                                                      'answered 500, not 200'):
                 self.deploy(host, directory)
             host = PromotedHost(issuers=['https://192.0.2.11:8443/auth/realms/todo'])
             with self.assertRaisesRegex(RuntimeError, 'canonical'):
@@ -215,8 +225,8 @@ class PromotedDeployTests(unittest.TestCase):
                                           'TARGET_NOTES_HOSTNAME': 'notes.example.org'}))
             host = PromotedHost(issuers=['https://auth.example.org:8443/auth/realms/todo'])
             self.deploy(host, directory)
-            self.assertIn(('request', platform_file.checkout().apps[0].api_path(), 'shop.example.org'), host.steps)
-            self.assertIn(('request', platform_file.checkout().apps[1].api_path(), 'notes.example.org'), host.steps)
+            self.assertIn(('get', platform_file.checkout().apps[0].checks[-1].path, 'shop.example.org'), host.steps)
+            self.assertIn(('get', platform_file.checkout().apps[1].checks[-1].path, 'notes.example.org'), host.steps)
             self.assertEqual([hostname for _client, hostname in host.clients], ['shop.example.org', 'notes.example.org'])
 
     def test_a_port_other_than_the_bundles_refuses_before_anything_changes(self):

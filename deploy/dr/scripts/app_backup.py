@@ -38,7 +38,7 @@ from typing import Callable, Optional, Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from app_dr_host import replication  # noqa: E402
 from app_installer import backup as backups  # noqa: E402
-from app_installer import keycloak, oplog, settings, stack, target_render  # noqa: E402
+from app_installer import checks, keycloak, oplog, settings, stack, target_render  # noqa: E402
 from app_installer.commands import CommandError, run  # noqa: E402
 
 DATA_DIRECTORY = "/var/lib/postgresql/data"
@@ -586,7 +586,7 @@ def configure(platform, tools: Sequence[DatabaseBackup], journal: Path) -> dict:
         # record), else the default the bundle was built with.
         served = target_render.hostnames(target_render.read_record(), platform)
         for app in platform.apps:
-            keycloak.wait("/ready", 30, 1, "ready", hostname=served.get(app.name, app.hostname))
+            checks.wait_ready(app, served.get(app.name, app.hostname))
         if platform.has_identity:
             keycloak.wait("/auth/realms/todo/.well-known/openid-configuration", 90, 2)
         verified = {}

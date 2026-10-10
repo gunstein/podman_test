@@ -57,6 +57,9 @@ class InstallTests(unittest.TestCase):
                 install.install(project, mode=mode, quadlet_dir=directory, platform=platform, **how)
                 configure.assert_called_once_with('fixture-password', [
                     (app.keycloak_client, app.hostname) for app in applications])
+                # Each app ready, then its checks, through nginx with its hostname (checks.verify).
+                self.assertEqual(host.requests, [(app.hostname, path) for app in applications
+                                                 for path in (app.ready, *(check.path for check in app.checks))])
                 if mode == 'server':
                     self.assertEqual(len(list(runtime.glob('*.kube'))), 2 * len(applications) + 3)
                     self.assertEqual(len(host.ran('systemctl', '--user', 'show')),

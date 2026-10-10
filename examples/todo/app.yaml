@@ -11,10 +11,6 @@ database: true
 # (todo-frontend/keycloak-adapter.js). Without keycloakClient the app has no
 # login; Keycloak runs only when some app has one.
 keycloakClient: todo-frontend
-# The DR tools check the app by reading /api/<apiCollection> (by default the
-# name), which must answer a public read with a list. nginx forwards all of
-# /api/ to the backend either way.
-apiCollection: todos
 # The images it builds (section 5.2), each localhost/todo-<name>. context is
 # the build context, relative to this directory; containerfile is relative to
 # the context. Both Containerfiles copy from the repository root today.
@@ -45,3 +41,15 @@ routes:
     to: backend
   - path: /
     to: frontend
+# The app is ready when this path on its hostname answers 200: its backend's
+# /ready answers 503 until the database takes a query. The platform waits for
+# it after a start.
+ready: /ready
+# Checked once it is ready, after an install and after a DR promotion: each a
+# GET on its hostname and the status it must answer. /api/todos is a
+# public read through the backend.
+checks:
+  - path: /health
+    status: 200
+  - path: /api/todos
+    status: 200

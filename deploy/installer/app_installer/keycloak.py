@@ -96,9 +96,9 @@ def template_client(token):
 def configure(admin_password, clients):
     """Make sure every app has a Keycloak client whose redirect and origin match its URL.
 
-    Waits for nginx and Keycloak (its hostname is nginx's default server)
-    and for each app, checks that the issuer is HTTPS with the todo realm,
-    then logs in as the Keycloak admin. The realm import brings one client,
+    Waits for nginx and Keycloak (its hostname is nginx's default server),
+    never for the apps (their checks run after this, checks.py), checks that
+    the issuer is HTTPS with the todo realm, then logs in as the Keycloak admin. The realm import brings one client,
     apps.TEMPLATE_CLIENT: another app's missing client is copied from it,
     with its own client ID, redirect URL and token audience. An existing
     client only gets its URLs corrected. The realm gets its login
@@ -109,9 +109,6 @@ def configure(admin_password, clients):
     if not re.fullmatch(r'https://[^/]+/auth/realms/todo', issuer):
         raise RuntimeError('Expected an HTTPS issuer with the Todo realm path.')
     identities = list(clients)  # [(client ID, the hostname its app is served on)], install.clients()
-    for _client_id, hostname in identities:
-        wait('/health', 30, 1, 'ok', hostname=hostname)
-        wait('/ready', 30, 1, 'ready', hostname=hostname)
     token = request('/auth/realms/master/protocol/openid-connect/token', 'POST', {
         'grant_type': 'password', 'client_id': 'admin-cli', 'username': 'admin',
         'password': admin_password,

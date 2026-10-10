@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 from app_installer import (
+    checks,
     images,
     install,
     keycloak,
@@ -47,14 +48,6 @@ def install_workloads(project_root, quadlet_dir, target, node_address, service_p
         changed = workloads.install_keycloak(*arguments, target=target) or changed
     return workloads.install_shared_proxy(*arguments, node_address, service_port,
                                           platform=target.platform, target=target) or changed
-
-
-def require_application(app, hostname):
-    """Health, database readiness and a public read, all through the app's nginx virtual host."""
-    keycloak.wait('/health', 30, 1, 'ok', hostname=hostname)
-    keycloak.wait('/ready', 30, 1, 'ready', hostname=hostname)
-    if not isinstance(keycloak.request(app.api_path(), hostname=hostname), list):
-        raise RuntimeError(f'{app.name}: public read {app.api_path()} did not return a list')
 
 
 def require_issuer(issuer, attempts=90, delay=2):
@@ -115,11 +108,11 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
         run('systemctl', '--user', 'stop', *platform.services(databases=False), allowed=(0, 5))
     for workload in platform.serving_workloads():
         quadlet.systemctl('start', workload.service)
-    for app in platform.apps:
-        require_application(app, hostnames[app.name])
     if platform.has_identity:
         require_issuer(f'https://{target.identity_hostname}:{service_port}/auth/realms/todo')
     clients_changed = install.configure_identity(platform, hostnames)
+    # Each app ready and its checks passed, through its nginx virtual host, once Keycloak is set up.
+    checks.verify(platform, hostnames)
     target_render.write_record(target.values)
     certificate = run('podman', 'exec', 'nginx', 'cat', CA_CERTIFICATE).stdout.strip() + '\n'
     certificate_changed = quadlet.write(config_dir / 'platform-nginx-root.crt', certificate.encode(), 0o644)

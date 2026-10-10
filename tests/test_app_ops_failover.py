@@ -132,7 +132,7 @@ class FailoverTests(unittest.TestCase):
         wait_ready = next(command for _host, command in world.commands if command[:2] == ["bash", "-s"])
         pods, containers = platform_file.checkout().ready("app")
         self.assertEqual(wait_ready[-5:], ["app", " ".join(pods), " ".join(containers),
-                                           "shop.example.org", "notes.example.org"])
+                                           "shop.example.org/ready", "notes.example.org/ready"])
         self.assertEqual(report["users"]["hostnames"], ["auth.example.org", "shop.example.org", "notes.example.org"])
         self.assertEqual({step[1] for step in world.steps() if step[0] == "login-form"}, {"auth.example.org"})
 

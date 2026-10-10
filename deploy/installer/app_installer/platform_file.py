@@ -168,6 +168,30 @@ def _routes(data, path, endpoints):
     return tuple(routes)
 
 
+def _routed(location, where, routes):
+    """location checked as a path one of routes sends on (a request nginx would otherwise refuse)."""
+    if not isinstance(location, str) or not PATH.fullmatch(location):
+        raise ValueError(f'{where}: must be a path such as /ready, not {location!r}')
+    if not any(location == route.path if route.exact else location.startswith(route.path) for route in routes):
+        raise ValueError(f'{where}: no route of the app matches {location}')
+    return location
+
+
+def _checks(data, path, routes):
+    """The checks an app.yaml declares, a list of {path, status}, as apps.Check."""
+    if not isinstance(data, list) or not data:
+        raise ValueError(f'{path}: checks must be a list of {{path, status}}, for example - {{path: /, status: 200}}')
+    checks = []
+    for index, check in enumerate(data):
+        where = f'{path}: checks[{index}]'
+        check = _fields(check, where, ('path', 'status'))
+        status = check['status']
+        if type(status) is not int or not 100 <= status <= 599:
+            raise ValueError(f'{where}.status: must be an HTTP status, 100-599, not {status!r}')
+        checks.append(apps.Check(path=_routed(check['path'], f'{where}.path', routes), status=status))
+    return tuple(checks)
+
+
 def _app(directory, hostname, replication_port, root, where):
     """The App in directory/app.yaml, served on hostname.
 
@@ -177,7 +201,7 @@ def _app(directory, hostname, replication_port, root, where):
     """
     path = directory / APP_FILE
     data = _fields(_yaml(path), path, ('name', 'images', 'endpoints', 'routes'),
-                   ('database', 'keycloakClient', 'apiCollection'))
+                   ('database', 'keycloakClient', 'ready', 'checks'))
     database = data.get('database', False)
     if type(database) is not bool:
         raise ValueError(f'{path}: database: must be true or false, not {database!r}')
@@ -186,14 +210,15 @@ def _app(directory, hostname, replication_port, root, where):
     if not database and replication_port is not None:
         raise ValueError(f'{where}: replicationPort is only for an app with a database, and {path} has none')
     endpoints = _endpoints(data['endpoints'], path)
+    routes = _routes(data['routes'], path, endpoints)
     return apps.App(name=_text(data['name'], f'{path}: name', NAME), hostname=hostname,
                     keycloak_client=_text(data['keycloakClient'], f'{path}: keycloakClient', WORD)
                     if 'keycloakClient' in data else '',
                     has_database=database, replication_port=replication_port or 0,
-                    api_collection=_text(data['apiCollection'], f'{path}: apiCollection', WORD)
-                    if 'apiCollection' in data else '',
                     images=_images(data['images'], path, root), endpoints=endpoints,
-                    routes=_routes(data['routes'], path, endpoints))
+                    routes=routes,
+                    ready=_routed(data['ready'], f'{path}: ready', routes) if 'ready' in data else '',
+                    checks=_checks(data['checks'], path, routes) if 'checks' in data else ())
 
 
 def load(path, environment='prod'):

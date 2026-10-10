@@ -51,8 +51,8 @@ application state unless:
 It loads only missing images, installs the grouped `todo-app` and `notes-app`,
 the independent `keycloak` and the `shared-proxy` Kube workloads, starts them
 through `.kube` Quadlets, updates each registered Keycloak client to the stable
-origin, and checks health, readiness, discovery and public reads for every
-application. When an image or workload definition changed, it stops the whole
+origin, checks Keycloak's discovery, and waits for each application's ready
+path and runs its checks (its `app.yaml`'s `ready` and `checks`). When an image or workload definition changed, it stops the whole
 application tier once before starting it again. It exports the public nginx root
 to `~/.config/platform/platform-nginx-root.crt`.
 

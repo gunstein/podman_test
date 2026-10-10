@@ -97,7 +97,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'deploy/installer'))
-from app_installer import platform_file  # noqa: E402
+from app_installer import checks, platform_file  # noqa: E402
 
 # What the lab installs: this checkout's platform.yaml, the one the bundle is built from (02-1).
 PLATFORM, PROD = platform_file.load(ROOT / platform_file.FILE, 'prod')
@@ -275,9 +275,9 @@ def check_services(step, host, mode):
     single failed runs while a container starts (run 19).
     """
     pods, containers = PLATFORM.ready(mode)
-    hostnames = [app.hostname for app in PLATFORM.apps] if mode == 'app' else []
+    urls = checks.ready_urls(PLATFORM, {app.name: app.hostname for app in PLATFORM.apps}) if mode == 'app' else []
     ready = step.ssh(host, (ROOT / 'deploy/scripts/wait-ready.sh').read_text(), mode, ' '.join(pods),
-                     ' '.join(containers), *hostnames, timeout=400)
+                     ' '.join(containers), *urls, timeout=400)
     step.expect(ready.returncode == 0 and 'READY:' in ready.stdout, f'wait-ready.sh {mode} printed READY')
     failed = step.ssh(host, 'systemctl --user --failed --no-legend --plain')
     units = [line.split()[0] for line in failed.stdout.splitlines() if line.strip()]

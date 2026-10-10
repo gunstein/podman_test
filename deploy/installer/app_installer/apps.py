@@ -22,6 +22,33 @@ class AppImage:
 
 
 @dataclass(frozen=True)
+class Endpoint:
+    """A port in the app's pod that nginx sends requests to, by name (a route's `to`)."""
+
+    name: str
+    port: int
+
+
+@dataclass(frozen=True)
+class Route:
+    """A path on the app's own hostname and the endpoint nginx sends it to.
+
+    path is a prefix ("/api/" matches /api/todos), or with exact the whole
+    path ("/ready"). /auth/ is the platform's: it goes to Keycloak on every
+    app's hostname, so an app reads the issuer from its own origin.
+    """
+
+    path: str
+    to: str
+    exact: bool = False
+
+    @property
+    def location(self) -> str:
+        """The nginx location this route becomes: "/api/" or "= /ready"."""
+        return f"= {self.path}" if self.exact else self.path
+
+
+@dataclass(frozen=True)
 class App:
     """One web application: its public hostname, OAuth client and database.
 
@@ -43,6 +70,8 @@ class App:
     replication_port: int = 5432
     api_collection: str = ""
     images: tuple = ()
+    endpoints: tuple = ()
+    routes: tuple = ()
 
     @property
     def names(self) -> stack.Names:
@@ -287,15 +316,20 @@ class Platform:
                 "apps": [{"name": app.name, "hostname": app.hostname, "keycloak_client": app.keycloak_client,
                           "replication_port": app.replication_port, "api_collection": app.api_collection,
                           "images": [{"name": image.name, "context": image.context,
-                                      "containerfile": image.containerfile} for image in app.images]}
+                                      "containerfile": image.containerfile} for image in app.images],
+                          "endpoints": [{"name": endpoint.name, "port": endpoint.port} for endpoint in app.endpoints],
+                          "routes": [{"path": route.path, "to": route.to, "exact": route.exact}
+                                     for route in app.routes]}
                          for app in self.apps]}
 
     @classmethod
     def from_json(cls, data):
         """The platform to_json wrote; anything else is a ValueError that says what is wrong."""
         fields = {"name": str, "hostname": str, "keycloak_client": str, "replication_port": int,
-                  "api_collection": str, "images": list}
-        image_fields = {"name": str, "context": str, "containerfile": str}
+                  "api_collection": str, "images": list, "endpoints": list, "routes": list}
+        parts = {"images": (AppImage, {"name": str, "context": str, "containerfile": str}),
+                 "endpoints": (Endpoint, {"name": str, "port": int}),
+                 "routes": (Route, {"path": str, "to": str, "exact": bool})}
         if not (isinstance(data, dict) and set(data) == {"identity_hostname", "apps"}
                 and isinstance(data["identity_hostname"], str) and isinstance(data["apps"], list)):
             raise ValueError("A platform needs exactly identity_hostname and a list of apps")
@@ -304,10 +338,13 @@ class Platform:
             if not (isinstance(entry, dict) and set(entry) == set(fields)
                     and all(type(entry[key]) is kind for key, kind in fields.items())):
                 raise ValueError(f"An app needs exactly {', '.join(fields)}: {entry!r}")
-            for image in entry["images"]:
-                if not (isinstance(image, dict) and set(image) == set(image_fields)
-                        and all(type(image[key]) is kind for key, kind in image_fields.items())):
-                    raise ValueError(f"An image needs exactly {', '.join(image_fields)}: {image!r}")
-            apps.append(App(**{**entry, "images": tuple(AppImage(**image) for image in entry["images"])}))
+            values = dict(entry)
+            for key, (kind, part_fields) in parts.items():
+                for part in entry[key]:
+                    if not (isinstance(part, dict) and set(part) == set(part_fields)
+                            and all(type(part[name]) is type_ for name, type_ in part_fields.items())):
+                        raise ValueError(f"Each of an app's {key} needs exactly {', '.join(part_fields)}: {part!r}")
+                values[key] = tuple(kind(**part) for part in entry[key])
+            apps.append(App(**values))
         return cls(apps=tuple(apps), identity_hostname=data["identity_hostname"])
 

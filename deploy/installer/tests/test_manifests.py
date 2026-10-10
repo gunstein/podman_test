@@ -65,6 +65,23 @@ class ManifestFunctionTests(unittest.TestCase):
         secret_names = {e["valueFrom"]["secretKeyRef"]["name"] for e in pod["spec"]["containers"][0]["env"]}
         self.assertEqual(secret_names, {"keycloak-kube-postgres-secret", "keycloak-kube-admin-secret"})
 
+    def test_render_shared_proxy_routes_each_path_to_its_endpoint(self):
+        site = apps.App(name="site", hostname="site.test", keycloak_client="site-frontend",
+                        endpoints=(apps.Endpoint(name="pages", port=8081), apps.Endpoint(name="api", port=9000)),
+                        routes=(apps.Route(path="/docs/", to="pages"), apps.Route(path="/ping", to="api", exact=True),
+                                apps.Route(path="/", to="pages")))
+        docs = list(yaml.safe_load_all(manifests.render_shared_proxy(
+            ROOT, [site], {"site": "site.test"}, "auth.test", 8443, "localhost/platform-proxy:m12")))
+        conf = next(d["data"] for d in docs if d["metadata"]["name"] == "shared-nginx-config")["nginx.conf"]
+        self.assertIn("upstream site_pages { zone site_pages 64k; server site-app:8081 resolve; }", conf)
+        self.assertIn("upstream site_api { zone site_api 64k; server site-app:9000 resolve; }", conf)
+        server = conf[conf.index("server_name site.test;"):]
+        # /auth/ first (the platform's), then the app's routes in the order app.yaml lists them.
+        locations = [line.strip() for line in server.splitlines() if line.strip().startswith("location ")]
+        self.assertEqual(locations, ["location /auth/ {", "location /docs/ {", "location = /ping {", "location / {"])
+        self.assertRegex(server, r"location = /ping \{\s+proxy_pass http://site_api;")
+        self.assertRegex(server, r"location / \{\s+proxy_pass http://site_pages;")
+
     def test_render_shared_proxy_resolves_the_identity_hostname(self):
         widget, gadget = _app("widget"), _app("gadget")
         docs = list(yaml.safe_load_all(manifests.render_shared_proxy(

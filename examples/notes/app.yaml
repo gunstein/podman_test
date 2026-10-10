@@ -17,3 +17,23 @@ images:
   frontend:
     context: ../..
     containerfile: notes-frontend/Containerfile
+# The ports in its pod that nginx sends requests to (section 5.3).
+endpoints:
+  frontend:
+    port: 8080
+  backend:
+    port: 8000
+# The paths on its own hostname and the endpoint each goes to: a prefix path
+# ends with a slash, exact: true matches the whole path. /auth/ is the
+# platform's (Keycloak) on every app's hostname.
+routes:
+  - path: /api/
+    to: backend
+  - path: /health
+    exact: true
+    to: backend
+  - path: /ready
+    exact: true
+    to: backend
+  - path: /
+    to: frontend

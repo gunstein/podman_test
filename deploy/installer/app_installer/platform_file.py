@@ -30,6 +30,11 @@ WORD = re.compile(r'[a-z][a-z0-9-]{0,62}')
 # migration and the backend, and the frontend), so every app declares them until
 # it brings its own pod template (docs/PLATFORM-PLAN.md, section 5.9).
 TEMPLATE_IMAGES = ('backend', 'frontend')
+# A route's path goes into nginx.conf as written: a slash, then only letters,
+# digits and . _ ~ / - (no spaces, quotes, ; { } or $ that could change nginx).
+PATH = re.compile(r'/[A-Za-z0-9._~/-]*')
+# The platform's own path on every app's hostname: Keycloak (apps.Route).
+IDENTITY_PATH = '/auth'
 
 
 @dataclass(frozen=True)
@@ -115,16 +120,67 @@ def _images(data, path, root):
     return tuple(images)
 
 
+def _endpoints(data, path):
+    """The endpoints an app.yaml declares, {name: {port}}, as apps.Endpoint: the ports in its pod nginx reaches."""
+    if not isinstance(data, dict) or not data:
+        raise ValueError(f'{path}: endpoints must map each endpoint name to its port, for example frontend: '
+                         '{port: 8080}')
+    endpoints = []
+    for name, endpoint in data.items():
+        where = f'{path}: endpoints.{name}'
+        _text(name, where, WORD)
+        endpoint = _fields(endpoint, where, ('port',))
+        endpoints.append(apps.Endpoint(name=name, port=_port(endpoint['port'], f'{where}.port', 1)))
+    return tuple(endpoints)
+
+
+def _routes(data, path, endpoints):
+    """The routes an app.yaml declares, a list of {path, to, exact}, as apps.Route.
+
+    A prefix path ends with a slash, so /api/ never also matches /apifoo; an
+    exact path (exact: true) is matched whole. to names one of the app's
+    endpoints. /auth and everything under it is the platform's (Keycloak), and
+    two routes for the same location are an error.
+    """
+    if not isinstance(data, list) or not data:
+        raise ValueError(f'{path}: routes must be a list of {{path, to}}, for example - {{path: /, to: frontend}}')
+    names = [endpoint.name for endpoint in endpoints]
+    routes = []
+    for index, route in enumerate(data):
+        where = f'{path}: routes[{index}]'
+        route = _fields(route, where, ('path', 'to'), ('exact',))
+        exact = route.get('exact', False)
+        if type(exact) is not bool:
+            raise ValueError(f'{where}.exact: must be true or false, not {exact!r}')
+        location = route['path']
+        if not isinstance(location, str) or not PATH.fullmatch(location):
+            raise ValueError(f'{where}.path: must be a path such as /api/, not {location!r}')
+        if not exact and not location.endswith('/'):
+            raise ValueError(f'{where}.path: a prefix path ends with a slash ({location}/), or set exact: true')
+        if location == IDENTITY_PATH or location.startswith(IDENTITY_PATH + '/'):
+            raise ValueError(f'{where}.path: {location} is the platform\'s: {IDENTITY_PATH}/ goes to Keycloak')
+        if route['to'] not in names:
+            raise ValueError(f'{where}.to: {route["to"]!r} is not one of the endpoints {", ".join(names)}')
+        route = apps.Route(path=location, to=route['to'], exact=exact)
+        if any(other.location == route.location for other in routes):
+            raise ValueError(f'{where}: a second route for {route.location}')
+        routes.append(route)
+    return tuple(routes)
+
+
 def _app(directory, hostname, replication_port, root):
     """The App in directory/app.yaml, served on hostname, its database replicating on replication_port."""
     path = directory / APP_FILE
-    data = _fields(_yaml(path), path, ('name', 'keycloakClient', 'images'), ('apiCollection',))
+    data = _fields(_yaml(path), path, ('name', 'keycloakClient', 'images', 'endpoints', 'routes'),
+                   ('apiCollection',))
+    endpoints = _endpoints(data['endpoints'], path)
     return apps.App(name=_text(data['name'], f'{path}: name', NAME), hostname=hostname,
                     keycloak_client=_text(data['keycloakClient'], f'{path}: keycloakClient', WORD),
                     replication_port=replication_port,
                     api_collection=_text(data['apiCollection'], f'{path}: apiCollection', WORD)
                     if 'apiCollection' in data else '',
-                    images=_images(data['images'], path, root))
+                    images=_images(data['images'], path, root), endpoints=endpoints,
+                    routes=_routes(data['routes'], path, endpoints))
 
 
 def load(path, environment='prod'):

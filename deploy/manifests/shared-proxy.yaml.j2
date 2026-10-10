@@ -73,8 +73,9 @@ data:
         include /tmp/podman-resolver.conf;
         upstream shared_keycloak { zone shared_keycloak 64k; server keycloak:8080 resolve; }
 {% for app in applications %}
-        upstream {{ app.name }}_frontend { zone {{ app.name }}_frontend 64k; server {{ app.frontend }} resolve; }
-        upstream {{ app.name }}_backend { zone {{ app.name }}_backend 64k; server {{ app.backend }} resolve; }
+{% for upstream in app.upstreams %}
+        upstream {{ upstream.name }} { zone {{ upstream.name }} 64k; server {{ upstream.server }} resolve; }
+{% endfor %}
 {% endfor %}
 {# One server per hostname, chosen by the Host header. Plain HTTP 8080 is
    published only on 127.0.0.1, for the host's own checks; users come in on
@@ -82,8 +83,8 @@ data:
    Keycloak's hostname comes first and is the default server, so a request
    without a known Host header reaches Keycloak and nothing else: only /auth/
    is served there. Each app's server sends /auth/ to the same Keycloak too
-   (an app reads the issuer from its own origin), /api/, /health and /ready to
-   the app's backend, everything else to its frontend. #}
+   (an app reads the issuer from its own origin), and each of its routes
+   (app.yaml: a path and the endpoint it goes to) to that endpoint. #}
         server {
             listen 8080 default_server;
             listen 8443 ssl default_server;
@@ -119,26 +120,13 @@ data:
                 proxy_pass http://shared_keycloak;
                 include /etc/nginx/platform-proxy-headers.conf;
             }
-            location /api/ {
-                proxy_pass http://{{ app.name }}_backend;
+{% for route in app.routes %}
+            location {{ route.location }} {
+                proxy_pass http://{{ route.upstream }};
                 include /etc/nginx/platform-proxy-headers.conf;
                 include /etc/platform-nginx/app-headers.conf;
             }
-            location = /health {
-                proxy_pass http://{{ app.name }}_backend;
-                include /etc/nginx/platform-proxy-headers.conf;
-                include /etc/platform-nginx/app-headers.conf;
-            }
-            location = /ready {
-                proxy_pass http://{{ app.name }}_backend;
-                include /etc/nginx/platform-proxy-headers.conf;
-                include /etc/platform-nginx/app-headers.conf;
-            }
-            location / {
-                proxy_pass http://{{ app.name }}_frontend;
-                include /etc/nginx/platform-proxy-headers.conf;
-                include /etc/platform-nginx/app-headers.conf;
-            }
+{% endfor %}
         }
 {% endfor %}
     }

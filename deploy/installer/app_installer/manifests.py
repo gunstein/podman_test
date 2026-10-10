@@ -88,11 +88,14 @@ def render_shared_proxy(project_root, applications, hostnames, identity_hostname
     host checks the value that replaces it (target_render.check_hostname)
     before anything is installed.
     """
+    # One upstream per endpoint (app.yaml's endpoints), "<app>_<endpoint>" at
+    # the app's pod; one location per route, in the order app.yaml lists them.
     context = [{
         "name": app.name,
         "hostname": hostnames[app.name],
-        "frontend": app.pod + ":8080",
-        "backend": app.pod + ":8000",
+        "upstreams": [{"name": f"{app.name}_{endpoint.name}", "server": f"{app.pod}:{endpoint.port}"}
+                      for endpoint in app.endpoints],
+        "routes": [{"location": route.location, "upstream": f"{app.name}_{route.to}"} for route in app.routes],
     } for app in applications]
     for hostname in [identity_hostname] + [entry["hostname"] for entry in context]:
         if not hostname.startswith("${TARGET_"):

@@ -95,7 +95,7 @@ group, workloads, services); each app holds the images it builds
 (`apps.AppImage`). A build reads it from `platform.yaml` and each app's
 `examples/<app>/app.yaml` (`platform_file.load`, which also gives the
 environment's port and log level); there is no list of apps in the code.
-`bundle.json` (format version 7) carries it, and a host records it in
+`bundle.json` (format version 8) carries it, and a host records it in
 `~/.config/platform/platform.json`. The richer tree below grows with phases
 4 and 5 (images, routes, checks, database and login as app fields).
 
@@ -118,7 +118,7 @@ Writing more to JSON is not enough: the readers must stop reconstructing.
   argument. No YAML loading at import time, no module-level app lists, no
   default arguments that bind an app list. Two different platforms in one
   Python process must not share state (tested).
-- **Versions**: `bundle.json` keeps `format_version` (7 since phase 4a); the
+- **Versions**: `bundle.json` keeps `format_version` (8 since phase 4b); the
   installer and the DR tools refuse any other. Not yet built: `bundle.json`
   recording the image IDs of every image it carries, and the installer
   comparing installed image IDs with them. Today an image that is present
@@ -132,13 +132,14 @@ tested.
 
 ### 5.1 Configuration files
 
-Implemented so far (phases 3 and 4a): `platform.yaml` with
+Implemented so far (phases 3 to 4b): `platform.yaml` with
 `identityHostname`, `publicPort`, `logLevel`, the `local` and `prod`
 environments and each app's `path`, `hostname` and `replicationPort`;
-`app.yaml` with `name`, `keycloakClient`, `apiCollection` and `images` (each
-built image's `context` and `containerfile`, section 5.2). Everything else
-below comes with the phase that needs it; until then an app's routes, setup
-and checks follow today's conventions: the shared app pod template uses its
+`app.yaml` with `name`, `keycloakClient`, `apiCollection`, `images` (each
+built image's `context` and `containerfile`, section 5.2), `endpoints` (each
+one's `port`) and `routes` (`path`, `to`, `exact`, section 5.3). Everything
+else below comes with the phase that needs it; until then an app's setup and
+checks follow today's conventions: the shared app pod template uses its
 `backend` and `frontend` images (`app.yaml.j2`), and the backend's
 `python -m backend.migrate` and `python -m backend.setup_roles`
 (`install.setup_roles`).
@@ -178,6 +179,12 @@ and checks follow today's conventions: the shared app pod template uses its
 - One hostname may have many paths; the same hostname and path twice is an
   error. Tested together: `/`, `/api/`, `/help/`, with and without trailing
   slash, static assets and redirects.
+- Phase 4b built `path`, `to` and one field more than this list: `exact`,
+  for the exact-match `/health` and `/ready` of today's apps. A prefix path
+  ends with a slash, `/auth` is the platform's (Keycloak), and a path holds
+  only characters that cannot change nginx.conf. An endpoint has only a
+  `port` so far (the container comes with pod templates, 5.9); `rewrite` and
+  the header policy come with Help (phase 4f), which needs them.
 
 ### 5.4 Start, readiness, setup and checks
 
@@ -599,4 +606,22 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
   tool reads `platform.yaml` at import (a lab tool, not platform code), and
   `Platform.ready` still names the template's backend and frontend
   containers (phase 5, the apps' own pod templates).
+
+**Phase 4b, code done; acceptance run with the next phase that changes a host.**
+- Each `app.yaml` declares its `endpoints` (a name and the `port` in its pod
+  nginx sends requests to) and its `routes` (`path`, `to` an endpoint, and
+  `exact` for a whole-path match), section 5.3. `apps.Endpoint` and
+  `apps.Route` hold them; `Route.location` is the nginx location.
+- nginx is rendered from them: one upstream per endpoint
+  (`<app>_<endpoint>` at the app's pod), one location per route in the
+  order `app.yaml` lists them, after the platform's own `/auth/`. The
+  loader refuses an unknown endpoint, a prefix path without its final
+  slash, a path under `/auth`, a path with characters that could change
+  nginx.conf, and the same location twice.
+- Todo and Notes declare today's routes (`/api/`, exact `/health` and
+  `/ready`, `/`), so every rendered nginx.conf is byte for byte as before;
+  `bundle.json` carries the endpoints and routes (format version 8), the
+  only change in the render baseline.
+- Not yet: `rewrite` and the header policy (phase 4f, for Help), and an
+  endpoint's container (with pod templates, 5.9).
 

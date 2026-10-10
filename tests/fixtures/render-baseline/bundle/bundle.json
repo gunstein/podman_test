@@ -1,6 +1,6 @@
 {
   "format": "platform-offline-bundle",
-  "format_version": 7,
+  "format_version": 8,
   "manifests": {
     "directory": "generated/target/manifests",
     "files": [
@@ -63,6 +63,38 @@
             "context": ".",
             "containerfile": "todo-frontend/Containerfile"
           }
+        ],
+        "endpoints": [
+          {
+            "name": "frontend",
+            "port": 8080
+          },
+          {
+            "name": "backend",
+            "port": 8000
+          }
+        ],
+        "routes": [
+          {
+            "path": "/api/",
+            "to": "backend",
+            "exact": false
+          },
+          {
+            "path": "/health",
+            "to": "backend",
+            "exact": true
+          },
+          {
+            "path": "/ready",
+            "to": "backend",
+            "exact": true
+          },
+          {
+            "path": "/",
+            "to": "frontend",
+            "exact": false
+          }
         ]
       },
       {
@@ -81,6 +113,38 @@
             "name": "frontend",
             "context": ".",
             "containerfile": "notes-frontend/Containerfile"
+          }
+        ],
+        "endpoints": [
+          {
+            "name": "frontend",
+            "port": 8080
+          },
+          {
+            "name": "backend",
+            "port": 8000
+          }
+        ],
+        "routes": [
+          {
+            "path": "/api/",
+            "to": "backend",
+            "exact": false
+          },
+          {
+            "path": "/health",
+            "to": "backend",
+            "exact": true
+          },
+          {
+            "path": "/ready",
+            "to": "backend",
+            "exact": true
+          },
+          {
+            "path": "/",
+            "to": "frontend",
+            "exact": false
           }
         ]
       }

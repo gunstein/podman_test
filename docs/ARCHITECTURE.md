@@ -39,8 +39,9 @@ shared nginx proxy ── /api/, /health, /ready ──► FastAPI ──► Pos
 
 The shared nginx proxy selects the application by hostname: `todo.test` or
 `notes.test`. Each host routes `/` to its HTTP-only frontend and `/api/`,
-`/health`, `/ready` to its own FastAPI backend. Both expose shared Keycloak at
-`/auth/`. Keycloak has a hostname of its own, `auth.test`, nginx's default
+`/health`, `/ready` to its own FastAPI backend, as its `app.yaml` declares
+(`endpoints` and `routes`; nginx is rendered from them). Both expose shared
+Keycloak at `/auth/`, which belongs to the platform. Keycloak has a hostname of its own, `auth.test`, nginx's default
 server, which serves only `/auth/`: a request without a known `Host` header
 reaches Keycloak, never an app. Reads are public; writes require a valid app-specific access token.
 Rows are shared rather than owned per user.

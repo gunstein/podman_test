@@ -1,7 +1,7 @@
 # Backlog
 
 Agreed work that is not done yet. The baseline to compare against is the
-CLEAN PASS on `89b369e` ([record](history/ACCEPTANCE-89b369e.md)). Do not
+CLEAN PASS on `8ef9e83` ([record](history/ACCEPTANCE-8ef9e83.md)). Do not
 change checked code while an acceptance run is in progress: the run would then
 test a different revision from the one in its kickoff message. Remove an item
 when its change has passed acceptance; the acceptance records and Git keep
@@ -31,25 +31,23 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-1. High up, small: V1 and V2 (leftovers on disk), done, awaiting
-   acceptance. Owner's request, 2026-10-09. S5 (the installer's topology in
-   one table) is done too, awaiting acceptance.
-2. Then, so a failover does not lose weeks of data: T3 (fencing without the
-   Oslo hypervisor, a procedure). When to
-   start is the owner's call.
-3. The rest of failover to Trondheim within 30 minutes (see the goal below):
-   G4 (the disaster drill in the
-   lab) and G5 (rebuilding Oslo on new hardware).
-4. What operation needs: U1 (updating a replicated pair), T6 (planned
-   switchover), U2 (the replication CA and nginx; the replication certificate
-   renews itself now)
-   and L1 (command logging).
+1. Done in code, still to see in the lab: V1 and V2 (an `uninstall` leaves
+   nothing behind; no acceptance run uninstalls) and P2 (a failing readiness
+   check). Owner's steps: Q3 (Dependabot on the default branch), L4 (the
+   journal in the clean snapshots, K1) and a review of T3's procedure.
+2. The rest of failover to Trondheim within 30 minutes (see the goal below):
+   G4 (the disaster drill in the lab, which also tests T3) and G5
+   (rebuilding Oslo on new hardware).
+3. What operation needs: U1 (updating a replicated pair), T6 (planned
+   switchover) and U2 (the replication CA and nginx; the replication
+   certificate renews itself now).
+4. D2 (backups that survive losing a machine), decided and not started.
 5. fapolicyd (F0 first), firewalls (W) and data checks (C).
 6. The rest.
 
 For a single host without DR (`install.sh` only), what matters, in order:
-Q3 (security updates, which `install.sh` can roll out). Then U3
-and L4. F0, S4, E3, E8 and O2 do not change how a single host runs.
+Q3 (security updates, which `install.sh` can roll out), then L4 on the
+host. F0 does not change how a single host runs.
 
 The real setup has two machines and no third, on separate hardware at separate
 physical sites. D2 and L6 are therefore designed for two hosts that each keep
@@ -59,8 +57,8 @@ between sites, and replication across it uses TLS.
 
 ## Secrets and leftovers on disk
 
-- **V1. Kube secret volumes that outlive their secrets.** *[done, awaiting
-  acceptance]* Found 2026-10-09 with Podman 4.9 while nginx's TLS files moved
+- **V1. Kube secret volumes that outlive their secrets.** *[done; no acceptance
+  run exercises it yet]* Found 2026-10-09 with Podman 4.9 while nginx's TLS files moved
   to Podman secrets: `podman kube play` writes the files of every `secret:`
   volume, passwords included, into a named volume called after the Kube
   secret, rewrites it at every play, and keeps it after `kube down` and
@@ -72,8 +70,8 @@ between sites, and replication across it uses TLS.
   live. Still to see on the lab's Podman 5.8: `podman volume ls` lists the
   `*-kube-*-secret` volumes while the stack runs and none after `uninstall`.
 
-- **V2. One uninstall that leaves nothing behind.** *[done, awaiting
-  acceptance]* Found 2026-10-09 on the acceptance client: an old
+- **V2. One uninstall that leaves nothing behind.** *[done; no acceptance
+  run exercises it yet]* Found 2026-10-09 on the acceptance client: an old
   per-container install from `quadlet-reference-v1` started at every login
   and held port 8080, and `uninstall --remove-data` removed only part of it.
   Done 2026-10-09, from the lists of the retired playbook
@@ -244,11 +242,6 @@ attention above 30 minutes (G3).
 
 ## Documentation
 
-- **O2. Align the runtime guide with the seven pods.** *[docs]* *[done 2026-10-09]* The seven pods were already right; the learning guide's `cat` now names `todo-app.yaml` (S5 task 3).
-  `deploy/runtime/README.md` still says "six" workloads and units in several
-  places, and `README.md` may have similar passages. Check them against
-  `AGENTS.md`, `docs/ARCHITECTURE.md` and the installer; documentation only.
-
 ## Updates and time
 
 - **U1. An update path for a replicated pair.** *[new]* The installer refuses a
@@ -277,13 +270,6 @@ attention above 30 minutes (G3).
     checked by `app_dr.py check` on both hosts. Open: local mode
     still renews only at a restart, and a DR pair in local mode checks
     nothing.
-- **U3. Time synchronisation.** *[new]* *[done 2026-10-09, awaiting acceptance]*
-  A WARN in the readiness check (`Clock synchronised (NTP)`) and in
-  `preflight.sh`; documented in deploy/offline/README.md. Token expiry, TLS and log timestamps
-  depend on correct clocks on both hosts. Check that chrony (or another time
-  service) is active in the preflight and in acceptance phase 1, and document
-  it.
-
 ## Monitoring and backup routine
 
 WAL on the primary is bounded (`max_slot_wal_keep_size=1GB`): a standby that is
@@ -310,15 +296,6 @@ Without an assistant, the logs must tell an operator what happened, where and
 why. The seven workloads already log to journald (`LogDriver=journald`), and
 `promotion.json` records promotions. The Python tools and backends do not log.
 
-- **L1. Log every operations and DR command.** *[new]* *[done 2026-10-09, awaiting
-  acceptance]* `app_installer/oplog.py`: one `logger` line per run of each of the
-  five tools, and app-ops's output kept per run; docs/LOGGING.md. No Python code uses
-  `logging`; the installer, `app_dr.py`, `app_backup.py` and app-ops print to
-  the terminal only, without timestamps, and keep nothing. Add one small
-  shared helper on the standard library that writes to journald (for example
-  through `logger -t app-ops`): timestamp, host, command, database, result and
-  duration, never a secret. app-ops also keeps one log file per run on the
-  controller.
 - **L3. Backend logging.** *[new]* *[optional]* The example apps, not the
   core of the repository. The backends log almost nothing, and `logLevel`
   in `values.yaml` becomes `LOG_LEVEL` in each app's ConfigMap, but no
@@ -332,11 +309,6 @@ why. The seven workloads already log to journald (`LogDriver=journald`), and
   reboot depends on journald storage on the hosts, which is neither set nor
   documented, and nothing bounds size or age. Configure persistent storage
   with limits, and document it.
-- **L5. `docs/LOGGING.md`.** *[docs]* *[done 2026-10-09]* Linked from README.md,
-  ARCHITECTURE.md and the runbooks. One page with where each log lives and
-  ready commands per workload and tool, including the rootless
-  `journalctl _SYSTEMD_USER_UNIT=...` form (`journalctl --user` can show
-  nothing).
 - **L6. Logs across the two hosts.** *[new]* Each VM keeps its own journal, so
   after a failover the history is split, and in a real disaster one host may
   be gone with its logs. Let each host forward its journal to the other (for
@@ -363,12 +335,6 @@ promoted primary.
   for all three databases but restores only todo and notes. Restore
   Keycloak's database as well, and compare a known value before and after the
   restore point.
-- **C4. State what asynchronous replication can lose.** *[docs]* *[done 2026-10-09]* ACCEPTANCE.md phase 6 and ARCHITECTURE.md section 10. Acceptance
-  fences only after the last marker has reached the standby, so it shows
-  failover works, not the worst-case loss of a crash while writing. Say
-  plainly in ACCEPTANCE.md and ARCHITECTURE.md that the last transactions can
-  be lost (the RPO), and that this is a design choice.
-
 ## Operations and DR decisions
 
 - **D1. Sudo with a password in app-ops.** *[new]* app-ops needs `NOPASSWD`
@@ -401,18 +367,9 @@ promoted primary.
   - *Not now.* Incremental base backups (`pg_basebackup --incremental`) add a
     chain that must be combined to restore; add them only if a full backup
     one day takes too long.
-- **D7. Shrink the packages after D6.** *[simplify]* *[done 2026-10-09, awaiting
-  acceptance]* Nothing installs
-  `generated/kube-runtime` or the `deploy/quadlet/*.kube.j2` templates from a
-  package any more; drop them from both packages and from the package tests,
-  which then compare `generated/target` instead.
 - **D8. A hostname in acceptance.** *[decision]* A public hostname other than
   the default is covered by unit tests only. Decide whether acceptance gets a
   step that installs the primary with one and checks it after failover.
-- **D3. Say that `deploy-promoted-application` runs on the promoted host.**
-  *[docs]* *[done 2026-10-09]* deploy/dr/README.md says why. It refuses unless that host is the machine running app-ops
-  (`local: true`). `failover` runs there anyway, so document the limit as
-  deliberate in `deploy/dr/README.md` and remove the item.
 - **D5. pgBackRest only if the needs grow.** *[optional]* Decided 2026-10-04:
   keep the own tools, which only orchestrate PostgreSQL's standard methods
   ([architecture](ARCHITECTURE.md#own-scripts-not-a-backup-or-ha-product));
@@ -448,14 +405,6 @@ whatever its current contents.
   `todo-component`). Cost: a `.spec` file and `rpmbuild` in the build step (CI
   only), and a GPG key to sign the package. Decide whether `install.sh` on a
   single host uses the RPM too. A new acceptance run follows.
-- **F1. Correct the docs.** *[docs]* *[done 2026-10-09]* FAPOLICYD.md, "What the trust database enforces". FAPOLICYD.md says trust is tied to path,
-  size and hash. That only holds when `integrity` is `size`, `sha256` or
-  `ima`; waiting for the exact `--dump-db` lines checks the database, not
-  enforcement. Say what holds with and without an integrity check.
-- **F6. State the lab limit.** *[docs]* *[done 2026-10-09]* ACCEPTANCE-AGENT.md A3, after the sudoers rule. With `NOPASSWD: ALL` the service user
-  can do anything as root, so acceptance does not test fapolicyd as a barrier
-  against that user. Say so in the acceptance docs.
-
 ## Firewalls
 
 The guest firewalld rules and the Proxmox quarantine are both needed: the
@@ -467,20 +416,10 @@ What is weak is how they are checked and switched.
   `acceptance.py` now has `do quarantine-profile` and `do quarantine-stop` for
   the lab. A product command that applies, lifts and verifies the whole
   profile only makes sense if the real sites run Proxmox; decide that first.
-- **W3. An exact lab baseline.** *[new]* *[done 2026-10-09]* The readiness check
-  already compares both VMs with the baseline; ACCEPTANCE-AGENT.md A1 now says
-  snapshots do not cover it. Proxmox firewall state is not part of
-  a VM snapshot, and leftovers from earlier runs stay behind. Add a check that
-  compares both VMs with an exact expected rule list and reports anything
-  else, and say clearly that snapshots do not cover this state.
 - **W4. Tool-owned guest rules.** *[new]* The firewalld rules are added by
   fixed commands in phases 3, 4, 7 and 9, tied to fixed addresses. Let a tool
   add or at least verify them (with the app-ops zone and runtime check) before
   each DR command.
-- **W5. Note the node-wide effect.** *[docs]* *[done 2026-10-09]* ACCEPTANCE-AGENT.md A1. VM rules need the datacenter and
-  node firewall on, which also changes access to the Proxmox host itself.
-  State this in the agent guide's preparation part.
-
 ## Code structure
 
 The owner's priority: the installer and DR code must be easy to understand
@@ -493,123 +432,14 @@ installer and DR have two independent apps, each with its own database,
 roles, secrets and images, to install, replicate and fail over. Sharing code
 between them is not a goal: each app should read on its own.
 
-- **S4. Split only along a real contract.** *[simplify]* Not by line
-  count: after S3, `app_backup.py` is 108 lines shorter, and its parts
-  (archiving, base backup, restore point, disposable PITR) share one
-  database, volume, image and set of invariants; `replication.py` follows
-  one lifecycle (inspect, prepare a primary, bootstrap a standby, promote,
-  reseed). Splitting them into manager classes would make one operation
-  harder to follow. Split a part out only when it has a public contract of
-  its own and can be tested without the rest of the lifecycle. The one
-  candidate was `install.install()` (118 lines), into named steps: done in
-  S5 task 4 (`check`, `prepare`, `write_definitions`, `start_in_order`,
-  `finish`), accepted in run 2026-10-09-run-3. Nothing else to split now.
-- **S5. Make the installer's topology concrete.** *[simplify]* *[done,
-  awaiting acceptance]* Phases 1 and 2 done 2026-10-09. The Python in
-  `deploy/installer/app_installer`, and the DR code that imports it, should
-  be easier to read and maintain, with less repetition and the same
-  behaviour (apart from the YAML renames in task 3). Simple, explicit code
-  over new abstraction; delete what becomes unused; no compatibility
-  aliases. Read AGENTS.md, docs/ARCHITECTURE.md and the installer README
-  first. One commit per task. Phase 1, then push and report; phase 2 only
-  when asked.
-  *Phase 1, the installer:*
-  0. *Lock in the behaviour first.* A test that pins the start and stop
-     order of all seven workloads (pods, units, services and Kube YAML
-     files, for all apps and for one selected app), run on the unchanged
-     code; and the rendered Kube YAML and Quadlet units of build mode and of
-     an offline bundle (`render-kube-runtime.sh`,
-     `python3 -m app_installer.bundle`), kept to diff against after every
-     task.
-  1. *One ordered workload table.* The seven workloads and their order are
-     written out by hand in about ten places: `install.services()`,
-     `install.offline_files()` and the start sequence in `install.install()`;
-     the manifest list, pod list, play order, teardown list and `down`
-     fallback in `kube_play.py`; `uninstall.PODS` and its name list;
-     `apps.services()`. Replace them with one function in `apps.py` that
-     returns the workloads in start order (stop is the reverse), each with
-     its pod name (also its unit and service base name), its Kube YAML files
-     and whether starting waits for it to be healthy, for example a frozen
-     dataclass `Workload(pod, manifests, wait_healthy=False)` and
-     `workloads(applications=APPS)`. Keep explicit: `setup_roles` after each
-     database is healthy and again after its app starts, `keycloak.configure`,
-     the proxy's published ports, replication publication, and nginx's TLS
-     secrets before the proxy starts (`tls_secrets.provision`). The step-0
-     test passes unchanged. Add a test of `deploy/quadlet/*.kube.j2` against
-     the table: every service in `Requires=` and `After=` starts earlier, and
-     `Yaml=` and `ConfigMap=` name that workload's own files. The units stay
-     written out literally.
-  2. *Name the shared resources directly.* Replace the names derived through
-     `SHARED_RESOURCE_OWNER` with named constants of unchanged value: the
-     proxy image and archive, the shared `config.yaml`, the `todo-nginx-data`
-     TLS volume (`tls.VOLUME`, `tls.recorded_hostnames`) and nginx's TLS
-     secrets (`apps.PROXY_TLS_SECRETS`, `apps.PROXY_KUBE_TLS_SECRET`). Count
-     the uses again first (23 outside the tests before the TLS secrets).
-     Keep one clearly named constant for the app whose public hostname is
-     also Keycloak's and the OIDC issuer's (`TARGET_EXTERNAL_HOSTNAME`).
-  3. *No todo special case in `stack.Names.manifest`.* todo's Kube YAML
-     files have no prefix (`postgres.yaml`, `config.yaml`), notes' do; make
-     the rule uniform. Inventory first: the shared proxy reads
-     `config.yaml`; the units name these files (`todo-postgres.kube.j2`,
-     `todo-app.kube.j2`, `shared-proxy.kube.j2`); so do tests
-     (`test_kube_name_contract.py`, `test_fixed_layout.py`), the DR code and
-     the docs. Bump `target_render.BUNDLE_FORMAT_VERSION`; an install
-     removes the old file names from the kube-runtime directory. Rename only
-     Kube YAML files, never containers, pods, units, services, secrets or
-     volumes. If the blast radius is larger, stop and report before pushing.
-  4. *`install.install()` in named steps* (the S4 candidate): checks before
-     anything changes, writing definitions (returning what must restart),
-     starting in order, and finishing (Keycloak, the SourcePath check, the
-     target record, the backup timer). The docstring stays the description
-     of the whole flow.
-  5. *Small cleanups.* `App.kube_secret(component)`, so `secrets.py` stops
-     reaching through `app.names`; remove the old state-file format in
-     `kube_play._recorded` (development only); remove the unused
-     `STANDBY_CA_FILE` in `replication_tls.py`; if `install.services()`
-     survives task 1, rename it so it no longer shares a name with
-     `apps.services()`.
-  *Phase 2, the DR code (only when asked):* the workload table in
-  `promoted.py`, in `SHARED_TIER_FILES` in `replication.py` and in
-  `app_backup.py`. Every fencing, promotion, backup, PITR and
-  standby-rebuild safety check stays exactly as it is.
-  *Do not change:* the `App`, `Database` and `Names` registry itself; the
-  legacy `.container` check in `install.preflight` and the old tool names in
-  `install.require_single_host` (safety boundaries); `target_render.load`,
-  its unit variants and cross-checks, and the environment source in
-  `target_render.resolve`; any persistent name (volumes, secrets,
-  containers, units, services); the `quadlet-reference-v1` tag. Python 3.9,
-  no new dependencies, small Bash scripts, no secrets in Git.
-  *Before every push:* the whole unittest suite (on Python 3.9 too if
-  available), ruff, pyright, shellcheck on touched scripts, and the render
-  diff against step 0: byte-identical apart from the task 3 renames. Update
-  ARCHITECTURE.md, LEARNING-GUIDE.md and the READMEs where they name changed
-  functions or files; never the acceptance verdict in PROJECT.md.
-  *Report:* the starting commit, what changed per task, line counts of
-  `app_installer` before and after, the test, ruff and pyright results, the
-  render diff, anything skipped or stopped on and why, and that the lab
-  acceptance was not re-run. Push to `feature/podman-kube`; no pull request
-  unless asked.
 ## Tests and CI
 
 The fakes check commands and order, not real SQL or Podman behaviour; CI's
 full-stack job and acceptance cover that.
 
-- **E3. Installer CLI branches.** *[new]* *[done 2026-10-09]* Branch coverage
-  now 93 % (`app_installer/cli.py`) and 99 % (`app_dr_host/cli.py`), from 78 %
-  and 61 %; `deploy/dr/tests/test_dr_cli.py` and `deploy/installer/tests/test_cli.py`. Measure the branch coverage of
-  `app_installer/cli.py` and `app_dr_host/cli.py` again (the last figure, 46
-  %, is from before S1), and test the commands and failure paths that are
-  missing through the CLI.
-- **E4. A coverage report in CI.** *[config]* *[done 2026-10-09]* A step in the
-  3.12 Python job; 94 % line coverage of the host tools locally. Print line and branch coverage
-  for the Python suites on every run, as information to follow up important
-  missing branches, not as a percentage gate.
 - **E5. Browser tests for failure.** *[optional]* An expired session and a real
   token refresh against Keycloak, and what the user sees when the backend or
   Keycloak is down.
-- **E8. Error paths in `images.py`.** *[new]* *[done 2026-10-09]*
-  `tests/test_images.py`; a missing archive is now named before `podman load`. A wrong proxy label, offline
-  with `refresh_images` refused, and a missing bundle.
 - **Q1. Replication in CI.** *[optional]* *[decision]* Stream between two
   PostgreSQL instances on one runner, so replication is tested before the lab.
   The full-stack job already covers the single host.
@@ -771,7 +601,7 @@ limited to 1.2 and 1.3.
   the Proxmox paths in `acceptance.py`, phases 1, 5, 6 and 9 and
   PROXMOX-QUARANTINE.md.
 
-- **P2. A readiness stop shows its FAIL lines.** *[done, awaiting acceptance]*
+- **P2. A readiness stop shows its FAIL lines.** *[done; no acceptance run exercises it yet]*
   Done 2026-10-09: the readiness check ends with `Failed checks, by section:`,
   every FAIL with its `== ...` heading, so the tail a stop shows holds them;
   a busy port 8080 names its process and pid (`ss`), for `rootlessport` the

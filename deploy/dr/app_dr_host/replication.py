@@ -279,12 +279,13 @@ def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kub
     host's public hostnames.
     """
     node_address = address(node_address)
-    install.preflight(quadlet_dir)
-    for database in apps.REPLICATED_DATABASES:
+    platform = target.platform
+    install.preflight(quadlet_dir, platform)
+    for database in platform.replicated_databases:
         require_primary(database)
     access_changed = replication_tls.ensure_ca()
     restart = []
-    for database in apps.REPLICATED_DATABASES:
+    for database in platform.replicated_databases:
         if bootstrap:
             changed = configure_primary(database, node_address)
         else:
@@ -295,11 +296,11 @@ def publish_primaries(node_address, *, bootstrap, project_root, quadlet_dir, kub
                                       node_address, database=database, target=target):
             restart.append(database)
     if restart:
-        run('systemctl', '--user', 'stop', *apps.services(databases=False), allowed=(0, 5))
+        run('systemctl', '--user', 'stop', *platform.services(databases=False), allowed=(0, 5))
     quadlet.systemctl('daemon-reload')
     for database in restart:
         quadlet.systemctl('restart', database.service)
-    for database in apps.REPLICATED_DATABASES:
+    for database in platform.replicated_databases:
         run('podman', 'wait', '--condition=healthy', database.container,
             timeout=settings.HEALTH_TIMEOUT)
     quadlet.systemctl('start', 'shared-proxy.service')
@@ -492,10 +493,10 @@ def archiving(database):
     return True
 
 
-def cluster_status(role):
+def cluster_status(platform, role):
     """Read-only group report after rebuild; every database is checked before any failure is raised."""
     report, problems = {}, []
-    for database in apps.REPLICATED_DATABASES:
+    for database in platform.replicated_databases:
         try:
             if role == 'primary':
                 report[database.name] = {'replication': streaming_status(database, rebuilt=True),
@@ -513,14 +514,14 @@ def cluster_status(role):
     return report
 
 
-def require_promoted_group(journal_path):
+def require_promoted_group(platform, journal_path):
     """Raise unless the promotion record confirms the whole group and every database is an active, healthy primary.
 
     The steps that open a promoted host to users (deploy-promoted,
     configure-backup) call this first, so a failed or partial promotion is
     never exposed.
     """
-    names = [database.name for database in apps.REPLICATED_DATABASES]
+    names = [database.name for database in platform.replicated_databases]
     try:
         decision = json.loads(Path(journal_path).read_text())
     except (OSError, ValueError) as error:
@@ -528,7 +529,7 @@ def require_promoted_group(journal_path):
     if (decision.get('state') != 'complete' or decision.get('applications') != names
             or decision.get('completed') != names):
         raise RuntimeError('Promotion record does not confirm the complete database group')
-    for database in apps.REPLICATED_DATABASES:
+    for database in platform.replicated_databases:
         if run('systemctl', '--user', 'is-active', database.service).stdout.strip() != 'active':
             raise RuntimeError(f'{database.name}: database service is not active')
         if run('podman', 'inspect', '--format', '{{.State.Health.Status}}',
@@ -548,13 +549,13 @@ def require_stopped_service(service):
         raise RuntimeError(f'{service}: require loaded, stopped service with zero MainPID/ControlPID')
 
 
-def require_quarantined_group():
+def require_quarantined_group(platform):
     """Raise unless every service is stopped and no user container runs.
 
     This is what the quarantine stop helper leaves behind. The rebuild host
     must look like this before anything on it is deleted.
     """
-    for service in apps.services():
+    for service in platform.services():
         require_stopped_service(service)
     if run('podman', 'ps', '--format', '{{.Names}}').stdout.strip():
         raise RuntimeError('Running user containers remain; keep infrastructure quarantine in place')
@@ -673,28 +674,30 @@ def reseed_standby(database, primary_address, *, confirm_fenced, confirm_reseed,
     return bootstrap_standby(database, primary_address, slot=database.replication_slot(rebuilt=True), **paths)
 
 
-# The serving tier's runtime files, which a rebuilt standby must not start again:
-# each unit and its Kube YAML. A ConfigMap file stays: its database reads it too.
-SERVING_TIER_FILES = tuple(name for workload in apps.serving_workloads() for name in (workload.unit, workload.yaml))
+def serving_tier_files(platform):
+    """The serving tier's runtime files, which a rebuilt standby must not start again:
+    each unit and its Kube YAML. A ConfigMap file stays: its database reads it too."""
+    return tuple(name for workload in platform.serving_workloads() for name in (workload.unit, workload.yaml))
 
 
 def reseed_group(primary_address, *, confirm_fenced, confirm_reseed, **paths):
     """Rebuild every database as a standby; every local and primary check passes before the first deletion."""
     require_reseed_confirmations(confirm_fenced, confirm_reseed)
     primary_address = address(primary_address)
-    run('systemctl', '--user', 'stop', *apps.services(), allowed=(0, 5))
-    require_quarantined_group()
+    platform = paths['target'].platform
+    run('systemctl', '--user', 'stop', *platform.services(), allowed=(0, 5))
+    require_quarantined_group(platform)
     confirmations = dict(confirm_fenced=confirm_fenced, confirm_reseed=confirm_reseed)
-    for database in apps.REPLICATED_DATABASES:
+    for database in platform.replicated_databases:
         reseed_check(database, primary_address, **confirmations, **paths)
-    for database in apps.REPLICATED_DATABASES:
+    for database in platform.replicated_databases:
         authenticate(database, primary_address)
     runtime = Path(paths['kube_runtime_dir'])
-    for name in SERVING_TIER_FILES:
+    for name in serving_tier_files(platform):
         (runtime / name).unlink(missing_ok=True)
-    for database in apps.REPLICATED_DATABASES:
+    for database in platform.replicated_databases:
         reseed_standby(database, primary_address, **confirmations, **paths)
-    return [database.name for database in apps.REPLICATED_DATABASES]
+    return [database.name for database in platform.replicated_databases]
 
 
 def standby_slot(database):
@@ -732,7 +735,7 @@ def drop_idle_slot(database, slot):
     return True
 
 
-def standby_reseed_check(primary_address):
+def standby_reseed_check(platform, primary_address):
     """On a standby, read-only: it may be copied again from the primary at primary_address.
 
     Every database must run as a read-only standby: that is the proof this
@@ -744,24 +747,24 @@ def standby_reseed_check(primary_address):
     comes up in recovery and waits for the primary.
     """
     primary_address = address(primary_address)
-    for database in apps.REPLICATED_DATABASES:
+    for database in platform.replicated_databases:
         state = status(database)
         if not (state['in_recovery'] and state['transaction_read_only']):
             raise RuntimeError(f'{database.name}: this host is not a read-only standby; '
                                'a re-seed never erases a primary, so nothing was changed')
-    services = apps.services(databases=False)
+    services = platform.services(databases=False)
     states = run('systemctl', '--user', 'is-active', *services, allowed=(0, 3, 4)).stdout.split()
     running = [service for service, state in zip(services, states) if state not in ('inactive', 'failed')]
     if running:
         raise RuntimeError(f'the application tier runs here ({", ".join(running)}); '
                            'only a database-only standby is re-seeded, so nothing was changed')
-    for database in apps.REPLICATED_DATABASES:
+    for database in platform.replicated_databases:
         replication_path(database, primary_address)
         authenticate(database, primary_address)
     return False
 
 
-def erase_standby_group(primary_address, confirm_reseed):
+def erase_standby_group(platform, primary_address, confirm_reseed):
     """On a standby: stop its databases and delete their data volumes, after every check passed again.
 
     confirm_reseed must be this host's name. The backup volumes and the
@@ -771,11 +774,11 @@ def erase_standby_group(primary_address, confirm_reseed):
     """
     if confirm_reseed != socket.gethostname():
         raise RuntimeError('The exact local hostname is required to erase this standby')
-    standby_reseed_check(primary_address)
-    run('systemctl', '--user', 'stop', *(database.service for database in apps.REPLICATED_DATABASES))
-    for database in apps.REPLICATED_DATABASES:
+    standby_reseed_check(platform, primary_address)
+    run('systemctl', '--user', 'stop', *(database.service for database in platform.replicated_databases))
+    for database in platform.replicated_databases:
         require_stopped_service(database.service)
         remove_exited_containers_using(database.volume('data'))
         # No force and no backup-volume removal. In-use data must fail closed.
         run('podman', 'volume', 'rm', database.volume('data'))
-    return [database.name for database in apps.REPLICATED_DATABASES]
+    return [database.name for database in platform.replicated_databases]

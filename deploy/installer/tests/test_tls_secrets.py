@@ -81,7 +81,7 @@ class SecretTest(unittest.TestCase):
         self.host = SecretHost(nginx)
         self.host.__enter__()
         self.addCleanup(self.host.__exit__)
-        self.host.record.parent.mkdir(parents=True)
+        self.host.record.parent.mkdir(parents=True, exist_ok=True)
         self.host.record.write_text(json.dumps({'TARGET_IDENTITY_HOSTNAME': NAMES[0],
                                                 'TARGET_NOTES_HOSTNAME': NAMES[1]}))
 
@@ -381,7 +381,7 @@ class InstallTests(SecretTest):
     def test_uninstall_with_its_data_removes_every_tls_secret(self):
         from app_installer import uninstall
         for name in tls_secrets.secret_names():
-            self.assertIn(name, uninstall.SECRETS)
+            self.assertIn(name, uninstall.secret_names(apps.registry()))
 
 
 if __name__ == '__main__':

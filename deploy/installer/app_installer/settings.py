@@ -48,6 +48,8 @@ PROMOTION_RECORD = "promotion.json"
 # The public hostnames this host was installed with (target_render); install.sh
 # and the DR tools write it, and every later step on the host reads it.
 TARGET_RECORD = "target-values.json"
+# The platform (its apps) this host was installed with (target_render.record_platform).
+PLATFORM_RECORD = "platform.json"
 
 # The recovery point objective app-ops writes into the DR settings. It is
 # informational: app_dr.py status prints it, nothing enforces it.

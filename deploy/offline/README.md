@@ -90,8 +90,8 @@ sh ./install.sh
 ```
 
 For a separate lab client, use `sh ./install.sh --publish-address 192.168.0.102`;
-add `--target-identity-hostname NAME`, `--target-todo-hostname NAME` and
-`--target-notes-hostname NAME` for public hostnames other than the bundle's
+add `--target-hostname identity=NAME`, `--target-hostname todo=NAME` and
+`--target-hostname notes=NAME` for public hostnames other than the bundle's
 defaults (see below).
 The address must belong to the target VM. The default publishes HTTPS on
 localhost only. Use the same argument on every repeat installation; omitting
@@ -123,13 +123,13 @@ nothing is passed through a shell or expanded from the environment.
 
 | Placeholder | Value | Where it comes from, first match wins | Checked as |
 |---|---|---|---|
-| `${TARGET_IDENTITY_HOSTNAME}` | The public hostname of Keycloak: its nginx `server_name` (the default server), the TLS certificate's first name, the OIDC issuer and `KC_HOSTNAME`; every app logs in there | `--target-identity-hostname`, then the environment variable `TARGET_IDENTITY_HOSTNAME`, then the host's record, then the bundle's default (`runtime.identityHostname` in the build's `values.yaml`, `auth.test`) | A DNS name: lowercase labels of letters, digits and inner hyphens |
-| `${TARGET_TODO_HOSTNAME}` | The public hostname of the Todo app: its nginx `server_name`, the TLS certificate and its Keycloak client's redirect URL | `--target-todo-hostname`, then `TARGET_TODO_HOSTNAME`, then the host's record, then the bundle's default (the app registry's `todo.test`) | As above |
-| `${TARGET_NOTES_HOSTNAME}` | The public hostname of the Notes app, used as Todo's is | `--target-notes-hostname`, then `TARGET_NOTES_HOSTNAME`, then the host's record, then the bundle's default (the app registry's `notes.test`) | As above |
+| `${TARGET_IDENTITY_HOSTNAME}` | The public hostname of Keycloak: its nginx `server_name` (the default server), the TLS certificate's first name, the OIDC issuer and `KC_HOSTNAME`; every app logs in there | `--target-hostname identity=...`, then the environment variable `TARGET_IDENTITY_HOSTNAME`, then the host's record, then the bundle's default (`runtime.identityHostname` in the build's `values.yaml`, `auth.test`) | A DNS name: lowercase labels of letters, digits and inner hyphens |
+| `${TARGET_TODO_HOSTNAME}` | The public hostname of the Todo app: its nginx `server_name`, the TLS certificate and its Keycloak client's redirect URL | `--target-hostname todo=...`, then `TARGET_TODO_HOSTNAME`, then the host's record, then the bundle's default (the app registry's `todo.test`) | As above |
+| `${TARGET_NOTES_HOSTNAME}` | The public hostname of the Notes app, used as Todo's is | `--target-hostname notes=...`, then `TARGET_NOTES_HOSTNAME`, then the host's record, then the bundle's default (the app registry's `notes.test`) | As above |
 | `${TARGET_PUBLISH_ADDRESS}` | The host IPv4 address nginx publishes HTTPS on (and, on a DR primary, PostgreSQL replication) | `--publish-address` (default `127.0.0.1`, which selects the local-only proxy unit); never the environment, a record or a default | A host IPv4 address, not a wildcard, multicast or reserved one |
 
-Every app gets its own `${TARGET_<APP>_HOSTNAME}` and
-`--target-<app>-hostname`, from the app registry (`apps.py`). The machine's own
+Every app of the bundle's platform (`bundle.json`) gets its own
+`${TARGET_<APP>_HOSTNAME}` and `--target-hostname <app>=...`. The machine's own
 hostname or FQDN is never used as a public hostname: the name users reach a
 service by is a decision, not a property of the host. There is no
 `${TARGET_HOSTNAME}` or `${TARGET_FQDN}`: no file needs them, and an unknown

@@ -4,31 +4,31 @@ from app_installer.commands import exists, run
 from app_installer.secrets import installed_names, read
 
 
-def replicated_names():
-    """Every raw credential the standby needs, for the complete replication group.
+def replicated_names(platform):
+    """Every raw credential the standby needs, for the platform's complete replication group.
 
     What the install created, plus each database's replication password.
     """
-    return installed_names() + [database.secret("replicator") for database in apps.REPLICATED_DATABASES]
+    return installed_names(platform) + [database.secret("replicator") for database in platform.replicated_databases]
 
 
-def transfer_names():
+def transfer_names(platform):
     """What the DR secret copy carries: the credentials plus the replication CA.
 
     The CA is not in replicated_names(), which the promoted host requires:
     a pair set up before replication TLS can still fail over without it.
     """
-    return replicated_names() + list(apps.REPLICATION_CA_SECRETS)
+    return replicated_names(platform) + list(apps.REPLICATION_CA_SECRETS)
 
 
-def export_replicated():
+def export_replicated(platform):
     """Every credential the standby needs and the replication CA, as {name: value}; sent over stdin only."""
-    return {name: read(name) for name in transfer_names()}
+    return {name: read(name) for name in transfer_names(platform)}
 
 
-def import_replicated(values):
+def import_replicated(platform, values):
     """Create missing credentials; refuse before any write if one differs. Errors name, never show, values."""
-    expected = transfer_names()
+    expected = transfer_names(platform)
     if not isinstance(values, dict) or sorted(values) != sorted(expected):
         raise ValueError("The credential transfer must contain exactly the complete replication group.")
     if not all(isinstance(value, str) and value for value in values.values()):

@@ -39,15 +39,16 @@ def require_identity(inventory_hostname, node_address, service_port):
 
 def install_workloads(project_root, quadlet_dir, target, node_address, service_port):
     """Install every app, Keycloak and the proxy from the bundle's files, published on this host's own address."""
-    install.preflight(quadlet_dir)
+    install.preflight(quadlet_dir, target.platform)
     runtime = quadlet_dir / settings.KUBE_RUNTIME
     arguments = (project_root, quadlet_dir, runtime, None)
     changed = False
-    for app in apps.APPS:
+    for app in target.platform.apps:
         changed = workloads.install_application(*arguments, node_address, service_port, app=app,
                                                 target=target) or changed
     changed = workloads.install_keycloak(*arguments, target=target) or changed
-    return workloads.install_shared_proxy(*arguments, node_address, service_port, target=target) or changed
+    return workloads.install_shared_proxy(*arguments, node_address, service_port,
+                                          applications=target.platform.apps, target=target) or changed
 
 
 def require_application(app, hostname):
@@ -99,12 +100,13 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
     target = target_render.load_on_host(project_root, node_address)
     if service_port != target.public_port:
         raise ValueError(f'The bundle was built for HTTPS port {target.public_port}, not {service_port}.')
-    hostnames = target.hostnames
-    replication.require_promoted_group(journal)
-    missing = [name for name in transfer.replicated_names() if not exists('secret', name)]
+    hostnames, platform = target.hostnames, target.platform
+    replication.require_promoted_group(platform, journal)
+    target_render.record_platform(platform)
+    missing = [name for name in transfer.replicated_names(platform) if not exists('secret', name)]
     if missing:
         raise RuntimeError('Credentials required by the promoted group are missing: ' + ', '.join(missing))
-    images_changed = images.prepare_offline_group(bundle_dir)
+    images_changed = images.prepare_offline_group(bundle_dir, platform)
     # A pair in provided mode never starts nginx here with a new demo CA. Checked with
     # the proxy image just loaded, before any workload changes.
     nginx_tls.require_for_failover()
@@ -112,14 +114,14 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
     tls_changed = nginx_tls.provision(hostnames, target.identity_hostname)
     workloads_changed = install_workloads(project_root, quadlet_dir, target, node_address, service_port)
     if images_changed or workloads_changed or tls_changed:
-        run('systemctl', '--user', 'stop', *apps.services(databases=False), allowed=(0, 5))
-    for workload in apps.serving_workloads():
+        run('systemctl', '--user', 'stop', *platform.services(databases=False), allowed=(0, 5))
+    for workload in platform.serving_workloads():
         quadlet.systemctl('start', workload.service)
-    for app in apps.APPS:
+    for app in platform.apps:
         require_application(app, hostnames[app.name])
     require_issuer(f'https://{target.identity_hostname}:{service_port}/auth/realms/todo')
     clients_changed = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
-                                         install.clients(apps.APPS, hostnames))
+                                         install.clients(platform, hostnames))
     target_render.write_record(target.values)
     certificate = run('podman', 'exec', 'nginx', 'cat', CA_CERTIFICATE).stdout.strip() + '\n'
     certificate_changed = quadlet.write(config_dir / 'platform-nginx-root.crt', certificate.encode(), 0o644)

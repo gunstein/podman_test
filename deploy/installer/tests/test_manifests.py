@@ -149,12 +149,12 @@ class StrictUndefinedTests(unittest.TestCase):
 class RenderErrorTests(unittest.TestCase):
     def test_unknown_application_name_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(ValueError, "Unknown or empty application selection"):
+            with self.assertRaisesRegex(ValueError, "Unknown apps: bogus"):
                 render.render(ROOT, VALUES, directory, ("bogus",))
 
     def test_mixed_known_and_unknown_application_names_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(ValueError, "Unknown or empty application selection"):
+            with self.assertRaisesRegex(ValueError, "Unknown apps: bogus"):
                 render.render(ROOT, VALUES, directory, ("todo", "bogus"))
 
     def test_broken_template_syntax_fails_before_any_output(self):
@@ -179,7 +179,7 @@ class RenderErrorTests(unittest.TestCase):
 
     def test_render_replaces_the_whole_output_directory(self):
         with tempfile.TemporaryDirectory() as directory:
-            todo, notes = apps.APPS
+            todo, notes = apps.registry().apps
             output = Path(directory) / "output"
             render.render(ROOT, VALUES, output)
             self.assertTrue((output / notes.manifest).is_file())

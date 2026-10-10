@@ -1,6 +1,6 @@
 {
   "format": "platform-offline-bundle",
-  "format_version": 5,
+  "format_version": 6,
   "manifests": {
     "directory": "generated/target/manifests",
     "files": [
@@ -43,10 +43,25 @@
     ]
   },
   "network": "generated/target/quadlet/app-network.network",
-  "applications": [
-    "todo",
-    "notes"
-  ],
+  "platform": {
+    "identity_hostname": "auth.test",
+    "apps": [
+      {
+        "name": "todo",
+        "hostname": "todo.test",
+        "keycloak_client": "todo-frontend",
+        "replication_port": 5432,
+        "api_collection": "todos"
+      },
+      {
+        "name": "notes",
+        "hostname": "notes.test",
+        "keycloak_client": "notes-frontend",
+        "replication_port": 5433,
+        "api_collection": ""
+      }
+    ]
+  },
   "public_port": 8443,
   "defaults": {
     "TARGET_IDENTITY_HOSTNAME": "auth.test",

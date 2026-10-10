@@ -6,13 +6,14 @@ set -eu
 bundle_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 
 usage() {
-  echo "Usage: sh install.sh [--publish-address HOST_IPV4] [--target-APP-hostname NAME ...]" >&2
-  echo "  for example --target-identity-hostname auth.example.org --target-todo-hostname todo.example.org --target-notes-hostname notes.example.org" >&2
+  echo "Usage: sh install.sh [--publish-address HOST_IPV4] [--target-hostname NAME=HOSTNAME ...]" >&2
+  echo "  NAME is identity (Keycloak) or an app of the bundle, for example" >&2
+  echo "  --target-hostname identity=auth.example.org --target-hostname todo=todo.example.org" >&2
   exit 2
 }
 
-# Each --target-...-hostname pair is kept, in order, at the end of "$@" for the
-# installer, which knows the apps and checks every value (target_render.py).
+# Each --target-hostname pair is kept, in order, at the end of "$@" for the
+# installer, which knows the bundle's apps and checks every value (target_render.py).
 # Without one, a hostname comes from the environment, the host's record or the
 # bundle's default.
 publish_address=127.0.0.1
@@ -21,7 +22,7 @@ while [ "$count" -gt 0 ]; do
   [ "$count" -ge 2 ] || usage
   case "$1" in
     --publish-address) publish_address=$2 ;;
-    --target-*-hostname) set -- "$@" "$1" "$2" ;;
+    --target-hostname) set -- "$@" "$1" "$2" ;;
     *) usage ;;
   esac
   shift 2

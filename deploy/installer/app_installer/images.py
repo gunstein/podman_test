@@ -77,7 +77,7 @@ def _prepare(project_root, deployment_mode, bundle_directory, refresh_images, sp
 
 
 def prepare(project_root, deployment_mode, bundle_directory="", refresh_images=False,
-            app: apps.App = apps.APPS[0], include_shared=True):
+            *, app: apps.App, include_shared=True):
     """Prepare one app's images, plus the shared ones unless include_shared is False."""
     specifications = image_list(app)
     if include_shared:
@@ -90,18 +90,18 @@ def prepare_shared(project_root, deployment_mode, bundle_directory="", refresh_i
     return _prepare(project_root, deployment_mode, bundle_directory, refresh_images, shared_images())
 
 
-def prepare_offline_group(bundle_directory):
-    """Load every missing registered image from a verified bundle; nothing is built or pulled."""
+def prepare_offline_group(bundle_directory, platform):
+    """Load every missing image of the platform from a verified bundle; nothing is built or pulled."""
     changed = any(prepare_shared(bundle_directory, 'offline', bundle_directory).values())
-    for app in apps.APPS:
+    for app in platform.apps:
         changed = any(prepare(bundle_directory, 'offline', bundle_directory,
                               app=app, include_shared=False).values()) or changed
     return changed
 
 
-def build_and_export(project_root, destination):
-    """Build and export each distinct registry image once for offline delivery."""
-    specifications = {image.reference: image for app in apps.APPS for image in image_list(app)}
+def build_and_export(project_root, destination, platform):
+    """Build and export each distinct image of the platform once for offline delivery."""
+    specifications = {image.reference: image for app in platform.apps for image in image_list(app)}
     specifications.update({image.reference: image for image in shared_images()})
     _prepare(project_root, 'build', '', True, specifications.values())
     destination = Path(destination)
@@ -118,4 +118,4 @@ if __name__ == '__main__':
     parser.add_argument('project_root', type=Path)
     parser.add_argument('destination', type=Path)
     arguments = parser.parse_args()
-    build_and_export(arguments.project_root, arguments.destination)
+    build_and_export(arguments.project_root, arguments.destination, apps.registry())

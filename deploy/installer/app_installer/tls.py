@@ -132,7 +132,8 @@ def recorded_hostnames():
     if target_render.IDENTITY_HOSTNAME not in record:
         raise TlsError(f'{target_render.record_path()} records no public hostnames: install this host first.')
     owner = target_render.identity_hostname(record)
-    return [owner] + [name for name in target_render.hostnames(record).values() if name != owner]
+    apps = target_render.hostnames(record, target_render.installed_platform())
+    return [owner] + [name for name in apps.values() if name != owner]
 
 
 def make_request(names, new_key=False, **where):

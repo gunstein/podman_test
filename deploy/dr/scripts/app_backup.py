@@ -37,8 +37,8 @@ from typing import Callable, Optional, Sequence
 # deploy/dr/README.md ("Where DR finds the installer") has the whole rule.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from app_dr_host import replication  # noqa: E402
-from app_installer import apps, keycloak, oplog, settings, stack, target_render  # noqa: E402
 from app_installer import backup as backups  # noqa: E402
+from app_installer import keycloak, oplog, settings, stack, target_render  # noqa: E402
 from app_installer.commands import CommandError, run  # noqa: E402
 
 DATA_DIRECTORY = "/var/lib/postgresql/data"
@@ -115,7 +115,7 @@ class DatabaseBackup:
         self,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         sleeper: Callable[[float], None] = time.sleep,
-        *, database: stack.Database = apps.APPS[0].database,
+        *, database: stack.Database,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.database = database
@@ -553,8 +553,8 @@ class DatabaseBackup:
             )
 
 
-def configure(tools: Sequence[DatabaseBackup], journal: Path) -> dict:
-    """Turn on WAL archiving for the complete group, restarting the app tier at most once.
+def configure(platform, tools: Sequence[DatabaseBackup], journal: Path) -> dict:
+    """Turn on WAL archiving for the platform's complete group, restarting the app tier at most once.
 
     Every database is checked before the first change. Databases that did
     not archive yet are restarted together, with the application tier
@@ -563,13 +563,13 @@ def configure(tools: Sequence[DatabaseBackup], journal: Path) -> dict:
     proves archiving works end to end with the command now in place.
     """
     try:
-        replication.require_promoted_group(journal)
+        replication.require_promoted_group(platform, journal)
         for tool in tools:
             tool.require_archive_prerequisites()
         prepared = [(tool, *tool.prepare_archive()) for tool in tools]
         restart = [tool for tool, _access, _directories, _changed, needed in prepared if needed]
         if restart:
-            for service in apps.services(databases=False):
+            for service in platform.services(databases=False):
                 # Exit 5 means the unit is not loaded, which is as good as stopped.
                 run("systemctl", "--user", "stop", service, allowed=(0, 5),
                     description=f"Stopping {service} before the PostgreSQL restart")
@@ -580,12 +580,12 @@ def configure(tools: Sequence[DatabaseBackup], journal: Path) -> dict:
         for tool in tools:
             tool.require_configured_archive()
         tools[0]._run(["systemctl", "--user", "start",
-                       *(workload.service for workload in apps.serving_workloads())],
+                       *(workload.service for workload in platform.serving_workloads())],
                       "Application tier start", timeout=settings.COMMAND_TIMEOUT)
         # Each app through nginx on the public hostname this host serves (its
         # record), else the default the bundle was built with.
-        served = target_render.hostnames(target_render.read_record())
-        for app in apps.APPS:
+        served = target_render.hostnames(target_render.read_record(), platform)
+        for app in platform.apps:
             keycloak.wait("/ready", 30, 1, "ready", hostname=served.get(app.name, app.hostname))
         keycloak.wait("/auth/realms/todo/.well-known/openid-configuration", 90, 2)
         verified = {}
@@ -634,8 +634,7 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
         description="Manage independent application backups and disposable PITR."
     )
-    result.add_argument('--app', choices=[d.name for d in apps.REPLICATED_DATABASES],
-                        help='Select one database; status/create/mark default to the whole group')
+    result.add_argument('--app', help="Select one database of the DR group; status/create/mark default to all of it")
     commands = result.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="Show live database and WAL archive status")
     commands.add_parser("create", help="Create and verify a physical base backup")
@@ -668,15 +667,20 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
     """Run one command for the selected databases; print errors as 'ERROR: ...' and return 1."""
     args = parser().parse_args(arguments)
     oplog.describe(args.command, args.app)
-    selected = [database for database in apps.REPLICATED_DATABASES if args.app is None or database.name == args.app]
     try:
+        # The platform this host was installed with: its DR group, in order.
+        group = target_render.installed_platform().replicated_databases
+        selected = [database for database in group if args.app is None or database.name == args.app]
+        if not selected:
+            raise BackupError(f'--app {args.app}: not a database of the DR group, which is '
+                              f'{", ".join(d.name for d in group)}')
         if args.command in ('restore', 'restore-status', 'cleanup-restore') and len(selected) != 1:
             raise BackupError('Disposable restore operations require an explicit --app')
         if args.command == 'configure' and args.app is not None:
             raise BackupError('configure always covers the complete database group')
         tools = [DatabaseBackup(database=database) for database in selected]
         if args.command == 'configure':
-            print(json.dumps(configure(tools, args.journal)))
+            print(json.dumps(configure(target_render.installed_platform(), tools, args.journal)))
             return 0
         if args.command == 'nightly':
             if args.app is not None or args.keep_days < 1:
@@ -705,7 +709,7 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
                 tool.cleanup_restore(args.confirm)
                 print(prefix + "Disposable PITR container and volume removed.")
         return 0
-    except (BackupError, CommandError) as error:
+    except (BackupError, CommandError, target_render.TargetError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
 

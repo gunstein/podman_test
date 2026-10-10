@@ -11,7 +11,7 @@ from .commands import exists, run
 from .install import setup_roles
 
 
-def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False):
+def up(rendered_manifest_dir, platform, state_file=None, refresh=False):
     """Start the development stack with podman kube play, without systemd.
 
     A fingerprint of the rendered YAML is stored in state_file. If nothing
@@ -21,8 +21,7 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
     itself, not its path, since the next render replaces the directory.
     Pods that exist without a state file are refused rather than guessed at.
     """
-    applications = apps.APPS if applications is None else tuple(applications)
-    selected = apps.workloads(applications)
+    selected = platform.workloads()
     directory = Path(rendered_manifest_dir)
     state_file = Path(state_file or settings.DEV_STATE_FILE)
     digest = hashlib.sha256()
@@ -51,7 +50,7 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
             *arguments, *ports, directory / manifest)
 
     # Roles are set up once an app's database is healthy, and again after every pod started.
-    databases = {app.database.container: app for app in applications}
+    databases = {app.database.container: app for app in platform.apps}
     for workload in selected:
         if workload.pod == 'shared-proxy':
             # nginx publishes its ports on loopback; its own ConfigMaps are in shared-proxy.yaml.
@@ -64,7 +63,7 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
             run('podman', 'wait', '--condition', 'healthy', workload.pod, timeout=settings.HEALTH_TIMEOUT)
         if workload.pod in databases:
             setup_roles(databases[workload.pod])
-    for app in applications:
+    for app in platform.apps:
         setup_roles(app)
     teardown = [workload.yaml for workload in reversed(selected)]
     state_file.parent.mkdir(parents=True, exist_ok=True)
@@ -91,8 +90,8 @@ def _tear_down(manifests):
     return torn_down
 
 
-def down(rendered_manifest_dir, applications=None, state_file=None):
-    """Tear down a dev install; True if anything was actually playing.
+def down(rendered_manifest_dir, platform, state_file=None):
+    """Tear down the platform's dev install; True if anything was actually playing.
 
     Prefers the exact manifests `up` recorded it played, so a caller that
     passes a different `rendered_manifest_dir` than the one used to install,
@@ -104,9 +103,8 @@ def down(rendered_manifest_dir, applications=None, state_file=None):
     if state_file.is_file():
         torn_down = _tear_down(json.loads(state_file.read_text())['teardown'])
     else:
-        applications = apps.APPS if applications is None else tuple(applications)
-        torn_down = _tear_down([directory / workload.yaml for workload in reversed(apps.workloads(applications))])
+        torn_down = _tear_down([directory / workload.yaml for workload in reversed(platform.workloads())])
     state_file.unlink(missing_ok=True)
     # kube down keeps the copies of the passwords kube play made; they go too.
-    secrets.remove_kube_volumes()
+    secrets.remove_kube_volumes(platform)
     return torn_down

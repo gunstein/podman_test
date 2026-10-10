@@ -24,10 +24,10 @@ def keycloak_secret_mapping():
     return {apps.KEYCLOAK_KUBE_ADMIN_SECRET: {"bootstrap-admin-password": apps.KEYCLOAK_ADMIN_SECRET}}
 
 
-def kube_mappings():
-    """The mappings above for every pod of a full install: each app's two pods, Keycloak's two."""
+def kube_mappings(platform):
+    """The mappings above for every pod of the platform: each app's two pods, Keycloak's two."""
     mapping = {}
-    for app in apps.APPS:
+    for app in platform.apps:
         mapping.update(postgres_secret_mapping(app.database))
         mapping.update(application_secret_mapping(app))
     mapping.update(postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
@@ -39,19 +39,19 @@ def kube_mappings():
 # nginx's key in plain text, into a named volume called after the Kube
 # secret. It rewrites them at every play, so a rotated secret reaches the
 # pod, but keeps the volume after kube down and after the secret is removed.
-def kube_volume_names():
-    """The names such a volume can have: every Kube secret of a full install, nginx's TLS secret included."""
-    return (*kube_mappings(), apps.PROXY_KUBE_TLS_SECRET)
+def kube_volume_names(platform):
+    """The names such a volume can have: every Kube secret of the platform, nginx's TLS secret included."""
+    return (*kube_mappings(platform), apps.PROXY_KUBE_TLS_SECRET)
 
 
-def remove_kube_volumes():
+def remove_kube_volumes(platform):
     """Remove each Kube secret's volume that no container uses any more; True if one went.
 
     A pod that still runs (another app's dev pod, a Quadlet service) keeps
     its volume; podman kube play makes it again at the next play.
     """
     removed = False
-    for name in kube_volume_names():
+    for name in kube_volume_names(platform):
         if exists("volume", name) and not run("podman", "ps", "--all", "--quiet",
                                               "--filter", f"volume={name}").stdout.strip():
             run("podman", "volume", "rm", name)
@@ -104,20 +104,19 @@ def _kube_data(name):
         return None
 
 
-def installed_names(applications=None):
+def installed_names(platform):
     """The raw Podman secrets an install creates: each app's three database
     passwords, Keycloak's database password and its admin password."""
-    applications = apps.APPS if applications is None else applications
-    names = [app.database.secret(role) for app in applications for role in ("db", "migrator", "app")]
+    names = [app.database.secret(role) for app in platform.apps for role in ("db", "migrator", "app")]
     return names + [apps.KEYCLOAK_DATABASE.secret("db"), apps.KEYCLOAK_ADMIN_SECRET]
 
 
-def provision(applications=None):
+def provision(platform):
     """Keep existing credentials; generate every missing password."""
     import secrets as random
     import string
 
-    for name in installed_names(applications):
+    for name in installed_names(platform):
         if exists('secret', name):
             continue
         value = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(32))

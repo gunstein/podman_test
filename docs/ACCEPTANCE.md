@@ -130,7 +130,7 @@ the build host with:
 
 ```bash
 PYTHONPATH=deploy/installer python3 -m app_installer replication-apps --details
-PYTHONPATH=deploy/installer python3 -c 'from app_installer import apps; print(" ".join(apps.services()))'
+PYTHONPATH=deploy/installer python3 -c 'from app_installer import apps; print(" ".join(apps.registry().services()))'
 ```
 
 | Pod / user service | Contents | Runs on |

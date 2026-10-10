@@ -10,14 +10,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_installer.apps import (  # noqa: E402
-    APPS,
     KEYCLOAK_DATABASE,
-    REPLICATED_DATABASES,
     App,
     Platform,
     registry,
 )
 from app_installer.stack import Database  # noqa: E402
+
+APPS = registry().apps
+REPLICATED_DATABASES = registry().replicated_databases
 
 
 class AppRegistryTests(unittest.TestCase):

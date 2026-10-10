@@ -15,7 +15,7 @@ The bundle then holds, under generated/target/:
   quadlet/replicated/ the database units of a DR primary, which also publish
                       replication on ${TARGET_PUBLISH_ADDRESS}
 
-and bundle.json says where each of them is, the apps it was built for, the
+and bundle.json says where each of them is, the platform it was built for (apps.Platform), the
 public port and the default target values (values.yaml and the app
 registry). The offline bundle and the operations package carry the same
 files: install.sh installs them on a single host, the DR tools on the
@@ -26,7 +26,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import apps, quadlet, render, target_render, workloads
+from . import quadlet, render, target_render, workloads
 from .target_render import (
     IDENTITY_HOSTNAME,
     LOOPBACK,
@@ -38,22 +38,17 @@ from .target_render import (
 TARGET = 'generated/target'
 
 
-def databases(selected):
-    """The PostgreSQL workloads of the selected apps and Keycloak's."""
-    return [app.database for app in selected] + [apps.KEYCLOAK_DATABASE]
-
-
-def quadlets(project_root, selected, port, publish_address):
-    """Every Quadlet unit of the selected apps, Keycloak and the proxy, rendered: {file name: bytes}."""
+def quadlets(project_root, platform, port, publish_address):
+    """Every Quadlet unit of the platform's apps, Keycloak and the proxy, rendered: {file name: bytes}."""
     root = Path(project_root)
     units = {}
-    for database in databases(selected):
+    for database in platform.replicated_databases:
         units[database.unit] = quadlet.render(root, database.unit, workloads.postgres_variables(database))
-    for app in selected:
+    for app in platform.apps:
         units[app.unit] = quadlet.render(root, app.unit, workloads.application_variables(publish_address, port))
     units['keycloak.kube'] = quadlet.render(root, 'keycloak.kube', {})
     units['shared-proxy.kube'] = quadlet.render(
-        root, 'shared-proxy.kube', workloads.proxy_variables(publish_address, port, selected))
+        root, 'shared-proxy.kube', workloads.proxy_variables(publish_address, port, platform.apps))
     return units
 
 
@@ -67,21 +62,22 @@ def build(project_root, values_file, bundle_directory, application_names=()):
     target host loads it, once for each proxy unit.
     """
     root, bundle = Path(project_root), Path(bundle_directory)
-    selected = render.selection(application_names)
-    identity_hostname, port, log_level = render.read_values(values_file)
-    normal = render.hostnames(selected)
-    manifest_files = render.files(root, selected, {app.name: placeholder(hostname_target(app)) for app in selected},
+    platform = render.platform(values_file, application_names)
+    _identity, port, log_level = render.read_values(values_file)
+    normal = render.hostnames(platform)
+    manifest_files = render.files(root, platform,
+                                  {app.name: placeholder(hostname_target(app)) for app in platform.apps},
                                   placeholder(IDENTITY_HOSTNAME), port, log_level)
-    defaults = {IDENTITY_HOSTNAME: identity_hostname,
-                **{hostname_target(app): normal[app.name] for app in selected}}
+    defaults = {IDENTITY_HOSTNAME: platform.identity_hostname,
+                **{hostname_target(app): normal[app.name] for app in platform.apps}}
     filled = {name: target_render.substitute(content.decode(), defaults, name).encode()
               for name, content in manifest_files.items()}
-    if filled != render.files(root, selected, normal, identity_hostname, port, log_level):
+    if filled != render.files(root, platform, normal, platform.identity_hostname, port, log_level):
         raise RuntimeError('The placeholder render differs from the normal render in more than the hostnames.')
-    published = quadlets(root, selected, port, placeholder(PUBLISH_ADDRESS))
-    local_only = {'shared-proxy.kube': quadlets(root, selected, port, LOOPBACK)['shared-proxy.kube']}
+    published = quadlets(root, platform, port, placeholder(PUBLISH_ADDRESS))
+    local_only = {'shared-proxy.kube': quadlets(root, platform, port, LOOPBACK)['shared-proxy.kube']}
     replicated = {database.unit: quadlet.render(root, database.unit, workloads.postgres_variables(
-        database, placeholder(PUBLISH_ADDRESS))) for database in databases(selected)}
+        database, placeholder(PUBLISH_ADDRESS))) for database in platform.replicated_databases}
     network = (root / 'deploy/quadlet/app-network.network').read_bytes()
 
     target = bundle / TARGET
@@ -101,7 +97,7 @@ def build(project_root, values_file, bundle_directory, application_names=()):
         'local_only_quadlets': {'directory': f'{TARGET}/quadlet/local-only', 'files': sorted(local_only)},
         'replicated_quadlets': {'directory': f'{TARGET}/quadlet/replicated', 'files': sorted(replicated)},
         'network': f'{TARGET}/quadlet/app-network.network',
-        'applications': [app.name for app in selected],
+        'platform': platform.to_json(),
         'public_port': port,
         'defaults': defaults,
     }

@@ -10,7 +10,7 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).res
 from app_dr_host import replication_tls  # noqa: E402
 from app_installer import apps, commands  # noqa: E402
 
-APP = apps.APPS[0].database
+APP = apps.registry().apps[0].database
 
 
 class CertificateTests(unittest.TestCase):
@@ -19,25 +19,26 @@ class CertificateTests(unittest.TestCase):
         self.addCleanup(lambda: subprocess.run(['rm', '-rf', str(self.directory)], check=True))
         self.ca_key, self.ca_certificate = replication_tls.make_ca(self.directory)
 
-    def test_a_host_certificate_names_its_address_and_the_database_containers(self):
-        key, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10')
+    def test_a_host_certificate_names_its_address_and_its_database_container(self):
+        key, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10',
+                                                 'todo-postgres')
         self.assertTrue(replication_tls.certificate_ok(certificate, self.ca_certificate, '192.0.2.10'))
         self.assertFalse(replication_tls.certificate_ok(certificate, self.ca_certificate, '192.0.2.11'))
         self.assertFalse(replication_tls.certificate_ok(certificate, self.ca_certificate, '192.0.2.1'))
         names = commands.run('openssl', 'x509', '-in', str(certificate), '-noout',
                              '-ext', 'subjectAltName').stdout
-        for database in apps.REPLICATED_DATABASES:
-            self.assertIn(f'DNS:{database.container}', names)
+        self.assertIn('DNS:todo-postgres', names)
+        self.assertNotIn('DNS:notes-postgres', names)
         self.assertIn('BEGIN PRIVATE KEY', key.read_text())
 
     def test_another_ca_or_a_certificate_about_to_expire_is_not_kept(self):
         other = self.directory / 'other'
         other.mkdir()
         _, other_ca = replication_tls.make_ca(other)
-        _, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10')
+        _, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10', 'todo-postgres')
         self.assertFalse(replication_tls.certificate_ok(certificate, other_ca, '192.0.2.10'))
         with patch.object(replication_tls, 'SERVER_DAYS', 1):
-            _, short = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10')
+            _, short = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10', 'todo-postgres')
         self.assertFalse(replication_tls.certificate_ok(short, self.ca_certificate, '192.0.2.10'))
 
 
@@ -123,7 +124,7 @@ class InstallServerTlsTests(unittest.TestCase):
     def test_a_certificate_for_another_address_is_replaced(self):
         # After promotion the data directory holds the old primary's certificate.
         _, certificate = replication_tls.issue(
-            self.directory, self.directory / 'ca.key', self.directory / 'ca.crt', '192.0.2.99')
+            self.directory, self.directory / 'ca.key', self.directory / 'ca.crt', '192.0.2.99', 'todo-postgres')
         self.container['crt'] = certificate.read_text()
         changed, writes, _ = self.install('on|TLSv1.2')
         self.assertTrue(changed)
@@ -150,7 +151,7 @@ class ExpiryTests(unittest.TestCase):
         self.ca_key, self.ca_certificate = replication_tls.make_ca(self.directory)
 
     def test_days_left_and_the_address_come_from_the_certificate(self):
-        _, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10')
+        _, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10', 'todo-postgres')
         # openssl counts from the second it signs; a test run never takes a whole day.
         self.assertIn(replication_tls.days_left(certificate),
                       (replication_tls.SERVER_DAYS - 1, replication_tls.SERVER_DAYS))
@@ -161,13 +162,13 @@ class ExpiryTests(unittest.TestCase):
 
     def test_an_expired_certificate_has_negative_days(self):
         with patch.object(replication_tls, 'SERVER_DAYS', 1):
-            _, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10')
+            _, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10', 'todo-postgres')
         with patch.object(replication_tls.time, 'time', return_value=replication_tls.time.time() + 3 * 86400):
             # Whole days round down: just over two days ago is -3.
             self.assertIn(replication_tls.days_left(certificate), (-3, -2))
 
     def test_the_ca_and_a_primary_certificate_are_read_from_where_they_live(self):
-        _, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10')
+        _, certificate = replication_tls.issue(self.directory, self.ca_key, self.ca_certificate, '192.0.2.10', 'todo-postgres')
 
         def run(*argv, allowed=(0,), **_):
             if argv[0] == 'openssl':
@@ -190,7 +191,7 @@ class RenewTests(InstallServerTlsTests):
     def certificate(self, address='192.0.2.10', days=None):
         ca_key, ca_certificate = self.directory / 'ca.key', self.directory / 'ca.crt'
         with patch.object(replication_tls, 'SERVER_DAYS', days or replication_tls.SERVER_DAYS):
-            _, certificate = replication_tls.issue(self.directory, ca_key, ca_certificate, address)
+            _, certificate = replication_tls.issue(self.directory, ca_key, ca_certificate, address, 'todo-postgres')
         self.container['crt'] = certificate.read_text()
 
     def test_a_certificate_with_more_than_30_days_is_kept(self):

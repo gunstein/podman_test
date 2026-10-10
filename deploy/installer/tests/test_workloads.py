@@ -18,14 +18,15 @@ ROOT = Path(__file__).resolve().parents[3]
 class WorkloadsTests(unittest.TestCase):
     def test_each_workload_is_idempotent_and_preserves_storage(self):
         for function, names, obsolete in (
-            (workloads.install_postgres, ['todo-postgres'],
+            (partial(workloads.install_postgres, database=apps.registry().apps[0].database), ['todo-postgres'],
              ['todo-postgres-data', 'todo-postgres-backup']),
-            (workloads.install_application, ['todo-app'], []),
-            (partial(workloads.install_postgres, database=apps.APPS[1].database), ['notes-postgres'],
+            (partial(workloads.install_application, app=apps.registry().apps[0]), ['todo-app'], []),
+            (partial(workloads.install_postgres, database=apps.registry().apps[1].database), ['notes-postgres'],
              ['notes-postgres-data', 'notes-postgres-backup']),
-            (partial(workloads.install_application, app=apps.APPS[1]), ['notes-app'], []),
+            (partial(workloads.install_application, app=apps.registry().apps[1]), ['notes-app'], []),
             (workloads.install_keycloak, ['keycloak'], []),
-            (workloads.install_shared_proxy, ['shared-proxy'], ['platform-nginx-data']),
+            (partial(workloads.install_shared_proxy, applications=apps.registry().apps), ['shared-proxy'],
+             ['platform-nginx-data']),
         ):
             with self.subTest(function=str(function)), tempfile.TemporaryDirectory() as temp:
                 base = Path(temp)
@@ -50,7 +51,7 @@ class WorkloadsTests(unittest.TestCase):
                     # A change to a file the workload installs: its ConfigMap, or Keycloak's
                     # and nginx's own Kube YAML (nginx's ConfigMaps are inside it).
                     config = ('keycloak.yaml' if function == workloads.install_keycloak else
-                              'shared-proxy.yaml' if function == workloads.install_shared_proxy else
+                              'shared-proxy.yaml' if names == ['shared-proxy'] else
                               'notes-config.yaml' if names[0].startswith('notes-') else 'todo-config.yaml')
                     (rendered / config).write_text('changed: true\n')
                     self.assertTrue(function(ROOT, directory, runtime, rendered))
@@ -82,7 +83,7 @@ class WorkloadsTests(unittest.TestCase):
             for name in ('postgres.yaml', 'config.yaml', 'app.yaml', 'keycloak.yaml'):
                 (runtime / name).write_text('old\n')
             with FakeHost():
-                workloads.install_postgres(ROOT, directory, runtime, rendered)
+                workloads.install_postgres(ROOT, directory, runtime, rendered, database=apps.registry().apps[0].database)
             self.assertEqual(sorted(path.name for path in runtime.iterdir()),
                              ['keycloak.yaml', 'todo-config.yaml', 'todo-postgres.kube', 'todo-postgres.yaml'])
             self.assertIn('Yaml=todo-postgres.yaml', (runtime / 'todo-postgres.kube').read_text())
@@ -92,7 +93,7 @@ class WorkloadsTests(unittest.TestCase):
         from app_installer import target_render
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
-            offline_bundle.build(base / 'bundle', apps.APPS)
+            offline_bundle.build(base / 'bundle', apps.registry().apps)
             target = target_render.load(base / 'bundle', {target_render.PUBLISH_ADDRESS: '192.0.2.10'},
                                         environment={}, recorded={})
             runtime = base / 'quadlet/platform-kube-runtime'
@@ -115,7 +116,8 @@ class WorkloadsTests(unittest.TestCase):
     def test_invalid_runtime_directory_fails_before_commands(self):
         with patch('subprocess.run') as run:
             with self.assertRaises(ValueError):
-                workloads.install_postgres(ROOT, '/tmp/q', '/tmp/elsewhere', '/tmp/rendered')
+                workloads.install_postgres(ROOT, '/tmp/q', '/tmp/elsewhere', '/tmp/rendered',
+                                           database=apps.KEYCLOAK_DATABASE)
             run.assert_not_called()
 
     def test_shared_proxy_refuses_a_wildcard_publish_address(self):
@@ -126,12 +128,12 @@ class WorkloadsTests(unittest.TestCase):
             with patch('subprocess.run') as run:
                 with self.assertRaisesRegex(ValueError, 'wildcard address'):
                     workloads.install_shared_proxy(ROOT, '/tmp/q', '/tmp/q/platform-kube-runtime',
-                                                   '/tmp/rendered', publish_address=wildcard)
+                                                   '/tmp/rendered', publish_address=wildcard, applications=())
                 run.assert_not_called()
         with patch('subprocess.run') as run:
             with self.assertRaises(ValueError):
                 workloads.install_shared_proxy(ROOT, '/tmp/q', '/tmp/q/platform-kube-runtime',
-                                               '/tmp/rendered', publish_address='not-an-address')
+                                               '/tmp/rendered', publish_address='not-an-address', applications=())
             run.assert_not_called()
 
     def test_default_postgres_address_is_optional_in_plain_jinja(self):
@@ -140,7 +142,7 @@ class WorkloadsTests(unittest.TestCase):
         self.assertIn('PublishPort=127.0.0.1:5432:5432\n', rendered)
 
     def test_databases_publish_distinct_ports_from_the_registry(self):
-        for app in apps.APPS:
+        for app in apps.registry().apps:
             rendered = quadlet.render(ROOT, app.database.unit, {
                 'postgres_publish_port': app.replication_port,
                 'postgres_publish_address': '192.0.2.50',
@@ -160,10 +162,10 @@ class WorkloadsTests(unittest.TestCase):
             with self.subTest(mode=mode, present=present, refresh=refresh), \
                     FakeHost(images_present=present) as host, tempfile.TemporaryDirectory() as bundle:
                 (Path(bundle) / 'images').mkdir()
-                for image in images.image_list(apps.APPS[0]) + images.shared_images():
+                for image in images.image_list(apps.registry().apps[0]) + images.shared_images():
                     (Path(bundle) / 'images' / image.archive).touch()
                 calls = host.calls
-                changed = images.prepare(ROOT, mode, bundle, refresh)
+                changed = images.prepare(ROOT, mode, bundle, refresh, app=apps.registry().apps[0])
                 self.assertEqual(set(changed.values()), {not present or refresh})
                 if mode == 'offline':
                     self.assertEqual(sum(a[1] == 'load' for a in calls), 5)

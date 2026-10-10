@@ -24,7 +24,7 @@ import socket
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import apps, quadlet, settings
+from . import quadlet, settings
 from .commands import run
 
 BACKUP_DIRECTORY = '/var/lib/postgresql/backup'
@@ -128,18 +128,18 @@ def runtime(quadlet_dir=None):
     return Path(quadlet_dir or settings.QUADLET_DIR) / settings.KUBE_RUNTIME
 
 
-def installed_databases(quadlet_dir=None):
-    """The databases this host runs: those whose Quadlet unit is installed."""
-    return [database for database in apps.REPLICATED_DATABASES
+def installed_databases(platform, quadlet_dir=None):
+    """The databases of the platform this host runs: those whose Quadlet unit is installed."""
+    return [database for database in platform.replicated_databases
             if (runtime(quadlet_dir) / database.unit).exists()]
 
 
-def nightly(keep_days, quadlet_dir=None, clock=utc_now, disk=None):
+def nightly(platform, keep_days, quadlet_dir=None, clock=utc_now, disk=None):
     """Back up and prune every installed database, then check the disk; return (lines, problems).
 
     A standby does nothing. disk replaces shutil.disk_usage(home) in tests.
     """
-    databases = installed_databases(quadlet_dir)
+    databases = installed_databases(platform, quadlet_dir)
     if not databases:
         raise RuntimeError('No database is installed on this host.')
     roles = [in_recovery(database) for database in databases]
@@ -168,7 +168,7 @@ rm -f /data/standby.signal /data/recovery.signal
 """
 
 
-def restore(confirm_restore, quadlet_dir=None):
+def restore(platform, confirm_restore, quadlet_dir=None):
     """Put every installed database back to its latest backup; return {database: backup name}.
 
     Destructive: everything written since that backup is lost. The caller
@@ -180,7 +180,7 @@ def restore(confirm_restore, quadlet_dir=None):
     """
     if confirm_restore != socket.gethostname():
         raise ValueError(f'--confirm-restore must be exactly this host\'s name, {socket.gethostname()!r}')
-    databases = installed_databases(quadlet_dir)
+    databases = installed_databases(platform, quadlet_dir)
     if not databases:
         raise RuntimeError('No database is installed on this host.')
     chosen = {}
@@ -192,8 +192,10 @@ def restore(confirm_restore, quadlet_dir=None):
         if not BACKUP_NAME.fullmatch(name):
             raise RuntimeError(f'{database.name}: no verified backup to restore; nothing was changed')
         chosen[database] = name
-    installed = [app for app in apps.APPS if (runtime(quadlet_dir) / app.unit).exists()]
-    services = apps.services(installed)
+    # Every service in stop order (nginx first, the databases last), but not those of an app not installed here.
+    absent = {pod for app in platform.apps if not (runtime(quadlet_dir) / app.unit).exists()
+              for pod in (app.pod, app.database.container)}
+    services = [workload.service for workload in reversed(platform.workloads()) if workload.pod not in absent]
     run('systemctl', '--user', 'stop', *services, allowed=(0, 5), timeout=settings.COMMAND_TIMEOUT)
     for database, name in chosen.items():
         run('podman', 'run', '--rm', '--user', 'postgres', '--security-opt', 'no-new-privileges',

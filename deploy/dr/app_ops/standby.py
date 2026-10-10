@@ -5,9 +5,9 @@ from . import steps, trust
 from .steps import settings
 
 
-def firewall_rule(primary, standby):
-    """The firewalld rich rule that lets only the standby reach the primary's replication ports."""
-    ports = [database.replication_port for database in steps.GROUP]
+def firewall_rule(group, primary, standby):
+    """The firewalld rich rule that lets only the standby reach the replication ports of the group's databases."""
+    ports = [database.replication_port for database in group]
     return (f'rule family="ipv4" source address="{standby.spec.address}/32" '
             f'destination address="{primary.spec.address}" port port="{min(ports)}-{max(ports)}" '
             'protocol="tcp" accept')
@@ -22,7 +22,7 @@ def interface_of(ip_output, address):
     return ''
 
 
-def require_firewall(primary, standby):
+def require_firewall(group, primary, standby):
     """The primary publishes PostgreSQL on the LAN only behind the documented rich rule.
 
     The rule must be in the zone of the interface that holds the primary's
@@ -39,7 +39,7 @@ def require_firewall(primary, standby):
                        allowed=(0, 2)).stdout.strip()
     if not zone or ' ' in zone:
         zone = primary.run(['firewall-cmd', '--get-default-zone'], sudo=True).stdout.strip()
-    rule = firewall_rule(primary, standby)
+    rule = firewall_rule(group, primary, standby)
     missing = [where for where, flags in (('running', []), ('permanent', ['--permanent']))
                if primary.run(['firewall-cmd', *flags, f'--zone={zone}', f'--query-rich-rule={rule}'],
                               sudo=True, allowed=(0, 1)).returncode]
@@ -61,11 +61,11 @@ def preflight(project_root, controller, primary, standby):
     """
     facts = {}
     for role, host in (('primary', primary), ('standby', standby)):
-        pythonpath = trust.stage_installer(project_root, controller, host)
+        pythonpath = steps.stage_target_files(project_root, controller, host)
         facts[role] = steps.app_dr_host(host, pythonpath, 'node-facts', '--inventory-hostname', host.name,
                                           '--role', role, '--address', host.spec.address).stdout.strip()
         if role == 'primary':
-            require_firewall(primary, standby)
+            require_firewall(steps.platform(project_root).replicated_databases, primary, standby)
             primary_pythonpath = pythonpath
     steps.app_dr_host(primary, primary_pythonpath, 'check-standby-pair', facts['primary'], facts['standby'])
     return False
@@ -77,15 +77,15 @@ def sync_secrets(project_root, controller, primary, standby):
     The export goes straight from one command's stdout to the other's stdin,
     in memory. An existing secret with a different value stops the import.
     """
-    primary_path = trust.stage_installer(project_root, controller, primary)
+    primary_path = steps.stage_target_files(project_root, controller, primary)
     transfer = steps.app_dr_host(primary, primary_path, 'export-replication-secrets').stdout
-    standby_path = trust.stage_installer(project_root, controller, standby)
+    standby_path = steps.stage_target_files(project_root, controller, standby)
     return steps.changed(steps.app_dr_host(standby, standby_path, 'import-replication-secrets', input=transfer))
 
 
-def streaming(primary, pythonpath, *, rebuilt=False):
-    """Wait until every database streams to its standby: 15 tries, 2 seconds apart."""
-    for database in steps.GROUP:
+def streaming(group, primary, pythonpath, *, rebuilt=False):
+    """Wait until every database of the group streams to its standby: 15 tries, 2 seconds apart."""
+    for database in group:
         steps.retry(lambda database=database: steps.app_dr_host(
             primary, pythonpath, 'replicate-workload', 'streaming', '--app', database.name,
             *(['--rebuilt'] if rebuilt else [])), 15, 2)
@@ -99,31 +99,33 @@ def bootstrap(project_root, controller, primary, standby):
     database, with the primary's public hostnames in its files, and the run
     ends when all of them stream.
     """
+    group = steps.platform(project_root).replicated_databases
     preflight(project_root, controller, primary, standby)
     primary_path = steps.stage_target_files(project_root, controller, primary)
     changed = steps.changed(steps.app_dr_host(primary, primary_path, 'publish-primaries', 'bootstrap',
                                                 '--node-address', primary.spec.address, *steps.group_paths(primary)))
     # The standby serves the primary's public hostnames, so a failover keeps them.
-    hostnames = steps.target_values(primary, primary_path, steps.paths(primary)['target'])
+    hostnames = steps.target_values(primary, primary_path)
     changed = sync_secrets(project_root, controller, primary, standby) or changed
     standby_path = steps.stage_target_files(project_root, controller, standby)
     images = steps.paths(standby)['bundle'] + '/images/'
-    for database in steps.GROUP:
+    for database in group:
         changed = steps.changed(steps.app_dr_host(
             standby, standby_path, 'replicate-workload', 'standby', '--app', database.name,
             '--primary-address', primary.spec.address, '--image-archive', images + database.image_archive,
             '--node-address', standby.spec.address, '--target-values', hostnames,
-            *steps.group_paths(standby), timeout=steps.COPY_STEP_TIMEOUT)) or changed
-    streaming(primary, primary_path)
+            *steps.group_paths(standby), timeout=steps.copy_step_timeout(group))) or changed
+    streaming(group, primary, primary_path)
     return changed
 
 
 def replication_status(project_root, controller, primary, standby):
     """Raise unless every database streams and every standby database is read-only."""
-    primary_path = trust.stage_installer(project_root, controller, primary)
-    streaming(primary, primary_path)
-    standby_path = trust.stage_installer(project_root, controller, standby)
-    for database in steps.GROUP:
+    group = steps.platform(project_root).replicated_databases
+    primary_path = steps.stage_target_files(project_root, controller, primary)
+    streaming(group, primary, primary_path)
+    standby_path = steps.stage_target_files(project_root, controller, standby)
+    for database in group:
         state = json.loads(steps.app_dr_host(standby, standby_path, 'replicate-workload', 'status',
                                                '--app', database.name).stdout)['status']
         if not (state['in_recovery'] and state['transaction_read_only']):

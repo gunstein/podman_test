@@ -36,7 +36,7 @@ it out as app-ops does on a host, and starts every entry point, so a broken
 path fails in CI rather than in the lab.
 
 These operations protect one group of three databases: Todo, Notes and the
-shared Keycloak database (`apps.REPLICATED_DATABASES`). Each has its own host
+shared Keycloak database (`Platform.replicated_databases`). Each has its own host
 replication port (5432, 5433, 5434), slot, credential, WAL archive and backup
 volume. Every command refuses a partial group. Promoted application recovery
 deploys both apps, Keycloak and the shared proxy.

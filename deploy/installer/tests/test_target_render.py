@@ -34,7 +34,7 @@ class SubstituteTests(unittest.TestCase):
                          'cd $HOME && psql "password=${DATABASE_PASSWORD}" $$ ${target_lower} $TARGET_IDENTITY_HOSTNAME\n')
 
     def test_an_unknown_placeholder_or_a_missing_value_is_an_error(self):
-        with self.assertRaisesRegex(TargetError, r'f.yaml: unknown placeholder \$\{TARGET_HOSTNAME\}'):
+        with self.assertRaisesRegex(TargetError, r'f.yaml: no value for \$\{TARGET_HOSTNAME\}'):
             target_render.substitute('${TARGET_HOSTNAME}', VALUES, 'f.yaml')
         with self.assertRaisesRegex(TargetError, r'no value for \$\{TARGET_PUBLISH_ADDRESS\}'):
             target_render.substitute('${TARGET_PUBLISH_ADDRESS}', {IDENTITY_HOSTNAME: 'a.test'}, 'f.kube')
@@ -42,9 +42,10 @@ class SubstituteTests(unittest.TestCase):
 
 class ResolveTests(unittest.TestCase):
     def test_keycloak_and_every_app_have_their_own_hostname_value(self):
-        self.assertEqual(target_render.HOSTNAMES, (IDENTITY_HOSTNAME, TODO, NOTES))
-        self.assertEqual([target_render.hostname_target(app) for app in apps.APPS], [TODO, NOTES])
-        self.assertEqual(target_render.hostnames(VALUES), {'todo': 'todo.example.org', 'notes': 'notes.example.org'})
+        self.assertEqual(target_render.hostname_targets(apps.registry()), [IDENTITY_HOSTNAME, TODO, NOTES])
+        self.assertEqual([target_render.hostname_target(app) for app in apps.registry().apps], [TODO, NOTES])
+        self.assertEqual(target_render.hostnames(VALUES, apps.registry()),
+                         {'todo': 'todo.example.org', 'notes': 'notes.example.org'})
         self.assertEqual(target_render.identity_hostname(VALUES), 'shop.example.org')
 
     def test_command_line_then_environment_then_host_record_then_bundle_default(self):
@@ -112,7 +113,7 @@ class MetadataTests(unittest.TestCase):
     def setUp(self):
         self.bundle = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__('shutil').rmtree(self.bundle))
-        offline_bundle.build(self.bundle, apps.APPS)
+        offline_bundle.build(self.bundle, apps.registry().apps)
         self.metadata = json.loads((self.bundle / 'bundle.json').read_text())
 
     def write(self, **changes):
@@ -145,7 +146,7 @@ class MetadataTests(unittest.TestCase):
         with self.assertRaisesRegex(TargetError, 'no bundle.json: it was built in an older format'):
             self.load()
         self.write(format_version=2)
-        with self.assertRaisesRegex(TargetError, 'format version 2; this installer reads version 5'):
+        with self.assertRaisesRegex(TargetError, 'format version 2; this installer reads version 6'):
             self.load()
         self.write(format='something-else')
         with self.assertRaisesRegex(TargetError, 'does not describe a platform-offline-bundle'):
@@ -160,7 +161,7 @@ class MetadataTests(unittest.TestCase):
     def test_a_placeholder_the_installer_does_not_know_stops_the_load(self):
         manifest = self.bundle / 'generated/target/manifests/keycloak.yaml'
         manifest.write_text(manifest.read_text() + '# ${TARGET_FQDN}\n')
-        with self.assertRaisesRegex(TargetError, r'manifests/keycloak.yaml: unknown placeholder \$\{TARGET_FQDN\}'):
+        with self.assertRaisesRegex(TargetError, r'manifests/keycloak.yaml: no value for \$\{TARGET_FQDN\}'):
             self.load()
 
 

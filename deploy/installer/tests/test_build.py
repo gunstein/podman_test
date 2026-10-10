@@ -30,7 +30,7 @@ class BuildInstallTests(unittest.TestCase):
                 calls = host.calls
                 render = [str(root / 'deploy/scripts/render-kube-runtime.sh'),
                           str(root / f'deploy/environments/{profile}/values.yaml'),
-                          str(root / 'generated' / output)]
+                          str(root / 'generated' / output), 'todo,notes']
                 self.assertIn(render, calls)
                 self.assertEqual(sum(a[:2] == ['podman', 'build'] for a in calls), 6)
                 self.assertEqual(sum(a[:2] == ['podman', 'pull'] for a in calls), 1)

@@ -55,26 +55,26 @@ class OfflineScriptTests(unittest.TestCase):
         self.assertEqual(values[values.index("--publish-address") + 1], "127.0.0.1")
 
     def test_a_target_hostname_is_passed_only_when_given(self):
-        result = self.install("--target-external-hostname", "shop.example.org", "--publish-address", "192.168.0.102")
+        result = self.install("--target-hostname", "identity=shop.example.org", "--publish-address", "192.168.0.102")
         self.assertEqual(result.returncode, 0, result.stderr)
         values = json.loads(result.stdout.splitlines()[-1])
-        self.assertEqual(values[values.index("--target-external-hostname") + 1], "shop.example.org")
+        self.assertEqual(values[values.index("--target-hostname") + 1], "identity=shop.example.org")
         self.assertEqual(values[values.index("--publish-address") + 1], "192.168.0.102")
         result = self.install("--publish-address", "192.168.0.102")
-        self.assertNotIn("--target-external-hostname", json.loads(result.stdout.splitlines()[-1]))
+        self.assertNotIn("--target-hostname", json.loads(result.stdout.splitlines()[-1]))
 
     def test_each_apps_hostname_option_is_passed_on(self):
-        result = self.install("--target-notes-hostname", "notes.example.org",
-                              "--target-external-hostname", "shop.example.org")
+        result = self.install("--target-hostname", "notes=notes.example.org",
+                              "--target-hostname", "identity=shop.example.org")
         self.assertEqual(result.returncode, 0, result.stderr)
         values = json.loads(result.stdout.splitlines()[-1])
-        self.assertEqual(values[values.index("--target-notes-hostname") + 1], "notes.example.org")
-        self.assertEqual(values[values.index("--target-external-hostname") + 1], "shop.example.org")
+        self.assertEqual([values[index + 1] for index, value in enumerate(values) if value == "--target-hostname"],
+                         ["notes=notes.example.org", "identity=shop.example.org"])
 
     def test_invalid_arguments_never_start_installer(self):
-        for arguments in (("--unknown",), ("--publish-address",), ("--target-external-hostname",),
-                          ("--target-notes-hostname",),
-                          ("--publish-address", "192.168.0.102", "--target-external-hostname"),
+        for arguments in (("--unknown",), ("--publish-address",), ("--target-hostname",),
+                          ("--target-notes-hostname", "notes.example.org"),
+                          ("--publish-address", "192.168.0.102", "--target-hostname"),
                           ("--publish-address", "0.0.0.0"),
                           ("--publish-address", "::1"),
                           ("--publish-address", "192.168.0.102\nPublishPort=9999")):

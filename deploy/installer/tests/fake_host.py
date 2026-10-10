@@ -15,13 +15,14 @@ its public hostnames (target_render.record_path) is host.record, in a
 temporary home. A test that needs one more answer subclasses FakeHost and
 overrides answer().
 """
+import json
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from unittest import mock
 
-from app_installer import secrets, tls_secrets
+from app_installer import apps, secrets, tls_secrets
 
 # What `podman image inspect` shows for the proxy image the installer checks.
 PROXY_LABELS = '[{"Labels":{"io.todo.proxy":"nginx","io.todo.proxy.tls":"local provided"}}]'
@@ -82,8 +83,10 @@ class FakeHost:
     """
 
     def __init__(self, *, password='fixture-password\n', images_present=True,
-                 unit_directory=None, source=None):
-        self.secrets = {name: password for name in secrets.installed_names()}
+                 unit_directory=None, source=None, platform=None):
+        # The platform this host was installed with: recorded in its home (target_render.record_platform).
+        self.platform = apps.registry() if platform is None else platform
+        self.secrets = {name: password for name in secrets.installed_names(self.platform)}
         self.volumes = set()
         self.volumes_in_use = set()
         # The files of the TLS volume platform-nginx-data, if a test gives it some ({name: text}).
@@ -100,10 +103,15 @@ class FakeHost:
         # directory, never in the home directory of whoever runs the tests.
         self.home = Path(tempfile.mkdtemp())
         self.record = self.home / '.config/platform/target-values.json'
+        self.platform_record = self.home / '.config/platform/platform.json'
+        self.platform_record.parent.mkdir(parents=True)
+        self.platform_record.write_text(json.dumps(self.platform.to_json()))
         # The nightly backup timer's units (backup.install_timer) go here too.
         self.units = self.home / '.config/systemd/user'
         self._patchers = [mock.patch('app_installer.commands.subprocess.run', side_effect=self._run),
                           mock.patch('app_installer.target_render.record_path', return_value=self.record),
+                          mock.patch('app_installer.target_render.platform_record_path',
+                                     return_value=self.platform_record),
                           mock.patch('app_installer.settings.SYSTEMD_USER_DIR', self.units),
                           # nginx's demo CA and leaf (tls_secrets): smaller keys only to keep the tests fast.
                           mock.patch('app_installer.tls_secrets.KEY_BITS', 2048),

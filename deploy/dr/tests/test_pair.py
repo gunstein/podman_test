@@ -8,13 +8,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[2] / 'installer')]
+import dr_target  # noqa: E402
 from app_dr_host import cli, pair  # noqa: E402
 from app_installer import apps, preflight  # noqa: E402
 
 IP_OUTPUT = (
     '2: eth0    inet 192.0.2.10/24 brd 192.0.2.255 scope global eth0\\       valid_lft forever\n'
     '3: eth1    inet 198.51.100.7/24 brd 198.51.100.255 scope global eth1\\       valid_lft forever\n')
-VOLUMES = [database.volume('data') for database in apps.REPLICATED_DATABASES]
+VOLUMES = [database.volume('data') for database in apps.registry().replicated_databases]
 
 
 def host(hostname='primary', machine_id='a' * 32, volumes=(), ip_output=IP_OUTPUT, systemd_rc=0):
@@ -37,7 +38,7 @@ def host(hostname='primary', machine_id='a' * 32, volumes=(), ip_output=IP_OUTPU
 def facts(hostname='primary', role='primary', address='192.0.2.10', **options):
     run, exists, _ = host(hostname=hostname, **options)
     with run, exists:
-        return pair.node_facts(hostname, role, address)
+        return pair.node_facts(apps.registry(), hostname, role, address)
 
 
 class NodeFactsTests(unittest.TestCase):
@@ -59,7 +60,7 @@ class NodeFactsTests(unittest.TestCase):
     def test_every_identity_problem_is_reported_together(self):
         run, exists, calls = host(hostname='other', machine_id='short')
         with run, exists, self.assertRaises(RuntimeError) as refused:
-            pair.node_facts('primary', 'witness', '203.0.113.9')
+            pair.node_facts(apps.registry(), 'primary', 'witness', '203.0.113.9')
         message = str(refused.exception)
         for fragment in ("role 'witness'", "hostname 'other'", '203.0.113.9', 'machine-id'):
             self.assertIn(fragment, message)
@@ -78,35 +79,35 @@ class PairTests(unittest.TestCase):
         return primary, facts(volumes=standby_volumes, **options)
 
     def test_a_valid_initial_pair_passes(self):
-        pair.check_pair(*self.pair())
+        pair.check_pair(apps.registry(), *self.pair())
 
     def test_cloned_machine_id_and_shared_address_are_both_reported(self):
         primary, standby = self.pair(machine_id='a' * 32, address='192.0.2.10')
         with self.assertRaises(RuntimeError) as refused:
-            pair.check_pair(primary, standby)
+            pair.check_pair(apps.registry(), primary, standby)
         self.assertIn('machine ID', str(refused.exception))
         self.assertIn('same address', str(refused.exception))
 
     def test_primary_must_have_every_data_volume(self):
         with self.assertRaisesRegex(RuntimeError, 'missing: ' + VOLUMES[-1]):
-            pair.check_pair(*self.pair(primary_volumes=VOLUMES[:-1]))
+            pair.check_pair(apps.registry(), *self.pair(primary_volumes=VOLUMES[:-1]))
 
     def test_standby_with_any_data_volume_is_refused(self):
         with self.assertRaisesRegex(RuntimeError, 'will not overwrite'):
-            pair.check_pair(*self.pair(standby_volumes=VOLUMES[-1:]))
+            pair.check_pair(apps.registry(), *self.pair(standby_volumes=VOLUMES[-1:]))
 
     def test_swapped_roles_or_same_host_are_refused(self):
         primary, standby = self.pair()
         for first, second in ((standby, primary), (primary, primary)):
             with self.subTest(first=first['inventory_hostname'], second=second['inventory_hostname']):
                 with self.assertRaises(RuntimeError):
-                    pair.check_pair(first, second)
+                    pair.check_pair(apps.registry(), first, second)
 
     def test_a_different_database_group_is_refused(self):
         primary, standby = self.pair()
         del standby['data_volumes'][VOLUMES[0]]
         with self.assertRaisesRegex(RuntimeError, 'different database group'):
-            pair.check_pair(primary, standby)
+            pair.check_pair(apps.registry(), primary, standby)
 
 
 class CliTests(unittest.TestCase):
@@ -117,19 +118,19 @@ class CliTests(unittest.TestCase):
             run, exists, _ = host(hostname=hostname, machine_id=machine_id, volumes=volumes)
             stdout = io.StringIO()
             with run, exists, redirect_stdout(stdout):
-                self.assertEqual(cli.main(['node-facts', '--inventory-hostname', hostname,
+                self.assertEqual(cli.main(['--project-root', str(dr_target.bundle()), 'node-facts', '--inventory-hostname', hostname,
                                            '--role', role, '--address', address]), 0)
             outputs.append(stdout.getvalue().strip())
         stdout = io.StringIO()
         with redirect_stdout(stdout):
-            self.assertEqual(cli.main(['check-standby-pair', *outputs]), 0)
+            self.assertEqual(cli.main(['--project-root', str(dr_target.bundle()), 'check-standby-pair', *outputs]), 0)
         self.assertEqual(json.loads(stdout.getvalue()), {'changed': False})
 
     def test_pair_refusal_is_one_readable_error(self):
         primary = facts(volumes=VOLUMES)
         errors = io.StringIO()
         with redirect_stderr(errors):
-            self.assertEqual(cli.main(['check-standby-pair', json.dumps(primary), json.dumps(primary)]), 1)
+            self.assertEqual(cli.main(['--project-root', str(dr_target.bundle()), 'check-standby-pair', json.dumps(primary), json.dumps(primary)]), 1)
         self.assertTrue(errors.getvalue().startswith('app-dr-host: Standby preflight failed:'))
 
 

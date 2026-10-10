@@ -40,7 +40,7 @@ class BundleContentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.bundle = Path(tempfile.mkdtemp())
-        cls.metadata = offline_bundle.build(cls.bundle, apps.APPS)
+        cls.metadata = offline_bundle.build(cls.bundle, apps.registry().apps)
 
     @classmethod
     def tearDownClass(cls):
@@ -49,15 +49,15 @@ class BundleContentTests(unittest.TestCase):
     def test_metadata_names_every_rendered_file(self):
         data = json.loads((self.bundle / 'bundle.json').read_text())
         self.assertEqual(data, self.metadata)
-        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 5))
-        self.assertEqual(data['applications'], ['todo', 'notes'])
+        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 6))
+        self.assertEqual(data['platform'], apps.registry().to_json())
         self.assertEqual(data['defaults'], {IDENTITY_HOSTNAME: 'auth.test', TODO_HOSTNAME: 'todo.test',
                                             NOTES_HOSTNAME: 'notes.test'})
-        manifests, units = install.offline_files(apps.APPS)
+        manifests, units = install.offline_files(apps.registry())
         self.assertEqual(set(data['manifests']['files']), manifests)
         self.assertEqual(set(data['quadlets']['files']), units)
         self.assertEqual(data['local_only_quadlets']['files'], ['shared-proxy.kube'])
-        self.assertEqual(set(data['replicated_quadlets']['files']), {d.unit for d in apps.REPLICATED_DATABASES})
+        self.assertEqual(set(data['replicated_quadlets']['files']), {d.unit for d in apps.registry().replicated_databases})
         for key in ('manifests', 'quadlets', 'local_only_quadlets', 'replicated_quadlets'):
             for name in data[key]['files']:
                 self.assertTrue((self.bundle / data[key]['directory'] / name).is_file(), name)
@@ -87,23 +87,23 @@ class BundleContentTests(unittest.TestCase):
         values = ROOT / 'deploy/environments/prod/values.yaml'
         identity, port, log_level = render.read_values(values)
         manifests = self.bundle / 'generated/target/manifests'
-        normal = render.files(ROOT, apps.APPS, render.hostnames(apps.APPS), identity, port, log_level)
+        normal = render.files(ROOT, apps.registry(), render.hostnames(apps.registry()), identity, port, log_level)
         self.assertEqual({name: (manifests / name).read_text().replace('${TARGET_IDENTITY_HOSTNAME}', identity)
                           .replace('${TARGET_TODO_HOSTNAME}', 'todo.test')
                           .replace('${TARGET_NOTES_HOSTNAME}', 'notes.test').encode() for name in normal}, normal)
         units = self.bundle / 'generated/target/quadlet'
-        for database in apps.REPLICATED_DATABASES:
+        for database in apps.registry().replicated_databases:
             self.assertEqual((units / database.unit).read_bytes(),
                              quadlet.render(ROOT, database.unit, workloads.postgres_variables(database)))
-        for database in apps.REPLICATED_DATABASES:
+        for database in apps.registry().replicated_databases:
             replicated = (units / 'replicated' / database.unit).read_text().replace('${TARGET_PUBLISH_ADDRESS}', ADDRESS)
             self.assertEqual(replicated.encode(), quadlet.render(
                 ROOT, database.unit, workloads.postgres_variables(database, ADDRESS)))
         published = (units / 'shared-proxy.kube').read_text().replace('${TARGET_PUBLISH_ADDRESS}', ADDRESS)
         self.assertEqual(published.encode(), quadlet.render(
-            ROOT, 'shared-proxy.kube', workloads.proxy_variables(ADDRESS, port, apps.APPS)))
+            ROOT, 'shared-proxy.kube', workloads.proxy_variables(ADDRESS, port, apps.registry().apps)))
         self.assertEqual((units / 'local-only/shared-proxy.kube').read_bytes(), quadlet.render(
-            ROOT, 'shared-proxy.kube', workloads.proxy_variables('127.0.0.1', port, apps.APPS)))
+            ROOT, 'shared-proxy.kube', workloads.proxy_variables('127.0.0.1', port, apps.registry().apps)))
         for path in units.glob('*.kube'):
             text = path.read_text()
             self.assertEqual(re.findall(r'^Network=(.*)$', text, re.M), ['app-network.network'], path.name)
@@ -117,7 +117,7 @@ class OfflineInstallTests(unittest.TestCase):
         self.addCleanup(subprocess.run, ['rm', '-rf', str(self.root)])
         self.bundle, self.quadlet = self.root / 'bundle', self.root / 'quadlet'
         self.runtime = self.quadlet / 'platform-kube-runtime'
-        offline_bundle.build(self.bundle, apps.APPS)
+        offline_bundle.build(self.bundle, apps.registry().apps)
 
     def install(self, host, hostname=HOSTNAME, address=ADDRESS, notes=None):
         with patch.object(keycloak, 'configure', return_value=False) as configure:
@@ -261,7 +261,7 @@ class OfflineInstallTests(unittest.TestCase):
                                 quadlet_dir=self.quadlet)
             with self.assertRaisesRegex(ValueError, 'built for todo, notes'):
                 install.install(self.bundle, deployment_mode='offline', bundle_directory=self.bundle,
-                                quadlet_dir=self.quadlet, applications=(apps.APPS[0],))
+                                quadlet_dir=self.quadlet, platform=apps.registry().select(['todo']))
             with self.assertRaisesRegex(ValueError, 'built for HTTPS port 8443, not 9443'):
                 install.install(self.bundle, deployment_mode='offline', bundle_directory=self.bundle,
                                 quadlet_dir=self.quadlet, service_port=9443)
@@ -292,8 +292,8 @@ with FakeHost(unit_directory=__import__('pathlib').Path(quadlet) / 'platform-kub
         patch.object(keycloak, 'configure', return_value=False):
     code = cli.main(['install', '--mode', 'server', '--deployment-mode', 'offline',
                      '--project-root', bundle, '--bundle-dir', bundle, '--publish-address', '192.0.2.10',
-                     '--quadlet-dir', quadlet, '--target-identity-hostname', 'shop.example.org',
-                     '--target-notes-hostname', 'notes.example.org'])
+                     '--quadlet-dir', quadlet, '--target-hostname', 'identity=shop.example.org',
+                     '--target-hostname', 'notes=notes.example.org'])
 loaded = sorted(name for name in sys.modules if name.split('.')[0] in ('jinja2', 'yaml'))
 print(json.dumps({'code': code, 'loaded': loaded, 'started': [a[3] for a in host.ran('systemctl', '--user', 'start')]}))
 '''
@@ -304,7 +304,7 @@ class WithoutJinjaTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             bundle, quadlet = root / 'bundle', root / 'quadlet'
-            offline_bundle.build(bundle, apps.APPS)
+            offline_bundle.build(bundle, apps.registry().apps)
             result = subprocess.run(
                 [sys.executable, '-c', WITHOUT_JINJA2_AND_PYYAML, str(TESTS.parent), str(TESTS), str(bundle),
                  str(quadlet)],
@@ -318,7 +318,7 @@ class WithoutJinjaTests(unittest.TestCase):
             self.assertEqual(outcome['loaded'], [])
             self.assertEqual(outcome['started'][-1], 'shared-proxy.service')
             runtime = quadlet / 'platform-kube-runtime'
-            manifests, units = install.offline_files(apps.APPS)
+            manifests, units = install.offline_files(apps.registry())
             self.assertEqual({path.name for path in runtime.iterdir()}, manifests | units)
             self.assertIn('server_name shop.example.org;', (runtime / 'shared-proxy.yaml').read_text())
             self.assertIn('server_name notes.example.org;', (runtime / 'shared-proxy.yaml').read_text())

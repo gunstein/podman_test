@@ -8,10 +8,11 @@ with checked values. It needs only the Python standard library, so a host
 needs neither Jinja2 nor PyYAML for it. install.sh uses it, and so do the
 DR tools on the primary and the standby.
 
-There are two kinds of value (TARGETS):
+There are two kinds of value:
 
   Public hostnames: TARGET_IDENTITY_HOSTNAME for Keycloak, the OIDC issuer,
-      and TARGET_<APP>_HOSTNAME for each app (TARGET_NOTES_HOSTNAME).
+      and TARGET_<APP>_HOSTNAME for each app of the bundle's platform
+      (TARGET_NOTES_HOSTNAME).
       They are the service's names: nginx server_name, the TLS certificate,
       the OIDC issuer, KC_HOSTNAME and each Keycloak client. They must be
       the same on primary and standby, so a host records them
@@ -27,6 +28,11 @@ A hostname comes from the first of: the command line (or, for the DR tools,
 the host they copy it from), the environment variable of the same name
 (install.sh only), the host's record, and the default the bundle was built
 with (values.yaml and the app registry).
+
+bundle.json also carries the platform the bundle was built for
+(apps.Platform): its apps and Keycloak's default hostname. An install
+records it on the host (record_platform), so every later tool on the host
+reads the platform it installed, never a list in the code.
 
 Only ${TARGET_...} is touched: $HOME, ${DATABASE_PASSWORD} and every other
 dollar expression stay as they are. A placeholder this module does not know,
@@ -49,8 +55,10 @@ from . import apps, manifests, quadlet, settings
 
 BUNDLE_METADATA = 'bundle.json'
 BUNDLE_FORMAT = 'platform-offline-bundle'
-BUNDLE_FORMAT_VERSION = 5
+BUNDLE_FORMAT_VERSION = 6
 PLACEHOLDER = re.compile(r'\$\{(TARGET_[A-Z0-9_]+)\}')
+# A hostname target value's name, as a host may record it.
+HOSTNAME_NAME = re.compile(r'TARGET_[A-Z0-9_]+_HOSTNAME')
 IDENTITY_HOSTNAME = 'TARGET_IDENTITY_HOSTNAME'
 PUBLISH_ADDRESS = 'TARGET_PUBLISH_ADDRESS'
 # The address that selects the local-only proxy unit: nginx then publishes only
@@ -70,12 +78,14 @@ def hostname_target(app):
     return f'TARGET_{app.name.upper()}_HOSTNAME'
 
 
-def hostname_targets(applications):
-    """The hostname target values of Keycloak and these apps, Keycloak's first."""
-    return [IDENTITY_HOSTNAME] + [hostname_target(app) for app in applications]
+def hostname_targets(platform):
+    """The hostname target values of Keycloak and the platform's apps, Keycloak's first."""
+    return [IDENTITY_HOSTNAME] + [hostname_target(app) for app in platform.apps]
 
 
-HOSTNAMES = tuple(hostname_targets(apps.APPS))
+def name_target(name):
+    """The target value for --target-hostname NAME=...: 'identity' is Keycloak's, any other name an app's."""
+    return IDENTITY_HOSTNAME if name == 'identity' else f'TARGET_{name.upper()}_HOSTNAME'
 
 
 def check_hostname(value):
@@ -95,16 +105,17 @@ def check_publish_address(value):
     return str(address)
 
 
-# Every supported target value and the check its value must pass where it is used.
-TARGETS = {**{name: check_hostname for name in HOSTNAMES}, PUBLISH_ADDRESS: check_publish_address}
+def check(name, value):
+    """The value, checked as the target value name must be: the publish address or a hostname."""
+    return check_publish_address(value) if name == PUBLISH_ADDRESS else check_hostname(value)
 
 
 class TargetError(ValueError):
     """A target value or the bundle that needs it is wrong; nothing was installed."""
 
 
-def resolve(given, environment, recorded, defaults, names=None):
-    """Each target value in names (all of TARGETS by default) from the first source that has it, checked.
+def resolve(given, environment, recorded, defaults, names):
+    """Each target value in names from the first source that has it, checked.
 
     given holds the command line's values (None when an option was not
     used). Only hostnames come from the environment, the host's record or
@@ -112,9 +123,8 @@ def resolve(given, environment, recorded, defaults, names=None):
     names the value and where it came from.
     """
     values = {}
-    for name in names or TARGETS:
-        check = TARGETS[name]
-        hostname = name in HOSTNAMES
+    for name in names:
+        hostname = name != PUBLISH_ADDRESS
         sources = (('command line', given.get(name)),
                    ('environment', environment.get(name) if hostname else None),
                    ('host record', recorded.get(name) if hostname else None),
@@ -124,7 +134,7 @@ def resolve(given, environment, recorded, defaults, names=None):
         if value is None:
             raise TargetError(f'{name} has no value: give it on the command line')
         try:
-            values[name] = check(value)
+            values[name] = check(name, value)
         except ValueError as error:
             raise TargetError(f'{name} from the {source} is not valid: {error}') from None
     return values
@@ -133,22 +143,20 @@ def resolve(given, environment, recorded, defaults, names=None):
 def substitute(text, values, where):
     """Replace each ${TARGET_...} in text with its value; leave every other $ expression alone.
 
-    where names the file in an error. An unknown placeholder or a value that
-    is missing is an error, so a typo can never reach an installed file.
+    where names the file in an error. A placeholder without a value is an
+    error, so a typo can never reach an installed file.
     """
     def value(match):
         name = match.group(1)
-        if name not in TARGETS:
-            raise TargetError(f'{where}: unknown placeholder ${{{name}}}')
         if name not in values:
             raise TargetError(f'{where}: no value for ${{{name}}}')
         return values[name]
     return PLACEHOLDER.sub(value, text)
 
 
-def hostnames(values):
+def hostnames(values, platform):
     """Each app's public hostname from the target values: {app name: hostname}, for the apps they cover."""
-    return {app.name: values[hostname_target(app)] for app in apps.APPS if hostname_target(app) in values}
+    return {app.name: values[hostname_target(app)] for app in platform.apps if hostname_target(app) in values}
 
 
 def identity_hostname(values):
@@ -172,8 +180,8 @@ def read_record():
         data = json.loads(path.read_text())
     except ValueError as error:
         raise TargetError(f'{path} is not valid JSON: {error}') from None
-    if not isinstance(data, dict) or set(data) - set(HOSTNAMES):
-        raise TargetError(f'{path} may hold only {", ".join(HOSTNAMES)}')
+    if not isinstance(data, dict) or not all(HOSTNAME_NAME.fullmatch(name) for name in data):
+        raise TargetError(f'{path} may hold only TARGET_..._HOSTNAME values')
     return data
 
 
@@ -181,9 +189,40 @@ def write_record(values):
     """Record the hostnames in values on this host; True if the record changed. Never the address."""
     path = record_path()
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    content = json.dumps({name: values[name] for name in HOSTNAMES if name in values},
+    content = json.dumps({name: value for name, value in values.items() if HOSTNAME_NAME.fullmatch(name)},
                          indent=2, sort_keys=True) + '\n'
     return quadlet.write(path, content.encode(), 0o644)
+
+
+# The record of the platform a host was installed with.
+
+def platform_record_path():
+    """~/.config/platform/platform.json of the user running the install."""
+    return Path.home() / settings.DR_CONFIG / settings.PLATFORM_RECORD
+
+
+def record_platform(platform):
+    """Record the platform this host installs; True if the record changed.
+
+    An install records it before it changes anything else, so even after an
+    install that stopped half way, uninstall and the DR tools know what may
+    be on the host.
+    """
+    path = platform_record_path()
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    content = json.dumps(platform.to_json(), indent=2, sort_keys=True) + '\n'
+    return quadlet.write(path, content.encode(), 0o644)
+
+
+def installed_platform():
+    """The platform this host was installed with (record_platform); TargetError if it has none."""
+    path = platform_record_path()
+    try:
+        return apps.Platform.from_json(json.loads(path.read_text()))
+    except FileNotFoundError:
+        raise TargetError(f'{path} does not exist: nothing was installed on this host') from None
+    except ValueError as error:
+        raise TargetError(f'{path} is not a platform: {error}') from None
 
 
 def inside(bundle_directory, relative):
@@ -212,14 +251,14 @@ class TargetFiles:
     replicated: dict
     network_name: str
     network: bytes
-    applications: tuple
+    platform: apps.Platform
     public_port: int
     values: dict
 
     @property
     def hostnames(self):
         """Each app's public hostname: {app name: hostname}."""
-        return hostnames(self.values)
+        return hostnames(self.values, self.platform)
 
     @property
     def identity_hostname(self):
@@ -251,9 +290,18 @@ def metadata(bundle_directory):
                 and all(isinstance(name, str) and name == Path(name).name for name in entry['files'])):
             raise TargetError(f'{BUNDLE_METADATA}: {key} needs a directory and a list of file names')
     if not isinstance(data.get('network'), str) or not isinstance(data.get('defaults'), dict) \
-            or not isinstance(data.get('applications'), list) or type(data.get('public_port')) is not int:
-        raise TargetError(f'{BUNDLE_METADATA}: network, defaults, applications or public_port is missing')
+            or type(data.get('public_port')) is not int:
+        raise TargetError(f'{BUNDLE_METADATA}: network, defaults or public_port is missing')
+    try:
+        apps.Platform.from_json(data.get('platform'))
+    except ValueError as error:
+        raise TargetError(f'{BUNDLE_METADATA}: platform: {error}') from None
     return data
+
+
+def bundle_platform(bundle_directory):
+    """The platform a bundle or an operations package was built for."""
+    return apps.Platform.from_json(metadata(bundle_directory)['platform'])
 
 
 def load(bundle_directory, given, environment=None, recorded=None):
@@ -266,8 +314,13 @@ def load(bundle_directory, given, environment=None, recorded=None):
     Network= the bundle's network unit, so the installed files fit together.
     """
     data = metadata(bundle_directory)
+    platform = apps.Platform.from_json(data['platform'])
     # Keycloak's hostname, the hostnames of the bundle's own apps, and the publish address.
-    names = hostname_targets(app for app in apps.APPS if app.name in data['applications']) + [PUBLISH_ADDRESS]
+    names = hostname_targets(platform) + [PUBLISH_ADDRESS]
+    unknown = sorted({name for name, value in given.items() if value is not None} - set(names))
+    if unknown:
+        raise TargetError(f'{", ".join(unknown)}: not a target value of this bundle, whose apps are '
+                          f'{", ".join(app.name for app in platform.apps)}')
     values = resolve(given, os.environ if environment is None else environment,
                      recorded or {}, data['defaults'], names)
 
@@ -296,7 +349,7 @@ def load(bundle_directory, given, environment=None, recorded=None):
             if wanted not in known:
                 raise TargetError(f'{name}: {key}={wanted} is not a file of this bundle')
     return TargetFiles(manifest_files, quadlets, replicated, network_path.name, network,
-                       tuple(data['applications']), data['public_port'], values)
+                       platform, data['public_port'], values)
 
 
 def load_on_host(bundle_directory, publish_address, given=None):
@@ -317,5 +370,5 @@ def host_hostnames(bundle_directory):
     the same names. Each value is checked as when it is installed.
     """
     data, recorded = metadata(bundle_directory), read_record()
-    names = hostname_targets(app for app in apps.APPS if app.name in data['applications'])
+    names = hostname_targets(apps.Platform.from_json(data['platform']))
     return resolve({}, {}, recorded, data['defaults'], names)

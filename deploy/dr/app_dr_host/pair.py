@@ -1,11 +1,10 @@
 """Read-only checks of both initial database hosts before standby bootstrap."""
-from app_installer import apps
 from app_installer.commands import exists, run
 from app_installer.preflight import ipv4_addresses
 
 
-def node_facts(inventory_hostname, role, address):
-    """This host's identity and database volumes; refuses an inventory it does not match."""
+def node_facts(platform, inventory_hostname, role, address):
+    """This host's identity and the platform's database volumes; refuses an inventory it does not match."""
     run('podman', '--version')
     run('systemctl', '--user', 'is-system-running', allowed=(0, 1))
     facts = {
@@ -16,7 +15,7 @@ def node_facts(inventory_hostname, role, address):
         'machine_id': run('cat', '/etc/machine-id').stdout.strip(),
         'ipv4_addresses': ipv4_addresses(run('ip', '-4', '-o', 'address', 'show', 'scope', 'global').stdout),
         'data_volumes': {database.volume('data'): exists('volume', database.volume('data'))
-                         for database in apps.REPLICATED_DATABASES},
+                         for database in platform.replicated_databases},
     }
     problems = []
     if role not in ('primary', 'standby'):
@@ -34,9 +33,9 @@ def node_facts(inventory_hostname, role, address):
     return facts
 
 
-def check_pair(primary, standby):
+def check_pair(platform, primary, standby):
     """Every cross-host rule, all reported together; nothing here changes either host."""
-    expected = sorted(database.volume('data') for database in apps.REPLICATED_DATABASES)
+    expected = sorted(database.volume('data') for database in platform.replicated_databases)
     problems = []
     if primary['role'] != 'primary' or standby['role'] != 'standby':
         problems.append('the first host must have role primary and the second role standby')

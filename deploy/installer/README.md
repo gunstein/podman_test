@@ -9,11 +9,16 @@ registry. An offline install never renders: it fills the target values into
 files the build rendered (`target_render.py`, standard library only), and so
 do the DR tools on a primary and a standby.
 
-`apps.APPS` registers Todo and Notes. Each App owns its derived image, secret,
+One installation is an `apps.Platform`: its apps, in start order, and
+Keycloak's default hostname. `apps.registry()` builds today's (Todo and
+Notes); an offline bundle carries the one it was built for in `bundle.json`,
+and an install records it on the host (`~/.config/platform/platform.json`),
+which every later command on the host (backup, uninstall, the DR tools) reads
+instead of a list in the code. Each App owns its derived image, secret,
 manifest, service and volume names. Single-host installs run seven pods; Keycloak,
 its own `keycloak-postgres` database and the proxy run once. Both apps share the
 `todo` realm but have independent clients and PostgreSQL instances.
-`apps.REPLICATED_DATABASES` (todo, notes, keycloak) is the DR group.
+`Platform.replicated_databases` (todo, notes, keycloak) is the DR group.
 
 Build mode renders on the host, so it needs OS-managed Jinja2 and PyYAML.
 From a checkout or extracted package:
@@ -46,8 +51,8 @@ without network access, in server mode only:
 ```bash
 python3 -m app_installer install --mode server --deployment-mode offline \
   --bundle-dir /path/to/platform-offline-m12 --publish-address 192.168.0.102 \
-  --target-identity-hostname auth.example.org --target-todo-hostname todo.example.org \
-  --target-notes-hostname notes.example.org
+  --target-hostname identity=auth.example.org --target-hostname todo=todo.example.org \
+  --target-hostname notes=notes.example.org
 ```
 
 The hostname options are optional: one for Keycloak, one per app. The host records the names it
@@ -120,10 +125,10 @@ accept project, Quadlet, runtime and rendered-manifest directories, or an
 offline bundle's filled-in files (`target=`). They return whether manifests,
 network or unit definitions changed. They always reload user systemd; they
 never restart services themselves.
-Callers control safe stop/start ordering, taken from `apps.workloads()`: the
+Callers control safe stop/start ordering, taken from `Platform.workloads()`: the
 seven pods in start order, each with its Kube YAML and ConfigMap files and
 whether a start waits for it to be healthy; stop is the reverse
-(`apps.services()`). Every Kube YAML file is named after its pod's name,
+(`Platform.services()`). Every Kube YAML file is named after its pod's name,
 then its component (`todo-postgres.yaml`, `notes-config.yaml`); an install
 removes todo's files under their earlier names (`postgres.yaml`,
 `config.yaml`, `app.yaml`), and bundles of the earlier format version are

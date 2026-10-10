@@ -40,7 +40,7 @@ from typing import Callable, List, Optional, Sequence
 # deploy/dr/README.md ("Where DR finds the installer") has the whole rule.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from app_dr_host import nginx_tls, replication, replication_tls, transfer  # noqa: E402
-from app_installer import apps, oplog, quadlet, settings  # noqa: E402
+from app_installer import oplog, quadlet, settings, target_render  # noqa: E402
 from app_installer.commands import run  # noqa: E402
 
 DEFAULT_CONFIG = Path.home() / settings.DR_CONFIG / 'platform-dr.json'
@@ -133,9 +133,9 @@ def load_config(path: Path) -> Config:
     return parse_config(raw, path)
 
 
-def write_config(path: Path, primary_name: str, primary_address: str, standby_name: str,
+def write_config(path: Path, platform, primary_name: str, primary_address: str, standby_name: str,
                  rpo_target_seconds: int, revision: str = '', bundle: str = '') -> bool:
-    """Write the private (0600) DR settings for the complete group; True if they changed.
+    """Write the private (0600) DR settings for the platform's complete group; True if they changed.
 
     primary_address must be a literal IPv4 address, so the preflight's
     "primary still answers" check always tests that machine, never whatever a
@@ -145,7 +145,7 @@ def write_config(path: Path, primary_name: str, primary_address: str, standby_na
         primary_address = replication.address(primary_address)
     except ValueError as error:
         raise DrError(f'primary_address must be a literal IPv4 address: {primary_address!r}') from error
-    raw = {'applications': [database.name for database in apps.REPLICATED_DATABASES], 'primary_name': primary_name,
+    raw = {'applications': [database.name for database in platform.replicated_databases], 'primary_name': primary_name,
            'primary_address': primary_address, 'standby_name': standby_name,
            'rpo_target_seconds': rpo_target_seconds}
     # Only when given, so settings written without them stay byte for byte the same.
@@ -165,10 +165,10 @@ class StandbyGroup:
     so a tool configured for an older group refuses to promote a newer one.
     """
 
-    def __init__(self, config: Config, connector: Connector = tcp_reachable,
+    def __init__(self, config: Config, platform, connector: Connector = tcp_reachable,
                  journal_path: Path = DEFAULT_JOURNAL):
         self.config, self.connector = config, connector
-        self.databases = apps.REPLICATED_DATABASES
+        self.databases = platform.replicated_databases
         expected = tuple(database.name for database in self.databases)
         if (config.applications and config.applications != expected) or (
                 not config.applications and len(expected) != 1):
@@ -333,7 +333,7 @@ class StandbyGroup:
                 raise
 
 
-def check(databases=apps.REPLICATED_DATABASES, disk=None):
+def check(databases, disk=None):
     """The scheduled check (platform-dr-check.timer): what is fine, and what is wrong, for this host's role.
 
     Returns (lines, problems). Each database's role is read live, so the same
@@ -396,7 +396,7 @@ def expiry(name, read_days, alert_days, advice, lines, problems):
         lines.append(f'{name}: valid {days} more days')
 
 
-def renew_tls(databases=apps.REPLICATED_DATABASES):
+def renew_tls(databases):
     """The nightly renewal (platform-replication-tls.timer): renew each primary's certificate if it is due.
 
     Returns (lines, problems), like check(). Each database's role is read
@@ -439,7 +439,7 @@ def secret_exists(name: str) -> bool:
                description=f'Podman secret {name} check').returncode == 0
 
 
-def readiness(config: Config, exists: Optional[Callable[[str], bool]] = None):
+def readiness(config: Config, platform, exists: Optional[Callable[[str], bool]] = None):
     """Could this host take over now? Returns (lines, problems), like check().
 
     A missing piece found during a fire is found too late, so the scheduled
@@ -468,7 +468,7 @@ def readiness(config: Config, exists: Optional[Callable[[str], bool]] = None):
             if not archives or missing:
                 problems.append(f'the offline bundle at {bundle} lacks image archives: '
                                 + (', '.join(missing) or 'SHA256SUMS lists none'))
-    names = transfer.transfer_names()
+    names = transfer.transfer_names(platform)
     absent = [name for name in names if not exists(name)]
     if absent:
         problems.append('DR secrets missing on this host: ' + ', '.join(absent))
@@ -514,15 +514,17 @@ def main(arguments: Optional[Sequence[str]] = None):
     args = parser().parse_args(arguments)
     oplog.describe(args.command)
     try:
+        # The platform this host was installed with: its DR group, in order.
+        platform = target_render.installed_platform()
         if args.command == 'configure':
-            print(json.dumps({'changed': write_config(args.config, args.primary_name, args.primary_address,
+            print(json.dumps({'changed': write_config(args.config, platform, args.primary_name, args.primary_address,
                                                       args.standby_name, args.rpo_target_seconds,
                                                       args.revision, args.bundle)}))
             return 0
         if args.command == 'check':
-            lines, problems = check()
+            lines, problems = check(platform.replicated_databases)
             try:
-                ready, missing = readiness(load_config(args.config))
+                ready, missing = readiness(load_config(args.config), platform)
             except RuntimeError as error:  # unreadable settings, or Podman not answering
                 ready, missing = [], [str(error)]
             lines, problems = lines + ready, problems + missing
@@ -533,12 +535,13 @@ def main(arguments: Optional[Sequence[str]] = None):
                 print(f'ERROR: {problem}', file=sys.stderr)
             return 1 if problems else 0
         if args.command == 'renew-tls':
-            lines, problems = renew_tls()
+            lines, problems = renew_tls(platform.replicated_databases)
             print('\n'.join(lines))
             for problem in problems:
                 print(f'ERROR: {problem}', file=sys.stderr)
             return 1 if problems else 0
-        tool = StandbyGroup(load_config(args.config), journal_path=args.config.with_name(settings.PROMOTION_RECORD))
+        tool = StandbyGroup(load_config(args.config), platform,
+                            journal_path=args.config.with_name(settings.PROMOTION_RECORD))
         if args.command == 'status':
             print('\n'.join(tool.status_lines()))
         elif args.command == 'preflight':

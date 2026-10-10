@@ -93,7 +93,7 @@ def template_client(token):
     return request('/auth/admin/realms/todo/clients/' + matches[0]['id'], token=token)
 
 
-def configure(admin_password, clients=None):
+def configure(admin_password, clients):
     """Make sure every app has a Keycloak client whose redirect and origin match its URL.
 
     Waits for nginx and Keycloak (its hostname is nginx's default server)
@@ -108,8 +108,7 @@ def configure(admin_password, clients=None):
     issuer = discovery.get('issuer', '')
     if not re.fullmatch(r'https://[^/]+/auth/realms/todo', issuer):
         raise RuntimeError('Expected an HTTPS issuer with the Todo realm path.')
-    identities = ([(app.keycloak_client, app.hostname) for app in apps.APPS]
-                  if clients is None else list(clients))
+    identities = list(clients)  # [(client ID, the hostname its app is served on)], install.clients()
     for _client_id, hostname in identities:
         wait('/health', 30, 1, 'ok', hostname=hostname)
         wait('/ready', 30, 1, 'ready', hostname=hostname)

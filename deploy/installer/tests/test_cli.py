@@ -7,7 +7,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app_installer import apps  # noqa: E402
 from app_installer.cli import main  # noqa: E402
+
+
+def setUpModule():
+    # The host commands take the platform the host recorded at install; here, the registry's.
+    patcher = patch('app_installer.target_render.installed_platform', return_value=apps.registry())
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
 
 
 class CLITests(unittest.TestCase):
@@ -58,8 +66,9 @@ class UninstallCLITests(unittest.TestCase):
                 code, output, error = run(['uninstall', *options])
             self.assertEqual((code, output), (0, '{"changed": true}\n'))
             self.assertIn(said, error)
-            self.assertEqual(remove.call_args.args[0], '--remove-data' in options)
-            self.assertEqual(remove.call_args.args[2], '--remove-backups' in options)
+            self.assertEqual(remove.call_args.args[0], apps.registry())
+            self.assertEqual(remove.call_args.args[1], '--remove-data' in options)
+            self.assertEqual(remove.call_args.args[3], '--remove-backups' in options)
 
 
 class BackupAndTlsCLITests(unittest.TestCase):

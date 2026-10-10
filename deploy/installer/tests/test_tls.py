@@ -107,10 +107,14 @@ class TlsTest(unittest.TestCase):
         self.volume.mkdir()
         self.record = self.directory / 'target-values.json'
         self.record.write_text(json.dumps({'TARGET_IDENTITY_HOSTNAME': NAMES[0], 'TARGET_NOTES_HOSTNAME': NAMES[1]}))
+        # The platform this host was installed with (target_render.record_platform).
+        self.platform_record = self.directory / 'platform.json'
+        self.platform_record.write_text(json.dumps(apps.registry().to_json()))
         self.podman = FakePodman(self, self.volume)
         for target, name, value in ((tls, 'KEY', 'rsa:2048'),  # a smaller key only to keep the tests fast
                                     (tls, 'ENTRYPOINT', str(ROOT / 'proxy/proxy-entrypoint.sh')),
                                     (tls.target_render, 'record_path', lambda: self.record),
+                                    (tls.target_render, 'platform_record_path', lambda: self.platform_record),
                                     (tls_store.settings, 'NGINX_TLS_STORAGE', 'volume')):
             patcher = patch.object(target, name, value)
             patcher.start()

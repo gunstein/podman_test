@@ -228,7 +228,7 @@ class KubeRuntimeTests(unittest.TestCase):
 
     def test_clean_deploy_targets_kube_without_legacy_chain(self):
         from app_installer import apps
-        self.assertEqual({workload.pod for workload in apps.workloads()}, {
+        self.assertEqual({workload.pod for workload in apps.registry().workloads()}, {
             "todo-app", "notes-app", "keycloak", "todo-postgres", "notes-postgres",
             "keycloak-postgres", "shared-proxy"})
         self.assertIn("SourcePath", read(ROOT / "deploy/installer/app_installer/install.py"))
@@ -237,7 +237,8 @@ class KubeRuntimeTests(unittest.TestCase):
         from app_installer.kube_play import up
         with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run, \
                 patch("app_installer.kube_play.exists", return_value=False):
-            up(RUNTIME, state_file=RUNTIME / '.dev-state.json')
+            from app_installer import apps
+            up(RUNTIME, apps.registry(), state_file=RUNTIME / '.dev-state.json')
         calls = [call.args[0] for call in run.call_args_list]
         postgres = next(i for i, a in enumerate(calls) if a[-1] == str(RUNTIME / "todo-postgres.yaml"))
         healthy = calls.index(["podman", "wait", "--condition", "healthy", "todo-postgres"])

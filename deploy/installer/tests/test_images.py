@@ -31,23 +31,23 @@ class ImageErrorTests(unittest.TestCase):
         for bundle, refresh in (('/bundle', True), ('', False)):
             with self.subTest(bundle=bundle, refresh=refresh), FakeHost() as host:
                 with self.assertRaisesRegex(ValueError, 'requires bundle_directory and forbids refresh_images'):
-                    images.prepare(ROOT, 'offline', bundle, refresh)
+                    images.prepare(ROOT, 'offline', bundle, refresh, app=apps.registry().apps[0])
                 self.assertEqual(host.calls, [])
         with FakeHost() as host, self.assertRaisesRegex(ValueError, 'build or offline'):
-            images.prepare(ROOT, 'online')
+            images.prepare(ROOT, 'online', app=apps.registry().apps[0])
         self.assertEqual(host.calls, [])
 
     def test_a_bundle_without_an_image_archive_names_it_and_loads_nothing(self):
         with tempfile.TemporaryDirectory() as bundle, FakeHost(images_present=False) as host:
             (Path(bundle) / 'images').mkdir()
             with self.assertRaisesRegex(FileNotFoundError, 'no image archive images/todo-backend-m12.tar'):
-                images.prepare(ROOT, 'offline', bundle, app=apps.APPS[0])
+                images.prepare(ROOT, 'offline', bundle, app=apps.registry().apps[0])
             self.assertFalse(host.ran('podman', 'load'))
 
     def test_a_present_image_is_kept_offline_without_its_archive(self):
         # An image already on the host is not loaded again, so its archive is not needed.
         with tempfile.TemporaryDirectory() as bundle, FakeHost() as host:
-            self.assertEqual(set(images.prepare(ROOT, 'offline', bundle).values()), {False})
+            self.assertEqual(set(images.prepare(ROOT, 'offline', bundle, app=apps.registry().apps[0]).values()), {False})
             self.assertFalse(host.ran('podman', 'load'))
 
 

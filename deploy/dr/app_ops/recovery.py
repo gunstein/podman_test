@@ -21,10 +21,10 @@ def deploy_promoted(project_root, controller, current):
     """
     if not current.spec.local:
         raise RuntimeError('deploy-promoted-application runs on the promoted host itself: mark it local: true')
-    pythonpath = trust.stage_installer(project_root, controller, current)
+    pythonpath = steps.stage_target_files(project_root, controller, current)
     p = steps.paths(current)
     return steps.changed(app_dr_host(
-        current, pythonpath, 'deploy-promoted', '--project-root', str(project_root), '--quadlet-dir', p['quadlet'],
+        current, pythonpath, 'deploy-promoted', '--quadlet-dir', p['quadlet'],
         '--bundle-dir', p['bundle'], '--inventory-hostname', current.name, '--node-address', current.spec.address,
         '--service-port', str(settings.HTTPS_PORT), '--journal', steps.promotion_record(current),
         '--config-dir', p['config']))
@@ -37,7 +37,7 @@ def configure_backup(project_root, controller, current):
     platform-backup.timer then runs `app_backup.py nightly` every night; on a host
     installed with install.sh it replaces the installer's service of the same timer.
     """
-    pythonpath = trust.stage_installer(project_root, controller, current)
+    pythonpath = steps.stage_target_files(project_root, controller, current)
     journal = steps.promotion_record(current)
     app_dr_host(current, pythonpath, 'require-promoted-group', '--journal', journal)
     changed = trust.install_trusted(
@@ -52,20 +52,21 @@ def configure_backup(project_root, controller, current):
 
 def preflight_rebuild(project_root, controller, current, rebuild, confirm_fenced, confirm_reseed):
     """Read-only gates on both hosts; the reseed itself repeats every rebuild-host check."""
-    require_identity(current)
-    current_path = trust.stage_installer(project_root, controller, current)
-    for database in steps.GROUP:
-        app_dr_host(current, current_path, 'replicate-workload', 'rebuild-primary-check', '--app', database.name)
-    require_identity(rebuild)
+    # The confirmations first: a wrong one stops the run before anything is staged on either host.
     if confirm_fenced != f'{rebuild.name} is fenced' or confirm_reseed != rebuild.name:
         raise RuntimeError('Rebuild host must remain infrastructure-fenced and both exact confirmations are '
                            'required before any destructive reseed.')
+    group = steps.platform(project_root).replicated_databases
+    require_identity(current)
+    current_path = steps.stage_target_files(project_root, controller, current)
+    for database in group:
+        app_dr_host(current, current_path, 'replicate-workload', 'rebuild-primary-check', '--app', database.name)
+    require_identity(rebuild)
     # The current primary's public hostnames, which the rebuilt standby will serve.
-    steps.stage_target_files(project_root, controller, current)
     rebuild_path = steps.stage_target_files(project_root, controller, rebuild)
-    app_dr_host(rebuild, rebuild_path, 'replicate-workload', 'quarantined', '--app', steps.GROUP[0].name)
-    hostnames = steps.target_values(current, current_path, steps.paths(current)['target'])
-    for database in steps.GROUP:
+    app_dr_host(rebuild, rebuild_path, 'replicate-workload', 'quarantined', '--app', group[0].name)
+    hostnames = steps.target_values(current, current_path)
+    for database in group:
         app_dr_host(rebuild, rebuild_path, 'replicate-workload', 'reseed-check', '--app', database.name,
                       '--primary-address', current.spec.address, '--confirm-fenced', confirm_fenced,
                       '--confirm-reseed', confirm_reseed, '--node-address', rebuild.spec.address,
@@ -85,6 +86,7 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
     until all of them stream. A failure stops the run where it is and is
     never retried automatically.
     """
+    group = steps.platform(project_root).replicated_databases
     for host in (controller, rebuild_host):
         host.run(['true'], sudo=True)
     rebuild_path = preflight_rebuild(project_root, controller, current, rebuild_host, confirm_fenced, confirm_reseed)
@@ -92,19 +94,19 @@ def rebuild(project_root, controller, current, rebuild_host, confirm_fenced, con
     app_dr_host(current, current_path, 'publish-primaries', 'redundancy',
                   '--node-address', current.spec.address, *steps.group_paths(current))
     # The rebuilt standby serves the current primary's public hostnames.
-    hostnames = steps.target_values(current, current_path, steps.paths(current)['target'])
+    hostnames = steps.target_values(current, current_path)
     # The rebuild host needs the replication CA that publishing may just have
     # created (a pair set up before replication TLS); existing values must match.
     standby.sync_secrets(project_root, controller, current, rebuild_host)
-    for database in steps.GROUP:
+    for database in group:
         app_dr_host(rebuild_host, rebuild_path, 'replicate-workload', 'replication-path', '--app', database.name,
                       '--primary-address', current.spec.address)
     app_dr_host(rebuild_host, rebuild_path, 'reseed-group', '--primary-address', current.spec.address,
                   '--confirm-fenced', confirm_fenced, '--confirm-reseed', confirm_reseed,
                   '--node-address', rebuild_host.spec.address, '--target-values', hostnames,
-                  *steps.group_paths(rebuild_host), timeout=steps.COPY_STEP_TIMEOUT)
+                  *steps.group_paths(rebuild_host), timeout=steps.copy_step_timeout(group))
     standby.install_dr_tool(project_root, controller, rebuild_host, current.spec, rebuild_host.name)
-    standby.streaming(current, current_path, rebuilt=True)
+    standby.streaming(group, current, current_path, rebuilt=True)
     return True
 
 
@@ -125,33 +127,34 @@ def reseed_standby(project_root, controller, primary, standby_host, confirm_rese
     if confirm_reseed != standby_host.name:
         raise RuntimeError(f'--confirm-reseed must name the standby exactly ({standby_host.name}); '
                            'nothing was changed')
+    group = steps.platform(project_root).replicated_databases
     for host in (primary, standby_host):
         require_identity(host)
-    standby.require_firewall(primary, standby_host)
+    standby.require_firewall(group, primary, standby_host)
     primary_path = steps.stage_target_files(project_root, controller, primary)
     slots = {database.name: json.loads(app_dr_host(primary, primary_path, 'replicate-workload', 'slot',
                                                    '--app', database.name).stdout)['slot']
-             for database in steps.GROUP}
-    hostnames = steps.target_values(primary, primary_path, steps.paths(primary)['target'])
+             for database in group}
+    hostnames = steps.target_values(primary, primary_path)
     standby.sync_secrets(project_root, controller, primary, standby_host)
     standby_path = steps.stage_target_files(project_root, controller, standby_host)
     app_dr_host(standby_host, standby_path, 'standby-reseed-check', '--primary-address', primary.spec.address)
     app_dr_host(standby_host, standby_path, 'erase-standby', '--primary-address', primary.spec.address,
                 '--confirm-reseed', confirm_reseed)
-    for database in steps.GROUP:
+    for database in group:
         # The standby's WAL senders end a moment after its databases stop.
         steps.retry(lambda database=database: app_dr_host(
             primary, primary_path, 'replicate-workload', 'drop-slot', '--app', database.name,
             '--slot', slots[database.name]), 15, 2)
     images = steps.paths(standby_host)['bundle'] + '/images/'
-    for database in steps.GROUP:
+    for database in group:
         app_dr_host(standby_host, standby_path, 'replicate-workload', 'standby', '--app', database.name,
                     '--primary-address', primary.spec.address, '--slot', slots[database.name],
                     '--image-archive', images + database.image_archive,
                     '--node-address', standby_host.spec.address, '--target-values', hostnames,
-                    *steps.group_paths(standby_host), timeout=steps.COPY_STEP_TIMEOUT)
+                    *steps.group_paths(standby_host), timeout=steps.copy_step_timeout(group))
     standby.install_dr_tool(project_root, controller, standby_host, primary.spec, standby_host.name)
-    for database in steps.GROUP:
+    for database in group:
         steps.retry(lambda database=database: app_dr_host(
             primary, primary_path, 'replicate-workload', 'streaming', '--app', database.name,
             '--slot', slots[database.name]), 15, 2)

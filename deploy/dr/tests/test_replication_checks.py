@@ -18,7 +18,7 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).res
 from app_dr_host import replication  # noqa: E402
 from app_installer import apps  # noqa: E402
 
-APP = apps.APPS[1].database
+APP = apps.registry().apps[1].database
 HEALTHY_STANDBY = 't|on|0/3000060|0/3000060'
 
 
@@ -238,8 +238,8 @@ class CommandContractTests(unittest.TestCase):
         commands, run = self.record([])
         with patch.object(replication, 'require_stopped_service', side_effect=checked.append), \
                 patch.object(replication, 'run', side_effect=run):
-            self.assertIs(replication.require_quarantined_group(), False)
-        self.assertEqual(checked, apps.services())
+            self.assertIs(replication.require_quarantined_group(apps.registry()), False)
+        self.assertEqual(checked, apps.registry().services())
         self.assertEqual(commands, [('podman', 'ps', '--format', '{{.Names}}')])
 
     def test_rebuild_primary_check(self):
@@ -267,25 +267,25 @@ class CommandContractTests(unittest.TestCase):
         self.assertIn(f"slot_name = '{APP.replication_slot(rebuilt=True)}'", statements[1][1])
 
     def test_require_promoted_group_checks_each_database_exactly(self):
-        names = [database.name for database in apps.REPLICATED_DATABASES]
+        names = [database.name for database in apps.registry().replicated_databases]
         commands, run = self.record([(('systemctl',), 'active'), (('podman',), 'healthy')])
         with tempfile.TemporaryDirectory() as temporary:
             journal = Path(temporary) / 'promotion.json'
             journal.write_text(json.dumps({'state': 'complete', 'applications': names, 'completed': names}))
             with patch.object(replication, 'run', side_effect=run), \
                     patch.object(replication, 'require_primary') as primary:
-                replication.require_promoted_group(journal)
+                replication.require_promoted_group(apps.registry(), journal)
         expected = []
-        for database in apps.REPLICATED_DATABASES:
+        for database in apps.registry().replicated_databases:
             expected += [('systemctl', '--user', 'is-active', database.service),
                          ('podman', 'inspect', '--format', '{{.State.Health.Status}}',
                           database.container)]
         self.assertEqual(commands, expected)
         self.assertEqual([call.args for call in primary.call_args_list],
-                         [(database,) for database in apps.REPLICATED_DATABASES])
+                         [(database,) for database in apps.registry().replicated_databases])
 
     def test_one_wrong_field_in_the_promotion_record_is_enough_to_refuse(self):
-        names = [database.name for database in apps.REPLICATED_DATABASES]
+        names = [database.name for database in apps.registry().replicated_databases]
         complete = {'state': 'complete', 'applications': names, 'completed': names}
         with tempfile.TemporaryDirectory() as temporary:
             journal = Path(temporary) / 'promotion.json'
@@ -293,7 +293,7 @@ class CommandContractTests(unittest.TestCase):
                 with self.subTest(key=key), patch.object(replication, 'run') as run:
                     journal.write_text(json.dumps({**complete, key: value}))
                     with self.assertRaisesRegex(RuntimeError, 'complete database group'):
-                        replication.require_promoted_group(journal)
+                        replication.require_promoted_group(apps.registry(), journal)
                     run.assert_not_called()
 
 

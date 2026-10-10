@@ -23,9 +23,8 @@ from .steps import app_dr_host
 
 
 def where(host):
-    """The options app_dr_host nginx-tls needs on host: staged target files, offline bundle, its address."""
-    p = steps.paths(host)
-    return ['--project-root', p['target'], '--bundle-dir', p['bundle'], '--node-address', host.spec.address]
+    """The options app_dr_host nginx-tls needs on host: its offline bundle and its address."""
+    return ['--bundle-dir', steps.paths(host)['bundle'], '--node-address', host.spec.address]
 
 
 def request(project_root, controller, primary, standby, output):

@@ -32,7 +32,7 @@ class AcceptanceGuideTests(unittest.TestCase):
                   if "systemctl --user is-active" in line]
         self.assertTrue(checks)
         for command in checks:
-            self.assertEqual(set(command[3:]), set(apps.services()))
+            self.assertEqual(set(command[3:]), set(apps.registry().services()))
         for line in commands.splitlines():
             if "podman exec nginx nginx -t" in line:
                 self.assertIn("-c /etc/platform-nginx/nginx.conf", line)
@@ -104,9 +104,9 @@ class AcceptanceGuideTests(unittest.TestCase):
 
     def test_registered_group_table_matches_the_app_registry(self):
         guide = (ROOT / 'docs/ACCEPTANCE.md').read_text()
-        for service in apps.services():
+        for service in apps.registry().services():
             self.assertIn(f'`{service}`', guide)
-        for database in apps.REPLICATED_DATABASES:
+        for database in apps.registry().replicated_databases:
             row = (f'| {database.name} | `{database.container}` | `{database.name}` '
                    f'| {database.replication_port} | `{database.replication_slot()}` '
                    f'| `{database.replication_slot(rebuilt=True)}` |')

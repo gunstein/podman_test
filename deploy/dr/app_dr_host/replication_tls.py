@@ -67,17 +67,16 @@ def make_ca(directory):
     return key, certificate
 
 
-def issue(directory, ca_key, ca_certificate, node_address):
+def issue(directory, ca_key, ca_certificate, node_address, container):
     """Issue a server key and certificate for node_address; return their paths.
 
     The certificate names the host's IPv4 address, which the standby checks
-    with verify-full, and the database container names, which the primary's
-    own replication login over app-network uses.
+    with verify-full, and the database's container, which the primary's own
+    replication login over app-network uses. Each database has its own.
     """
     directory = Path(directory)
     key, request, certificate = directory / 'server.key', directory / 'server.csr', directory / 'server.crt'
-    names = ','.join([f'IP:{node_address}'] + [f'DNS:{database.container}'
-                                                 for database in apps.REPLICATED_DATABASES])
+    names = f'IP:{node_address},DNS:{container}'
     extensions = directory / 'server.ext'
     extensions.write_text(f'subjectAltName={names}\nbasicConstraints=critical,CA:FALSE\n'
                           'keyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n')
@@ -138,7 +137,7 @@ def install_server_tls(database, node_address):
         current.write_text(run('podman', 'exec', container, 'cat', f'{DATA}/server.crt',
                                allowed=(0, 1)).stdout)
         if not current.read_text().strip() or not certificate_ok(current, ca_certificate, node_address):
-            key, certificate = issue(directory, ca_key, ca_certificate, node_address)
+            key, certificate = issue(directory, ca_key, ca_certificate, node_address, container)
             for source, target in ((key, 'server.key'), (certificate, 'server.crt')):
                 # stdin holds the private key: never show this command's output in an error.
                 run('podman', 'exec', '-i', container, 'sh', '-c',

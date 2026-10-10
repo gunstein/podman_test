@@ -38,7 +38,9 @@ Current architecture and workflow:
   rootless app-network. The App registry in
   deploy/installer/app_installer/apps.py owns per-app installer names.
   DR/backup/rebuild act on one group of three databases (todo, notes,
-  keycloak; apps.REPLICATED_DATABASES), never on a partial group.
+  keycloak; Platform.replicated_databases), never on a partial group. The
+  Platform comes from bundle.json or the host's record, never from a list in
+  the code (apps.registry() is the only one, for build mode).
   shared-proxy.service owns nginx, which reads its TLS files read-only from
   Podman secrets the installer makes (tls_secrets.py, the worked example of
   files as Podman secrets); the TLS volume platform-nginx-data (tls.py) is kept,

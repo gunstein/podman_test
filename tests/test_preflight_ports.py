@@ -54,7 +54,7 @@ class PreflightHostPortTests(unittest.TestCase):
 
     def test_every_registered_database_port_is_checked(self):
         checked = self.check_ports(set())
-        for database in apps.REPLICATED_DATABASES:
+        for database in apps.registry().replicated_databases:
             self.assertIn(database.replication_port, checked)
             self.assertIn(f'"{database.container}:{database.replication_port}"', PREFLIGHT)
 

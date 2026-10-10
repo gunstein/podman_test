@@ -27,7 +27,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from . import recovery, steps
-from .steps import apps, settings, target_render
+from .steps import settings, target_render
 
 APP_DR = str(settings.TOOLS_BIN / 'app_dr.py')
 # Any valid S256 PKCE challenge: the login form is only shown, never submitted.
@@ -69,8 +69,8 @@ def services(project_root, host, hostnames):
     waited = host.run(['bash', '-s', '--', 'app', *hostnames.values()], input=wait_ready, allowed=(0, 1))
     if waited.returncode:
         raise RuntimeError(waited.stdout.strip().splitlines()[-1] if waited.stdout.strip() else 'not ready')
-    for app in apps.APPS:
-        https(host, hostnames[app.name], '/ready')
+    for hostname in hostnames.values():
+        https(host, hostname, '/ready')
 
 
 def connect_sources(headers):
@@ -85,13 +85,13 @@ def connect_sources(headers):
     return []
 
 
-def login_page(host, hostnames, identity):
+def login_page(host, platform, hostnames, identity):
     """Raise unless each app's login can start: Keycloak accepts its redirect, and its CSP allows the token.
 
     hostnames is {app name: hostname}, identity Keycloak's hostname.
     """
     identity_origin = f'https://{identity}:{settings.HTTPS_PORT}'
-    for app in apps.APPS:
+    for app in platform.apps:
         origin = f'https://{hostnames[app.name]}:{settings.HTTPS_PORT}'
         query = urlencode({'client_id': app.keycloak_client, 'redirect_uri': origin + '/', 'response_type': 'code',
                            'scope': 'openid', 'code_challenge': PKCE_CHALLENGE, 'code_challenge_method': 'S256'})
@@ -123,7 +123,7 @@ def users(host, hostnames, identity):
     lines = host.run(['podman', 'exec', 'nginx', 'sh', '-c', CA_FACTS]).stdout.strip().splitlines()
     fingerprint = lines[-1].split('=', 1)[-1] if lines else ''
     provided = 'provided' in (line.strip() for line in lines[:-1])
-    names = [identity] + [hostnames[app.name] for app in apps.APPS]
+    names = [identity, *hostnames.values()]
     trust = ('Clients already trust your CA (provided mode), SHA-256 {}: nothing to install on them.'
              if provided else 'Have clients trust this host\'s CA, SHA-256 {}.').format(fingerprint)
     return {'hostnames': names, 'address': host.spec.address, 'ca_sha256': fingerprint,
@@ -142,14 +142,15 @@ def failover(project_root, controller, current, old_primary, confirm_fenced, con
         raise RuntimeError(f'confirmations must be exactly --confirm-primary-fenced "{old_primary.name} is fenced" '
                            f'--confirm-promotion {current.name}')
     recovery.require_identity(current)
+    platform = steps.platform(project_root)
     report = {}
     # The public hostnames the deploy installed: the ones this host recorded as a standby.
     hostnames, identity = {}, []
 
     def deploy():
         changed = recovery.deploy_promoted(project_root, controller, current)
-        values = json.loads(steps.target_values(current, steps.installed_pythonpath(current), project_root))
-        hostnames.update(target_render.hostnames(values))
+        values = json.loads(steps.target_values(current, steps.installed_pythonpath(current)))
+        hostnames.update(target_render.hostnames(values, platform))
         identity.append(target_render.identity_hostname(values))
         return changed
 
@@ -158,7 +159,7 @@ def failover(project_root, controller, current, old_primary, confirm_fenced, con
             ('deploy', deploy),
             ('backup', lambda: recovery.configure_backup(project_root, controller, current)),
             ('services', lambda: services(project_root, current, hostnames)),
-            ('login-page', lambda: login_page(current, hostnames, identity[0])),
+            ('login-page', lambda: login_page(current, platform, hostnames, identity[0])),
             ('users', lambda: users(current, hostnames, identity[0]))):
         say(f'{name} ...')
         try:

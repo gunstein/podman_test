@@ -10,15 +10,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "deploy/dr"))
+from app_installer import apps  # noqa: E402
 from app_ops import cli, inventory, recovery, standby, steps  # noqa: E402
 from app_ops.transport import Host  # noqa: E402
 
-NAMES = [database.name for database in steps.GROUP]
+NAMES = [database.name for database in apps.registry().replicated_databases]
 # The public hostnames each host recorded (app_dr_host target-values).
 RECORDED = {"todo-primary": {"TARGET_IDENTITY_HOSTNAME": "auth.test", "TARGET_TODO_HOSTNAME": "shop.example.org",
                              "TARGET_NOTES_HOSTNAME": "notes.test"},
             "todo-standby": {"TARGET_IDENTITY_HOSTNAME": "auth.test", "TARGET_TODO_HOSTNAME": "todo.test",
                              "TARGET_NOTES_HOSTNAME": "notes.test"}}
+
+
+def dr_host_command(command):
+    """What follows python3 -m app_dr_host in command, without the --project-root that app-ops puts first."""
+    sub = command[command.index("app_dr_host") + 1:]
+    return sub[2:] if sub[:1] == ["--project-root"] else sub
 
 
 def setUpModule():
@@ -69,7 +76,7 @@ class World:
 
     def answer(self, host, command, stdin):
         if command[:1] == ["env"] and "app_dr_host" in command:
-            sub = command[command.index("app_dr_host") + 1:]
+            sub = dr_host_command(command)
             step = tuple(sub[:2]) if sub[0] == "replicate-workload" else (sub[0],)
             if step in self.failing:
                 return step, "", 1
@@ -123,7 +130,7 @@ class World:
         """The value of option name in every app_dr_host operation (a tuple) run on host."""
         return [command[command.index(name) + 1] for where, command in self.commands
                 if where == host and "app_dr_host" in command
-                and tuple(command[command.index("app_dr_host") + 1:][:len(operation)]) == operation]
+                and tuple(dr_host_command(command)[:len(operation)]) == operation]
 
 
 class InitialTopologyTests(unittest.TestCase):
@@ -174,7 +181,8 @@ class InitialTopologyTests(unittest.TestCase):
 
     def test_the_firewall_rule_must_apply_now_and_after_a_reload(self):
         # Checked in the zone of the primary's interface, running and permanent.
-        standby.require_firewall(*self.hosts(World(zone="internal", rule_zone="internal"))[1:])
+        standby.require_firewall(apps.registry().replicated_databases,
+                                 *self.hosts(World(zone="internal", rule_zone="internal"))[1:])
         for world, message in ((World(rule_in=("permanent",)), "running configuration"),
                                (World(rule_in=("running",)), "permanent configuration"),
                                (World(zone="internal", rule_zone="public"), "zone internal of eth0")):

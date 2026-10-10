@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[2] / 'installer')]
+import dr_target  # noqa: E402
 from app_dr_host import cli  # noqa: E402
 from app_installer import apps  # noqa: E402
 
@@ -22,7 +23,15 @@ FILES = SimpleNamespace(values={'TARGET_IDENTITY_HOSTNAME': 'todo.test'})
 
 
 def run(argv):
-    """cli.main(argv): its exit code, its stdout as JSON (or text), and its stderr."""
+    """cli.main(argv) on a host with this repository's bundle: its exit code, stdout as JSON (or text), stderr.
+
+    --project-root, the operations package's files on the host, comes first, before the command.
+    """
+    if '--project-root' in argv:
+        index = argv.index('--project-root')
+        argv = argv[index:index + 2] + argv[:index] + argv[index + 2:]
+    else:
+        argv = ['--project-root', str(dr_target.bundle()), *argv]
     out, err = io.StringIO(), io.StringIO()
     with redirect_stdout(out), redirect_stderr(err):
         code = cli.main(argv)
@@ -38,7 +47,7 @@ class ReplicateWorkloadTests(unittest.TestCase):
         cases = (
             (['primary', '--node-address', '192.0.2.10'], 'configure_primary', (KEYCLOAK, '192.0.2.10'), 'changed'),
             (['rebuild-primary-check'], 'rebuild_primary_check', (KEYCLOAK,), 'changed'),
-            (['quarantined'], 'require_quarantined_group', (), 'changed'),
+            (['quarantined'], 'require_quarantined_group', (apps.registry(),), 'changed'),
             (['slot'], 'standby_slot', (KEYCLOAK,), 'slot'),
             (['replication-path', '--primary-address', '192.0.2.10'], 'replication_path',
              (KEYCLOAK, '192.0.2.10'), 'path'),
@@ -56,24 +65,24 @@ class ReplicateWorkloadTests(unittest.TestCase):
 
     def test_streaming_passes_rebuilt_and_slot(self):
         with patch.object(cli.replication, 'streaming_status', return_value='streaming') as called:
-            code, output, _ = run(['replicate-workload', 'streaming', '--rebuilt', '--slot', 's1'])
+            code, output, _ = run(['replicate-workload', '--app', 'todo', 'streaming', '--rebuilt', '--slot', 's1'])
         self.assertEqual((code, output), (0, {'changed': False, 'status': 'streaming'}))
-        called.assert_called_once_with(apps.APPS[0].database, rebuilt=True, slot='s1')
+        called.assert_called_once_with(apps.registry().apps[0].database, rebuilt=True, slot='s1')
 
     def test_hba_refreshes_only_on_a_primary(self):
         with patch.object(cli.replication, 'require_primary', side_effect=RuntimeError('not a primary')), \
                 patch.object(cli.replication, 'refresh_hba') as refresh:
-            code, _, error = run(['replicate-workload', 'hba'])
+            code, _, error = run(['replicate-workload', '--app', 'todo', 'hba'])
         self.assertEqual(code, 1)
         self.assertIn('app-dr-host: not a primary', error)
         refresh.assert_not_called()
         with patch.object(cli.replication, 'require_primary'), \
                 patch.object(cli.replication, 'refresh_hba', return_value=True):
-            self.assertEqual(run(['replicate-workload', 'hba'])[:2], (0, {'changed': True}))
+            self.assertEqual(run(['replicate-workload', '--app', 'todo', 'hba'])[:2], (0, {'changed': True}))
 
     def test_drop_slot_needs_a_slot(self):
         with patch.object(cli.replication, 'drop_idle_slot') as drop:
-            code, _, error = run(['replicate-workload', 'drop-slot'])
+            code, _, error = run(['replicate-workload', '--app', 'todo', 'drop-slot'])
         self.assertEqual(code, 1)
         self.assertIn('drop-slot needs --slot', error)
         drop.assert_not_called()
@@ -82,12 +91,12 @@ class ReplicateWorkloadTests(unittest.TestCase):
         with patch.object(cli, 'target', return_value=FILES) as target, \
                 patch.object(cli.replication, 'bootstrap_standby', return_value=True) as bootstrap, \
                 patch.object(cli.target_render, 'write_record') as record:
-            code, output, _ = run(['replicate-workload', 'standby', '--node-address', '192.0.2.11',
+            code, output, _ = run(['replicate-workload', '--app', 'todo', 'standby', '--node-address', '192.0.2.11',
                                    '--primary-address', '192.0.2.10', '--slot', 's1',
                                    '--quadlet-dir', '/q', '--target-values', '{"TARGET_IDENTITY_HOSTNAME": "x"}'])
         self.assertEqual((code, output), (0, {'changed': True}))
         self.assertEqual(target.call_args.args[1], '192.0.2.11')
-        self.assertEqual(bootstrap.call_args.args, (apps.APPS[0].database, '192.0.2.10'))
+        self.assertEqual(bootstrap.call_args.args, (apps.registry().apps[0].database, '192.0.2.10'))
         self.assertEqual(bootstrap.call_args.kwargs['slot'], 's1')
         self.assertEqual(bootstrap.call_args.kwargs['kube_runtime_dir'], Path('/q/platform-kube-runtime'))
         self.assertIs(bootstrap.call_args.kwargs['target'], FILES)
@@ -97,13 +106,13 @@ class ReplicateWorkloadTests(unittest.TestCase):
         for option in (['--slot', 's1'], ['--image-archive', '/a.tar']):
             with self.subTest(option[0]), patch.object(cli, 'target', return_value=FILES), \
                     patch.object(cli.replication, 'reseed_check') as check:
-                code, _, error = run(['replicate-workload', 'reseed-check', *option])
+                code, _, error = run(['replicate-workload', '--app', 'todo', 'reseed-check', *option])
                 self.assertEqual(code, 1)
                 self.assertIn('registered rebuild slot', error)
                 check.assert_not_called()
         with patch.object(cli, 'target', return_value=FILES), \
                 patch.object(cli.replication, 'reseed_check', return_value=False) as check:
-            code, output, _ = run(['replicate-workload', 'reseed-check', '--primary-address', '192.0.2.10',
+            code, output, _ = run(['replicate-workload', '--app', 'todo', 'reseed-check', '--primary-address', '192.0.2.10',
                                    '--confirm-fenced', 'fenced', '--confirm-reseed', 'todo-primary'])
         self.assertEqual((code, output), (0, {'changed': False}))
         self.assertEqual(check.call_args.kwargs['confirm_reseed'], 'todo-primary')
@@ -125,7 +134,7 @@ class GroupCommandTests(unittest.TestCase):
                 called.assert_called_once()
         with patch.object(cli.replication, 'erase_standby_group', return_value=[]) as erase:
             run(['erase-standby', '--primary-address', '192.0.2.10', '--confirm-reseed', 'todo-primary'])
-        erase.assert_called_once_with('192.0.2.10', 'todo-primary')
+        erase.assert_called_once_with(apps.registry(), '192.0.2.10', 'todo-primary')
 
     def test_reseed_group_and_publish_record_the_hostnames(self):
         with patch.object(cli, 'target', return_value=FILES), \

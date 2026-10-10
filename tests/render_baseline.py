@@ -34,10 +34,10 @@ def rendered():
         # Build mode: the Kube YAML render.render writes, and the units an
         # install writes for a host that publishes only on 127.0.0.1.
         identity, port, log_level = render.read_values(_values(environment))
-        manifests = render.files(ROOT, apps.APPS, render.hostnames(apps.APPS), identity, port, log_level)
+        manifests = render.files(ROOT, apps.registry(), render.hostnames(apps.registry()), identity, port, log_level)
         for name, content in manifests.items():
             files[f"build-{environment}/manifests/{name}"] = content
-        for name, content in bundle.quadlets(ROOT, apps.APPS, port, "127.0.0.1").items():
+        for name, content in bundle.quadlets(ROOT, apps.registry(), port, "127.0.0.1").items():
             files[f"build-{environment}/quadlet/{name}"] = content
     # The offline bundle: generated/target and bundle.json, as build-bundle.sh makes them.
     with tempfile.TemporaryDirectory() as directory:

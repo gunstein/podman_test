@@ -38,16 +38,32 @@ def _details(database):
             'standby_slot': database.replication_slot(), 'rebuilt_slot': database.replication_slot(rebuilt=True)}
 
 
+def target_hostnames(entries):
+    """--target-hostname NAME=HOSTNAME options as target values: {TARGET_..._HOSTNAME: hostname}.
+
+    NAME is identity (Keycloak) or an app's name; the bundle's platform
+    decides which names it knows (target_render.load).
+    """
+    values = {}
+    for entry in entries or ():
+        name, separator, hostname = entry.partition('=')
+        if not separator or not name or not hostname:
+            raise ValueError(f'--target-hostname takes NAME=HOSTNAME, not {entry!r}')
+        values[target_render.name_target(name)] = hostname
+    return values
+
+
 def backup_command(args):
     """backup create | nightly | restore; text for the journal, problems as ERROR lines, exit 1 on any."""
+    platform = target_render.installed_platform()
     if args.backup_command == 'create':
-        for database in backup.installed_databases():
+        for database in backup.installed_databases(platform):
             print(f'{database.name}: verified base backup {backup.create(database)}')
         return 0
     if args.backup_command == 'nightly':
         if args.keep_days < 1:
             raise ValueError('--keep-days must keep at least one day')
-        lines, problems = backup.nightly(args.keep_days)
+        lines, problems = backup.nightly(platform, args.keep_days)
         # The same nightly run looks at nginx's certificate (tls_store: secrets or volume).
         tls_lines, tls_problems = tls_check()
         lines, problems = lines + tls_lines, problems + tls_problems
@@ -55,8 +71,8 @@ def backup_command(args):
         for problem in problems:
             print(f'ERROR: {problem}', file=sys.stderr)
         return 1 if problems else 0
-    install.require_single_host('backup restore')
-    restored = backup.restore(args.confirm_restore)
+    install.require_single_host('backup restore', platform)
+    restored = backup.restore(platform, args.confirm_restore)
     for name, chosen in restored.items():
         print(f'{name}: restored {chosen}')
     print(json.dumps({'changed': True}))
@@ -103,7 +119,9 @@ def main(argv=None):
     install, uninstall, down, backup and the tls- commands serve a single host
     (tls-request, tls-install, tls-status and tls-renew touch only nginx's
     TLS files, so they also run on a DR host); replication-apps
-    prints the DR group for the acceptance guide to compare with its table.
+    prints the registry's DR group for the acceptance guide to compare with
+    its table. install takes its platform from the bundle or the registry;
+    the other host commands take the one the host recorded at install.
     The DR tools import the installer's functions instead, and their own
     commands live in app_dr_host (deploy/dr). Each command prints one JSON
     result on stdout (backup prints lines for the journal). Errors print one
@@ -119,10 +137,9 @@ def main(argv=None):
     deploy.add_argument('--refresh-images', action='store_true')
     deploy.add_argument('--publish-address', default='127.0.0.1')
     deploy.add_argument('--service-port', type=int, default=settings.HTTPS_PORT)
-    for name in target_render.HOSTNAMES:  # --target-identity-hostname, --target-todo-hostname, ...
-        option = name.removeprefix('TARGET_').lower().replace('_', '-')
-        deploy.add_argument(f'--target-{option}', dest=name, default=None,
-                            help=f'{option.replace("-", " ")} for an offline bundle (see target_render.py)')
+    deploy.add_argument('--target-hostname', action='append', metavar='NAME=HOSTNAME',
+                        help='a public hostname for an offline bundle: NAME is identity (Keycloak) or an app '
+                             'of the bundle; repeat it for each (see target_render.py)')
     registry = subcommands.add_parser('replication-apps')
     registry.add_argument('--details', action='store_true')
     remove = subcommands.add_parser('uninstall')
@@ -153,25 +170,27 @@ def main(argv=None):
     oplog.describe(args.command, getattr(args, 'backup_command', None))
     try:
         if args.command == 'replication-apps':
-            print(json.dumps([_details(d) if args.details else d.name for d in apps.REPLICATED_DATABASES]))
+            print(json.dumps([_details(d) if args.details else d.name
+                              for d in apps.registry().replicated_databases]))
         elif args.command == 'install':
             changed = install.install(
                 args.project_root, args.mode, args.deployment_mode, args.bundle_dir, args.refresh_images,
                 args.publish_address, args.service_port, args.quadlet_dir, args.kube_runtime_dir,
-                target_values={name: getattr(args, name) for name in target_render.HOSTNAMES})
+                target_values=target_hostnames(args.target_hostname))
             print(json.dumps({'changed': changed}))
         elif args.command == 'uninstall':
             if args.remove_backups and not args.remove_data:
                 parser.error('--remove-backups needs --remove-data')
-            changed = uninstall.uninstall(args.remove_data, args.quadlet_dir, args.remove_backups)
+            platform = target_render.installed_platform()
+            changed = uninstall.uninstall(platform, args.remove_data, args.quadlet_dir, args.remove_backups)
             if args.remove_backups:
-                print(f'Backup volumes {", ".join(uninstall.BACKUP_VOLUMES)} were removed: '
+                print(f'Backup volumes {", ".join(uninstall.backup_volumes(platform))} were removed: '
                       'nothing of this install can be restored any more.', file=sys.stderr)
             elif args.remove_data:
-                print(f'Backup volumes {", ".join(uninstall.BACKUP_VOLUMES)} were preserved. '
+                print(f'Backup volumes {", ".join(uninstall.backup_volumes(platform))} were preserved. '
                       'Use --remove-backups too to delete them permanently.', file=sys.stderr)
             else:
-                volumes = ', '.join(d.volume('data') for d in apps.REPLICATED_DATABASES)
+                volumes = ', '.join(d.volume('data') for d in platform.replicated_databases)
                 tls_volumes = ', '.join(uninstall.TLS_VOLUMES)
                 print(f'Database volumes {volumes}, TLS volumes {tls_volumes} and database, Keycloak and '
                       'nginx TLS secrets were preserved. Use --remove-data to delete them permanently.',
@@ -182,7 +201,11 @@ def main(argv=None):
         elif args.command.startswith('tls-'):
             return tls_command(args)
         elif args.command == 'down':
-            if not kube_play.down(args.rendered_manifest_dir):
+            try:
+                platform = target_render.installed_platform()
+            except target_render.TargetError:
+                platform = None
+            if platform is None or not kube_play.down(args.rendered_manifest_dir, platform):
                 print('No installed development manifests were found under '
                       f'{args.rendered_manifest_dir}; nothing was torn down.', file=sys.stderr)
     except (OSError, RuntimeError, ValueError, KeyError, *RENDER_ERRORS) as error:

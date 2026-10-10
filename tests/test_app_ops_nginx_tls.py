@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from tests import test_app_ops_commands as commands
-from tests.test_app_ops_commands import World, spec
+from tests.test_app_ops_commands import World, dr_host_command, spec
 
 sys.path.insert(0, "deploy/dr")
 from app_ops import cli, nginx_tls  # noqa: E402
@@ -26,7 +26,7 @@ class TlsWorld(World):
 
     def answer(self, host, command, stdin):
         if command[:1] == ['env'] and 'app_dr_host' in command:
-            sub = command[command.index('app_dr_host') + 1:]
+            sub = dr_host_command(command)
             if sub[0] == 'nginx-tls':
                 if sub[1] == 'request':
                     return (('nginx-tls', 'request'), json.dumps(

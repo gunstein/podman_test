@@ -3,19 +3,26 @@ import json
 import time
 from pathlib import Path
 
-from app_installer import apps, settings, target_render
+from app_installer import settings, target_render
 
 from . import trust
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-GROUP = apps.REPLICATED_DATABASES
-
 # A backstop for one app_dr_host step on a host. Each command inside it has
 # its own limit (settings.COMMAND_TIMEOUT and the longer ones), so this only
 # catches a step that hangs outside them. Copying databases takes longer.
 STEP_TIMEOUT = 2 * 3600
-COPY_STEP_TIMEOUT = len(GROUP) * settings.DATA_COPY_TIMEOUT + STEP_TIMEOUT
+
+
+def platform(project_root):
+    """The platform of the operations package app-ops runs from: its bundle.json's."""
+    return target_render.bundle_platform(project_root)
+
+
+def copy_step_timeout(group):
+    """The backstop for a step that copies every database of the group."""
+    return len(group) * settings.DATA_COPY_TIMEOUT + STEP_TIMEOUT
 
 
 def paths(host):
@@ -50,10 +57,14 @@ def installed_pythonpath(host):
 
 
 def app_dr_host(host, pythonpath, *arguments, input=None, allowed=(0,), timeout=STEP_TIMEOUT):
-    """Run python3 -m app_dr_host with the given arguments on host, using pythonpath."""
+    """Run python3 -m app_dr_host with the given arguments on host, using pythonpath.
+
+    Its --project-root is where stage_target_files put the package's files on
+    that host: app_dr_host reads the platform from the bundle.json there.
+    """
     return host.run(['env', f'PYTHONPATH={pythonpath}', 'PYTHONDONTWRITEBYTECODE=1',
-                     'python3', '-m', 'app_dr_host', *arguments], input=input, allowed=allowed,
-                    timeout=timeout)
+                     'python3', '-m', 'app_dr_host', '--project-root', paths(host)['target'], *arguments],
+                    input=input, allowed=allowed, timeout=timeout)
 
 
 def changed(result):
@@ -112,16 +123,16 @@ def stage_target_files(project_root, controller, host):
 def group_paths(host):
     """The directory options app_dr_host needs for the staged files on host."""
     p = paths(host)
-    return ['--project-root', p['target'], '--quadlet-dir', p['quadlet'], '--kube-runtime-dir', p['runtime']]
+    return ['--quadlet-dir', p['quadlet'], '--kube-runtime-dir', p['runtime']]
 
 
-def target_values(host, pythonpath, project_root):
+def target_values(host, pythonpath):
     """The public hostnames host serves, {TARGET_...: hostname}, as JSON text: recorded, else the defaults.
 
     app-ops passes them on (--target-values) to the host that becomes its
     standby, so both serve the same names.
     """
-    result = app_dr_host(host, pythonpath, 'target-values', '--project-root', str(project_root))
+    result = app_dr_host(host, pythonpath, 'target-values')
     return json.dumps(json.loads(result.stdout)['values'], sort_keys=True)
 
 

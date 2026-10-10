@@ -398,3 +398,25 @@ and what to do.
   Also noted: setup roles and migrations assume Python modules (phase 5
   contract), checksum and shell preflight run only in `install.sh`, and
   the proxy entrypoint tests need a writable `/tmp`.
+
+**Phase 2, code done; understandability check pending.**
+- `apps.Platform` (apps in start order, Keycloak's default hostname) answers
+  the DR group, workloads and services; `apps.registry()` is the only list
+  of apps in the code, used by build and dev mode, `replication-apps`, the
+  image export and the lab tool (until phase 3b).
+- Where a running tool gets its platform: a bundle or operations package
+  from its `bundle.json` (format version 6); a host from its record
+  `~/.config/platform/platform.json`, written before an install or a DR step
+  changes anything; app-ops from its own package. `app_dr_host` takes
+  `--project-root` before the command and reads the staged `bundle.json`;
+  app-ops now stages it on every host it runs `app_dr_host` on.
+- Every function that acts on an installation takes the platform; no
+  module-level app lists and no defaults that bind one remain. Two
+  platforms in one process are tested.
+- Offline hostnames: `--target-hostname NAME=HOSTNAME` (NAME `identity` or an
+  app of the bundle) replaces `--target-<app>-hostname`, so the CLI no longer
+  needs the apps in advance; `install.sh` passes it on.
+- Smaller changes on the way: a replication server certificate names only
+  its own database container; `preflight_rebuild` checks the confirmations
+  before it stages anything; a missing record or an unknown app is a clear
+  error. The render baseline changes only in `bundle.json`.

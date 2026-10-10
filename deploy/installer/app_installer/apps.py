@@ -260,24 +260,3 @@ def registry(identity_hostname=IDENTITY_HOSTNAME):
         App(name="todo", hostname="todo.test", keycloak_client="todo-frontend", api_collection="todos"),
         App(name="notes", hostname="notes.test", keycloak_client="notes-frontend", replication_port=5433),
     ), identity_hostname=identity_hostname)
-
-
-# Until every caller takes a Platform (docs/PLATFORM-PLAN.md, phase 2), the
-# old module-level names come from registry().
-APPS = registry().apps
-REPLICATED_DATABASES = registry().replicated_databases
-
-
-def workloads(applications=None):
-    return Platform(apps=tuple(APPS if applications is None else applications),
-                    identity_hostname=IDENTITY_HOSTNAME).workloads()
-
-
-def serving_workloads(applications=None):
-    return Platform(apps=tuple(APPS if applications is None else applications),
-                    identity_hostname=IDENTITY_HOSTNAME).serving_workloads()
-
-
-def services(applications=None, *, databases=True):
-    return Platform(apps=tuple(APPS if applications is None else applications),
-                    identity_hostname=IDENTITY_HOSTNAME).services(databases=databases)

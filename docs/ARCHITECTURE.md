@@ -98,10 +98,10 @@ into the packages' `generated/target/`, or by build mode into
 one `.kube` unit and generated user service:
 `shared-proxy.service`, `todo-app.service`, `notes-app.service`,
 `keycloak.service`, `todo-postgres.service`, `notes-postgres.service`,
-`keycloak-postgres.service`. `apps.workloads()` is the one table of them,
+`keycloak-postgres.service`. `Platform.workloads()` (`apps.py`) is the one table of them,
 in start order (each database, Keycloak's database, Keycloak, the apps,
-nginx), with each pod's Kube YAML and ConfigMap files; `apps.services()`
-returns the services in stop order, the reverse, and `apps.serving_workloads()`
+nginx), with each pod's Kube YAML and ConfigMap files; `Platform.services()`
+returns the services in stop order, the reverse, and `Platform.serving_workloads()`
 the serving tier without the databases. The installer, development mode,
 uninstall and the DR tools (the promoted host's start, a rebuilt standby's
 removed files, the restart around WAL archiving) take their order from it, and
@@ -339,7 +339,7 @@ Do not disable SELinux or fapolicyd to repair application failures.
 ## 10. Availability and disaster recovery
 
 The DR flow covers one group of three databases: Todo, Notes and Keycloak
-(`apps.REPLICATED_DATABASES`). Bootstrap, promotion, backup, rebuild and status
+(`Platform.replicated_databases`). Bootstrap, promotion, backup, rebuild and status
 always act on the complete group; app-ops refuses a partial application
 override. Each database has its own replication port, slot, replication
 credential, WAL archive and backup volume. Promotion first checks every

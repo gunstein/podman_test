@@ -44,21 +44,18 @@ def read_values(values_file):
     return hostname, port, log_level
 
 
-def selection(application_names=()):
-    """The registered apps by name, all of them if none are named; unknown names are an error."""
-    selected = tuple(app for app in apps.APPS if not application_names or app.name in application_names)
-    if not selected or set(application_names) - {app.name for app in apps.APPS}:
-        raise ValueError('Unknown or empty application selection')
-    return selected
+def platform(values_file, application_names=()):
+    """The platform a build renders: the registry's apps (the named ones, or all), Keycloak's hostname from values."""
+    return apps.registry(read_values(values_file)[0]).select(application_names)
 
 
-def hostnames(selected):
-    """Each app's public hostname from the registry: {app name: hostname}."""
-    return {app.name: app.hostname for app in selected}
+def hostnames(platform):
+    """Each app's default public hostname: {app name: hostname}."""
+    return {app.name: app.hostname for app in platform.apps}
 
 
-def files(project_root, selected, hostnames, identity_hostname, port, log_level):
-    """Every Kube YAML file of the selected apps, Keycloak and the proxy: {file name: bytes}, checked.
+def files(project_root, platform, hostnames, identity_hostname, port, log_level):
+    """Every Kube YAML file of the platform's apps, Keycloak and the proxy: {file name: bytes}, checked.
 
     hostnames maps each app's name to its public hostname, and
     identity_hostname is Keycloak's, the OIDC issuer's; for an offline
@@ -68,7 +65,7 @@ def files(project_root, selected, hostnames, identity_hostname, port, log_level)
     root = Path(project_root)
     hostname = identity_hostname
     result = {}
-    for app in selected:
+    for app in platform.apps:
         result[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
         result[app.config_manifest] = (manifests.render_postgres_config(root, app.database) + b'---\n'
                                        + manifests.render_app_config(root, app, hostname, port, log_level))
@@ -80,7 +77,7 @@ def files(project_root, selected, hostnames, identity_hostname, port, log_level)
         root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_DATABASE.image)
     result[apps.KEYCLOAK_DATABASE.config_manifest] = manifests.render_postgres_config(root, apps.KEYCLOAK_DATABASE)
     result['shared-proxy.yaml'] = manifests.render_shared_proxy(
-        root, selected, hostnames, identity_hostname, port, apps.PROXY_IMAGE)
+        root, platform.apps, hostnames, identity_hostname, port, apps.PROXY_IMAGE)
 
     for name, content in result.items():
         _validate(name, content)
@@ -97,10 +94,10 @@ def render(project_root, values_file, output_directory, application_names=()):
     exactly this render: no file from an earlier render stays behind, and a
     failed render leaves the earlier output as it was.
     """
-    selected = selection(application_names)
-    identity_hostname, port, log_level = read_values(values_file)
-    _replace_directory(Path(output_directory),
-                       files(project_root, selected, hostnames(selected), identity_hostname, port, log_level))
+    selected = platform(values_file, application_names)
+    _identity, port, log_level = read_values(values_file)
+    _replace_directory(Path(output_directory), files(project_root, selected, hostnames(selected),
+                                                     selected.identity_hostname, port, log_level))
 
 
 def _replace_directory(output, files):

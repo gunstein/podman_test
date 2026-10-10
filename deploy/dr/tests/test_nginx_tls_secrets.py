@@ -40,7 +40,7 @@ class NginxTlsSecretTest(unittest.TestCase):
         self.host = SecretHost()
         self.host.__enter__()
         self.addCleanup(self.host.__exit__)
-        self.host.record.parent.mkdir(parents=True)
+        self.host.record.parent.mkdir(parents=True, exist_ok=True)
         self.host.record.write_text(json.dumps(RECORD))
         self.loaded = []
         for target, name, value in (
@@ -113,9 +113,9 @@ class PromotedTests(NginxTlsSecretTest):
         with patch.object(promoted, 'require_identity', lambda *args: None), \
                 patch.object(promoted.target_render, 'load_on_host',
                              return_value=dr_target.load('192.0.2.11', **RECORD)), \
-                patch.object(promoted.replication, 'require_promoted_group', lambda journal: None), \
+                patch.object(promoted.replication, 'require_promoted_group', lambda platform, journal: None), \
                 patch.object(promoted, 'exists', lambda kind, name: True), \
-                patch.object(promoted.images, 'prepare_offline_group', lambda bundle: steps.append('images')), \
+                patch.object(promoted.images, 'prepare_offline_group', lambda bundle, platform: steps.append('images')), \
                 patch.object(promoted, 'install_workloads', lambda *args: steps.append('workloads')
                              or (_ for _ in ()).throw(RuntimeError('stop after the workloads'))):
             promoted.deploy(project_root=dr_target.bundle(), quadlet_dir=self.directory / 'systemd',
@@ -150,7 +150,12 @@ class PromotedTests(NginxTlsSecretTest):
 class CommandTests(NginxTlsSecretTest):
     def main(self, *argv):
         with patch('sys.stdout') as stdout, patch('sys.stderr'):
-            code = cli.main(list(argv))
+            # --project-root comes before the command: the test's own, else this repository's bundle.
+            argv = list(argv)
+            root = argv[argv.index('--project-root') + 1] if '--project-root' in argv else str(dr_target.bundle())
+            if '--project-root' in argv:
+                del argv[argv.index('--project-root'):argv.index('--project-root') + 2]
+            code = cli.main(['--project-root', root, *argv])
         return code, ''.join(call.args[0] for call in stdout.write.call_args_list)
 
     def test_request_install_and_mode_from_the_command_line(self):

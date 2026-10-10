@@ -90,16 +90,17 @@ def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
 
 def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                      publish_address="", db_password=None, *,
-                     database: stack.Database = apps.APPS[0].database, target=None):
+                     database: stack.Database, target=None):
     """Install one database's PostgreSQL workload.
 
-    publish_address publishes the replication port on the LAN; only
-    databases in the DR group may do that. With target, the bundle's
+    publish_address publishes the replication port on the LAN; only a
+    database in the DR group of the bundle's platform may do that, so it
+    needs target. With target, the bundle's
     replicated unit publishes on the target's own publish address, so
     publish_address must be that address. db_password supplies the owner
     password directly instead of reading it from Podman.
     """
-    if publish_address and database not in apps.REPLICATED_DATABASES:
+    if publish_address and (target is None or database not in target.platform.replicated_databases):
         raise ValueError("Replication publication requires membership in the verified DR group.")
     if publish_address and target is not None and publish_address != target.values["TARGET_PUBLISH_ADDRESS"]:
         raise ValueError(f"The bundle's units publish on {target.values['TARGET_PUBLISH_ADDRESS']}, "
@@ -117,7 +118,7 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
 
 def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                         publish_address="127.0.0.1", service_port=settings.HTTPS_PORT, *,
-                        app: apps.App = apps.APPS[0], target=None):
+                        app: apps.App, target=None):
     """Install one app's pod (migration, backend and frontend)."""
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
@@ -137,8 +138,8 @@ def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
 
 
 def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-                         publish_address="127.0.0.1", service_port=settings.HTTPS_PORT,
-                         applications=None, *, target=None):
+                         publish_address="127.0.0.1", service_port=settings.HTTPS_PORT, *,
+                         applications, target=None):
     """Install the shared nginx proxy, published on publish_address:service_port.
 
     It always also listens on 127.0.0.1, so a wildcard address such as
@@ -153,7 +154,6 @@ def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_m
             f"publish_address must not be a wildcard address ({publish_address!r}); "
             "it would collide with the fixed 127.0.0.1 binding. Use the host's own address."
         )
-    applications = apps.APPS if applications is None else applications
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         manifests=("shared-proxy.yaml",), units=("shared-proxy.kube",),

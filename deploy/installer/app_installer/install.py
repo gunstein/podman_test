@@ -16,12 +16,15 @@ from . import (
 )
 from .commands import exists, run
 
-LEGACY = tuple(app.names.resource(component) for app in apps.APPS
-               for component in ('postgres', 'db-setup', 'migrate', 'db-grants', 'backend', 'frontend')) + (
-                   'todo-keycloak', 'keycloak')
+
+def legacy_units(platform):
+    """The per-container Quadlet units the retired implementation installed for these apps."""
+    return tuple(app.names.resource(component) for app in platform.apps
+                 for component in ('postgres', 'db-setup', 'migrate', 'db-grants', 'backend', 'frontend')) + (
+                     'todo-keycloak', 'keycloak')
 
 
-def preflight(quadlet_dir):
+def preflight(quadlet_dir, platform):
     """Refuse a host this installer does not support, before anything changes.
 
     Requires podman kube play --no-pod-prefix, which keeps container names
@@ -30,14 +33,14 @@ def preflight(quadlet_dir):
     """
     if '--no-pod-prefix' not in run('podman', 'kube', 'play', '--help').stdout:
         raise RuntimeError('This installer requires the Podman kube play --no-pod-prefix option.')
-    if any((Path(quadlet_dir) / (name + '.container')).exists() for name in LEGACY):
+    if any((Path(quadlet_dir) / (name + '.container')).exists() for name in legacy_units(platform)):
         raise RuntimeError(
             'Unsupported per-container Quadlets are installed. Stop and review the host '
             'separately; clean deploy requires a Kube-compatible baseline and does not '
             'migrate or remove existing runtime state.')
 
 
-def require_single_host(action):
+def require_single_host(action, platform):
     """Refuse a host with replication, promotion or backup state; it is a DR node.
 
     The single-host installer and uninstaller do not know about DR. Rerunning
@@ -49,7 +52,7 @@ def require_single_host(action):
                settings.TOOLS_BIN / 'app_dr.py', settings.TOOLS_BIN / 'app_backup.py',
                # Names installed before the tools were renamed still mark a clustered host.
                settings.TOOLS_BIN / 'todo_dr.py', settings.TOOLS_BIN / 'todo_backup.py')
-    if any(exists('secret', d.secret('replicator')) for d in apps.REPLICATED_DATABASES) or any(
+    if any(exists('secret', d.secret('replicator')) for d in platform.replicated_databases) or any(
             path.exists() for path in markers):
         raise RuntimeError(
             f'{action} only supports a single-host deployment. This host contains '
@@ -57,7 +60,7 @@ def require_single_host(action):
             'use the DR tools and runbooks instead (docs/ACCEPTANCE.md, deploy/dr).')
 
 
-def setup_roles(app: apps.App = apps.APPS[0]):
+def setup_roles(app):
     """Run the app's setup_roles.py once, in a throwaway container on app-network.
 
     It logs in as the database owner and creates the migrator and app roles
@@ -74,52 +77,58 @@ def setup_roles(app: apps.App = apps.APPS[0]):
         app.image('backend'), 'python', '-m', 'backend.setup_roles')
 
 
-def offline_files(applications):
-    """The Kube YAML files and units an offline install of these apps writes, as two sets of names."""
-    selected = apps.workloads(applications)
+def offline_files(platform):
+    """The Kube YAML files and units an offline install of this platform writes, as two sets of names."""
+    selected = platform.workloads()
     return {name for workload in selected for name in workload.manifests}, {workload.unit for workload in selected}
 
 
-def load_target(bundle_directory, applications, publish_address, service_port, target_values):
+def load_target(bundle_directory, platform, publish_address, service_port, target_values):
     """Read and fill in the offline bundle's files, and check that they fit this install.
 
     Runs before anything on the host changes: a missing or invalid target
-    value, an older bundle or a bundle for other apps or another port stops
-    the install here.
+    value, an older bundle, a bundle for another platform than the one asked
+    for (platform, None for the bundle's own) or another port stops the
+    install here.
     """
     target = target_render.load(bundle_directory, {**(target_values or {}),
                                                    target_render.PUBLISH_ADDRESS: publish_address},
                                 recorded=target_render.read_record())
-    if target.applications != tuple(app.name for app in applications):
-        raise ValueError(f'The bundle was built for {", ".join(target.applications)}; '
-                         'an offline install installs exactly those apps.')
+    if platform is not None and platform != target.platform:
+        raise ValueError(f'The bundle was built for {", ".join(app.name for app in target.platform.apps)}; '
+                         'an offline install installs exactly its own platform.')
     if service_port != target.public_port:
         raise ValueError(f'The bundle was built for HTTPS port {target.public_port}, not {service_port}.')
-    manifests, units = offline_files(applications)
+    manifests, units = offline_files(target.platform)
     missing = sorted((manifests - set(target.manifests)) | (units - set(target.quadlets)))
     if missing:
         raise ValueError('The bundle lacks ' + ', '.join(missing))
     return target
 
 
-def public_hostnames(project_root, mode, target, applications):
+def build_platform(project_root, mode):
+    """The platform build and dev mode install: the registry's, Keycloak's hostname from the mode's values.yaml.
+
+    render needs PyYAML, which those modes have.
+    """
+    from . import render
+    profile = 'local' if mode == 'dev' else 'prod'
+    return render.platform(Path(project_root) / f'deploy/environments/{profile}/values.yaml')
+
+
+def public_hostnames(platform, target):
     """Each app's public hostname and Keycloak's: ({app name: hostname}, Keycloak's hostname).
 
-    From the offline bundle's target values, else from the app registry and
-    the environment's values.yaml, which build and dev mode render with
-    (render needs PyYAML, which those modes have).
+    From the offline bundle's target values, else the platform's defaults.
     """
     if target is not None:
         return target.hostnames, target.identity_hostname
-    from . import render
-    profile = 'local' if mode == 'dev' else 'prod'
-    identity = render.read_values(Path(project_root) / f'deploy/environments/{profile}/values.yaml')[0]
-    return render.hostnames(applications), identity
+    return {app.name: app.hostname for app in platform.apps}, platform.identity_hostname
 
 
-def clients(applications, hostnames):
+def clients(platform, hostnames):
     """Each app's Keycloak client and the hostname it is served on."""
-    return [(app.keycloak_client, hostnames[app.name]) for app in applications]
+    return [(app.keycloak_client, hostnames[app.name]) for app in platform.apps]
 
 
 def _contents(path):
@@ -128,13 +137,15 @@ def _contents(path):
 
 
 def check(project_root, mode, deployment_mode, bundle_directory, refresh_images, publish_address,
-          service_port, quadlet_dir, kube_runtime_dir, applications, target_values):
-    """Everything install checks before anything changes; return (root, quadlet dir, runtime dir, target).
+          service_port, quadlet_dir, kube_runtime_dir, platform, target_values):
+    """Everything install checks before anything changes; return (platform, root, quadlet dir, runtime dir, target).
 
     The arguments must fit together, an offline bundle must load with its
-    target values and fit these apps and port, the host must not be a DR
-    node or carry the old per-container units, and Podman must answer.
-    target is the bundle's files filled in, or None in build mode.
+    target values and fit this port (and platform, if one is given), the
+    host must not be a DR node or carry the old per-container units, and
+    Podman must answer. platform is the one to install: the bundle's, else
+    the one given, else build_platform's. target is the bundle's files
+    filled in, or None in build mode.
     """
     if mode not in ('dev', 'server'):
         raise ValueError('mode must be dev or server')
@@ -146,49 +157,51 @@ def check(project_root, mode, deployment_mode, bundle_directory, refresh_images,
     if deployment_mode == 'offline':
         if mode != 'server':
             raise ValueError('An offline bundle installs in server mode only.')
-        target = load_target(bundle_directory, applications, publish_address, service_port, target_values)
+        target = load_target(bundle_directory, platform, publish_address, service_port, target_values)
     elif target_values and any(target_values.values()):
         raise ValueError('Target values only apply to an offline bundle (--deployment-mode offline).')
-    require_single_host('install')
     root = Path(project_root).resolve()
+    platform = target.platform if target is not None else platform or build_platform(root, mode)
+    require_single_host('install', platform)
     directory = Path(quadlet_dir or settings.QUADLET_DIR).resolve()
     runtime = Path(kube_runtime_dir or directory / settings.KUBE_RUNTIME).resolve()
     if mode == 'server' and runtime != directory / settings.KUBE_RUNTIME:
         raise ValueError(f'kube_runtime_dir must be quadlet_dir/{settings.KUBE_RUNTIME}')
-    preflight(directory)
+    preflight(directory, platform)
     run('podman', '--version')
-    return root, directory, runtime, target
+    return platform, root, directory, runtime, target
 
 
-def prepare(root, mode, deployment_mode, bundle_directory, refresh_images, applications, target):
-    """Render (build mode), passwords, images and nginx's TLS secrets; return what the next steps need.
+def prepare(root, mode, deployment_mode, bundle_directory, refresh_images, platform, target):
+    """Record the platform, render (build mode), passwords, images and nginx's TLS secrets.
 
     Returns (rendered, image_changes, shared_images, hostnames, identity, tls_changed):
     the directory of the rendered Kube YAML (None offline), each app's and
     the shared images' changes from images.prepare, each app's public
     hostname, Keycloak's, and whether nginx's TLS secret changed.
     """
+    # Before anything on the host changes: what this host may now hold, for uninstall and the DR tools.
+    target_render.record_platform(platform)
     # An offline install takes its files from the bundle (target); the others render here.
     rendered = None if deployment_mode == 'offline' else root / 'generated' / ('dev' if mode == 'dev' else 'kube-runtime')
     if deployment_mode == 'build':
         profile = 'local' if mode == 'dev' else 'prod'
-        selection = [','.join(app.name for app in applications)] if tuple(applications) != apps.APPS else []
-        run(root / 'deploy/scripts/render-kube-runtime.sh',
-            root / f'deploy/environments/{profile}/values.yaml', rendered, *selection)
-    secrets.provision(applications)
+        run(root / 'deploy/scripts/render-kube-runtime.sh', root / f'deploy/environments/{profile}/values.yaml',
+            rendered, ','.join(app.name for app in platform.apps))
+    secrets.provision(platform)
     image_changes = {}
-    for app in applications:
+    for app in platform.apps:
         image_changes[app.name] = images.prepare(
             root, deployment_mode, bundle_directory, refresh_images, app=app, include_shared=False)
     shared_images = images.prepare_shared(root, deployment_mode, bundle_directory, refresh_images)
-    hostnames, identity = public_hostnames(root, mode, target, applications)
+    hostnames, identity = public_hostnames(platform, target)
     # nginx's TLS files as Podman secrets, before nginx starts (tls_secrets);
     # with the TLS volume, the shared-proxy pod's init container makes them.
     tls_changed = tls_store.secret_storage() and tls_secrets.provision(tls_secrets.ordered(hostnames, identity))
     return rendered, image_changes, shared_images, hostnames, identity, tls_changed
 
 
-def write_definitions(root, directory, runtime, rendered, applications, publish_address, service_port,
+def write_definitions(root, directory, runtime, rendered, platform, publish_address, service_port,
                       target, image_changes, shared_images, tls_changed):
     """Write every workload's Kube YAML and unit; return (changed, the pods that must restart).
 
@@ -205,9 +218,9 @@ def write_definitions(root, directory, runtime, rendered, applications, publish_
     # An app's ConfigMap file (OIDC issuer, log level) is shared with its database
     # pod, whose install writes it first; install_application then finds it
     # unchanged. So compare it with what was installed before this run.
-    configs_before = {app.name: _contents(runtime / app.config_manifest) for app in applications}
+    configs_before = {app.name: _contents(runtime / app.config_manifest) for app in platform.apps}
     restart = set()
-    for app in applications:
+    for app in platform.apps:
         postgres_changed = workloads.install_postgres(*arguments, database=app.database, target=target)
         changed = postgres_changed or changed
         if postgres_changed or postgres_image_changed:
@@ -229,24 +242,24 @@ def write_definitions(root, directory, runtime, rendered, applications, publish_
     if keycloak_changed or shared_images['keycloak']:
         restart.add('keycloak')
     proxy_changed = workloads.install_shared_proxy(
-        *arguments, publish_address, service_port, applications=applications, target=target)
+        *arguments, publish_address, service_port, applications=platform.apps, target=target)
     changed = proxy_changed or changed
     if proxy_changed or shared_images['proxy'] or tls_changed:
         restart.add('shared-proxy')
     return changed, restart
 
 
-def start_in_order(applications, restart):
+def start_in_order(platform, restart):
     """Stop the pods in restart, last-started first, then start every workload in order.
 
     Roles are set up once an app's database is healthy, and again after the
     app started, so the tables its migrations created get their grants.
     """
-    selected = apps.workloads(applications)
+    selected = platform.workloads()
     for workload in reversed(selected):
         if workload.pod in restart:
             quadlet.systemctl('stop', workload.service)
-    roles = {pod: app for app in applications for pod in (app.database.container, app.pod)}
+    roles = {pod: app for app in platform.apps for pod in (app.database.container, app.pod)}
     for workload in selected:
         quadlet.systemctl('start', workload.service)
         if workload.wait_healthy:
@@ -255,20 +268,20 @@ def start_in_order(applications, restart):
             setup_roles(roles[workload.pod])
 
 
-def finish(applications, runtime, target, hostnames, identity):
+def finish(platform, runtime, target, hostnames, identity):
     """Configure Keycloak, check every unit's SourcePath, record the hostnames, turn the backup on.
 
     Returns (Keycloak changed, backup timer changed).
     """
-    configured = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(applications, hostnames))
-    for workload in apps.workloads(applications):
+    configured = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(platform, hostnames))
+    for workload in platform.workloads():
         source = quadlet.systemctl('show', workload.service, '--property=SourcePath', '--value').stdout.strip()
         if source != str(runtime / workload.unit):
             raise RuntimeError(f'Unexpected SourcePath for {workload.pod}: {source}')
     # The hostnames this host now serves, for the next install, tls.py and the DR tools.
     target_render.write_record(target.values if target is not None else
                                {target_render.IDENTITY_HOSTNAME: identity,
-                                **{target_render.hostname_target(app): hostnames[app.name] for app in applications}})
+                                **{target_render.hostname_target(app): hostnames[app.name] for app in platform.apps}})
     # Every server install backs itself up every night, so a single host can at
     # least go back to last night (backup.py).
     backups_changed = backup.install_timer(Path(__file__).resolve().parents[1])
@@ -277,9 +290,12 @@ def finish(applications, runtime, target, hostnames, identity):
 
 def install(project_root, mode='server', deployment_mode='build', bundle_directory='',
             refresh_images=False, publish_address='127.0.0.1', service_port=settings.HTTPS_PORT,
-            quadlet_dir=None, kube_runtime_dir=None, applications=None, target_values=None):
+            quadlet_dir=None, kube_runtime_dir=None, platform=None, target_values=None):
     """Install or update the whole single-host stack. Safe to run again.
 
+    platform is what to install: by default an offline bundle's own, or in
+    build and dev mode the registry's (build_platform). The host records it
+    first (target_render.record_platform).
     Steps: check the host, render the Kube YAML (build mode) or use the
     bundle's (offline mode), create missing passwords, build or load
     images, give nginx its TLS files as Podman secrets (tls_secrets, when
@@ -304,26 +320,25 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
 
     Returns True if anything changed.
     """
-    applications = apps.APPS if applications is None else tuple(applications)
-    root, directory, runtime, target = check(
+    platform, root, directory, runtime, target = check(
         project_root, mode, deployment_mode, bundle_directory, refresh_images, publish_address,
-        service_port, quadlet_dir, kube_runtime_dir, applications, target_values)
+        service_port, quadlet_dir, kube_runtime_dir, platform, target_values)
     rendered, image_changes, shared_images, hostnames, identity, tls_changed = prepare(
-        root, mode, deployment_mode, bundle_directory, refresh_images, applications, target)
+        root, mode, deployment_mode, bundle_directory, refresh_images, platform, target)
     images_changed = any(shared_images.values()) or any(
         any(changes.values()) for changes in image_changes.values())
     if mode == 'dev':
         from .kube_play import up
-        for app in applications:
+        for app in platform.apps:
             secrets.create_kube(secrets.postgres_secret_mapping(app.database))
             secrets.create_kube(secrets.application_secret_mapping(app))
         secrets.create_kube(secrets.postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
         secrets.create_kube(secrets.keycloak_secret_mapping())
-        changed = up(rendered, applications, settings.DEV_STATE_FILE, images_changed or tls_changed)
-        configured = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(applications, hostnames))
+        changed = up(rendered, platform, settings.DEV_STATE_FILE, images_changed or tls_changed)
+        configured = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(platform, hostnames))
         return changed or configured or tls_changed
-    changed, restart = write_definitions(root, directory, runtime, rendered, applications, publish_address,
+    changed, restart = write_definitions(root, directory, runtime, rendered, platform, publish_address,
                                          service_port, target, image_changes, shared_images, tls_changed)
-    start_in_order(applications, restart)
-    configured, backups_changed = finish(applications, runtime, target, hostnames, identity)
+    start_in_order(platform, restart)
+    configured, backups_changed = finish(platform, runtime, target, hostnames, identity)
     return changed or images_changed or tls_changed or configured or backups_changed

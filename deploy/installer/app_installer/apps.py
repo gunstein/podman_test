@@ -71,7 +71,7 @@ class App:
     Platform.replicated_databases. has_login: its users log in at the shared
     Keycloak with the OAuth client keycloak_client ("" without login).
     ready is the HTTP path that answers 200 once the app can serve ("" for
-    none: it is ready when it runs), checks the requests (Check) that must
+    none: nothing waits for it beyond its started unit), checks the requests (Check) that must
     answer as declared after an install and a DR promotion (checks.py).
     Build an App with keyword arguments only (tests/test_apps.py checks it):
     the string fields are easy to mix up, and the hosts' Python 3.9 has no

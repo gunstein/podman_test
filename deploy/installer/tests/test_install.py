@@ -151,6 +151,19 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(started, ['wiki-postgres.service', 'wiki-app.service', 'shared-proxy.service'])
         self.assertEqual(roles, [wiki, wiki])
 
+    def test_an_app_that_cannot_be_installed_yet_is_refused_before_the_host_records_it(self):
+        help_ = apps.App(name='help', hostname='help.test', has_database=False, replication_port=0)
+        wiki = apps.App(name='wiki', hostname='wiki.test', keycloak_client='wiki-frontend', replication_port=5441)
+        for platform, message in (
+                (apps.Platform(apps=(help_,), identity_hostname='auth.test'), 'help needs database: true'),
+                (apps.Platform(apps=(wiki,), identity_hostname='auth.test'), 'deploy/quadlet/wiki-app.kube.j2')):
+            with self.subTest(message=message), tempfile.TemporaryDirectory() as temp, \
+                    FakeHost(unit_directory=Path(temp) / 'quadlet/platform-kube-runtime') as host:
+                with self.assertRaisesRegex(ValueError, message):
+                    install.install(ROOT, quadlet_dir=Path(temp) / 'quadlet', platform=platform)
+                self.assertEqual(host.calls, [])
+                self.assertEqual(json.loads(host.platform_record.read_text()), host.platform.to_json())
+
     def test_source_path_must_be_the_expected_workload_unit(self):
         for source in ('/tmp/todo-app.container', '/tmp/todo-app.kube',
                        '/tmp/platform-kube-runtime/unrelated.kube'):

@@ -67,6 +67,7 @@ def build(project_root, environment_name, bundle_directory, application_names=()
     root, bundle = Path(project_root), Path(bundle_directory)
     platform, environment = platform_file.load(root / platform_file.FILE, environment_name)
     platform = platform.select(application_names)
+    render.require_supported(root, platform)
     port, log_level = environment.public_port, environment.log_level
     normal = render.hostnames(platform)
     manifest_files = render.files(root, platform,

@@ -698,4 +698,34 @@ start order (`requires`) comes with the generated units in 4d.
 - Not yet: a check compares the status only, so the old "the public read
   returns a list" is now "answers 200". Setup tasks (5.4 item 3) come with
   phase 5, start order with 4d.
+- Understandability check of phases 4b and 4c (fresh agent, at bfdff46):
+  **YELLOW**. Install's five steps, `checks.py` and the model's
+  `database_apps`, `login_apps` and `has_identity` were easy to follow, and
+  the YAML errors name the file and field. The friction is the gap between
+  what the model can describe and what today's pod and unit templates can
+  install. Its findings and what was done:
+  1. An app the shared pod template cannot run (no database or login), or
+     without its own unit templates, was refused only while rendering,
+     after the host had recorded the platform: fixed,
+     `render.require_supported` names what is missing, and `install.check`
+     and `bundle.build` call it before anything is written (tested: no command,
+     record unchanged).
+  2. Each app's `.kube` units are copied templates: phase 4d generates them.
+  3. An app without `ready` was said to be "ready when it runs", which
+     `checks.py` does not check: fixed in the docstrings, which now say
+     nothing waits for it beyond its started unit (`wait-ready.sh` checks
+     the containers). A container check per app comes with pod templates
+     (5.9).
+  4. A check followed redirects, so a 302 to a login page counted as 200:
+     fixed, `checks.status` does not follow redirects (tested with a real
+     302).
+  5. With a `/` route, `ready` or a check could name `/auth/...`, which
+     nginx sends to Keycloak: fixed, both are refused like a route under
+     `/auth`.
+  Also: `finish` no longer says a check "may need login" (a check sends no
+  token). Noted: a check compares only the status, so it cannot prove a
+  path is the app's own (a `/` route matches any path); and a host's
+  recorded platform has no version of its own, which matters once a field
+  is added after an installation (no backward compatibility so far, as
+  decided).
 

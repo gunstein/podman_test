@@ -15,12 +15,14 @@ HELP = apps.App(name='help', hostname='help.test', has_database=False, replicati
 
 
 class Answers(http.server.BaseHTTPRequestHandler):
-    """200 for shop.test/ready, 503 for its /api/items, 404 for anything else."""
+    """200 for shop.test/ready, 503 for its /api/items, 302 to /ready for /old, 404 for anything else."""
 
     def do_GET(self):
-        code = {('shop.test', '/ready'): 200, ('shop.test', '/api/items'): 503}.get(
+        code = {('shop.test', '/ready'): 200, ('shop.test', '/api/items'): 503, ('shop.test', '/old'): 302}.get(
             (self.headers['Host'], self.path), 404)
         self.send_response(code)
+        if code == 302:
+            self.send_header('Location', '/ready')
         self.end_headers()
 
     def log_message(self, *args):
@@ -37,6 +39,8 @@ class CheckTests(unittest.TestCase):
             self.assertEqual(checks.status('/ready', 'shop.test'), 200)
             self.assertEqual(checks.status('/api/items', 'shop.test'), 503)
             self.assertEqual(checks.status('/ready', 'other.test'), 404)
+            # A redirect is the check's answer; it is not followed to the page it names.
+            self.assertEqual(checks.status('/old', 'shop.test'), 302)
         with patch.object(checks, 'BASE', 'http://127.0.0.1:1'):
             self.assertIsNone(checks.status('/ready', 'shop.test'))
 

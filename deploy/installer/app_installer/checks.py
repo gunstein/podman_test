@@ -5,21 +5,31 @@ app can serve; the platform waits for it after a start. checks are GET
 requests with the status each must answer, run once the app is ready:
 after an install and after a DR promotion, when Keycloak is already set up.
 Both go through nginx on 127.0.0.1 with the app's hostname as the Host
-header, so they also prove the route. Standard library only.
+header, so they also prove the route. They send no token or cookie, and a
+redirect is not followed: a check sees the status of its own path (a 302
+to a login page is 302). Standard library only.
 """
 import time
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from . import settings
 
 BASE = f'http://127.0.0.1:{settings.LOCAL_HTTP_PORT}'
 
 
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, *args):
+        return None  # urllib then raises HTTPError with the 3xx status
+
+
+_OPENER = build_opener(_NoRedirect)
+
+
 def status(path, hostname):
     """The HTTP status of GET path on hostname's virtual host, or None if nothing answered."""
     try:
-        with urlopen(Request(BASE + path, headers={'Host': hostname}), timeout=30) as response:
+        with _OPENER.open(Request(BASE + path, headers={'Host': hostname}), timeout=30) as response:
             return response.status
     except HTTPError as error:
         return error.code
@@ -28,7 +38,11 @@ def status(path, hostname):
 
 
 def wait_ready(app, hostname, attempts=30, delay=1):
-    """Wait until app's ready path answers 200 on hostname; an app without one is ready when it runs."""
+    """Wait until app's ready path answers 200 on hostname.
+
+    An app without a ready path is not waited for here: its unit has
+    started, and wait-ready.sh checks its containers.
+    """
     if not app.ready:
         return
     for attempt in range(attempts):

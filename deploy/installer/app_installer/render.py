@@ -22,6 +22,35 @@ def hostnames(platform):
     return {app.name: app.hostname for app in platform.apps}
 
 
+def require_shared_template(platform):
+    """Raise unless the one shared app pod template (app.yaml.j2) can run every app.
+
+    It runs a migration and an OIDC backend, so an app needs database: true
+    and a keycloakClient until apps bring pod templates of their own (4f).
+    """
+    for app in platform.apps:
+        if not (app.has_database and app.has_login):
+            raise ValueError(f'The app {app.name} needs database: true and a keycloakClient: the shared app pod '
+                             'template is the only one so far, and it uses both')
+
+
+def require_supported(project_root, platform):
+    """Raise unless every app of platform can be rendered and installed today, naming what is missing.
+
+    The shared pod template must fit it (require_shared_template), and each
+    app's two Quadlet units are still templates of their own (phase 4d
+    generates them). install.check and bundle.build call this before
+    anything is written.
+    """
+    require_shared_template(platform)
+    quadlet = Path(project_root) / 'deploy/quadlet'
+    for app in platform.apps:
+        for unit in (app.unit, app.database.unit):
+            if not (quadlet / (unit + '.j2')).is_file():
+                raise ValueError(f'The app {app.name} has no unit template deploy/quadlet/{unit}.j2 '
+                                 '(each app still needs its own until phase 4d)')
+
+
 def files(project_root, platform, hostnames, identity_hostname, port, log_level):
     """Every Kube YAML file of the platform's apps, Keycloak and the proxy: {file name: bytes}, checked.
 
@@ -31,13 +60,10 @@ def files(project_root, platform, hostnames, identity_hostname, port, log_level)
     the files are otherwise the same.
     """
     root = Path(project_root)
+    require_shared_template(platform)
     hostname = identity_hostname
     result = {}
     for app in platform.apps:
-        if not (app.has_database and app.has_login):
-            # The one shared app pod template (app.yaml.j2) runs a migration and an OIDC backend.
-            raise ValueError(f'The app {app.name} needs database: true and a keycloakClient: the shared app pod '
-                             'template is the only one so far, and it uses both')
         result[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
         result[app.config_manifest] = (manifests.render_postgres_config(root, app.database) + b'---\n'
                                        + manifests.render_app_config(root, app, hostname, port, log_level))

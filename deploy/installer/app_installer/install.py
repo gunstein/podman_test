@@ -185,6 +185,8 @@ def check(project_root, mode, deployment_mode, bundle_directory, refresh_images,
     if target is None:
         configured, environment = build_settings(root, mode, service_port)
         platform, port = platform or configured, environment.public_port
+        from . import render  # Jinja2 and PyYAML: build mode only
+        render.require_supported(root, platform)
     else:
         platform, port = target.platform, target.public_port
     require_single_host('install', platform)
@@ -297,8 +299,8 @@ def finish(platform, runtime, target, hostnames, identity):
     turn the backup on.
 
     Each app is checked (checks.verify: ready, then its checks) after
-    Keycloak is set up, so a check may need login. Returns (Keycloak
-    changed, backup timer changed).
+    Keycloak is set up, so identity setup never waits for an app. A check
+    sends no token or cookie. Returns (Keycloak changed, backup timer changed).
     """
     configured = configure_identity(platform, hostnames)
     checks.verify(platform, hostnames)

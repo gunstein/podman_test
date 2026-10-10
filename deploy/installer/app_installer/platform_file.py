@@ -169,9 +169,11 @@ def _routes(data, path, endpoints):
 
 
 def _routed(location, where, routes):
-    """location checked as a path one of routes sends on (a request nginx would otherwise refuse)."""
+    """location checked as a path one of routes sends to the app (nginx sends /auth to Keycloak)."""
     if not isinstance(location, str) or not PATH.fullmatch(location):
         raise ValueError(f'{where}: must be a path such as /ready, not {location!r}')
+    if location == IDENTITY_PATH or location.startswith(IDENTITY_PATH + '/'):
+        raise ValueError(f'{where}: {location} is the platform\'s: {IDENTITY_PATH}/ goes to Keycloak')
     if not any(location == route.path if route.exact else location.startswith(route.path) for route in routes):
         raise ValueError(f'{where}: no route of the app matches {location}')
     return location

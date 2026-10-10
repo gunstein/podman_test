@@ -224,6 +224,8 @@ class PlatformFileTests(unittest.TestCase):
             ({'ready': 'ready'}, r'app.yaml: ready: must be a path'),
             ({'ready': '/ready/now', 'routes': routes}, r'ready: no route of the app matches /ready/now'),
             ({'ready': '/', 'routes': routes}, r'ready: no route of the app matches /'),
+            ({'ready': '/auth/realms/x'}, r"ready: /auth/realms/x is the platform's"),
+            ({'checks': [{'path': '/auth', 'status': 200}]}, r"checks\[0\].path: /auth is the platform's"),
             ({'checks': []}, r'checks must be a list'),
             ({'checks': [{'path': '/', 'status': 99}]}, r'checks\[0\].status: must be an HTTP status'),
             ({'checks': [{'path': '/', 'status': '200'}]}, r'checks\[0\].status: must be an HTTP status'),

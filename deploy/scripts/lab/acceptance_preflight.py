@@ -125,6 +125,8 @@ def check_local(report, args):
     report.check(bool(runtime) and Path(runtime).is_dir(), 'XDG_RUNTIME_DIR for the tmpfs password file', runtime)
     with socket.socket() as probe:
         try:
+            # Only a listener holds it; connections in TIME_WAIT do not (as in preflight.sh).
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind(('127.0.0.1', 8080))
             free = True
         except OSError:

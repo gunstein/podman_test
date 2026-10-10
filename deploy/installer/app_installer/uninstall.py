@@ -1,8 +1,6 @@
 """Single-host uninstall, retaining DR refusal and opt-in database removal."""
 import shutil
-import socket
 import sys
-import time
 from pathlib import Path
 
 from . import apps, backup, install, secrets, settings, target_render, tls_secrets
@@ -20,11 +18,6 @@ OLD_IMAGE = 'localhost/todo-keycloak:m12'
 # podman kube play makes a named volume of each ConfigMap it mounts as files, as
 # of each secret (secrets.remove_kube_volumes); it is configuration, made again at every play.
 CONFIG_VOLUMES = ('shared-nginx-config',)
-# nginx's ports on 127.0.0.1, which its unit always publishes. Podman's port
-# forwarder can hold one for a moment after the pod is gone; an install right
-# after an uninstall (preflight.sh) must find them free, so uninstall waits.
-PROXY_PORTS = (settings.LOCAL_HTTP_PORT, settings.HTTPS_PORT)
-PORT_WAIT_SECONDS = 30
 
 
 def backup_volumes(platform):
@@ -60,28 +53,6 @@ def secret_names(platform):
                                 *tls_secrets.secret_names()]))
 
 
-def held_ports(ports):
-    """The ports something holds on 127.0.0.1, found the way preflight.sh does: by binding them."""
-    held = []
-    for port in ports:
-        with socket.socket() as probe:
-            try:
-                probe.bind(('127.0.0.1', port))
-            except OSError:
-                held.append(port)
-    return held
-
-
-def wait_for_ports(ports, seconds=PORT_WAIT_SECONDS):
-    """Wait until the ports are free, at most seconds; return the ones still held."""
-    deadline = time.monotonic() + seconds
-    held = held_ports(ports)
-    while held and time.monotonic() < deadline:
-        time.sleep(1)
-        held = held_ports(held)
-    return held
-
-
 def remove(kind, name):
     """Remove the Podman object if it exists; True if it did."""
     if exists(kind, name):
@@ -107,8 +78,7 @@ def uninstall(platform, remove_data=False, quadlet_dir=None, remove_backups=Fals
     reinstalling keeps the data and passwords. The Kube secrets' volumes
     always go (secrets.remove_kube_volumes), and so does an old
     per-container install (old_quadlet_files). The host's record of the
-    platform goes with the data. When nginx was there, it returns once its
-    ports are free again (wait_for_ports). Returns True if anything was removed.
+    platform goes with the data. Returns True if anything was removed.
     """
     if remove_backups and not remove_data:
         raise ValueError('Removing the backups needs remove_data too: a backup without its data is no use.')
@@ -130,7 +100,6 @@ def uninstall(platform, remove_data=False, quadlet_dir=None, remove_backups=Fals
     systemctl('daemon-reload')
     # Direct kube play has no systemd owner to remove its pods/infra containers.
     # Pod removal does not request volume deletion; PVCs follow remove_data below.
-    proxy = exists('pod', 'shared-proxy') or exists('container', 'nginx')
     for name in (workload.pod for workload in reversed(platform.workloads())):
         changed = exists('pod', name) or changed
         run('podman', 'pod', 'rm', '--force', '--ignore', name)
@@ -138,10 +107,6 @@ def uninstall(platform, remove_data=False, quadlet_dir=None, remove_backups=Fals
     for name in (*install.legacy_units(platform), 'nginx'):
         changed = exists('container', name) or changed
         run('podman', 'rm', '--force', '--ignore', name)
-    held = wait_for_ports(PROXY_PORTS) if proxy else []
-    if held:
-        print(f'Port {", ".join(map(str, held))} on 127.0.0.1 is still held {PORT_WAIT_SECONDS} seconds '
-              'after nginx was removed; an install checks it first (preflight.sh).', file=sys.stderr)
     changed = remove('network', apps.NETWORK) or changed
     changed = remove('network', OLD_NETWORK) or changed
     for name in CONFIG_VOLUMES:

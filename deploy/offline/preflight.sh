@@ -84,6 +84,8 @@ done
 if ! PLATFORM_ALLOWED_PORTS="$allowed_ports" python3 - <<'PY'
 import os
 import socket
+import subprocess
+import sys
 
 allowed = {
     int(port)
@@ -95,6 +97,10 @@ failed = []
 for port in (5432, 5433, 5434, 8080, 8443):
     sock = socket.socket()
     try:
+        # Only a listener counts: SO_REUSEADDR lets the bind pass over connections
+        # in TIME_WAIT, which an install's own checks leave for a minute after an
+        # uninstall; nginx and Podman bind with it too.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(("127.0.0.1", port))
     except OSError:
         if port not in allowed:
@@ -103,6 +109,14 @@ for port in (5432, 5433, 5434, 8080, 8443):
         sock.close()
 
 if failed:
+    # What listens there, as far as this user may see (ss shows other users' sockets without the process).
+    for port in failed:
+        try:
+            listening = subprocess.run(["ss", "-Hltnp", "sport = :%d" % port], capture_output=True,
+                                       text=True, check=False).stdout.strip()
+        except OSError:
+            listening = ""
+        print("INFO: port %d: %s" % (port, listening or "ss shows no listener now"), file=sys.stderr)
     raise SystemExit(
         "ERROR: localhost ports already in use by an unexpected process: "
         + ", ".join(map(str, failed))

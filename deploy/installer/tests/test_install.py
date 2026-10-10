@@ -351,32 +351,6 @@ class UninstallTests(unittest.TestCase):
         patcher = patch.object(settings, 'SYSTEMD_USER_DIR', self.units)
         patcher.start()
         self.addCleanup(patcher.stop)
-        # nginx's ports are free here, whatever holds them on the machine running the tests.
-        patcher = patch('app_installer.uninstall.held_ports', return_value=[])
-        self.held_ports = patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def test_waits_until_nginx_ports_are_released(self):
-        # Podman's port forwarder can hold a port a moment after the pod is gone.
-        self.held_ports.side_effect = [[8080, 8443], [8080], []]
-        with patch('app_installer.uninstall.time.sleep') as sleep:
-            self.assertEqual(uninstall.wait_for_ports((8080, 8443)), [])
-        self.assertEqual(sleep.call_count, 2)
-        self.assertEqual(self.held_ports.call_args.args, ([8080],))
-
-    def test_gives_up_on_a_held_port_and_says_so(self):
-        self.held_ports.return_value = [8080]
-        self.assertEqual(uninstall.wait_for_ports((8080, 8443), seconds=0), [8080])
-        with tempfile.TemporaryDirectory() as temp, \
-                patch('app_installer.install.exists', return_value=False), \
-                patch('app_installer.uninstall.exists', return_value=True), \
-                patch('app_installer.uninstall.wait_for_ports', return_value=[8080]) as wait, \
-                patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')), \
-                patch.object(settings, 'DEV_STATE_FILE', Path(temp) / 'dev.json'), \
-                contextlib.redirect_stderr(io.StringIO()) as error:
-            uninstall.uninstall(apps.registry(), quadlet_dir=Path(temp))
-        wait.assert_called_once_with(uninstall.PROXY_PORTS)
-        self.assertIn('Port 8080 on 127.0.0.1 is still held', error.getvalue())
 
     def test_refuses_dr_secret_before_any_mutation(self):
         with patch('app_installer.install.exists', return_value=True), \

@@ -43,15 +43,19 @@ class ProxyConfigurationTests(unittest.TestCase):
         for directive in ("default-src 'self'", "script-src 'self'", "frame-ancestors 'none'",
                           "object-src 'none'"):
             self.assertIn(directive, csp)
-        # Notes logs in at Keycloak's canonical origin; nothing else may be reached.
+        # Every app logs in at Keycloak's own origin; nothing else may be reached.
         connect = re.search(r"connect-src ([^;]+);", csp).group(1).split()
         self.assertEqual(connect[0], "'self'")
         self.assertEqual(len(connect), 2)
         self.assertRegex(connect[1], r"^https://[a-z0-9.-]+:\d+$")
         self.assertNotIn("unsafe-inline", csp)
         self.assertNotIn("unsafe-eval", csp)
-        servers = config["nginx.conf"].split("server {")[1:]
+        identity, *servers = config["nginx.conf"].split("server {")[1:]
         self.assertEqual(len(servers), 2)
+        # Keycloak's own server: shared headers, /auth/ to Keycloak, nothing else.
+        self.assertIn("include /etc/platform-nginx/security-headers.conf;", identity.split("location")[0])
+        self.assertEqual(set(dict(re.findall(r"location ([^{]+)\{([^}]*)\}", identity))), {"/auth/ ", "/ "})
+        self.assertNotIn("app-headers.conf", identity)
         for server in servers:
             self.assertIn("include /etc/platform-nginx/security-headers.conf;", server.split("location")[0])
             locations = dict(re.findall(r"location ([^{]+)\{([^}]*)\}", server))
@@ -120,18 +124,22 @@ class ProxyConfigurationTests(unittest.TestCase):
         for line in ("#~ kind: PersistentVolumeClaim", "#~   initContainers:",
                      "#~         claimName: platform-nginx-data"):
             self.assertIn(line, template)
-        # Following the steps at the top gives the template before the secrets, apart from its comments.
+        # Following the steps at the top gives the template before the secrets, apart from its comments,
+        # in what the TLS storage decides: the volume claim (first) and the pod (last). The ConfigMaps
+        # between them, nginx.conf among them, have changed since for other reasons.
         before = subprocess.run(["git", "show", "8d0e699:deploy/manifests/shared-proxy.yaml.j2"], cwd=ROOT,
                                 capture_output=True, text=True, check=False)
         if before.returncode == 0:
-            def code(text):
-                return [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+            def storage_parts(text):
+                documents = text.split("\n---\n")
+                return [[line for line in document.splitlines() if not line.lstrip().startswith("#")]
+                        for document in (documents[0], documents[-1])]
             # The shared names have carried the platform- prefix since (docs/PLATFORM-PLAN.md, phase 1).
             renamed = before.stdout
             for old, new in (("todo-nginx", "platform-nginx"), ("todo-tls", "platform-tls"),
                              ("todo-proxy", "platform-proxy"), ("TODO_TLS_", "PLATFORM_TLS_")):
                 renamed = renamed.replace(old, new)
-            self.assertEqual(code(volume_manifest(template)), code(renamed))
+            self.assertEqual(storage_parts(volume_manifest(template)), storage_parts(renamed))
         docs = list(yaml.safe_load_all(volume_manifest((RUNTIME / "shared-proxy.yaml").read_text())))
         self.assertEqual([doc["kind"] for doc in docs], ["PersistentVolumeClaim", "ConfigMap", "ConfigMap", "Pod"])
         self.assertEqual(docs[-1]["spec"]["initContainers"][0]["name"], "nginx-tls")
@@ -145,15 +153,15 @@ class ProxyConfigurationTests(unittest.TestCase):
         proxy_config = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
 
         from app_installer import apps
-        self.assertEqual(apps.IDENTITY_APP.hostname, 'todo.test')
+        self.assertEqual(apps.IDENTITY_HOSTNAME, 'auth.test')
         self.assertIn("'--service-port', str(settings.HTTPS_PORT)", read("deploy/dr/app_ops/recovery.py"))
         self.assertIn(
-            "PublishPort={{ todo_publish_address }}:"
-            "{{ todo_service_port }}:8443",
+            "PublishPort={{ publish_address }}:"
+            "{{ service_port }}:8443",
             template,
         )
-        self.assertIn('OIDC_ISSUER: "https://todo.test:8443/auth/realms/todo"', config)
-        self.assertIn('KC_HOSTNAME: "https://todo.test:8443/auth"',
+        self.assertIn('OIDC_ISSUER: "https://auth.test:8443/auth/realms/todo"', config)
+        self.assertIn('KC_HOSTNAME: "https://auth.test:8443/auth"',
                       read(RUNTIME / 'keycloak.yaml'))
         self.assertIn("name: shared-nginx-env", proxy_config)
 

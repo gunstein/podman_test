@@ -39,6 +39,6 @@ trap cleanup EXIT
 # needs the real demo CA, exported fresh so a rebuilt CA is picked up too.
 podman exec nginx cat /var/lib/platform-tls/ca.crt > "$ca_file"
 
-E2E_BASE_URL=https://localhost:8443 E2E_NOTES_URL=https://notes.test:8443 \
+E2E_BASE_URL=https://todo.test:8443 E2E_NOTES_URL=https://notes.test:8443 \
   E2E_MULTI_APP=1 E2E_CA_FILE="$ca_file" E2E_IGNORE_HTTPS_ERRORS=true \
   "$python" -m pytest "$project_root/e2e" --browser chromium

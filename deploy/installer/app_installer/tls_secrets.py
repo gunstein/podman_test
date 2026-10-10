@@ -274,8 +274,8 @@ def provision(hostnames=None):
 
     install and deploy-promoted call it before shared-proxy starts, and a
     True result means a running nginx must restart. In local mode it is the
-    volume's init container: a demo CA, and a leaf for hostnames (the
-    identity app's first), each replaced when missing, within 30
+    volume's init container: a demo CA, and a leaf for hostnames
+    (Keycloak's first), each replaced when missing, within 30
     days of its end or no longer fitting. In provided mode it issues
     nothing: the files tls-install put there must all exist.
     """
@@ -299,10 +299,9 @@ def provision(hostnames=None):
     return publish() or changed
 
 
-def ordered(hostnames):
-    """{app name: hostname} as the list provision() takes: the identity app's first, no repeats."""
-    first = hostnames[apps.IDENTITY_APP.name]
-    return [first] + [name for name in dict.fromkeys(hostnames.values()) if name != first]
+def ordered(hostnames, identity):
+    """The list provision() takes: Keycloak's hostname first, then each app's {app name: hostname}, no repeats."""
+    return [identity] + [name for name in dict.fromkeys(hostnames.values()) if name != identity]
 
 
 def make_request(names, new_key_wanted=False):

@@ -22,7 +22,7 @@ kind: ConfigMap
 metadata:
   name: shared-nginx-env
 data:
-  PLATFORM_TLS_HOSTNAME: "todo.test"
+  PLATFORM_TLS_HOSTNAME: "auth.test"
   APP_TLS_HOSTNAMES: "todo.test notes.test"
 ---
 apiVersion: v1
@@ -44,7 +44,7 @@ data:
   # hostname fetches its tokens from there.
   app-headers.conf: |
     include /etc/platform-nginx/security-headers.conf;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://todo.test:8443; frame-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://auth.test:8443; frame-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'" always;
     add_header X-Frame-Options DENY always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
   nginx.conf: |
@@ -73,6 +73,24 @@ data:
         upstream todo_backend { zone todo_backend 64k; server todo-app:8000 resolve; }
         upstream notes_frontend { zone notes_frontend 64k; server notes-app:8080 resolve; }
         upstream notes_backend { zone notes_backend 64k; server notes-app:8000 resolve; }
+        server {
+            listen 8080 default_server;
+            listen 8443 ssl default_server;
+            server_name auth.test;
+            ssl_certificate /var/lib/platform-tls/server.crt;
+            ssl_certificate_key /var/lib/platform-tls/server.key;
+            ssl_protocols TLSv1.2 TLSv1.3;
+            ssl_session_tickets off;
+            include /etc/platform-nginx/security-headers.conf;
+
+            location /auth/ {
+                proxy_pass http://shared_keycloak;
+                include /etc/nginx/platform-proxy-headers.conf;
+            }
+            location / {
+                return 404;
+            }
+        }
         server {
             listen 8080;
             listen 8443 ssl;

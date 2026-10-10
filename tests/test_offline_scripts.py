@@ -142,9 +142,9 @@ class BuildBundleTests(unittest.TestCase):
             loaded = subprocess.run(
                 [sys.executable, "-c", "import sys; from app_installer import target_render; "
                  "files = target_render.load(sys.argv[1], {'TARGET_PUBLISH_ADDRESS': '192.0.2.10'}, {}); "
-                 "print(files.values['TARGET_EXTERNAL_HOSTNAME'], len(files.manifests), len(files.quadlets))",
+                 "print(files.values['TARGET_IDENTITY_HOSTNAME'], len(files.manifests), len(files.quadlets))",
                  str(bundle)],
                 env={"PATH": os.environ["PATH"], "PYTHONPATH": str(bundle / "deploy/installer")},
                 capture_output=True, text=True, check=False)
             self.assertEqual(loaded.returncode, 0, loaded.stderr)
-            self.assertEqual(loaded.stdout.split(), ["todo.test", "10", "7"])
+            self.assertEqual(loaded.stdout.split(), ["auth.test", "10", "7"])

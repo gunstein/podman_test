@@ -25,7 +25,7 @@ def postgres_variables(database, publish_address=""):
 
 def application_variables(publish_address, service_port):
     """The unit template's values for an app pod."""
-    return {"todo_publish_address": publish_address, "todo_service_port": service_port}
+    return {"publish_address": publish_address, "service_port": service_port}
 
 
 # todo's Kube YAML files before every app's got its name's prefix (todo-postgres.yaml,
@@ -36,7 +36,7 @@ RENAMED_MANIFESTS = ("postgres.yaml", "config.yaml", "app.yaml")
 
 def proxy_variables(publish_address, service_port, applications):
     """The unit template's values for nginx: where it publishes HTTPS and the app services it needs."""
-    return {"todo_publish_address": publish_address, "todo_service_port": service_port,
+    return {"publish_address": publish_address, "service_port": service_port,
             "app_services": [app.service for app in applications]}
 
 
@@ -156,7 +156,7 @@ def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_m
     applications = apps.APPS if applications is None else applications
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
-        manifests=("shared-proxy.yaml", apps.PROXY_CONFIG_MANIFEST), units=("shared-proxy.kube",),
+        manifests=("shared-proxy.yaml",), units=("shared-proxy.kube",),
         obsolete=(apps.NGINX_TLS_VOLUME,),
         capability="shared proxy", mapping={},
         variables=proxy_variables(publish_address, service_port, applications), target=target,

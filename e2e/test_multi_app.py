@@ -19,18 +19,19 @@ class SharedIdentityBrowserTests(unittest.TestCase):
     def test_shared_sso_independent_audiences_and_notes_crud(self):
         from playwright.sync_api import expect, sync_playwright
 
+        identity = os.getenv('E2E_IDENTITY_URL', 'https://auth.test:8443')
         todo = os.getenv('E2E_TODO_URL', 'https://todo.test:8443')
         notes = os.getenv('E2E_NOTES_URL', 'https://notes.test:8443')
         username = os.getenv('E2E_USERNAME', 'testuser')
         password = os.environ['E2E_PASSWORD']
         tls = ssl.create_default_context(cafile=os.environ['E2E_CA_FILE'])
         certificates = []
-        for origin in (todo, notes):
+        for origin in (identity, todo, notes):
             url = urlsplit(origin)
             with socket.create_connection((url.hostname, url.port or 443), timeout=10) as connection:
                 with tls.wrap_socket(connection, server_hostname=url.hostname) as secure:
                     certificates.append(hashlib.sha256(secure.getpeercert(binary_form=True)).digest())
-        self.assertEqual(certificates[0], certificates[1], 'Both hosts must serve the same SAN certificate')
+        self.assertEqual(len(set(certificates)), 1, 'Keycloak and both apps must serve the same SAN certificate')
         tokens = {}
 
         def capture(request):
@@ -78,7 +79,8 @@ class SharedIdentityBrowserTests(unittest.TestCase):
                 todo_token, notes_token = (tokens[urlsplit(origin).hostname] for origin in (todo, notes))
                 todo_claims, notes_claims = claims(todo_token), claims(notes_token)
                 self.assertEqual(todo_claims['sub'], notes_claims['sub'])
-                self.assertEqual(todo_claims['iss'], todo + '/auth/realms/todo')
+                # Both apps log in at Keycloak's own hostname.
+                self.assertEqual(todo_claims['iss'], identity + '/auth/realms/todo')
                 self.assertEqual(notes_claims['iss'], todo_claims['iss'])
                 for payload, audience in ((todo_claims, 'todo-frontend'), (notes_claims, 'notes-frontend')):
                     audiences = payload['aud'] if isinstance(payload['aud'], list) else [payload['aud']]

@@ -51,7 +51,7 @@ The connected build machine renders everything with Jinja2 before packaging
 
 | In the bundle | What it is |
 |---|---|
-| `generated/target/manifests/` | Every Kube YAML file, with `${TARGET_EXTERNAL_HOSTNAME}` and `${TARGET_NOTES_HOSTNAME}` where each app's public hostname goes |
+| `generated/target/manifests/` | Every Kube YAML file, with `${TARGET_IDENTITY_HOSTNAME}` where Keycloak's public hostname goes and `${TARGET_TODO_HOSTNAME}` and `${TARGET_NOTES_HOSTNAME}` where each app's goes |
 | `generated/target/quadlet/` | Every `.kube` unit and `app-network.network`; the proxy unit also publishes HTTPS on `${TARGET_PUBLISH_ADDRESS}` |
 | `generated/target/quadlet/local-only/` | The proxy unit for a host that publishes only on 127.0.0.1 |
 | `generated/target/quadlet/replicated/` | The database units of a DR primary, which also publish replication on `${TARGET_PUBLISH_ADDRESS}` |
@@ -90,8 +90,9 @@ sh ./install.sh
 ```
 
 For a separate lab client, use `sh ./install.sh --publish-address 192.168.0.102`;
-add `--target-external-hostname NAME` and `--target-notes-hostname NAME` for
-public hostnames other than the bundle's defaults (see below).
+add `--target-identity-hostname NAME`, `--target-todo-hostname NAME` and
+`--target-notes-hostname NAME` for public hostnames other than the bundle's
+defaults (see below).
 The address must belong to the target VM. The default publishes HTTPS on
 localhost only. Use the same argument on every repeat installation; omitting
 it restores localhost-only publication. Only HTTPS is exposed externally;
@@ -122,11 +123,12 @@ nothing is passed through a shell or expanded from the environment.
 
 | Placeholder | Value | Where it comes from, first match wins | Checked as |
 |---|---|---|---|
-| `${TARGET_EXTERNAL_HOSTNAME}` | The public hostname of the Todo app and of Keycloak: nginx `server_name`, the TLS certificate, the OIDC issuer, `KC_HOSTNAME` and the Keycloak client's redirect URL | `--target-external-hostname`, then the environment variable `TARGET_EXTERNAL_HOSTNAME`, then the host's record, then the bundle's default (`runtime.publicHostname` in the build's `values.yaml`, `todo.test`) | A DNS name: lowercase labels of letters, digits and inner hyphens |
-| `${TARGET_NOTES_HOSTNAME}` | The public hostname of the Notes app: its nginx `server_name`, the TLS certificate and its Keycloak client's redirect URL | `--target-notes-hostname`, then `TARGET_NOTES_HOSTNAME`, then the host's record, then the bundle's default (the app registry's `notes.test`) | As above |
+| `${TARGET_IDENTITY_HOSTNAME}` | The public hostname of Keycloak: its nginx `server_name` (the default server), the TLS certificate's first name, the OIDC issuer and `KC_HOSTNAME`; every app logs in there | `--target-identity-hostname`, then the environment variable `TARGET_IDENTITY_HOSTNAME`, then the host's record, then the bundle's default (`runtime.identityHostname` in the build's `values.yaml`, `auth.test`) | A DNS name: lowercase labels of letters, digits and inner hyphens |
+| `${TARGET_TODO_HOSTNAME}` | The public hostname of the Todo app: its nginx `server_name`, the TLS certificate and its Keycloak client's redirect URL | `--target-todo-hostname`, then `TARGET_TODO_HOSTNAME`, then the host's record, then the bundle's default (the app registry's `todo.test`) | As above |
+| `${TARGET_NOTES_HOSTNAME}` | The public hostname of the Notes app, used as Todo's is | `--target-notes-hostname`, then `TARGET_NOTES_HOSTNAME`, then the host's record, then the bundle's default (the app registry's `notes.test`) | As above |
 | `${TARGET_PUBLISH_ADDRESS}` | The host IPv4 address nginx publishes HTTPS on (and, on a DR primary, PostgreSQL replication) | `--publish-address` (default `127.0.0.1`, which selects the local-only proxy unit); never the environment, a record or a default | A host IPv4 address, not a wildcard, multicast or reserved one |
 
-Every app other than Todo gets its own `${TARGET_<APP>_HOSTNAME}` and
+Every app gets its own `${TARGET_<APP>_HOSTNAME}` and
 `--target-<app>-hostname`, from the app registry (`apps.py`). The machine's own
 hostname or FQDN is never used as a public hostname: the name users reach a
 service by is a decision, not a property of the host. There is no

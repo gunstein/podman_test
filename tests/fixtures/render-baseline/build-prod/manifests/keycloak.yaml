@@ -75,7 +75,7 @@ data:
   KC_DB_USERNAME: "keycloak"
   KC_HTTP_ENABLED: "true"
   KC_HTTP_RELATIVE_PATH: /auth
-  KC_HOSTNAME: "https://todo.test:8443/auth"
+  KC_HOSTNAME: "https://auth.test:8443/auth"
   KC_PROXY_HEADERS: xforwarded
   KC_HEALTH_ENABLED: "true"
   KC_CACHE: ispn

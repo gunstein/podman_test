@@ -101,7 +101,7 @@ from app_installer import apps  # noqa: E402  (the registry of services, read-on
 
 TODO_URL = 'https://todo.test:8443'
 NOTES_URL = 'https://notes.test:8443'
-IDENTITY_ORIGIN = TODO_URL
+IDENTITY_ORIGIN = 'https://auth.test:8443'
 ZONE = 'public'  # the firewalld zone of the lab VMs' LAN interface (ACCEPTANCE.md phase 3)
 CA_PATH = '/var/lib/platform-tls/ca.crt'
 PYTHON = ROOT / 'todo-backend/.venv/bin/python'
@@ -346,7 +346,7 @@ def check_headers(step):
         step.expect(found.get('x-frame-options') == ['DENY'], f'{url}: X-Frame-Options DENY')
         step.expect(found.get('referrer-policy') == ['strict-origin-when-cross-origin'],
                     f'{url}: Referrer-Policy strict-origin-when-cross-origin')
-    url = TODO_URL + '/auth/realms/todo'
+    url = IDENTITY_ORIGIN + '/auth/realms/todo'
     result = step.run(['curl', '--silent', '--show-error', '--head', '--max-time', '10', url])
     step.expect(result.returncode == 0 and 'strict-transport-security' in headers(result.stdout),
                 f'{url}: Strict-Transport-Security')
@@ -1520,16 +1520,17 @@ def client_trust(run_directory, text, address):
         return True
     record.parent.mkdir(exist_ok=True)
     block = re.sub(r'^IP=\S+$', f'IP={address}', guide_block(text, 'trust-serving-ca.sh'), count=1, flags=re.M)
-    print(f'\nclient trust: todo.test and notes.test at {address}, and its CA', flush=True)
+    print(f'\nclient trust: auth.test, todo.test and notes.test at {address}, and its CA', flush=True)
     result = subprocess.run(['bash', '-c', 'set -e\n' + SUDO_NO_PROMPT + block], cwd=ROOT, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     hosts = HOSTS.read_text()
     answered = all(subprocess.run(['curl', '--silent', '--fail', '--max-time', '10', url],
                                   capture_output=True).returncode == 0
                    for url in (f'{TODO_URL}/ready', f'{NOTES_URL}/ready'))
-    passed = result.returncode == 0 and f'{address} todo.test notes.test' in hosts and answered
-    record.write_text(result.stdout + f'\n/etc/hosts maps both names to {address}: '
-                      f'{f"{address} todo.test notes.test" in hosts}\nboth answer over trusted HTTPS: {answered}\n'
+    mapped = f'{address} auth.test todo.test notes.test' in hosts
+    passed = result.returncode == 0 and mapped and answered
+    record.write_text(result.stdout + f'\n/etc/hosts maps the three names to {address}: {mapped}\n'
+                      f'both apps answer over trusted HTTPS: {answered}\n'
                       + ('exit=0' if passed else 'exit=1') + '\n')
     print('\n'.join(line for line in result.stdout.splitlines() if not NOISE.match(line)))
     print(f'client trust for {address}: ' + ('done' if passed else f'FAILED, see {record}'), flush=True)

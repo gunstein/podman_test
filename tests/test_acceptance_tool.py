@@ -21,7 +21,7 @@ OTHER = ":".join(["CD"] * 32)
 APP_HEADERS = ("HTTP/1.1 200 OK\r\nX-Content-Type-Options: nosniff\r\n"
                "Strict-Transport-Security: max-age=31536000\r\n"
                "Content-Security-Policy: default-src 'self'; script-src 'self'; "
-               "connect-src 'self' https://todo.test:8443; frame-ancestors 'none'; object-src 'none'\r\n"
+               "connect-src 'self' https://auth.test:8443; frame-ancestors 'none'; object-src 'none'\r\n"
                "X-Frame-Options: DENY\r\nReferrer-Policy: strict-origin-when-cross-origin\r\n\r\n")
 AUTH_HEADERS = "HTTP/1.1 200 OK\r\nStrict-Transport-Security: max-age=31536000\r\n\r\n"
 
@@ -186,7 +186,7 @@ class CheckTests(ToolTest):
     def test_headers_pass_and_a_wrong_connect_src_fails(self):
         good = [("/auth/", (0, AUTH_HEADERS)), ("curl", (0, APP_HEADERS))]
         self.assertEqual(self.tool("--step", "03-3", "check", "headers", rules=good)[0], 0)
-        wrong = [("/auth/", (0, AUTH_HEADERS)), ("curl", (0, APP_HEADERS.replace(" https://todo.test:8443;", ";")))]
+        wrong = [("/auth/", (0, AUTH_HEADERS)), ("curl", (0, APP_HEADERS.replace(" https://auth.test:8443;", ";")))]
         self.assertEqual(self.tool("--step", "03-3", "check", "headers", rules=wrong)[0], 1)
         self.assertIn("FAIL: https://todo.test:8443/: connect-src", self.log(self.record()[-1]))
 

@@ -105,16 +105,16 @@ not in improvised work after the primary has failed.
 ## Verify locally on standby
 
 ```bash
-curl --fail http://127.0.0.1:8080/health
-curl --fail http://127.0.0.1:8080/ready
-curl --fail http://127.0.0.1:8080/api/todos
+curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/health
+curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/ready
+curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/api/todos
 
 curl --fail \
   http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
 ```
 
 The discovery document issuer must be
-`https://todo.test:8443/auth/realms/todo`.
+`https://auth.test:8443/auth/realms/todo`.
 
 The old primary must remain fenced. Rejoining or failing back is a separate
 operation that starts by rebuilding it as a replica of the promoted database.

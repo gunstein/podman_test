@@ -36,7 +36,8 @@ class BuildInstallTests(unittest.TestCase):
                 self.assertEqual(sum(a[:2] == ['podman', 'pull'] for a in calls), 1)
                 self.assertLess(calls.index(render), next(i for i, a in enumerate(calls)
                                                          if a[:2] == ['podman', 'build']))
-                self.assertEqual(recorded, {'TARGET_EXTERNAL_HOSTNAME': 'todo.test', 'TARGET_NOTES_HOSTNAME': 'notes.test'}
+                self.assertEqual(recorded, {'TARGET_IDENTITY_HOSTNAME': 'auth.test', 'TARGET_TODO_HOSTNAME': 'todo.test',
+                                    'TARGET_NOTES_HOSTNAME': 'notes.test'}
                                  if mode == 'server' else None)
 
     def test_a_refresh_pulls_the_shared_postgres_image_once_for_every_app(self):

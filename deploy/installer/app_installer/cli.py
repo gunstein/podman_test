@@ -119,10 +119,10 @@ def main(argv=None):
     deploy.add_argument('--refresh-images', action='store_true')
     deploy.add_argument('--publish-address', default='127.0.0.1')
     deploy.add_argument('--service-port', type=int, default=settings.HTTPS_PORT)
-    for app in apps.APPS:  # --target-external-hostname, --target-notes-hostname
-        option = target_render.hostname_target(app).removeprefix('TARGET_').lower().replace('_', '-')
-        deploy.add_argument(f'--target-{option}', dest=target_render.hostname_target(app), default=None,
-                            help=f'public hostname of {app.name} for an offline bundle (see target_render.py)')
+    for name in target_render.HOSTNAMES:  # --target-identity-hostname, --target-todo-hostname, ...
+        option = name.removeprefix('TARGET_').lower().replace('_', '-')
+        deploy.add_argument(f'--target-{option}', dest=name, default=None,
+                            help=f'{option.replace("-", " ")} for an offline bundle (see target_render.py)')
     registry = subcommands.add_parser('replication-apps')
     registry.add_argument('--details', action='store_true')
     remove = subcommands.add_parser('uninstall')

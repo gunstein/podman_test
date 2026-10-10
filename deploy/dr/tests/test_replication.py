@@ -384,7 +384,7 @@ class PublishPrimariesTests(unittest.TestCase):
                          [('wait', '/ready', app.hostname) for app in apps.APPS])
 
     def test_readiness_asks_for_the_hosts_own_public_hostnames(self):
-        _result, steps = self.publish(False, TARGET_EXTERNAL_HOSTNAME='shop.example.org')
+        _result, steps = self.publish(False, TARGET_TODO_HOSTNAME='shop.example.org')
         self.assertEqual([s for s in steps if s[0] == 'wait'],
                          [('wait', '/ready', 'shop.example.org'), ('wait', '/ready', 'notes.test')])
 

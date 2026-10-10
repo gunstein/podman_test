@@ -116,7 +116,7 @@ systemctl --user is-active \
 podman ps
 podman secret ls
 
-curl --fail http://127.0.0.1:8080/ready
+curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/ready
 ```
 
 All seven services should be active, and the readiness check should succeed.
@@ -134,7 +134,7 @@ This lab setup uses the hostnames `todo.test` and `notes.test`. Add the VM's IP
 to the laptop's `/etc/hosts`:
 
 ```text
-192.168.1.50 todo.test notes.test
+192.168.1.50 auth.test todo.test notes.test
 ```
 
 Then open <https://todo.test:8443>.
@@ -149,7 +149,7 @@ the fetch, fingerprint verification and trust-store update in one step.
 regular Todo user. Create a user in Keycloak afterward to be able to log in
 and change Todos.
 
-The Keycloak admin console is at `https://todo.test:8443/auth/admin/`. Its
+The Keycloak admin console is at `https://auth.test:8443/auth/admin/`. Its
 generated admin password is a Podman secret on the VM; read it only when
 needed, and never into a file or shell history you keep:
 
@@ -179,8 +179,8 @@ A Todo access token must not authorize a Notes write, or vice versa; the two
 frontends use separate token audiences even though the login is shared.
 
 If login loops or fails, inspect discovery at
-`https://todo.test:8443/auth/realms/todo/.well-known/openid-configuration`:
-issuer must be `https://todo.test:8443/auth/realms/todo`. Check the client mapping,
+`https://auth.test:8443/auth/realms/todo/.well-known/openid-configuration`:
+issuer must be `https://auth.test:8443/auth/realms/todo`. Check the client mapping,
 CA trust and user profile; do not disable certificate verification.
 
 On the VM, `podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf` should

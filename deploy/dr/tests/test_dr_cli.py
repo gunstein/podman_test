@@ -18,7 +18,7 @@ from app_dr_host import cli  # noqa: E402
 from app_installer import apps  # noqa: E402
 
 KEYCLOAK = apps.KEYCLOAK_DATABASE
-FILES = SimpleNamespace(values={'TARGET_EXTERNAL_HOSTNAME': 'todo.test'})
+FILES = SimpleNamespace(values={'TARGET_IDENTITY_HOSTNAME': 'todo.test'})
 
 
 def run(argv):
@@ -84,7 +84,7 @@ class ReplicateWorkloadTests(unittest.TestCase):
                 patch.object(cli.target_render, 'write_record') as record:
             code, output, _ = run(['replicate-workload', 'standby', '--node-address', '192.0.2.11',
                                    '--primary-address', '192.0.2.10', '--slot', 's1',
-                                   '--quadlet-dir', '/q', '--target-values', '{"TARGET_EXTERNAL_HOSTNAME": "x"}'])
+                                   '--quadlet-dir', '/q', '--target-values', '{"TARGET_IDENTITY_HOSTNAME": "x"}'])
         self.assertEqual((code, output), (0, {'changed': True}))
         self.assertEqual(target.call_args.args[1], '192.0.2.11')
         self.assertEqual(bootstrap.call_args.args, (apps.APPS[0].database, '192.0.2.10'))

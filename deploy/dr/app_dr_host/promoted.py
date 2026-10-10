@@ -109,7 +109,7 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
     # the proxy image just loaded, before any workload changes.
     nginx_tls.require_for_failover()
     # nginx's TLS files as Podman secrets on this host, before nginx starts.
-    tls_changed = nginx_tls.provision(hostnames)
+    tls_changed = nginx_tls.provision(hostnames, target.identity_hostname)
     workloads_changed = install_workloads(project_root, quadlet_dir, target, node_address, service_port)
     if images_changed or workloads_changed or tls_changed:
         run('systemctl', '--user', 'stop', *apps.services(databases=False), allowed=(0, 5))
@@ -117,7 +117,7 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
         quadlet.systemctl('start', workload.service)
     for app in apps.APPS:
         require_application(app, hostnames[app.name])
-    require_issuer(f'https://{hostnames[apps.IDENTITY_APP.name]}:{service_port}/auth/realms/todo')
+    require_issuer(f'https://{target.identity_hostname}:{service_port}/auth/realms/todo')
     clients_changed = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
                                          install.clients(apps.APPS, hostnames))
     target_render.write_record(target.values)

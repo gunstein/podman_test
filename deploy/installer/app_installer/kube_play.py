@@ -54,8 +54,7 @@ def up(rendered_manifest_dir, applications=None, state_file=None, refresh=False)
     databases = {app.database.container: app for app in applications}
     for workload in selected:
         if workload.pod == 'shared-proxy':
-            # nginx publishes its ports on loopback, and plays without todo-config.yaml (its
-            # unit names it): its own ConfigMaps are in shared-proxy.yaml.
+            # nginx publishes its ports on loopback; its own ConfigMaps are in shared-proxy.yaml.
             play(workload.yaml, ports=(
                 '--publish', f'127.0.0.1:{settings.LOCAL_HTTP_PORT}:{settings.LOCAL_HTTP_PORT}',
                 '--publish', f'127.0.0.1:{settings.HTTPS_PORT}:{settings.HTTPS_PORT}'))

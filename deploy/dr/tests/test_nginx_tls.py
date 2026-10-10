@@ -25,7 +25,7 @@ from app_installer import settings, target_render, tls  # noqa: E402
 from test_tls import REAL_RUN, ROOT, FakePodman, app_ca  # noqa: E402
 from volume_mode import volume_bundle  # noqa: E402
 
-RECORD = {'TARGET_EXTERNAL_HOSTNAME': 'todo.example.test', 'TARGET_NOTES_HOSTNAME': 'notes.example.test'}
+RECORD = {'TARGET_IDENTITY_HOSTNAME': 'todo.example.test', 'TARGET_NOTES_HOSTNAME': 'notes.example.test'}
 NAMES = ['todo.example.test', 'notes.example.test']
 
 

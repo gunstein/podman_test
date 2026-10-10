@@ -46,10 +46,11 @@ without network access, in server mode only:
 ```bash
 python3 -m app_installer install --mode server --deployment-mode offline \
   --bundle-dir /path/to/platform-offline-m12 --publish-address 192.168.0.102 \
-  --target-external-hostname todo.example.org --target-notes-hostname notes.example.org
+  --target-identity-hostname auth.example.org --target-todo-hostname todo.example.org \
+  --target-notes-hostname notes.example.org
 ```
 
-The hostname options are optional, one per app; the host records the names it
+The hostname options are optional: one for Keycloak, one per app. The host records the names it
 installed with (`~/.config/platform/target-values.json`), so a later install keeps
 them. The supported target values, their sources and checks are in
 [the offline README](../offline/README.md#target-values).

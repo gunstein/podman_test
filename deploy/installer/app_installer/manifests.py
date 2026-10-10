@@ -14,7 +14,7 @@ from . import apps
 # shared-proxy.yaml.j2 interpolates hostnames raw into the nginx.conf literal
 # block scalar (plain text, not a YAML value, so | tojson does not apply
 # there). Validate every hostname that reaches it - both the operator-supplied
-# runtime.publicHostname and each App's own registry hostname - so neither can
+# runtime.identityHostname and each App's own registry hostname - so neither can
 # inject an nginx directive or break the surrounding YAML with a stray ';',
 # '#' or newline. The check also requires a real DNS name, so a name such as
 # ".." or "-todo.test" fails here and not later in nginx, TLS or Keycloak.
@@ -78,12 +78,12 @@ def render_keycloak(project_root, database, admin_secret, hostname, port, image)
                    hostname=hostname, port=port, image=image)
 
 
-def render_shared_proxy(project_root, applications, identity_app, hostnames, port, image):
-    """The nginx pod that terminates TLS and routes each hostname to its app.
+def render_shared_proxy(project_root, applications, hostnames, identity_hostname, port, image):
+    """The nginx pod that terminates TLS and routes each hostname to its app, and Keycloak's to Keycloak.
 
-    hostnames maps each app's name to its public hostname; the identity app's
-    is also where Keycloak serves every app's login and tokens, which goes
-    into the CSP. Every hostname is checked before it is written into
+    hostnames maps each app's name to its public hostname; identity_hostname
+    is where Keycloak serves every app's login and tokens, which goes into
+    the CSP. Every hostname is checked before it is written into
     nginx.conf, except a ${TARGET_...} placeholder of an offline bundle: the
     host checks the value that replaces it (target_render.check_hostname)
     before anything is installed.
@@ -94,10 +94,10 @@ def render_shared_proxy(project_root, applications, identity_app, hostnames, por
         "frontend": app.pod + ":8080",
         "backend": app.pod + ":8000",
     } for app in applications]
-    for entry in context:
-        if not entry["hostname"].startswith("${TARGET_"):
-            validate_hostname(entry["hostname"])
-    hostname = hostnames[identity_app.name]
+    for hostname in [identity_hostname] + [entry["hostname"] for entry in context]:
+        if not hostname.startswith("${TARGET_"):
+            validate_hostname(hostname)
+    hostname = identity_hostname
     return _render(project_root, "shared-proxy.yaml.j2", applications=context, hostname=hostname,
                    identity_origin=f"https://{hostname}:{int(port)}", image=image,
                    tls_secret=apps.PROXY_KUBE_TLS_SECRET)

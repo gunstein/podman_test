@@ -40,18 +40,21 @@ shared nginx proxy ── /api/, /health, /ready ──► FastAPI ──► Pos
 The shared nginx proxy selects the application by hostname: `todo.test` or
 `notes.test`. Each host routes `/` to its HTTP-only frontend and `/api/`,
 `/health`, `/ready` to its own FastAPI backend. Both expose shared Keycloak at
-`/auth/`. Reads are public; writes require a valid app-specific access token.
+`/auth/`. Keycloak has a hostname of its own, `auth.test`, nginx's default
+server, which serves only `/auth/`: a request without a known `Host` header
+reaches Keycloak, never an app. Reads are public; writes require a valid app-specific access token.
 Rows are shared rather than owned per user.
 Each app has independent PostgreSQL data, bootstrap, migration and runtime
 identities. Keycloak has its own PostgreSQL pod, `keycloak-postgres`; shared
 login therefore depends on that database, not on Todo's.
 
 Clients reach the profile's HTTPS hostname rather than a pod address.
-Both local and production profiles use `https://todo.test:8443` and
-`https://notes.test:8443`. One SAN certificate covers both hostnames. Map both
-names to the serving host; direct development uses 127.0.0.1. The shared values
-file sets the canonical identity hostname/port, while the App registry supplies
-additional application hostnames.
+Both local and production profiles use `https://auth.test:8443`,
+`https://todo.test:8443` and `https://notes.test:8443`. One SAN certificate
+covers the three hostnames. Map all three names to the serving host; direct
+development uses 127.0.0.1. The values file sets Keycloak's hostname
+(`runtime.identityHostname`) and port, while the App registry supplies each
+application's hostname.
 Port 8080 is published on loopback for
 local checks; remote HTTPS and replication publication are explicit
 deployment choices constrained by host firewalls.
@@ -166,7 +169,7 @@ YAML is rendered into a temporary build directory and packaged. Source checkout
 Quadlets. Tests compare packaged YAML with independent Jinja2 rendering.
 Rendering runs on the build host, not the Oracle Linux target. The offline
 bundle and the operations package carry every Kube YAML file and `.kube` unit
-rendered, with `${TARGET_EXTERNAL_HOSTNAME}`, `${TARGET_NOTES_HOSTNAME}` and
+rendered, with `${TARGET_IDENTITY_HOSTNAME}`, `${TARGET_TODO_HOSTNAME}`, `${TARGET_NOTES_HOSTNAME}` and
 `${TARGET_PUBLISH_ADDRESS}` for the values that vary between hosts, and
 `bundle.json` naming where they are. The single-host install and the DR tools
 fill in those placeholders with the standard library alone
@@ -241,12 +244,13 @@ returning a stale token. Tokens are not deliberately persisted by Todo code.
 
 Backend validation is independent of the frontend adapter: it validates JWT
 signature, issuer and audience using configured JWKS. In production/acceptance,
-both profiles use `https://todo.test:8443/auth/realms/todo`. The realm remains
+both profiles use `https://auth.test:8443/auth/realms/todo`. The realm remains
 `todo`; clients `todo-frontend` and `notes-frontend` have separate audiences,
 redirect URIs and web origins. The installer creates the additional public
 client in existing realms and changes redirect/origin settings only if needed.
-Notes discovers the canonical identity origin so both apps use the same login
-cookie. A Todo token cannot authorize Notes writes, or vice versa.
+Keycloak has its own hostname (`auth.test` by default), nginx's default
+server, which serves only `/auth/`. Each app discovers that canonical identity
+origin through its own `/auth/`, so both apps use the same login cookie. A Todo token cannot authorize Notes writes, or vice versa.
 JWKS can be fetched through the internal Keycloak address without changing
 the profile's public issuer.
 

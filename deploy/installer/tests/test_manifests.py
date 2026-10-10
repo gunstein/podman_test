@@ -68,13 +68,20 @@ class ManifestFunctionTests(unittest.TestCase):
     def test_render_shared_proxy_resolves_the_identity_hostname(self):
         widget, gadget = _app("widget"), _app("gadget")
         docs = list(yaml.safe_load_all(manifests.render_shared_proxy(
-            ROOT, [widget, gadget], widget, {"widget": "shared.test", "gadget": "gadget.test"}, 8443,
+            ROOT, [widget, gadget], {"widget": "widget.test", "gadget": "gadget.test"}, "auth.test", 8443,
             "localhost/platform-proxy:m12")))
         data = next(d["data"] for d in docs if d["metadata"]["name"] == "shared-nginx-config")
-        self.assertIn("server_name shared.test;", data["nginx.conf"])
-        self.assertIn("server_name gadget.test;", data["nginx.conf"])
-        # gadget.test logs in at the identity origin, so its pages may fetch tokens there.
-        self.assertIn("connect-src 'self' https://shared.test:8443;", data["app-headers.conf"])
+        conf = data["nginx.conf"]
+        self.assertIn("server_name widget.test;", conf)
+        self.assertIn("server_name gadget.test;", conf)
+        # Keycloak's own server comes first and is the default: it serves /auth/ and nothing else.
+        identity = conf[conf.index("server {"):conf.index("server_name widget.test;")]
+        self.assertIn("listen 8080 default_server;", identity)
+        self.assertIn("server_name auth.test;", identity)
+        self.assertIn("location /auth/", identity)
+        self.assertNotIn("_backend", identity)
+        # Each app logs in at the identity origin, so its pages may fetch tokens there.
+        self.assertIn("connect-src 'self' https://auth.test:8443;", data["app-headers.conf"])
 
 
 class TemplateSafetyTests(unittest.TestCase):
@@ -108,22 +115,24 @@ class TemplateSafetyTests(unittest.TestCase):
         # shared-proxy.yaml.j2 interpolates hostnames raw into nginx.conf (plain
         # text, not a YAML value), so | tojson can't protect it: unlike the two
         # tests above, an adversarial value here must be rejected outright, not
-        # safely encoded. This is what stops a runtime.publicHostname like
+        # safely encoded. This is what stops a runtime.identityHostname like
         # "evil.test; return 200 pwned" from injecting an nginx directive.
         app = _app()
         for value in self.ADVERSARIAL:
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
-                    manifests.render_shared_proxy(ROOT, [app], app, {app.name: value}, 8443,
+                    manifests.render_shared_proxy(ROOT, [app], {app.name: value}, "auth.test", 8443,
+                                                  "localhost/platform-proxy:m12")
+                with self.assertRaises(ValueError):
+                    manifests.render_shared_proxy(ROOT, [app], {app.name: "app.test"}, value, 8443,
                                                   "localhost/platform-proxy:m12")
 
-    def test_shared_proxy_rejects_an_unsafe_non_identity_app_hostname_too(self):
-        identity, other = _app("identity"), apps.App(
+    def test_shared_proxy_rejects_an_unsafe_second_app_hostname_too(self):
+        first, other = _app("first"), apps.App(
             name="other", hostname="evil.test; return 200 pwned", keycloak_client="other-frontend")
         with self.assertRaises(ValueError):
-            manifests.render_shared_proxy(ROOT, [identity, other], identity,
-                                          {"identity": "identity.test", "other": other.hostname}, 8443,
-                                          "localhost/platform-proxy:m12")
+            manifests.render_shared_proxy(ROOT, [first, other], {"first": "first.test", "other": other.hostname},
+                                          "auth.test", 8443, "localhost/platform-proxy:m12")
 
 
 class StrictUndefinedTests(unittest.TestCase):
@@ -193,18 +202,18 @@ class RenderErrorTests(unittest.TestCase):
             self.assertEqual(sorted(path.name for path in Path(directory).iterdir()), ["output"])
 
     def test_values_file_mistakes_name_the_file_and_the_setting(self):
-        good = {"publicHostname": "todo.test", "publicPort": 8443, "logLevel": "info"}
+        good = {"identityHostname": "todo.test", "publicPort": 8443, "logLevel": "info"}
         cases = [
             ("runtime: [1]\n", "needs a runtime section"),
             ("other: {}\n", "needs a runtime section"),
             ("", "needs a runtime section"),
             ("runtime: [\n", "not valid YAML"),
-            (yaml.safe_dump({"runtime": {"publicHostname": "todo.test"}}),
+            (yaml.safe_dump({"runtime": {"identityHostname": "todo.test"}}),
              "runtime is missing publicPort, logLevel"),
             (yaml.safe_dump({"runtime": {**good, "publicPort": "8443"}}), "publicPort must be a port"),
             (yaml.safe_dump({"runtime": {**good, "publicPort": 70000}}), "publicPort must be a port"),
             (yaml.safe_dump({"runtime": {**good, "publicPort": True}}), "publicPort must be a port"),
-            (yaml.safe_dump({"runtime": {**good, "publicHostname": 7}}), "publicHostname must be"),
+            (yaml.safe_dump({"runtime": {**good, "identityHostname": 7}}), "identityHostname must be"),
             (yaml.safe_dump({"runtime": {**good, "logLevel": ""}}), "logLevel must be"),
         ]
         with tempfile.TemporaryDirectory() as directory:
@@ -231,7 +240,7 @@ class RenderErrorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             values = Path(directory) / "values.yaml"
             values.write_text(yaml.safe_dump({"runtime": {
-                "publicHostname": "evil.test; return 200 pwned", "publicPort": 8443, "logLevel": "info"}}))
+                "identityHostname": "evil.test; return 200 pwned", "publicPort": 8443, "logLevel": "info"}}))
             output = Path(directory) / "output"
             with self.assertRaisesRegex(ValueError, "safe hostname"):
                 render.render(ROOT, values, output)

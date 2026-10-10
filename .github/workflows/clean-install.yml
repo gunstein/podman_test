@@ -167,7 +167,7 @@ jobs:
           command -v certutil >/dev/null || { sudo apt-get update; sudo apt-get install -y libnss3-tools; }
           podman --version
           test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
-          echo '127.0.0.1 todo.test notes.test' | sudo tee -a /etc/hosts
+          echo '127.0.0.1 auth.test todo.test notes.test' | sudo tee -a /etc/hosts
 
       - name: Start the stack with dev-up.sh
         run: deploy/scripts/dev/dev-up.sh

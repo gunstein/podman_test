@@ -123,16 +123,16 @@ def require_ready(volume=apps.NGINX_TLS_VOLUME, image=apps.PROXY_IMAGE):
 
 
 def recorded_hostnames():
-    """The public hostnames this host recorded at install (target-values.json), the shared one first.
+    """The public hostnames this host recorded at install (target-values.json), Keycloak's first.
 
     The first is the certificate's common name. A DR standby runs no nginx,
     but it records the hostnames it will serve after a failover.
     """
-    names = target_render.hostnames(target_render.read_record())
-    if apps.IDENTITY_APP.name not in names:
+    record = target_render.read_record()
+    if target_render.IDENTITY_HOSTNAME not in record:
         raise TlsError(f'{target_render.record_path()} records no public hostnames: install this host first.')
-    owner = names.pop(apps.IDENTITY_APP.name)
-    return [owner] + [name for name in names.values() if name != owner]
+    owner = target_render.identity_hostname(record)
+    return [owner] + [name for name in target_render.hostnames(record).values() if name != owner]
 
 
 def make_request(names, new_key=False, **where):

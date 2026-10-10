@@ -1,4 +1,4 @@
 runtime:
-  publicHostname: todo.test
+  identityHostname: auth.test
   publicPort: 8443
   logLevel: info

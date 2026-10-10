@@ -15,7 +15,7 @@ from app_dr_host import cli, promoted, transfer  # noqa: E402
 from app_installer import apps, target_render  # noqa: E402
 
 CERTIFICATE = '-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----'
-ISSUER = 'https://todo.test:8443/auth/realms/todo'
+ISSUER = 'https://auth.test:8443/auth/realms/todo'
 
 
 class PromotedHost:
@@ -53,7 +53,7 @@ class PromotedHost:
 
     def install(self, name):
         def install(*args, **kwargs):
-            self.steps.append(('install', name, kwargs.get('app', apps.IDENTITY_APP).name))
+            self.steps.append(('install', name, kwargs['app'].name if 'app' in kwargs else None))
             return self.workloads_changed
         return install
 
@@ -91,7 +91,7 @@ class PromotedHost:
             patch.object(promoted.nginx_tls, 'PAIR_MODE', Path(directory) / 'nginx-tls-mode'),
             # nginx's TLS secrets on this host (test_nginx_tls_secrets.py runs the real ones).
             patch.object(promoted.nginx_tls, 'provision',
-                         lambda hostnames: (self.steps.append(('tls', *hostnames.values())), self.tls_changed)[1]),
+                         lambda hostnames, identity: (self.steps.append(('tls', identity, *hostnames.values())), self.tls_changed)[1]),
         ]
 
     @staticmethod
@@ -175,18 +175,18 @@ class PromotedDeployTests(unittest.TestCase):
             self.deploy(host, directory)
             installs = [s[1:] for s in host.steps if s[0] == 'install']
             self.assertEqual(installs, [('application', app.name) for app in apps.APPS]
-                             + [('keycloak', apps.IDENTITY_APP.name),
-                                ('shared-proxy', apps.IDENTITY_APP.name)])
+                             + [('keycloak', None), ('shared-proxy', None)])
 
     def test_nginx_gets_its_tls_secrets_for_the_recorded_hostnames_before_it_is_installed(self):
         with tempfile.TemporaryDirectory() as directory:
             record = PromotedHost.record(directory)
             record.parent.mkdir(parents=True)
-            record.write_text(json.dumps({'TARGET_EXTERNAL_HOSTNAME': 'shop.example.org',
+            record.write_text(json.dumps({'TARGET_IDENTITY_HOSTNAME': 'auth.example.org',
+                                          'TARGET_TODO_HOSTNAME': 'shop.example.org',
                                           'TARGET_NOTES_HOSTNAME': 'notes.example.org'}))
-            host = PromotedHost(issuers=['https://shop.example.org:8443/auth/realms/todo'])
+            host = PromotedHost(issuers=['https://auth.example.org:8443/auth/realms/todo'])
             self.deploy(host, directory)
-            tls = ('tls', 'shop.example.org', 'notes.example.org')
+            tls = ('tls', 'auth.example.org', 'shop.example.org', 'notes.example.org')
             self.assertLess(self.index(host, ('images',)), self.index(host, tls))
             self.assertLess(self.index(host, tls), self.index(host, ('install', 'application', 'todo')))
 
@@ -210,9 +210,10 @@ class PromotedDeployTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             record = PromotedHost.record(directory)
             record.parent.mkdir(parents=True)
-            record.write_text(json.dumps({'TARGET_EXTERNAL_HOSTNAME': 'shop.example.org',
+            record.write_text(json.dumps({'TARGET_IDENTITY_HOSTNAME': 'auth.example.org',
+                                          'TARGET_TODO_HOSTNAME': 'shop.example.org',
                                           'TARGET_NOTES_HOSTNAME': 'notes.example.org'}))
-            host = PromotedHost(issuers=['https://shop.example.org:8443/auth/realms/todo'])
+            host = PromotedHost(issuers=['https://auth.example.org:8443/auth/realms/todo'])
             self.deploy(host, directory)
             self.assertIn(('request', apps.APPS[0].api_path(), 'shop.example.org'), host.steps)
             self.assertIn(('request', apps.APPS[1].api_path(), 'notes.example.org'), host.steps)

@@ -15,6 +15,6 @@ data:
   DATABASE_PORT: "5432"
   DATABASE_NAME: "todo"
   LOG_LEVEL: "info"
-  OIDC_ISSUER: "https://todo.test:8443/auth/realms/todo"
+  OIDC_ISSUER: "https://auth.test:8443/auth/realms/todo"
   OIDC_JWKS_URL: http://keycloak:8080/auth/realms/todo/protocol/openid-connect/certs
   OIDC_AUDIENCE: "todo-frontend"

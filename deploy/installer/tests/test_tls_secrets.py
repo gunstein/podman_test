@@ -82,7 +82,7 @@ class SecretTest(unittest.TestCase):
         self.host.__enter__()
         self.addCleanup(self.host.__exit__)
         self.host.record.parent.mkdir(parents=True)
-        self.host.record.write_text(json.dumps({'TARGET_EXTERNAL_HOSTNAME': NAMES[0],
+        self.host.record.write_text(json.dumps({'TARGET_IDENTITY_HOSTNAME': NAMES[0],
                                                 'TARGET_NOTES_HOSTNAME': NAMES[1]}))
 
     def secret(self, name):

@@ -5,7 +5,6 @@ After=todo-app.service notes-app.service keycloak.service
 
 [Kube]
 Yaml=shared-proxy.yaml
-ConfigMap=todo-config.yaml
 Network=app-network.network
 PodmanArgs=--no-pod-prefix
 PublishPort=127.0.0.1:8080:8080

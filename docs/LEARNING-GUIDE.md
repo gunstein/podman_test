@@ -141,7 +141,7 @@ Client CA trust and server private-key protection are separate obligations.
 ```bash
 podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf
 curl --fail https://todo.test:8443/ready
-curl --fail https://todo.test:8443/auth/realms/todo/.well-known/openid-configuration
+curl --fail https://auth.test:8443/auth/realms/todo/.well-known/openid-configuration
 ```
 
 These HTTPS commands require client name resolution and CA trust.

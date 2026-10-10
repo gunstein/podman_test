@@ -138,7 +138,7 @@ and start the seven workloads with:
 deploy/scripts/dev/dev-up.sh
 ```
 
-Map both `todo.test` and `notes.test` to the serving host and trust one shared
+Map `auth.test` (Keycloak), `todo.test` and `notes.test` to the serving host and trust one shared
 CA; see [TLS instructions](../../docs/TLS.md). Both apps use the same `todo`
 realm, separate clients, and a single SAN certificate.
 

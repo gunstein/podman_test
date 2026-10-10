@@ -18,7 +18,7 @@ def _validate(name, content):
 
 
 def read_values(values_file):
-    """publicHostname, publicPort and logLevel from the runtime section of values.yaml.
+    """identityHostname, publicPort and logLevel from the runtime section of values.yaml.
 
     Checked here, so a mistake in the file gives an error that names the
     file and the setting instead of a KeyError or a broken manifest.
@@ -30,12 +30,12 @@ def read_values(values_file):
     runtime = document.get('runtime') if isinstance(document, dict) else None
     if not isinstance(runtime, dict):
         raise ValueError(f'{values_file}: needs a runtime section')
-    missing = [key for key in ('publicHostname', 'publicPort', 'logLevel') if key not in runtime]
+    missing = [key for key in ('identityHostname', 'publicPort', 'logLevel') if key not in runtime]
     if missing:
         raise ValueError(f'{values_file}: runtime is missing {", ".join(missing)}')
-    hostname, port, log_level = runtime['publicHostname'], runtime['publicPort'], runtime['logLevel']
+    hostname, port, log_level = runtime['identityHostname'], runtime['publicPort'], runtime['logLevel']
     if not isinstance(hostname, str):
-        raise ValueError(f'{values_file}: runtime.publicHostname must be a hostname')
+        raise ValueError(f'{values_file}: runtime.identityHostname must be a hostname')
     manifests.validate_hostname(hostname)
     if type(port) is not int or not 1 <= port <= 65535:
         raise ValueError(f'{values_file}: runtime.publicPort must be a port number, 1-65535')
@@ -52,21 +52,21 @@ def selection(application_names=()):
     return selected
 
 
-def hostnames(selected, public_hostname):
-    """Each app's public hostname: the identity app on public_hostname, the others from the registry."""
-    return {app.name: public_hostname if app is apps.IDENTITY_APP else app.hostname for app in selected}
+def hostnames(selected):
+    """Each app's public hostname from the registry: {app name: hostname}."""
+    return {app.name: app.hostname for app in selected}
 
 
-def files(project_root, selected, hostnames, port, log_level):
+def files(project_root, selected, hostnames, identity_hostname, port, log_level):
     """Every Kube YAML file of the selected apps, Keycloak and the proxy: {file name: bytes}, checked.
 
-    hostnames maps each app's name to its public hostname; for an offline
+    hostnames maps each app's name to its public hostname, and
+    identity_hostname is Keycloak's, the OIDC issuer's; for an offline
     bundle (app_installer.bundle) each is a ${TARGET_...} placeholder, and
-    the files are otherwise the same. The identity app's hostname is
-    also Keycloak's and the OIDC issuer's.
+    the files are otherwise the same.
     """
     root = Path(project_root)
-    hostname = hostnames[apps.IDENTITY_APP.name]
+    hostname = identity_hostname
     result = {}
     for app in selected:
         result[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
@@ -80,7 +80,7 @@ def files(project_root, selected, hostnames, port, log_level):
         root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_DATABASE.image)
     result[apps.KEYCLOAK_DATABASE.config_manifest] = manifests.render_postgres_config(root, apps.KEYCLOAK_DATABASE)
     result['shared-proxy.yaml'] = manifests.render_shared_proxy(
-        root, selected, apps.IDENTITY_APP, hostnames, port, apps.PROXY_IMAGE)
+        root, selected, hostnames, identity_hostname, port, apps.PROXY_IMAGE)
 
     for name, content in result.items():
         _validate(name, content)
@@ -91,16 +91,16 @@ def render(project_root, values_file, output_directory, application_names=()):
     """Render every Kube YAML file for the selected apps into output_directory.
 
     Runs at build time. Values come from the environment's values.yaml
-    (public hostname, port and log level); names come from the app
+    (Keycloak's hostname, port and log level); names come from the app
     registry. Every file is rendered and checked first. Then the whole
     output directory is replaced (see _replace_directory), so it holds
     exactly this render: no file from an earlier render stays behind, and a
     failed render leaves the earlier output as it was.
     """
     selected = selection(application_names)
-    hostname, port, log_level = read_values(values_file)
+    identity_hostname, port, log_level = read_values(values_file)
     _replace_directory(Path(output_directory),
-                       files(project_root, selected, hostnames(selected, hostname), port, log_level))
+                       files(project_root, selected, hostnames(selected), identity_hostname, port, log_level))
 
 
 def _replace_directory(output, files):

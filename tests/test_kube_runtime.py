@@ -118,7 +118,7 @@ class KubeRuntimeTests(unittest.TestCase):
             self.assertIn("PodmanArgs=--no-pod-prefix", unit)
             self.assertIn("ExitCodePropagation=any", unit)
             self.assertIn("Restart=on-failure", unit)
-            if unit != keycloak:
+            if unit not in (keycloak, app):
                 if "Yaml=notes-" in unit:
                     config = "notes-config.yaml"
                 elif "Yaml=keycloak-" in unit:
@@ -127,6 +127,7 @@ class KubeRuntimeTests(unittest.TestCase):
                     config = "todo-config.yaml"
                 self.assertIn("ConfigMap=" + config, unit)
         self.assertNotIn("ConfigMap=", keycloak)
+        self.assertNotIn("ConfigMap=", app)
         self.assertIn("name: keycloak-config", read(RUNTIME / "keycloak.yaml"))
 
         self.assertNotIn("ConfigMap=config-runtime.yaml", postgres)
@@ -187,7 +188,7 @@ class KubeRuntimeTests(unittest.TestCase):
     def test_proxy_runtime_unit_maps_external_port_to_container_tls(self):
         template = read(ROOT / "deploy/quadlet/shared-proxy.kube.j2")
         self.assertIn("127.0.0.1:8080:8080", template)
-        self.assertIn("todo_service_port }}:8443", template)
+        self.assertIn("service_port }}:8443", template)
 
     def test_jinja_manifests_are_the_single_workload_template_source(self):
         manifests_dir = ROOT / "deploy/manifests"

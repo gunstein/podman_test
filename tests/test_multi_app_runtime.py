@@ -46,7 +46,7 @@ class IndependentAppChartsTests(unittest.TestCase):
                            if e['name'] == 'DATABASE_USER')
             self.assertEqual(runtime, name + '_app')
             self.assertEqual(backend['data']['OIDC_AUDIENCE'], name + '-frontend')
-            self.assertEqual(backend['data']['OIDC_ISSUER'], 'https://todo.test:8443/auth/realms/todo')
+            self.assertEqual(backend['data']['OIDC_ISSUER'], 'https://auth.test:8443/auth/realms/todo')
         self.assertFalse(all_claims[0] & all_claims[1])
 
     def test_no_container_sets_a_variable_both_in_env_and_from_a_config_map(self):
@@ -76,6 +76,8 @@ class IndependentAppChartsTests(unittest.TestCase):
             self.assertIn('server_name ' + name + '.test;', config)
             self.assertIn('server ' + name + '-app:8000 resolve;', config)
             self.assertIn('server ' + name + '-app:8080 resolve;', config)
-        self.assertEqual(config.count('proxy_pass http://shared_keycloak;'), 2)
-        self.assertEqual(config.count('ssl_certificate /var/lib/platform-tls/server.crt;'), 2)
-        self.assertEqual(config.count('ssl_certificate_key /var/lib/platform-tls/server.key;'), 2)
+        # Keycloak's own server and each app's send /auth/ to Keycloak, with the one certificate.
+        self.assertIn('server_name auth.test;', config)
+        self.assertEqual(config.count('proxy_pass http://shared_keycloak;'), 3)
+        self.assertEqual(config.count('ssl_certificate /var/lib/platform-tls/server.crt;'), 3)
+        self.assertEqual(config.count('ssl_certificate_key /var/lib/platform-tls/server.key;'), 3)

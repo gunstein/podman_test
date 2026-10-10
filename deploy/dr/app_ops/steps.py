@@ -125,11 +125,6 @@ def target_values(host, pythonpath, project_root):
     return json.dumps(json.loads(result.stdout)['values'], sort_keys=True)
 
 
-def hostnames(host, pythonpath, project_root):
-    """Each app's public hostname on host: {app name: hostname}."""
-    return target_render.hostnames(json.loads(target_values(host, pythonpath, project_root)))
-
-
 def retry(action, attempts, delay, sleep=time.sleep):
     """Call action until it stops raising RuntimeError, up to attempts times, delay seconds apart."""
     for attempt in range(attempts):

@@ -33,8 +33,8 @@ def rendered():
     for environment in ENVIRONMENTS:
         # Build mode: the Kube YAML render.render writes, and the units an
         # install writes for a host that publishes only on 127.0.0.1.
-        hostname, port, log_level = render.read_values(_values(environment))
-        manifests = render.files(ROOT, apps.APPS, render.hostnames(apps.APPS, hostname), port, log_level)
+        identity, port, log_level = render.read_values(_values(environment))
+        manifests = render.files(ROOT, apps.APPS, render.hostnames(apps.APPS), identity, port, log_level)
         for name, content in manifests.items():
             files[f"build-{environment}/manifests/{name}"] = content
         for name, content in bundle.quadlets(ROOT, apps.APPS, port, "127.0.0.1").items():

@@ -15,8 +15,10 @@ from app_ops.transport import Host  # noqa: E402
 
 NAMES = [database.name for database in steps.GROUP]
 # The public hostnames each host recorded (app_dr_host target-values).
-RECORDED = {"todo-primary": {"TARGET_EXTERNAL_HOSTNAME": "shop.example.org", "TARGET_NOTES_HOSTNAME": "notes.test"},
-            "todo-standby": {"TARGET_EXTERNAL_HOSTNAME": "todo.test", "TARGET_NOTES_HOSTNAME": "notes.test"}}
+RECORDED = {"todo-primary": {"TARGET_IDENTITY_HOSTNAME": "auth.test", "TARGET_TODO_HOSTNAME": "shop.example.org",
+                             "TARGET_NOTES_HOSTNAME": "notes.test"},
+            "todo-standby": {"TARGET_IDENTITY_HOSTNAME": "auth.test", "TARGET_TODO_HOSTNAME": "todo.test",
+                             "TARGET_NOTES_HOSTNAME": "notes.test"}}
 
 
 def setUpModule():

@@ -176,7 +176,7 @@ lab failover time.
 For direct development, add this entry to the test client’s `/etc/hosts`:
 
 ```text
-127.0.0.1 todo.test notes.test
+127.0.0.1 auth.test todo.test notes.test
 ```
 
 For a VM or server, use its serving IP instead. Export only the public CA:
@@ -188,8 +188,9 @@ curl --cacert ./platform-nginx-root.crt https://notes.test:8443/ready
 ```
 
 Trust that CA in the browser as well. Both apps authenticate against the same
-canonical issuer `https://todo.test:8443/auth/realms/todo`; `/auth/` is reachable
-from either hostname. The new `e2e/test_multi_app.py` requires real CA trust
+canonical issuer `https://auth.test:8443/auth/realms/todo`, on Keycloak's own
+hostname; `/auth/` is also reachable from either app's hostname, where each app
+reads the issuer. The new `e2e/test_multi_app.py` requires real CA trust
 (`E2E_CA_FILE` plus the browser trust store) and never ignores TLS errors.
 It checks both hostnames serve the same certificate and that login transfers
 from Todo to Notes without another password prompt.
@@ -500,7 +501,7 @@ the `todo` realm on every install and failover, so an existing realm gets them
 too.
 
 Application recovery must verify that Keycloak discovery still reports the stable external issuer
-`https://todo.test:8443/auth/realms/todo`. Health, readiness, public API,
+`https://auth.test:8443/auth/realms/todo`. Health, readiness, public API,
 login redirect, token validation and logout/redirect behavior belong in proxy
 acceptance testing.
 

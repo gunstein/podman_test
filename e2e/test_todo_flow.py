@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from playwright.sync_api import Page, expect
 
-BASE_URL = os.getenv("E2E_BASE_URL", "https://localhost:8443")
+BASE_URL = os.getenv("E2E_BASE_URL", "https://todo.test:8443")
 
 
 def test_public_todo_list(page: Page):

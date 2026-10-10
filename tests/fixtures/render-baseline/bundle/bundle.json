@@ -1,6 +1,6 @@
 {
   "format": "platform-offline-bundle",
-  "format_version": 4,
+  "format_version": 5,
   "manifests": {
     "directory": "generated/target/manifests",
     "files": [
@@ -49,7 +49,8 @@
   ],
   "public_port": 8443,
   "defaults": {
-    "TARGET_EXTERNAL_HOSTNAME": "todo.test",
+    "TARGET_IDENTITY_HOSTNAME": "auth.test",
+    "TARGET_TODO_HOSTNAME": "todo.test",
     "TARGET_NOTES_HOSTNAME": "notes.test"
   }
 }

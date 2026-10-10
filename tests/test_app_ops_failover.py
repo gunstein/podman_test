@@ -30,7 +30,8 @@ class FailoverWorld(World):
         super().__init__()
         self.record, self.fail, self.tls_mode = record, fail, tls_mode
         # The public hostnames the promoted host recorded as a standby.
-        self.hostnames = hostnames or {"TARGET_EXTERNAL_HOSTNAME": "todo.test", "TARGET_NOTES_HOSTNAME": "notes.test"}
+        self.hostnames = hostnames or {"TARGET_IDENTITY_HOSTNAME": "auth.test", "TARGET_TODO_HOSTNAME": "todo.test",
+                                       "TARGET_NOTES_HOSTNAME": "notes.test"}
 
     def answer(self, host, command, stdin):
         if command[0] == "env" and "target-values" in command:
@@ -53,7 +54,7 @@ class FailoverWorld(World):
                 refused = self.fail == "redirect" and "notes-frontend" in path
                 return ("login-form", hostname, path), "" if refused else LOGIN_FORM, 22 if refused else 0
             if options == ["--head"]:
-                sources = "'self'" if self.fail == "csp" else "'self' https://todo.test:8443"
+                sources = "'self'" if self.fail == "csp" else "'self' https://auth.test:8443"
                 return ("csp", hostname), f"HTTP/1.1 200 OK\ncontent-security-policy: default-src 'self'; " \
                                           f"connect-src {sources}; frame-ancestors 'none'\n", 0
             return ("https", hostname, address), "ready", 0
@@ -83,7 +84,7 @@ class FailoverTests(unittest.TestCase):
                                              "app_backup.py", "wait-ready", "https", "https", "login-form", "csp",
                                              "login-form", "csp", "ca"])
         forms = [step for step in world.steps() if step[0] == "login-form"]
-        self.assertEqual([step[1] for step in forms], ["todo.test", "todo.test"])
+        self.assertEqual([step[1] for step in forms], ["auth.test", "auth.test"])
         self.assertIn("client_id=todo-frontend&redirect_uri=https%3A%2F%2Ftodo.test%3A8443%2F", forms[0][2])
         self.assertIn("client_id=notes-frontend&redirect_uri=https%3A%2F%2Fnotes.test%3A8443%2F", forms[1][2])
         self.assertEqual([step[1] for step in world.steps() if step[0] == "csp"], ["todo.test", "notes.test"])
@@ -92,7 +93,7 @@ class FailoverTests(unittest.TestCase):
         self.assertTrue(all(step[2] == "192.0.2.11" for step in world.steps() if step[0] == "https"))
         self.assertTrue(report["changed"] and report["promoted_now"])
         self.assertEqual(report["users"]["ca_sha256"], "AA:BB")
-        self.assertIn("todo.test and notes.test at 192.0.2.11", report["users"]["next"])
+        self.assertIn("auth.test and todo.test and notes.test at 192.0.2.11", report["users"]["next"])
         self.assertIn("checks the login page, not a login", report["users"]["next"])
         self.assertEqual(report["users"]["client_trust"], "required")
         self.assertIn("Have clients trust this host's CA, SHA-256 AA:BB", report["users"]["next"])
@@ -105,9 +106,10 @@ class FailoverTests(unittest.TestCase):
         self.assertNotIn("Have clients trust", report["users"]["next"])
 
     def test_the_checks_use_the_public_hostnames_the_host_recorded(self):
-        world = FailoverWorld(hostnames={"TARGET_EXTERNAL_HOSTNAME": "shop.example.org",
+        world = FailoverWorld(hostnames={"TARGET_IDENTITY_HOSTNAME": "auth.example.org",
+                                         "TARGET_TODO_HOSTNAME": "shop.example.org",
                                          "TARGET_NOTES_HOSTNAME": "notes.example.org"})
-        with unittest.mock.patch.object(failover, "connect_sources", return_value=["https://shop.example.org:8443"]):
+        with unittest.mock.patch.object(failover, "connect_sources", return_value=["https://auth.example.org:8443"]):
             report = self.run_failover(world)
         order = [step[0] for step in world.steps()]
         self.assertLess(order.index("deploy-promoted"), order.index("target-values"))
@@ -115,7 +117,8 @@ class FailoverTests(unittest.TestCase):
                          ["shop.example.org", "notes.example.org"])
         wait_ready = next(command for _host, command in world.commands if command[:2] == ["bash", "-s"])
         self.assertEqual(wait_ready[-3:], ["app", "shop.example.org", "notes.example.org"])
-        self.assertEqual(report["users"]["hostnames"], ["shop.example.org", "notes.example.org"])
+        self.assertEqual(report["users"]["hostnames"], ["auth.example.org", "shop.example.org", "notes.example.org"])
+        self.assertEqual({step[1] for step in world.steps() if step[0] == "login-form"}, {"auth.example.org"})
 
     def test_a_rerun_after_a_complete_promotion_skips_it(self):
         world = FailoverWorld(record="complete")
@@ -151,8 +154,9 @@ class FailoverTests(unittest.TestCase):
         """Code review: redirect URI and CSP errors block login while the services answer."""
         for fail, message in (("redirect", "notes: Keycloak refused the login request of client notes-frontend "
                                            "with redirect https://notes.test:8443/"),
-                              ("csp", "notes: Content-Security-Policy connect-src 'self' does not allow "
-                                      "https://todo.test:8443")):
+                              # Every app, todo too, logs in at Keycloak's own origin: 'self' is not enough.
+                              ("csp", "todo: Content-Security-Policy connect-src 'self' does not allow "
+                                      "https://auth.test:8443")):
             world = FailoverWorld(fail=fail)
             with self.subTest(fail=fail), self.assertRaisesRegex(RuntimeError, 'step "login-page": ' + message):
                 self.run_failover(world)

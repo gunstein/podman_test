@@ -106,17 +106,17 @@ def install(project_root, bundle_dir, node_address, certificate, ca):
     return store.install(certificate, ca, hostnames=store.recorded_hostnames())
 
 
-def provision(hostnames):
+def provision(hostnames, identity):
     """Before nginx starts on a promoted host: its TLS files as Podman secrets; True if they changed.
 
-    hostnames is {app name: hostname}. In local mode this makes the
+    hostnames is {app name: hostname}, identity Keycloak's hostname. In local mode this makes the
     promoted host its own demo CA (backlog T4), in provided mode it only
     publishes what nginx-tls install put there. With the TLS volume the
     pod's init container does this, so nothing happens here.
     """
     if not tls_store.secret_storage():
         return False
-    return tls_secrets.provision(tls_secrets.ordered(hostnames))
+    return tls_secrets.provision(tls_secrets.ordered(hostnames, identity))
 
 
 def fitting():

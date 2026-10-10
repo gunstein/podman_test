@@ -758,7 +758,8 @@ class ConfigureArchiveTests(unittest.TestCase):
 
     def test_readiness_uses_the_hostnames_this_host_serves(self):
         host = FakeHost()
-        self.configure(host, recorded={'TARGET_EXTERNAL_HOSTNAME': 'todo.example.org',
+        self.configure(host, recorded={'TARGET_IDENTITY_HOSTNAME': 'auth.example.org',
+                                       'TARGET_TODO_HOSTNAME': 'todo.example.org',
                                        'TARGET_NOTES_HOSTNAME': 'notes.example.org'})
         self.assertEqual(self.waits[:2], [('/ready', 'todo.example.org'), ('/ready', 'notes.example.org')])
 

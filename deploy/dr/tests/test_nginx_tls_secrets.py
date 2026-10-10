@@ -19,7 +19,7 @@ from app_dr_host import cli, nginx_tls, promoted  # noqa: E402
 from app_installer import apps, target_render, tls_secrets  # noqa: E402
 from test_tls_secrets import REAL_RUN, SecretHost, app_ca, kube_files  # noqa: E402
 
-RECORD = {'TARGET_EXTERNAL_HOSTNAME': 'todo.example.test', 'TARGET_NOTES_HOSTNAME': 'notes.example.test'}
+RECORD = {'TARGET_IDENTITY_HOSTNAME': 'todo.example.test', 'TARGET_NOTES_HOSTNAME': 'notes.example.test'}
 NAMES = ['todo.example.test', 'notes.example.test']
 SECRET = apps.PROXY_TLS_SECRETS
 

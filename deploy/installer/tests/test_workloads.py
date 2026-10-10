@@ -47,7 +47,10 @@ class WorkloadsTests(unittest.TestCase):
                     self.assertFalse(function(ROOT, directory, runtime, rendered))
                     self.assertEqual(initial, {p: p.stat().st_mtime_ns for p in runtime.iterdir()})
                     self.assertFalse(host.ran('podman', 'secret', 'create'))
+                    # A change to a file the workload installs: its ConfigMap, or Keycloak's
+                    # and nginx's own Kube YAML (nginx's ConfigMaps are inside it).
                     config = ('keycloak.yaml' if function == workloads.install_keycloak else
+                              'shared-proxy.yaml' if function == workloads.install_shared_proxy else
                               'notes-config.yaml' if names[0].startswith('notes-') else 'todo-config.yaml')
                     (rendered / config).write_text('changed: true\n')
                     self.assertTrue(function(ROOT, directory, runtime, rendered))
@@ -65,9 +68,7 @@ class WorkloadsTests(unittest.TestCase):
                     self.assertTrue((runtime / f'{name}.kube').is_file())
                 self.assertEqual(list(directory.glob('*.volume')), [directory / 'unrelated.volume'])
                 self.assertEqual(runtime.stat().st_mode & 0o777, 0o700)
-                manifest = ('keycloak.yaml' if function == workloads.install_keycloak else
-                            'notes-config.yaml' if names[0].startswith('notes-') else 'todo-config.yaml')
-                self.assertEqual((runtime / manifest).stat().st_mode & 0o777, 0o600)
+                self.assertEqual((runtime / config).stat().st_mode & 0o777, 0o600)
 
     def test_an_install_removes_todos_kube_yaml_under_its_old_names(self):
         with tempfile.TemporaryDirectory() as temp:

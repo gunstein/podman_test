@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DeployLayoutTests(unittest.TestCase):
     def test_renderer_works_outside_checkout_and_applies_shared_environment(self):
-        for environment, hostname in (("local", "todo.test"), ("prod", "todo.test")):
+        for environment, hostname in (("local", "auth.test"), ("prod", "auth.test")):
             with self.subTest(environment=environment), tempfile.TemporaryDirectory() as directory:
                 output = Path(directory) / "rendered"
                 subprocess.run([

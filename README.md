@@ -114,9 +114,10 @@ Use `--refresh-images` to rebuild/pull images. Direct development uses
 `--mode dev` and `python -m app_installer down`; the existing dev shell scripts
 remain thin wrappers. See [installer usage](deploy/installer/README.md).
 
-Both profiles expose <https://todo.test:8443> and <https://notes.test:8443>.
-Map both names to the serving host (127.0.0.1 for direct development). nginx
-creates one SAN certificate for both names from a persistent local demo CA; install only its public root on clients that should trust it. HTTP health checks remain available on
+Both profiles expose <https://todo.test:8443> and <https://notes.test:8443>,
+and Keycloak on its own hostname, <https://auth.test:8443>.
+Map the three names to the serving host (127.0.0.1 for direct development). nginx
+creates one SAN certificate for the three names from a persistent local demo CA; install only its public root on clients that should trust it. HTTP health checks remain available on
 <http://127.0.0.1:8080>.
 
 Inspect the running system:
@@ -132,7 +133,7 @@ systemctl --user is-active \
   shared-proxy.service
 podman ps
 podman secret ls
-curl --fail http://127.0.0.1:8080/ready
+curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/ready
 ```
 
 Quadlets live below `~/.config/containers/systemd/`. `todo-app.service` pulls in

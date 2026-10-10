@@ -36,7 +36,7 @@ def copy_project(root):
 class InstallTests(unittest.TestCase):
     def exercise_install(self, mode, repeat=False, source_override=None, applications=None):
         """Install in server mode from a real offline bundle, or in dev mode by building; return the calls."""
-        applications = (apps.IDENTITY_APP,) if applications is None else applications
+        applications = (apps.APPS[0],) if applications is None else applications
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             directory = root / 'quadlet'
@@ -273,8 +273,8 @@ class InstallTests(unittest.TestCase):
             if unchanged:
                 client.update(redirectUris=['https://todo.test:8443/'],
                               webOrigins=['https://todo.test:8443'])
-            with patch.object(keycloak, 'wait', side_effect=[{}, {}, {
-                    'issuer': 'https://todo.test:8443/auth/realms/todo'}]), \
+            with patch.object(keycloak, 'wait', side_effect=[{
+                    'issuer': 'https://auth.test:8443/auth/realms/todo'}, {}, {}]), \
                     patch.object(keycloak, 'request', side_effect=[
                         {'access_token': 'token'}, dict(keycloak.REALM_SECURITY), [{'id': 'client'}],
                         client, None]) as request:
@@ -292,10 +292,11 @@ class InstallTests(unittest.TestCase):
                     'included.client.audience': 'todo-frontend'}}]}
         for missing in (False, True):
             responses = [{'access_token': 'token'}, dict(keycloak.REALM_SECURITY), [{'id': 'todo-id'}], todo]
-            responses += [[], None] if missing else [[{'id': 'notes-id'}], {
+            # A missing client is copied from the realm import's client, looked up only then.
+            responses += [[], [{'id': 'todo-id'}], todo, None] if missing else [[{'id': 'notes-id'}], {
                 'id': 'notes-id', 'custom': True, 'redirectUris': [], 'webOrigins': []}, None]
-            with patch.object(keycloak, 'wait', side_effect=[{}, {}, {
-                    'issuer': 'https://todo.test:8443/auth/realms/todo'}, {}, {}]), \
+            with patch.object(keycloak, 'wait', side_effect=[{
+                    'issuer': 'https://auth.test:8443/auth/realms/todo'}, {}, {}, {}, {}]), \
                     patch.object(keycloak, 'request', side_effect=responses) as request:
                 self.assertTrue(keycloak.configure('password', [
                     ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.test')]))

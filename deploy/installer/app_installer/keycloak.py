@@ -84,49 +84,50 @@ def secure_realm(token):
     return True
 
 
+def template_client(token):
+    """The client the realm import brought (apps.TEMPLATE_CLIENT), which a missing client is copied from."""
+    matches = request('/auth/admin/realms/todo/clients?' + urlencode({'clientId': apps.TEMPLATE_CLIENT}),
+                      token=token)
+    if len(matches) != 1:
+        raise RuntimeError(f'The realm import client {apps.TEMPLATE_CLIENT} must exist before adding clients.')
+    return request('/auth/admin/realms/todo/clients/' + matches[0]['id'], token=token)
+
+
 def configure(admin_password, clients=None):
     """Make sure every app has a Keycloak client whose redirect and origin match its URL.
 
-    Waits for nginx, the apps and Keycloak, checks that the issuer is HTTPS
-    with the todo realm, then logs in as the Keycloak admin. The first app's
-    client comes with the realm import and serves as the template: another
-    app's missing client is copied from it, with its own client ID,
-    redirect URL and token audience. An existing client only gets its URLs
-    corrected. The realm gets its login protection first (secure_realm).
-    Returns True if anything changed.
+    Waits for nginx and Keycloak (its hostname is nginx's default server)
+    and for each app, checks that the issuer is HTTPS with the todo realm,
+    then logs in as the Keycloak admin. The realm import brings one client,
+    apps.TEMPLATE_CLIENT: another app's missing client is copied from it,
+    with its own client ID, redirect URL and token audience. An existing
+    client only gets its URLs corrected. The realm gets its login
+    protection first (secure_realm). Returns True if anything changed.
     """
-    wait('/health', 30, 1, 'ok')
-    wait('/ready', 30, 1, 'ready')
     discovery = wait('/auth/realms/todo/.well-known/openid-configuration', 90, 2)
     issuer = discovery.get('issuer', '')
     if not re.fullmatch(r'https://[^/]+/auth/realms/todo', issuer):
         raise RuntimeError('Expected an HTTPS issuer with the Todo realm path.')
-    origin = issuer.removesuffix('/auth/realms/todo')
     identities = ([(app.keycloak_client, app.hostname) for app in apps.APPS]
                   if clients is None else list(clients))
-    for client_id, hostname in identities:
-        if client_id != apps.IDENTITY_APP.keycloak_client:
-            wait('/health', 30, 1, 'ok', hostname=hostname)
-            wait('/ready', 30, 1, 'ready', hostname=hostname)
+    for _client_id, hostname in identities:
+        wait('/health', 30, 1, 'ok', hostname=hostname)
+        wait('/ready', 30, 1, 'ready', hostname=hostname)
     token = request('/auth/realms/master/protocol/openid-connect/token', 'POST', {
         'grant_type': 'password', 'client_id': 'admin-cli', 'username': 'admin',
         'password': admin_password,
     }, form=True)['access_token']
     parsed = urlsplit(issuer)
     changed = secure_realm(token)
-    template = None
     for client_id, hostname in identities:
-        # The identity app's client uses the issuer's own origin; the
-        # other apps use their own public hostnames on the issuer's port.
-        client_origin = (origin if client_id == apps.IDENTITY_APP.keycloak_client
-                         else f'https://{hostname}' + (f':{parsed.port}' if parsed.port else ''))
+        # Each app's client: its own public hostname on the issuer's port.
+        client_origin = f'https://{hostname}' + (f':{parsed.port}' if parsed.port else '')
         matches = request('/auth/admin/realms/todo/clients?' + urlencode({'clientId': client_id}),
                           token=token)
         if len(matches) > 1:
             raise RuntimeError(f'Expected at most one Keycloak client named {client_id}.')
         if not matches:
-            if template is None:
-                raise RuntimeError('The identity application client must exist before adding clients.')
+            template = template_client(token)
             client = copy.deepcopy({key: value for key, value in template.items() if key in (
                 'publicClient', 'protocol', 'standardFlowEnabled', 'directAccessGrantsEnabled',
                 'serviceAccountsEnabled', 'attributes', 'defaultClientScopes',
@@ -136,15 +137,13 @@ def configure(admin_password, clients=None):
             for mapper in client.get('protocolMappers', []):
                 mapper.pop('id', None)
                 config = mapper.get('config', {})
-                if config.get('included.client.audience') == apps.IDENTITY_APP.keycloak_client:
+                if config.get('included.client.audience') == apps.TEMPLATE_CLIENT:
                     config['included.client.audience'] = client_id
             request('/auth/admin/realms/todo/clients', 'POST', client, token)
             changed = True
             continue
         path = '/auth/admin/realms/todo/clients/' + matches[0]['id']
         client = request(path, token=token)
-        if client_id == apps.IDENTITY_APP.keycloak_client:
-            template = client
         if client.get('redirectUris') == [client_origin + '/'] and client.get('webOrigins') == [client_origin]:
             continue
         client.update(redirectUris=[client_origin + '/'], webOrigins=[client_origin])

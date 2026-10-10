@@ -12,14 +12,14 @@ from app_ops.transport import Host
 def main():
     host = Host(inventory.HostSpec(name="ci", role="current_primary", address="127.0.0.1",
                                    user="runner", home="/home/runner", local=True))
-    # The build-mode install serves the registry's hostnames.
-    failover.login_page(host, {app.name: app.hostname for app in apps.APPS})
+    # The build-mode install serves the registry's hostnames and Keycloak's default one.
+    failover.login_page(host, {app.name: app.hostname for app in apps.APPS}, apps.IDENTITY_HOSTNAME)
     # A redirect Keycloak does not know must be refused, or the check proves nothing.
     query = failover.urlencode({"client_id": "todo-frontend", "redirect_uri": "https://evil.test/",
                                 "response_type": "code", "scope": "openid",
                                 "code_challenge": failover.PKCE_CHALLENGE, "code_challenge_method": "S256"})
     try:
-        page = failover.https(host, "todo.test", "/auth/realms/todo/protocol/openid-connect/auth?" + query)
+        page = failover.https(host, apps.IDENTITY_HOSTNAME, "/auth/realms/todo/protocol/openid-connect/auth?" + query)
     except RuntimeError:
         page = ""
     if 'id="username"' in page:

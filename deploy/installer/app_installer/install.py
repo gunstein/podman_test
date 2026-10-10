@@ -102,19 +102,19 @@ def load_target(bundle_directory, applications, publish_address, service_port, t
     return target
 
 
-def app_hostnames(project_root, mode, target, applications):
-    """Each app's public hostname: {app name: hostname}.
+def public_hostnames(project_root, mode, target, applications):
+    """Each app's public hostname and Keycloak's: ({app name: hostname}, Keycloak's hostname).
 
-    From the offline bundle's target values, else from the environment's
-    values.yaml and the app registry, which build and dev mode render with
+    From the offline bundle's target values, else from the app registry and
+    the environment's values.yaml, which build and dev mode render with
     (render needs PyYAML, which those modes have).
     """
     if target is not None:
-        return target.hostnames
+        return target.hostnames, target.identity_hostname
     from . import render
     profile = 'local' if mode == 'dev' else 'prod'
-    public = render.read_values(Path(project_root) / f'deploy/environments/{profile}/values.yaml')[0]
-    return render.hostnames(applications, public)
+    identity = render.read_values(Path(project_root) / f'deploy/environments/{profile}/values.yaml')[0]
+    return render.hostnames(applications), identity
 
 
 def clients(applications, hostnames):
@@ -136,9 +136,6 @@ def check(project_root, mode, deployment_mode, bundle_directory, refresh_images,
     node or carry the old per-container units, and Podman must answer.
     target is the bundle's files filled in, or None in build mode.
     """
-    if apps.IDENTITY_APP not in applications:
-        raise ValueError(f'The identity app ({apps.IDENTITY_APP.name}) must be included: '
-                         'Keycloak and every login use its hostname.')
     if mode not in ('dev', 'server'):
         raise ValueError('mode must be dev or server')
     if deployment_mode not in ('build', 'offline') or (
@@ -166,10 +163,10 @@ def check(project_root, mode, deployment_mode, bundle_directory, refresh_images,
 def prepare(root, mode, deployment_mode, bundle_directory, refresh_images, applications, target):
     """Render (build mode), passwords, images and nginx's TLS secrets; return what the next steps need.
 
-    Returns (rendered, image_changes, shared_images, hostnames, tls_changed):
+    Returns (rendered, image_changes, shared_images, hostnames, identity, tls_changed):
     the directory of the rendered Kube YAML (None offline), each app's and
     the shared images' changes from images.prepare, each app's public
-    hostname, and whether nginx's TLS secret changed.
+    hostname, Keycloak's, and whether nginx's TLS secret changed.
     """
     # An offline install takes its files from the bundle (target); the others render here.
     rendered = None if deployment_mode == 'offline' else root / 'generated' / ('dev' if mode == 'dev' else 'kube-runtime')
@@ -184,11 +181,11 @@ def prepare(root, mode, deployment_mode, bundle_directory, refresh_images, appli
         image_changes[app.name] = images.prepare(
             root, deployment_mode, bundle_directory, refresh_images, app=app, include_shared=False)
     shared_images = images.prepare_shared(root, deployment_mode, bundle_directory, refresh_images)
-    hostnames = app_hostnames(root, mode, target, applications)
+    hostnames, identity = public_hostnames(root, mode, target, applications)
     # nginx's TLS files as Podman secrets, before nginx starts (tls_secrets);
     # with the TLS volume, the shared-proxy pod's init container makes them.
-    tls_changed = tls_store.secret_storage() and tls_secrets.provision(tls_secrets.ordered(hostnames))
-    return rendered, image_changes, shared_images, hostnames, tls_changed
+    tls_changed = tls_store.secret_storage() and tls_secrets.provision(tls_secrets.ordered(hostnames, identity))
+    return rendered, image_changes, shared_images, hostnames, identity, tls_changed
 
 
 def write_definitions(root, directory, runtime, rendered, applications, publish_address, service_port,
@@ -258,7 +255,7 @@ def start_in_order(applications, restart):
             setup_roles(roles[workload.pod])
 
 
-def finish(applications, runtime, target, hostnames):
+def finish(applications, runtime, target, hostnames, identity):
     """Configure Keycloak, check every unit's SourcePath, record the hostnames, turn the backup on.
 
     Returns (Keycloak changed, backup timer changed).
@@ -270,7 +267,8 @@ def finish(applications, runtime, target, hostnames):
             raise RuntimeError(f'Unexpected SourcePath for {workload.pod}: {source}')
     # The hostnames this host now serves, for the next install, tls.py and the DR tools.
     target_render.write_record(target.values if target is not None else
-                               {target_render.hostname_target(app): hostnames[app.name] for app in applications})
+                               {target_render.IDENTITY_HOSTNAME: identity,
+                                **{target_render.hostname_target(app): hostnames[app.name] for app in applications}})
     # Every server install backs itself up every night, so a single host can at
     # least go back to last night (backup.py).
     backups_changed = backup.install_timer(Path(__file__).resolve().parents[1])
@@ -310,7 +308,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     root, directory, runtime, target = check(
         project_root, mode, deployment_mode, bundle_directory, refresh_images, publish_address,
         service_port, quadlet_dir, kube_runtime_dir, applications, target_values)
-    rendered, image_changes, shared_images, hostnames, tls_changed = prepare(
+    rendered, image_changes, shared_images, hostnames, identity, tls_changed = prepare(
         root, mode, deployment_mode, bundle_directory, refresh_images, applications, target)
     images_changed = any(shared_images.values()) or any(
         any(changes.values()) for changes in image_changes.values())
@@ -327,5 +325,5 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     changed, restart = write_definitions(root, directory, runtime, rendered, applications, publish_address,
                                          service_port, target, image_changes, shared_images, tls_changed)
     start_in_order(applications, restart)
-    configured, backups_changed = finish(applications, runtime, target, hostnames)
+    configured, backups_changed = finish(applications, runtime, target, hostnames, identity)
     return changed or images_changed or tls_changed or configured or backups_changed

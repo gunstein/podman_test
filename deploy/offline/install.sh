@@ -7,7 +7,7 @@ bundle_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 
 usage() {
   echo "Usage: sh install.sh [--publish-address HOST_IPV4] [--target-APP-hostname NAME ...]" >&2
-  echo "  for example --target-external-hostname todo.example.org --target-notes-hostname notes.example.org" >&2
+  echo "  for example --target-identity-hostname auth.example.org --target-todo-hostname todo.example.org --target-notes-hostname notes.example.org" >&2
   exit 2
 }
 

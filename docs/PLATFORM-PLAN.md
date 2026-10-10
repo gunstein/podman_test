@@ -357,3 +357,23 @@ Existing security and DR tests stay. In addition:
 updated. Understandability check: not needed, no installer or DR code
 changed; the three new tests each explain in their docstring why they fail
 and what to do.
+
+**Phase 1, code done; acceptance run pending.**
+- 1a: every shared `todo-` name is now `platform-` (proxy image, TLS
+  secrets and volume, nginx paths, host directories, bundle and operations
+  package, DR timers, CA wrapper). The lab's own names (VM names, firewall
+  rule comments, `~/.config/todo-acceptance`) are kept until the lab is
+  rebuilt.
+- 1b: Keycloak has its own hostname, `auth.test` by default
+  (`runtime.identityHostname`, `TARGET_IDENTITY_HOSTNAME`,
+  `--target-identity-hostname`); every app has `TARGET_<APP>_HOSTNAME`, todo
+  included. nginx serves Keycloak's hostname as its default server with only
+  `/auth/`, so a request without a known `Host` reaches Keycloak, never an
+  app. The proxy unit no longer reads `todo-config.yaml`, the Todo frontend
+  discovers the issuer like Notes, a missing Keycloak client is copied from
+  `apps.TEMPLATE_CLIENT` (looked up only when needed), and an install no
+  longer requires the todo app. Bundle format version 5.
+- Clients and the lab must map `auth.test` too (`/etc/hosts` lines in the
+  guides and CI). Name guard: 52 known files left.
+- Understandability check: not yet done; to be run by a fresh agent before
+  phase 2.

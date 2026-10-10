@@ -27,7 +27,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from . import recovery, steps
-from .steps import apps, settings
+from .steps import apps, settings, target_render
 
 APP_DR = str(settings.TOOLS_BIN / 'app_dr.py')
 # Any valid S256 PKCE challenge: the login form is only shown, never submitted.
@@ -85,9 +85,11 @@ def connect_sources(headers):
     return []
 
 
-def login_page(host, hostnames):
-    """Raise unless each app's login can start: Keycloak accepts its redirect, and its CSP allows the token."""
-    identity = hostnames[apps.IDENTITY_APP.name]
+def login_page(host, hostnames, identity):
+    """Raise unless each app's login can start: Keycloak accepts its redirect, and its CSP allows the token.
+
+    hostnames is {app name: hostname}, identity Keycloak's hostname.
+    """
     identity_origin = f'https://{identity}:{settings.HTTPS_PORT}'
     for app in apps.APPS:
         origin = f'https://{hostnames[app.name]}:{settings.HTTPS_PORT}'
@@ -101,7 +103,7 @@ def login_page(host, hostnames):
         if 'id="username"' not in page:
             raise RuntimeError(f'{app.name}: Keycloak did not show its login form for {app.keycloak_client}')
         sources = connect_sources(https(host, hostnames[app.name], '/', '--head'))
-        if identity_origin not in sources and not (origin == identity_origin and "'self'" in sources):
+        if identity_origin not in sources:
             raise RuntimeError(f'{app.name}: Content-Security-Policy connect-src {" ".join(sources) or "(none)"} '
                                f'does not allow {identity_origin}, so the browser cannot fetch the login token')
 
@@ -111,7 +113,7 @@ CA_FACTS = ('cat /var/lib/platform-tls/tls-mode 2>/dev/null; '
             'openssl x509 -in /var/lib/platform-tls/ca.crt -noout -fingerprint -sha256')
 
 
-def users(host, hostnames):
+def users(host, hostnames, identity):
     """What the operator must do so users reach this host: the names, the address and, if needed, the CA to trust.
 
     With certificates from the organisation's CA (provided mode) clients
@@ -121,7 +123,7 @@ def users(host, hostnames):
     lines = host.run(['podman', 'exec', 'nginx', 'sh', '-c', CA_FACTS]).stdout.strip().splitlines()
     fingerprint = lines[-1].split('=', 1)[-1] if lines else ''
     provided = 'provided' in (line.strip() for line in lines[:-1])
-    names = [hostnames[app.name] for app in apps.APPS]
+    names = [identity] + [hostnames[app.name] for app in apps.APPS]
     trust = ('Clients already trust your CA (provided mode), SHA-256 {}: nothing to install on them.'
              if provided else 'Have clients trust this host\'s CA, SHA-256 {}.').format(fingerprint)
     return {'hostnames': names, 'address': host.spec.address, 'ca_sha256': fingerprint,
@@ -142,11 +144,13 @@ def failover(project_root, controller, current, old_primary, confirm_fenced, con
     recovery.require_identity(current)
     report = {}
     # The public hostnames the deploy installed: the ones this host recorded as a standby.
-    hostnames = {}
+    hostnames, identity = {}, []
 
     def deploy():
         changed = recovery.deploy_promoted(project_root, controller, current)
-        hostnames.update(steps.hostnames(current, steps.installed_pythonpath(current), project_root))
+        values = json.loads(steps.target_values(current, steps.installed_pythonpath(current), project_root))
+        hostnames.update(target_render.hostnames(values))
+        identity.append(target_render.identity_hostname(values))
         return changed
 
     for name, action in (
@@ -154,8 +158,8 @@ def failover(project_root, controller, current, old_primary, confirm_fenced, con
             ('deploy', deploy),
             ('backup', lambda: recovery.configure_backup(project_root, controller, current)),
             ('services', lambda: services(project_root, current, hostnames)),
-            ('login-page', lambda: login_page(current, hostnames)),
-            ('users', lambda: users(current, hostnames))):
+            ('login-page', lambda: login_page(current, hostnames, identity[0])),
+            ('users', lambda: users(current, hostnames, identity[0]))):
         say(f'{name} ...')
         try:
             report[name] = action()

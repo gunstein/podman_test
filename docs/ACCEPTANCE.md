@@ -153,9 +153,10 @@ All three databases are one DR group: bootstrap, promotion, backup, rebuild and
 status always act on the complete group, never on one database alone. A
 serving host runs all seven services; a rebuilt standby runs only the three
 PostgreSQL services. Clients use `https://todo.test:8443` and
-`https://notes.test:8443`; both names map to the serving host and are covered
-by one SAN certificate. The shared issuer is
-`https://todo.test:8443/auth/realms/todo`.
+`https://notes.test:8443`, and log in at Keycloak's `https://auth.test:8443`;
+the three names map to the serving host and are covered by one SAN
+certificate. The shared issuer is
+`https://auth.test:8443/auth/realms/todo`.
 
 ## Acceptance rules
 
@@ -182,7 +183,7 @@ require changing the realm, frontend, certificate hostname or manifest templates
 | Initial HTTPS binding | Primary: `sh ./install.sh --publish-address PRIMARY_IP` | Primary's own IPv4, on every install/rerun |
 | Replication and SSH | Primary's `platform-operations/initial.yaml` | Each host's own IPv4 (`address`), matching `ip -4 address` on that host |
 | Recovery/rebuild | Promoted host's `platform-operations/recovery.yaml` | Same machine IPs, reversed roles (`current_primary`, `rebuild_standby`) |
-| Browser destination | Client DNS or `/etc/hosts` | `PRIMARY_IP todo.test notes.test`; change to promoted host after failover |
+| Browser destination | Client DNS or `/etc/hosts` | `PRIMARY_IP auth.test todo.test notes.test`; change to promoted host after failover |
 | Firewall | VM firewalld and manual hypervisor fencing/quarantine | Replace source/destination IPs in the rules; HTTPS 8443 from client, replication 5432-5434 from peer |
 
 With NAT, check the source address seen by the destination. Our primary saw
@@ -398,10 +399,10 @@ sudo cp /tmp/platform-public-root.crt /usr/local/share/ca-certificates/platform-
 sudo update-ca-certificates
 curl --fail https://todo.test:8443/ready
 curl --fail https://notes.test:8443/ready
-curl --fail https://todo.test:8443/auth/realms/todo/.well-known/openid-configuration
+curl --fail https://auth.test:8443/auth/realms/todo/.well-known/openid-configuration
 ```
 
-Require the stable issuer `https://todo.test:8443/auth/realms/todo`.
+Require the stable issuer `https://auth.test:8443/auth/realms/todo`.
 Use the client's native trust mechanism on other platforms.
 
 System trust and Chromium trust are separate on this Linux test client.
@@ -799,7 +800,7 @@ before it changes anything.
 
 Map `todo.test` and `notes.test` to `.108` on the client and install the exported public nginx
 root. Require system-trust HTTPS, health/readiness, stable issuer
-`https://todo.test:8443/auth/realms/todo`, replicated data, browser login and
+`https://auth.test:8443/auth/realms/todo`, replicated data, browser login and
 SSO tests, and a persistent authenticated failover marker in each app.
 
 Rerun `deploy-promoted-application` and require `{"changed": false}`. Reboot promoted host and verify all

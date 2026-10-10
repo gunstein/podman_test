@@ -106,7 +106,7 @@ class TlsTest(unittest.TestCase):
         self.volume = self.directory / 'volume'
         self.volume.mkdir()
         self.record = self.directory / 'target-values.json'
-        self.record.write_text(json.dumps({'TARGET_EXTERNAL_HOSTNAME': NAMES[0], 'TARGET_NOTES_HOSTNAME': NAMES[1]}))
+        self.record.write_text(json.dumps({'TARGET_IDENTITY_HOSTNAME': NAMES[0], 'TARGET_NOTES_HOSTNAME': NAMES[1]}))
         self.podman = FakePodman(self, self.volume)
         for target, name, value in ((tls, 'KEY', 'rsa:2048'),  # a smaller key only to keep the tests fast
                                     (tls, 'ENTRYPOINT', str(ROOT / 'proxy/proxy-entrypoint.sh')),
@@ -351,9 +351,9 @@ class StatusTests(TlsTest):
         (self.volume / tls.MODE_FILE).write_text('custom\n')
         self.assertEqual(tls.status(NAMES)[1:], (None, 'unknown TLS mode in ./tls-mode: custom'))
 
-    def test_the_recorded_hostnames_put_the_shared_one_first(self):
+    def test_the_recorded_hostnames_put_keycloaks_first(self):
         self.record.write_text(json.dumps({'TARGET_NOTES_HOSTNAME': 'notes.example.test',
-                                           'TARGET_EXTERNAL_HOSTNAME': 'todo.example.test'}))
+                                           'TARGET_IDENTITY_HOSTNAME': 'todo.example.test'}))
         self.assertEqual(tls.recorded_hostnames(), NAMES)
         self.record.unlink()
         with self.assertRaisesRegex(tls.TlsError, 'records no public hostnames'):

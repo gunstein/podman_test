@@ -19,13 +19,13 @@ TESTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TESTS.parent))
 import offline_bundle  # noqa: E402
 from app_installer import apps, install, keycloak, quadlet, render, workloads  # noqa: E402
-from app_installer.target_render import EXTERNAL_HOSTNAME, TargetError  # noqa: E402
+from app_installer.target_render import IDENTITY_HOSTNAME, TargetError  # noqa: E402
 from fake_host import FakeHost  # noqa: E402
 
 ROOT = TESTS.parents[2]
 HOSTNAME = 'shop.example.org'
 ADDRESS = '192.0.2.10'
-NOTES_HOSTNAME = 'TARGET_NOTES_HOSTNAME'
+TODO_HOSTNAME, NOTES_HOSTNAME = 'TARGET_TODO_HOSTNAME', 'TARGET_NOTES_HOSTNAME'
 
 
 def dollar_expressions(text):
@@ -49,9 +49,10 @@ class BundleContentTests(unittest.TestCase):
     def test_metadata_names_every_rendered_file(self):
         data = json.loads((self.bundle / 'bundle.json').read_text())
         self.assertEqual(data, self.metadata)
-        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 4))
+        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 5))
         self.assertEqual(data['applications'], ['todo', 'notes'])
-        self.assertEqual(data['defaults'], {EXTERNAL_HOSTNAME: 'todo.test', 'TARGET_NOTES_HOSTNAME': 'notes.test'})
+        self.assertEqual(data['defaults'], {IDENTITY_HOSTNAME: 'auth.test', TODO_HOSTNAME: 'todo.test',
+                                            NOTES_HOSTNAME: 'notes.test'})
         manifests, units = install.offline_files(apps.APPS)
         self.assertEqual(set(data['manifests']['files']), manifests)
         self.assertEqual(set(data['quadlets']['files']), units)
@@ -66,26 +67,29 @@ class BundleContentTests(unittest.TestCase):
     def test_every_public_hostname_is_a_placeholder_wherever_it_is_used(self):
         manifests = self.bundle / 'generated/target/manifests'
         proxy = (manifests / 'shared-proxy.yaml').read_text()
-        for line in ('PLATFORM_TLS_HOSTNAME: "${TARGET_EXTERNAL_HOSTNAME}"',
-                     'APP_TLS_HOSTNAMES: "${TARGET_EXTERNAL_HOSTNAME} ${TARGET_NOTES_HOSTNAME}"',
-                     'server_name ${TARGET_EXTERNAL_HOSTNAME};', 'server_name ${TARGET_NOTES_HOSTNAME};',
-                     "connect-src 'self' https://${TARGET_EXTERNAL_HOSTNAME}:8443;"):
+        for line in ('PLATFORM_TLS_HOSTNAME: "${TARGET_IDENTITY_HOSTNAME}"',
+                     'APP_TLS_HOSTNAMES: "${TARGET_TODO_HOSTNAME} ${TARGET_NOTES_HOSTNAME}"',
+                     'server_name ${TARGET_IDENTITY_HOSTNAME};', 'server_name ${TARGET_TODO_HOSTNAME};',
+                     'server_name ${TARGET_NOTES_HOSTNAME};',
+                     "connect-src 'self' https://${TARGET_IDENTITY_HOSTNAME}:8443;"):
             self.assertIn(line, proxy)
         for name in ('todo-config.yaml', 'notes-config.yaml'):
-            self.assertIn('OIDC_ISSUER: "https://${TARGET_EXTERNAL_HOSTNAME}:8443/auth/realms/todo"',
+            self.assertIn('OIDC_ISSUER: "https://${TARGET_IDENTITY_HOSTNAME}:8443/auth/realms/todo"',
                           (manifests / name).read_text())
-        self.assertIn('KC_HOSTNAME: "https://${TARGET_EXTERNAL_HOSTNAME}:8443/auth"',
+        self.assertIn('KC_HOSTNAME: "https://${TARGET_IDENTITY_HOSTNAME}:8443/auth"',
                       (manifests / 'keycloak.yaml').read_text())
         everything = ''.join(path.read_text() for path in manifests.iterdir())
         self.assertNotIn('todo.test', everything)
         self.assertNotIn('notes.test', everything)
+        self.assertNotIn('auth.test', everything)
 
     def test_the_target_files_are_the_normal_render_with_the_values_in_place(self):
         values = ROOT / 'deploy/environments/prod/values.yaml'
-        hostname, port, log_level = render.read_values(values)
+        identity, port, log_level = render.read_values(values)
         manifests = self.bundle / 'generated/target/manifests'
-        normal = render.files(ROOT, apps.APPS, render.hostnames(apps.APPS, hostname), port, log_level)
-        self.assertEqual({name: (manifests / name).read_text().replace('${TARGET_EXTERNAL_HOSTNAME}', hostname)
+        normal = render.files(ROOT, apps.APPS, render.hostnames(apps.APPS), identity, port, log_level)
+        self.assertEqual({name: (manifests / name).read_text().replace('${TARGET_IDENTITY_HOSTNAME}', identity)
+                          .replace('${TARGET_TODO_HOSTNAME}', 'todo.test')
                           .replace('${TARGET_NOTES_HOSTNAME}', 'notes.test').encode() for name in normal}, normal)
         units = self.bundle / 'generated/target/quadlet'
         for database in apps.REPLICATED_DATABASES:
@@ -120,7 +124,7 @@ class OfflineInstallTests(unittest.TestCase):
             changed = install.install(self.bundle, mode='server', deployment_mode='offline',
                                       bundle_directory=self.bundle, publish_address=address,
                                       quadlet_dir=self.quadlet,
-                                      target_values={EXTERNAL_HOSTNAME: hostname, NOTES_HOSTNAME: notes})
+                                      target_values={IDENTITY_HOSTNAME: hostname, NOTES_HOSTNAME: notes})
         return changed, configure
 
     def installed(self):
@@ -139,14 +143,15 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertFalse([name for name, text in files.items() if '${TARGET_' in text])
         proxy = files['shared-proxy.yaml']
         self.assertIn(f'PLATFORM_TLS_HOSTNAME: "{HOSTNAME}"', proxy)
-        self.assertIn(f'APP_TLS_HOSTNAMES: "{HOSTNAME} notes.test"', proxy)
+        self.assertIn('APP_TLS_HOSTNAMES: "todo.test notes.test"', proxy)
         self.assertIn(f'server_name {HOSTNAME};', proxy)
+        self.assertIn('server_name todo.test;', proxy)
         self.assertIn(f'OIDC_ISSUER: "https://{HOSTNAME}:8443/auth/realms/todo"', files['todo-config.yaml'])
         self.assertIn(f'OIDC_ISSUER: "https://{HOSTNAME}:8443/auth/realms/todo"', files['notes-config.yaml'])
         self.assertIn(f'KC_HOSTNAME: "https://{HOSTNAME}:8443/auth"', files['keycloak.yaml'])
         self.assertIn(f'PublishPort={ADDRESS}:8443:8443', files['shared-proxy.kube'])
         configure.assert_called_once_with('fixture-password', [
-            ('todo-frontend', HOSTNAME), ('notes-frontend', 'notes.test')])
+            ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.test')])
         # Every other dollar expression is installed exactly as the bundle has it.
         bundle_manifests = self.bundle / 'generated/target/manifests'
         for name in ('todo-app.yaml', 'notes-app.yaml', 'todo-postgres.yaml', 'keycloak.yaml'):
@@ -170,13 +175,13 @@ class OfflineInstallTests(unittest.TestCase):
     def test_bad_or_missing_values_stop_before_anything_changes(self):
         metadata = json.loads((self.bundle / 'bundle.json').read_text())
         for hostname, address, defaults, message in (
-                ('shop.example.org;', ADDRESS, metadata['defaults'], 'TARGET_EXTERNAL_HOSTNAME from the command line'),
-                (None, ADDRESS, {}, 'TARGET_EXTERNAL_HOSTNAME has no value'),
+                ('shop.example.org;', ADDRESS, metadata['defaults'], 'TARGET_IDENTITY_HOSTNAME from the command line'),
+                (None, ADDRESS, {}, 'TARGET_IDENTITY_HOSTNAME has no value'),
                 (HOSTNAME, '0.0.0.0', metadata['defaults'], 'TARGET_PUBLISH_ADDRESS from the command line')):
             (self.bundle / 'bundle.json').write_text(json.dumps({**metadata, 'defaults': defaults}))
             with self.subTest(message=message), FakeHost(unit_directory=self.runtime) as host, \
                     patch.dict('os.environ', {}, clear=False) as environment:
-                environment.pop(EXTERNAL_HOSTNAME, None)
+                environment.pop(IDENTITY_HOSTNAME, None)
                 with self.assertRaisesRegex(TargetError, message):
                     self.install(host, hostname, address)
                 self.assertFalse(self.quadlet.exists())
@@ -207,30 +212,31 @@ class OfflineInstallTests(unittest.TestCase):
             changed, configure = self.install(host, hostname='www.example.org')
         self.assertTrue(changed)
         stopped = {argv[3] for argv in host.ran('systemctl', '--user', 'stop')}
-        # The hostname is in todo-config.yaml (todo's database, app and proxy), notes-config.yaml,
+        # Keycloak's hostname is in todo-config.yaml (todo's database and app), notes-config.yaml,
         # keycloak.yaml and shared-proxy.yaml; keycloak-postgres's files do not have it.
         self.assertEqual(stopped, {'todo-postgres.service', 'todo-app.service', 'notes-postgres.service',
                                    'notes-app.service', 'keycloak.service', 'shared-proxy.service'})
         self.assertIn('server_name www.example.org;', self.installed()['shared-proxy.yaml'])
         configure.assert_called_once_with('fixture-password', [
-            ('todo-frontend', 'www.example.org'), ('notes-frontend', 'notes.test')])
+            ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.test')])
 
     def test_each_app_gets_its_own_public_hostname(self):
         with FakeHost(unit_directory=self.runtime) as host:
             _changed, configure = self.install(host, notes='notes.example.org')
         files = self.installed()
         self.assertIn('server_name notes.example.org;', files['shared-proxy.yaml'])
-        self.assertIn(f'APP_TLS_HOSTNAMES: "{HOSTNAME} notes.example.org"', files['shared-proxy.yaml'])
+        self.assertIn('APP_TLS_HOSTNAMES: "todo.test notes.example.org"', files['shared-proxy.yaml'])
         configure.assert_called_once_with('fixture-password', [
-            ('todo-frontend', HOSTNAME), ('notes-frontend', 'notes.example.org')])
+            ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.example.org')])
 
     def test_the_host_records_its_hostnames_and_a_later_install_keeps_them(self):
         with FakeHost(unit_directory=self.runtime) as host, patch.dict('os.environ', {}, clear=False) as environment:
-            for name in (EXTERNAL_HOSTNAME, NOTES_HOSTNAME):
+            for name in (IDENTITY_HOSTNAME, TODO_HOSTNAME, NOTES_HOSTNAME):
                 environment.pop(name, None)
             self.install(host, notes='notes.example.org')
             self.assertEqual(json.loads(host.record.read_text()),
-                             {EXTERNAL_HOSTNAME: HOSTNAME, NOTES_HOSTNAME: 'notes.example.org'})
+                             {IDENTITY_HOSTNAME: HOSTNAME, TODO_HOSTNAME: 'todo.test',
+                              NOTES_HOSTNAME: 'notes.example.org'})
             self.assertEqual(oct(host.record.stat().st_mode & 0o777), '0o644')
             # An update without the options keeps the names instead of going back to the bundle's defaults.
             host.calls.clear()
@@ -238,7 +244,7 @@ class OfflineInstallTests(unittest.TestCase):
             self.assertFalse(changed)
             self.assertIn(f'server_name {HOSTNAME};', self.installed()['shared-proxy.yaml'])
             configure.assert_called_once_with('fixture-password', [
-                ('todo-frontend', HOSTNAME), ('notes-frontend', 'notes.example.org')])
+                ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.example.org')])
             # The record never holds the address: it is the host's own, given each time.
             self.assertNotIn('TARGET_PUBLISH_ADDRESS', host.record.read_text())
 
@@ -255,7 +261,7 @@ class OfflineInstallTests(unittest.TestCase):
                                 quadlet_dir=self.quadlet)
             with self.assertRaisesRegex(ValueError, 'built for todo, notes'):
                 install.install(self.bundle, deployment_mode='offline', bundle_directory=self.bundle,
-                                quadlet_dir=self.quadlet, applications=(apps.IDENTITY_APP,))
+                                quadlet_dir=self.quadlet, applications=(apps.APPS[0],))
             with self.assertRaisesRegex(ValueError, 'built for HTTPS port 8443, not 9443'):
                 install.install(self.bundle, deployment_mode='offline', bundle_directory=self.bundle,
                                 quadlet_dir=self.quadlet, service_port=9443)
@@ -286,7 +292,7 @@ with FakeHost(unit_directory=__import__('pathlib').Path(quadlet) / 'platform-kub
         patch.object(keycloak, 'configure', return_value=False):
     code = cli.main(['install', '--mode', 'server', '--deployment-mode', 'offline',
                      '--project-root', bundle, '--bundle-dir', bundle, '--publish-address', '192.0.2.10',
-                     '--quadlet-dir', quadlet, '--target-external-hostname', 'shop.example.org',
+                     '--quadlet-dir', quadlet, '--target-identity-hostname', 'shop.example.org',
                      '--target-notes-hostname', 'notes.example.org'])
 loaded = sorted(name for name in sys.modules if name.split('.')[0] in ('jinja2', 'yaml'))
 print(json.dumps({'code': code, 'loaded': loaded, 'started': [a[3] for a in host.ran('systemctl', '--user', 'start')]}))

@@ -177,7 +177,7 @@ systemctl --user is-active \
   notes-postgres.service \
   keycloak-postgres.service
 
-curl --fail http://127.0.0.1:8080/ready
+curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/ready
 ```
 
 From the laptop, `todo.test` should resolve to `192.168.1.50`, and Todo should
@@ -600,8 +600,8 @@ systemctl --user is-active \
   notes-postgres.service \
   keycloak-postgres.service
 
-curl --fail http://127.0.0.1:8080/health
-curl --fail http://127.0.0.1:8080/ready
+curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/health
+curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/ready
 curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/api/todos
 curl --fail -H 'Host: notes.test' http://127.0.0.1:8080/api/notes
 ```
@@ -618,7 +618,7 @@ sudo sed -i \
   -e '/[[:space:]]notes\.test\([[:space:]]\|$\)/d' \
   /etc/hosts
 
-echo '192.168.1.51 todo.test notes.test' | sudo tee -a /etc/hosts
+echo '192.168.1.51 auth.test todo.test notes.test' | sudo tee -a /etc/hosts
 ```
 
 VM2 creates its own demo CA the first time nginx starts, so you also need to

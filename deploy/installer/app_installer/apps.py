@@ -79,25 +79,23 @@ APPS = (
     App(name="notes", hostname="notes.test", keycloak_client="notes-frontend", replication_port=5433),
 )
 
-# The app whose public hostname is also Keycloak's and the OIDC issuer's
-# (TARGET_EXTERNAL_HOSTNAME). Its Keycloak client, from the realm import, is
-# the template the other apps' clients are copied from (keycloak.configure),
-# and nginx's certificate names its hostname first. An install always
-# includes it. Keycloak's own database is KEYCLOAK_DATABASE below.
-IDENTITY_APP = APPS[0]
+# Keycloak's own public hostname, the OIDC issuer's: every app's login happens
+# there (TARGET_IDENTITY_HOSTNAME in an offline bundle), and nginx's
+# certificate names it first. It belongs to no app; this is its default, which
+# deploy/environments/*/values.yaml and the target values may change.
+IDENTITY_HOSTNAME = "auth.test"
+# The Keycloak client the realm import brings (keycloak/todo-realm.json): the
+# template every other app's client is copied from (keycloak.configure).
+TEMPLATE_CLIENT = "todo-frontend"
 NETWORK = "app-network"
 # Keycloak itself is the identity server, not a per-app/per-database resource,
 # so its image does not follow the "<name>-<component>" naming.
 KEYCLOAK_IMAGE = f"localhost/keycloak:{settings.IMAGE_TAG}"
 KEYCLOAK_ARCHIVE = f"keycloak-{settings.IMAGE_TAG}.tar"
 
-# The resources nginx, shared by every app, runs with. Their names start with
-# "todo-" because todo was the first app; they belong to no app.
+# The resources nginx, shared by every app, runs with; they belong to no app.
 PROXY_IMAGE = f"localhost/platform-proxy:{settings.IMAGE_TAG}"
 PROXY_ARCHIVE = f"platform-proxy-{settings.IMAGE_TAG}.tar"
-# The ConfigMap file shared-proxy.kube names (ConfigMap=); it is the identity
-# app's own ConfigMap file (tests/test_kube_name_contract.py).
-PROXY_CONFIG_MANIFEST = "todo-config.yaml"
 # The TLS volume nginx used before its Podman secrets; kept for going back (tls.py).
 NGINX_TLS_VOLUME = "platform-nginx-data"
 
@@ -163,8 +161,8 @@ def workloads(applications=APPS):
     Each app's database first, then Keycloak's, Keycloak, the apps, and
     nginx last: each starts after what it needs (deploy/quadlet/*.kube.j2
     say the same in Requires= and After=). A database is healthy before the
-    next workload starts. An app shares its ConfigMap file with its database,
-    and nginx's unit names the identity app's (PROXY_CONFIG_MANIFEST).
+    next workload starts. An app shares its ConfigMap file with its database;
+    nginx's ConfigMaps are in its own shared-proxy.yaml.
     """
     return (
         *(Workload(app.database.container, app.database.manifest, app.database.config_manifest,
@@ -173,7 +171,7 @@ def workloads(applications=APPS):
                  wait_healthy=True),
         Workload("keycloak", "keycloak.yaml"),
         *(Workload(app.pod, app.manifest, app.config_manifest) for app in applications),
-        Workload("shared-proxy", "shared-proxy.yaml", PROXY_CONFIG_MANIFEST),
+        Workload("shared-proxy", "shared-proxy.yaml"),
     )
 
 

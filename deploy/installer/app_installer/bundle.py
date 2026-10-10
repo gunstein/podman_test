@@ -27,7 +27,13 @@ import sys
 from pathlib import Path
 
 from . import apps, quadlet, render, target_render, workloads
-from .target_render import LOOPBACK, PUBLISH_ADDRESS, hostname_target, placeholder
+from .target_render import (
+    IDENTITY_HOSTNAME,
+    LOOPBACK,
+    PUBLISH_ADDRESS,
+    hostname_target,
+    placeholder,
+)
 
 TARGET = 'generated/target'
 
@@ -62,14 +68,15 @@ def build(project_root, values_file, bundle_directory, application_names=()):
     """
     root, bundle = Path(project_root), Path(bundle_directory)
     selected = render.selection(application_names)
-    hostname, port, log_level = render.read_values(values_file)
-    normal = render.hostnames(selected, hostname)
+    identity_hostname, port, log_level = render.read_values(values_file)
+    normal = render.hostnames(selected)
     manifest_files = render.files(root, selected, {app.name: placeholder(hostname_target(app)) for app in selected},
-                                  port, log_level)
-    defaults = {hostname_target(app): normal[app.name] for app in selected}
+                                  placeholder(IDENTITY_HOSTNAME), port, log_level)
+    defaults = {IDENTITY_HOSTNAME: identity_hostname,
+                **{hostname_target(app): normal[app.name] for app in selected}}
     filled = {name: target_render.substitute(content.decode(), defaults, name).encode()
               for name, content in manifest_files.items()}
-    if filled != render.files(root, selected, normal, port, log_level):
+    if filled != render.files(root, selected, normal, identity_hostname, port, log_level):
         raise RuntimeError('The placeholder render differs from the normal render in more than the hostnames.')
     published = quadlets(root, selected, port, placeholder(PUBLISH_ADDRESS))
     local_only = {'shared-proxy.kube': quadlets(root, selected, port, LOOPBACK)['shared-proxy.kube']}

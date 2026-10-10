@@ -35,7 +35,7 @@ for attempt in 1 2 3; do
   hostnames=todo.test
   if [[ "$attempt" != 1 ]]; then hostnames="todo.test notes.test"; fi
   podman run --rm \
-    --env PLATFORM_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=$hostnames" \
+    --env PLATFORM_TLS_HOSTNAME=auth.test --env "APP_TLS_HOSTNAMES=$hostnames" \
     --volume "$volume:/var/lib/platform-tls" \
     --volume "$work_directory/nginx-config:/etc/platform-nginx:ro,Z" \
     "$image" nginx -t -c /etc/platform-nginx/nginx.conf
@@ -64,7 +64,7 @@ cat "$work_directory/tls-3"
 # nginx itself, as in the pod: PLATFORM_TLS_ROLE=serve with the volume read-only.
 serve_read_only() {
   podman run --rm --env PLATFORM_TLS_ROLE=serve \
-    --env PLATFORM_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
+    --env PLATFORM_TLS_HOSTNAME=auth.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
     --volume "$volume:/var/lib/platform-tls:ro" \
     --volume "$work_directory/nginx-config:/etc/platform-nginx:ro,Z" \
     "$image" nginx -t -c /etc/platform-nginx/nginx.conf
@@ -106,7 +106,7 @@ test "$(tls install)" = true
 test "$(tls install)" = false
 test "$(tls status)" = 'provided True fits'
 podman run --rm \
-  --env PLATFORM_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
+  --env PLATFORM_TLS_HOSTNAME=auth.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
   --volume "$volume:/var/lib/platform-tls" \
   --volume "$work_directory/nginx-config:/etc/platform-nginx:ro,Z" \
   "$image" nginx -t -c /etc/platform-nginx/nginx.conf
@@ -158,7 +158,7 @@ PY
 serve_secrets() {
   # shellcheck disable=SC2046 # one --secret option per word
   podman run --rm --env PLATFORM_TLS_ROLE=serve \
-    --env PLATFORM_TLS_HOSTNAME=todo.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
+    --env PLATFORM_TLS_HOSTNAME=auth.test --env "APP_TLS_HOSTNAMES=todo.test notes.test" \
     $(secrets_step mounts) \
     --volume "$work_directory/nginx-config:/etc/platform-nginx:ro,Z" \
     "$image" nginx -t -c /etc/platform-nginx/nginx.conf

@@ -347,7 +347,7 @@ class ClientTrustTests(unittest.TestCase):
         directory = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(directory))
         hosts = directory / "hosts"
-        hosts.write_text(f"{mapped} todo.test notes.test\n")
+        hosts.write_text(f"{mapped} auth.test todo.test notes.test\n")
         commands = []
 
         def run(argv, **keywords):

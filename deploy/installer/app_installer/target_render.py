@@ -10,9 +10,8 @@ DR tools on the primary and the standby.
 
 There are two kinds of value (TARGETS):
 
-  Public hostnames, one per app: TARGET_EXTERNAL_HOSTNAME for the app that
-      is the identity app (apps.IDENTITY_APP), which Keycloak and the OIDC issuer use too,
-      and TARGET_<APP>_HOSTNAME for every other app (TARGET_NOTES_HOSTNAME).
+  Public hostnames: TARGET_IDENTITY_HOSTNAME for Keycloak, the OIDC issuer,
+      and TARGET_<APP>_HOSTNAME for each app (TARGET_NOTES_HOSTNAME).
       They are the service's names: nginx server_name, the TLS certificate,
       the OIDC issuer, KC_HOSTNAME and each Keycloak client. They must be
       the same on primary and standby, so a host records them
@@ -50,9 +49,9 @@ from . import apps, manifests, quadlet, settings
 
 BUNDLE_METADATA = 'bundle.json'
 BUNDLE_FORMAT = 'platform-offline-bundle'
-BUNDLE_FORMAT_VERSION = 4
+BUNDLE_FORMAT_VERSION = 5
 PLACEHOLDER = re.compile(r'\$\{(TARGET_[A-Z0-9_]+)\}')
-EXTERNAL_HOSTNAME = 'TARGET_EXTERNAL_HOSTNAME'
+IDENTITY_HOSTNAME = 'TARGET_IDENTITY_HOSTNAME'
 PUBLISH_ADDRESS = 'TARGET_PUBLISH_ADDRESS'
 # The address that selects the local-only proxy unit: nginx then publishes only
 # on 127.0.0.1, which its unit always does (see deploy/quadlet/shared-proxy.kube.j2).
@@ -62,16 +61,21 @@ FILE_SETS = ('manifests', 'quadlets', 'local_only_quadlets', 'replicated_quadlet
 
 
 def placeholder(name):
-    """The text that stands for a target value in a rendered file, e.g. ${TARGET_EXTERNAL_HOSTNAME}."""
+    """The text that stands for a target value in a rendered file, e.g. ${TARGET_IDENTITY_HOSTNAME}."""
     return '${' + name + '}'
 
 
 def hostname_target(app):
     """The target value of an app's public hostname, e.g. TARGET_NOTES_HOSTNAME."""
-    return EXTERNAL_HOSTNAME if app is apps.IDENTITY_APP else f'TARGET_{app.name.upper()}_HOSTNAME'
+    return f'TARGET_{app.name.upper()}_HOSTNAME'
 
 
-HOSTNAMES = tuple(hostname_target(app) for app in apps.APPS)
+def hostname_targets(applications):
+    """The hostname target values of Keycloak and these apps, Keycloak's first."""
+    return [IDENTITY_HOSTNAME] + [hostname_target(app) for app in applications]
+
+
+HOSTNAMES = tuple(hostname_targets(apps.APPS))
 
 
 def check_hostname(value):
@@ -147,6 +151,11 @@ def hostnames(values):
     return {app.name: values[hostname_target(app)] for app in apps.APPS if hostname_target(app) in values}
 
 
+def identity_hostname(values):
+    """Keycloak's public hostname from the target values."""
+    return values[IDENTITY_HOSTNAME]
+
+
 # The record of the public hostnames a host was installed with.
 
 def record_path():
@@ -212,6 +221,11 @@ class TargetFiles:
         """Each app's public hostname: {app name: hostname}."""
         return hostnames(self.values)
 
+    @property
+    def identity_hostname(self):
+        """Keycloak's public hostname."""
+        return identity_hostname(self.values)
+
 
 def metadata(bundle_directory):
     """bundle.json, checked: the format, its version and the shape of each entry."""
@@ -252,8 +266,8 @@ def load(bundle_directory, given, environment=None, recorded=None):
     Network= the bundle's network unit, so the installed files fit together.
     """
     data = metadata(bundle_directory)
-    # The hostnames of the bundle's own apps, and the publish address.
-    names = [hostname_target(app) for app in apps.APPS if app.name in data['applications']] + [PUBLISH_ADDRESS]
+    # Keycloak's hostname, the hostnames of the bundle's own apps, and the publish address.
+    names = hostname_targets(app for app in apps.APPS if app.name in data['applications']) + [PUBLISH_ADDRESS]
     values = resolve(given, os.environ if environment is None else environment,
                      recorded or {}, data['defaults'], names)
 
@@ -303,5 +317,5 @@ def host_hostnames(bundle_directory):
     the same names. Each value is checked as when it is installed.
     """
     data, recorded = metadata(bundle_directory), read_record()
-    names = [hostname_target(app) for app in apps.APPS if app.name in data['applications']]
+    names = hostname_targets(app for app in apps.APPS if app.name in data['applications'])
     return resolve({}, {}, recorded, data['defaults'], names)

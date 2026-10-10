@@ -12,9 +12,10 @@ carries the Platform in bundle.json and a host its record (target_render).
 Every mistake is a ValueError that names the file and the field.
 """
 import functools
+import os
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from . import apps, manifests
 
@@ -81,15 +82,41 @@ def _yaml(path):
         raise ValueError(f'{path}: not valid YAML: {error}') from None
 
 
-def _app(directory, hostname, replication_port):
+def _images(data, path, root):
+    """The images an app.yaml declares, {name: {context, containerfile}}, as apps.AppImage.
+
+    context is relative to the app's directory and may lead out of it (a
+    source tree elsewhere); it is kept relative to root, platform.yaml's
+    directory. containerfile (default Containerfile) is relative to the
+    context and stays inside it. Neither has to exist until a build.
+    """
+    if not isinstance(data, dict) or not data:
+        raise ValueError(f'{path}: images must map each image name to its build (context, containerfile)')
+    images = []
+    for name, build in data.items():
+        where = f'{path}: images.{name}'
+        _text(name, where, WORD)
+        build = _fields(build, where, ('context',), ('containerfile',))
+        context = _text(build['context'], f'{where}.context')
+        containerfile = _text(build.get('containerfile', 'Containerfile'), f'{where}.containerfile')
+        if PurePosixPath(containerfile).is_absolute() or '..' in PurePosixPath(containerfile).parts:
+            raise ValueError(f'{where}.containerfile: must be a path inside the context, not {containerfile!r}')
+        directory = os.path.normpath(path.parent / context)
+        images.append(apps.AppImage(name=name, context=Path(os.path.relpath(directory, root)).as_posix(),
+                                    containerfile=containerfile))
+    return tuple(images)
+
+
+def _app(directory, hostname, replication_port, root):
     """The App in directory/app.yaml, served on hostname, its database replicating on replication_port."""
     path = directory / APP_FILE
-    data = _fields(_yaml(path), path, ('name', 'keycloakClient'), ('apiCollection',))
+    data = _fields(_yaml(path), path, ('name', 'keycloakClient', 'images'), ('apiCollection',))
     return apps.App(name=_text(data['name'], f'{path}: name', NAME), hostname=hostname,
                     keycloak_client=_text(data['keycloakClient'], f'{path}: keycloakClient', WORD),
                     replication_port=replication_port,
                     api_collection=_text(data['apiCollection'], f'{path}: apiCollection', WORD)
-                    if 'apiCollection' in data else '')
+                    if 'apiCollection' in data else '',
+                    images=_images(data['images'], path, root))
 
 
 def load(path, environment='prod'):
@@ -114,7 +141,8 @@ def load(path, environment='prod'):
                for index, entry in enumerate(data['apps'])]
     app_list = tuple(_app(path.parent / _text(entry['path'], f'{path}: apps[{index}].path'),
                           _hostname(entry['hostname'], f'{path}: apps[{index}].hostname'),
-                          _port(entry['replicationPort'], f'{path}: apps[{index}].replicationPort', 1024))
+                          _port(entry['replicationPort'], f'{path}: apps[{index}].replicationPort', 1024),
+                          path.parent)
                      for index, entry in enumerate(entries))
     _require_distinct(path, entries, app_list)
     identity = _hostname(data['identityHostname'], f'{path}: identityHostname')

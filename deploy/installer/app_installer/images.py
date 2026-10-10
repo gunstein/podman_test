@@ -11,17 +11,22 @@ from .commands import exists, run
 
 @dataclass(frozen=True)
 class Image:
-    """One container image: its reference, offline archive name, and build directory (None: pulled)."""
+    """One container image: its reference, offline archive name, and how a build makes it.
+
+    context is the build context relative to the project root, None for an
+    image that is pulled; containerfile is relative to the context.
+    """
     component: str
     reference: str
     archive: str
-    source: str | None
+    context: str | None
+    containerfile: str = "Containerfile"
 
 
 def image_list(app: apps.App) -> tuple[Image, ...]:
-    """The backend and frontend images of one app; only they are built per app."""
-    return tuple(Image(component, app.image(component), app.image_archive(component), app.names.resource(component))
-                 for component in ("backend", "frontend"))
+    """The images one app builds, as its app.yaml declares them (apps.AppImage)."""
+    return tuple(Image(image.name, app.image(image.name), app.image_archive(image.name), image.context,
+                       image.containerfile) for image in app.images)
 
 
 def shared_images() -> tuple[Image, ...]:
@@ -32,8 +37,8 @@ def shared_images() -> tuple[Image, ...]:
     """
     postgres = apps.KEYCLOAK_DATABASE  # every Database has the same image and archive
     return (Image("postgres", postgres.image, postgres.image_archive, None),
-            Image("proxy", apps.PROXY_IMAGE, apps.PROXY_ARCHIVE, "proxy"),
-            Image("keycloak", apps.KEYCLOAK_IMAGE, apps.KEYCLOAK_ARCHIVE, "keycloak"))
+            Image("proxy", apps.PROXY_IMAGE, apps.PROXY_ARCHIVE, ".", "proxy/Containerfile"),
+            Image("keycloak", apps.KEYCLOAK_IMAGE, apps.KEYCLOAK_ARCHIVE, ".", "keycloak/Containerfile"))
 
 
 def _prepare(project_root, deployment_mode, bundle_directory, refresh_images, specifications):
@@ -59,11 +64,12 @@ def _prepare(project_root, deployment_mode, bundle_directory, refresh_images, sp
                     raise FileNotFoundError(f"The bundle {bundle_directory} has no image archive images/"
                                             f"{image.archive}; use the complete verified bundle.")
                 run("podman", "load", "--input", archive, timeout=settings.IMAGE_TIMEOUT)
-            elif image.source is None:
+            elif image.context is None:
                 run("podman", "pull", image.reference, timeout=settings.IMAGE_TIMEOUT)
             else:
+                context = root / image.context
                 run("podman", "build", *(["--pull"] if refresh_images else []),
-                    "--file", root / image.source / "Containerfile", "--tag", image.reference, root,
+                    "--file", context / image.containerfile, "--tag", image.reference, context,
                     timeout=settings.IMAGE_TIMEOUT)
             changed[image.component] = True
         if image.component == "proxy":

@@ -10,3 +10,13 @@ keycloakClient: todo-frontend
 # name), which must answer a public read with a list. nginx forwards all of
 # /api/ to the backend either way.
 apiCollection: todos
+# The images it builds (section 5.2), each localhost/todo-<name>. context is
+# the build context, relative to this directory; containerfile is relative to
+# the context. Both Containerfiles copy from the repository root today.
+images:
+  backend:
+    context: ../..
+    containerfile: todo-backend/Containerfile
+  frontend:
+    context: ../..
+    containerfile: todo-frontend/Containerfile

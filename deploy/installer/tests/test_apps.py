@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_installer.apps import (  # noqa: E402
     KEYCLOAK_DATABASE,
     App,
+    AppImage,
     Platform,
 )
 from app_installer.platform_file import checkout  # noqa: E402
@@ -51,7 +52,8 @@ class AppRegistryTests(unittest.TestCase):
 
     def test_app_owns_every_derived_name(self):
         for name in ("todo", "notes", "third"):
-            app = App(name=name, hostname=name + ".test", keycloak_client=name + "-frontend")
+            app = App(name=name, hostname=name + ".test", keycloak_client=name + "-frontend",
+                      images=(AppImage(name="backend", context="."),))
             self.assertEqual(app.database.container, name + "-postgres")
             self.assertEqual(app.unit, name + "-app.kube")
             self.assertEqual(app.service, name + "-app.service")
@@ -88,11 +90,16 @@ class AppRegistryTests(unittest.TestCase):
 
     def test_images_come_from_the_app(self):
         from app_installer.images import image_list, shared_images
-        app = App(name="notes", hostname="notes.test", keycloak_client="notes-frontend")
+        app = App(name="notes", hostname="notes.test", keycloak_client="notes-frontend",
+                  images=(AppImage(name="backend", context=".", containerfile="notes-backend/Containerfile"),
+                          AppImage(name="site", context="../help")))
         images = image_list(app)
         self.assertEqual([image.reference for image in images], [
-            "localhost/notes-backend:m12", "localhost/notes-frontend:m12"])
-        self.assertEqual([image.source for image in images], ["notes-backend", "notes-frontend"])
+            "localhost/notes-backend:m12", "localhost/notes-site:m12"])
+        self.assertEqual([(image.context, image.containerfile) for image in images],
+                         [(".", "notes-backend/Containerfile"), ("../help", "Containerfile")])
+        with self.assertRaisesRegex(ValueError, "The app notes declares no image 'frontend'"):
+            app.image("frontend")
         # PostgreSQL runs every database, so it is shared, not one per app.
         self.assertEqual([image.reference for image in shared_images()], [
             "docker.io/library/postgres:17.11", "localhost/platform-proxy:m12", "localhost/keycloak:m12"])

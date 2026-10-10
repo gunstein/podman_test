@@ -1,6 +1,6 @@
 {
   "format": "platform-offline-bundle",
-  "format_version": 6,
+  "format_version": 7,
   "manifests": {
     "directory": "generated/target/manifests",
     "files": [
@@ -51,14 +51,38 @@
         "hostname": "todo.test",
         "keycloak_client": "todo-frontend",
         "replication_port": 5432,
-        "api_collection": "todos"
+        "api_collection": "todos",
+        "images": [
+          {
+            "name": "backend",
+            "context": ".",
+            "containerfile": "todo-backend/Containerfile"
+          },
+          {
+            "name": "frontend",
+            "context": ".",
+            "containerfile": "todo-frontend/Containerfile"
+          }
+        ]
       },
       {
         "name": "notes",
         "hostname": "notes.test",
         "keycloak_client": "notes-frontend",
         "replication_port": 5433,
-        "api_collection": ""
+        "api_collection": "",
+        "images": [
+          {
+            "name": "backend",
+            "context": ".",
+            "containerfile": "notes-backend/Containerfile"
+          },
+          {
+            "name": "frontend",
+            "context": ".",
+            "containerfile": "notes-frontend/Containerfile"
+          }
+        ]
       }
     ]
   },

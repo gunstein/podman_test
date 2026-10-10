@@ -146,7 +146,7 @@ class MetadataTests(unittest.TestCase):
         with self.assertRaisesRegex(TargetError, 'no bundle.json: it was built in an older format'):
             self.load()
         self.write(format_version=2)
-        with self.assertRaisesRegex(TargetError, 'format version 2; this installer reads version 6'):
+        with self.assertRaisesRegex(TargetError, 'format version 2; this installer reads version 7'):
             self.load()
         self.write(format='something-else')
         with self.assertRaisesRegex(TargetError, 'does not describe a platform-offline-bundle'):

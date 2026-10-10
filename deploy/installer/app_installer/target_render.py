@@ -55,7 +55,7 @@ from . import apps, manifests, quadlet, settings
 
 BUNDLE_METADATA = 'bundle.json'
 BUNDLE_FORMAT = 'platform-offline-bundle'
-BUNDLE_FORMAT_VERSION = 6
+BUNDLE_FORMAT_VERSION = 7
 PLACEHOLDER = re.compile(r'\$\{(TARGET_[A-Z0-9_]+)\}')
 # A hostname target value's name, as a host may record it.
 HOSTNAME_NAME = re.compile(r'TARGET_[A-Z0-9_]+_HOSTNAME')

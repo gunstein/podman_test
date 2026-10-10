@@ -134,8 +134,8 @@ def uninstall(platform, remove_data=False, quadlet_dir=None, remove_backups=Fals
         for name in backup_volumes(platform):
             changed = remove('volume', name) or changed
     for app in platform.apps:
-        for component in ('backend', 'frontend'):
-            changed = remove('image', app.image(component)) or changed
+        for image in app.images:
+            changed = remove('image', app.image(image.name)) or changed
     for reference in (apps.PROXY_IMAGE, apps.KEYCLOAK_IMAGE, OLD_IMAGE):
         changed = remove('image', reference) or changed
     if old:

@@ -129,15 +129,16 @@ tested.
 
 ### 5.1 Configuration files
 
-Implemented so far (phase 3): `platform.yaml` with `identityHostname`,
-`publicPort`, `logLevel`, the `local` and `prod` environments and each app's
-`path`, `hostname` and `replicationPort`; `app.yaml` with `name`,
-`keycloakClient` and `apiCollection`. Everything else below comes with the
-phase that needs it; until then an app's source, images, routes, setup and
-checks follow today's conventions: the sources in `<name>-backend/` and
-`<name>-frontend/` (`images.py`), the images' names (`stack.Names`), and the
-backend's `python -m backend.migrate` (`app.yaml.j2`) and
-`python -m backend.setup_roles` (`install.setup_roles`).
+Implemented so far (phases 3 and 4a): `platform.yaml` with
+`identityHostname`, `publicPort`, `logLevel`, the `local` and `prod`
+environments and each app's `path`, `hostname` and `replicationPort`;
+`app.yaml` with `name`, `keycloakClient`, `apiCollection` and `images` (each
+built image's `context` and `containerfile`, section 5.2). Everything else
+below comes with the phase that needs it; until then an app's routes, setup
+and checks follow today's conventions: the shared app pod template uses its
+`backend` and `frontend` images (`app.yaml.j2`), and the backend's
+`python -m backend.migrate` and `python -m backend.setup_roles`
+(`install.setup_roles`).
 
 - `platform.yaml` is the operator's: hostnames, which realm each app uses,
   each database's `replicationPort`, which app serves another app's help
@@ -549,4 +550,21 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
   (phase 4d) and the example apps' CI jobs. The firewall rules allow the
   range from the lowest to the highest replication port, as app-ops'
   standby rule does. Name guard: 48 known files left.
+
+**Phase 4a, code done; acceptance run with the next phase that changes a host.**
+- Each `app.yaml` declares the images the app builds (`images: {NAME:
+  {context, containerfile}}`, section 5.2): `context` relative to the app's
+  directory, possibly outside it (a source tree elsewhere), kept relative to
+  the project root; `containerfile` relative to the context and inside it.
+  The image is still `localhost/<app>-<NAME>:<tag>`. `apps.AppImage` holds
+  one; `images.image_list` builds exactly the declared images, from their
+  context (`podman build --file CONTEXT/CONTAINERFILE CONTEXT`), and
+  `uninstall` removes exactly them. An app asked for an image it does not
+  declare is an error.
+- Todo and Notes declare `backend` and `frontend` with the repository root as
+  context, so they build exactly as before. `bundle.json` carries the images
+  (format version 7); the render baseline changes only there.
+- Not yet: prebuilt images (`reference`, pulled): no app needs one, so they
+  come with the first that does. Which shared images a bundle carries
+  (Keycloak and PostgreSQL only when needed) is phase 4c.
 

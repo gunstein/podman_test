@@ -8,12 +8,27 @@ from . import settings, stack
 
 
 @dataclass(frozen=True)
+class AppImage:
+    """One image an app builds: its name in the app, and how to build it.
+
+    context is the build context, relative to the project root (the
+    directory of platform.yaml); containerfile is relative to the context.
+    The image is localhost/<app>-<name>:<tag> (App.image).
+    """
+
+    name: str
+    context: str
+    containerfile: str = "Containerfile"
+
+
+@dataclass(frozen=True)
 class App:
     """One web application: its public hostname, OAuth client and database.
 
     Its resource names come from its name through stack.Names, so the "todo"
-    app runs the todo-app pod (unit todo-app.kube, service todo-app.service)
-    from the images localhost/todo-backend and localhost/todo-frontend.
+    app runs the todo-app pod (unit todo-app.kube, service todo-app.service).
+    images are the images it builds (AppImage, from its app.yaml); its
+    backend image is localhost/todo-backend.
     Its PostgreSQL workload is self.database (todo-postgres, todo-db-password,
     the todo_migrator role and so on). An App is not a database: code that
     works on the replicated database group asks Platform.replicated_databases.
@@ -27,6 +42,7 @@ class App:
     keycloak_client: str
     replication_port: int = 5432
     api_collection: str = ""
+    images: tuple = ()
 
     @property
     def names(self) -> stack.Names:
@@ -74,10 +90,13 @@ class App:
         return self.names.kube_secret(component)
 
     def image(self, component: str) -> str:
-        """The app's image for component "backend" or "frontend"."""
+        """The reference of the app's image named component, which its app.yaml must declare."""
+        if component not in (image.name for image in self.images):
+            raise ValueError(f"The app {self.name} declares no image {component!r} in its app.yaml")
         return self.names.image(component)
 
     def image_archive(self, component: str) -> str:
+        self.image(component)
         return self.names.image_archive(component)
 
 
@@ -266,21 +285,29 @@ class Platform:
         """This platform as plain data, for bundle.json and a host's record."""
         return {"identity_hostname": self.identity_hostname,
                 "apps": [{"name": app.name, "hostname": app.hostname, "keycloak_client": app.keycloak_client,
-                          "replication_port": app.replication_port, "api_collection": app.api_collection}
+                          "replication_port": app.replication_port, "api_collection": app.api_collection,
+                          "images": [{"name": image.name, "context": image.context,
+                                      "containerfile": image.containerfile} for image in app.images]}
                          for app in self.apps]}
 
     @classmethod
     def from_json(cls, data):
         """The platform to_json wrote; anything else is a ValueError that says what is wrong."""
         fields = {"name": str, "hostname": str, "keycloak_client": str, "replication_port": int,
-                  "api_collection": str}
+                  "api_collection": str, "images": list}
+        image_fields = {"name": str, "context": str, "containerfile": str}
         if not (isinstance(data, dict) and set(data) == {"identity_hostname", "apps"}
                 and isinstance(data["identity_hostname"], str) and isinstance(data["apps"], list)):
             raise ValueError("A platform needs exactly identity_hostname and a list of apps")
+        apps = []
         for entry in data["apps"]:
             if not (isinstance(entry, dict) and set(entry) == set(fields)
                     and all(type(entry[key]) is kind for key, kind in fields.items())):
                 raise ValueError(f"An app needs exactly {', '.join(fields)}: {entry!r}")
-        return cls(apps=tuple(App(**entry) for entry in data["apps"]),
-                   identity_hostname=data["identity_hostname"])
+            for image in entry["images"]:
+                if not (isinstance(image, dict) and set(image) == set(image_fields)
+                        and all(type(image[key]) is kind for key, kind in image_fields.items())):
+                    raise ValueError(f"An image needs exactly {', '.join(image_fields)}: {image!r}")
+            apps.append(App(**{**entry, "images": tuple(AppImage(**image) for image in entry["images"])}))
+        return cls(apps=tuple(apps), identity_hostname=data["identity_hostname"])
 

@@ -8,3 +8,12 @@ name: notes
 keycloakClient: notes-frontend
 # apiCollection is left out: the DR tools check the app by reading /api/notes,
 # the name (see examples/todo/app.yaml).
+# The images it builds (section 5.2), each localhost/notes-<name>; see
+# examples/todo/app.yaml.
+images:
+  backend:
+    context: ../..
+    containerfile: notes-backend/Containerfile
+  frontend:
+    context: ../..
+    containerfile: notes-frontend/Containerfile

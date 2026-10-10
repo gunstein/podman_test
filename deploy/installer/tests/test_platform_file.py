@@ -16,7 +16,7 @@ PLATFORM = {
     'environments': {'local': {'logLevel': 'debug'}, 'prod': {}},
     'apps': [{'path': 'apps/shop', 'hostname': 'shop.example.org', 'replicationPort': 5440}],
 }
-SHOP = {'name': 'shop', 'keycloakClient': 'shop-frontend'}
+SHOP = {'name': 'shop', 'keycloakClient': 'shop-frontend', 'images': {'site': {'context': '.'}}}
 
 
 class PlatformFileTests(unittest.TestCase):
@@ -48,7 +48,8 @@ class PlatformFileTests(unittest.TestCase):
     def test_an_app_comes_from_its_directory_relative_to_platform_yaml(self):
         platform, prod = platform_file.load(self.write())
         self.assertEqual(platform, apps.Platform(apps=(apps.App(
-            name='shop', hostname='shop.example.org', keycloak_client='shop-frontend', replication_port=5440),),
+            name='shop', hostname='shop.example.org', keycloak_client='shop-frontend', replication_port=5440,
+            images=(apps.AppImage(name='site', context='apps/shop'),)),),
             identity_hostname='login.example.org'))
         self.assertEqual(prod, platform_file.Environment(public_port=8443, log_level='info'))
 
@@ -93,7 +94,7 @@ class PlatformFileTests(unittest.TestCase):
 
     def test_two_apps_may_not_share_a_name_client_hostname_or_port(self):
         second = {'path': 'apps/other', 'hostname': 'other.example.org', 'replicationPort': 5441}
-        other = {'name': 'other', 'keycloakClient': 'other-frontend'}
+        other = {'name': 'other', 'keycloakClient': 'other-frontend', 'images': {'site': {'context': '.'}}}
         for change, field in (({'hostname': 'shop.example.org'}, 'hostname'), ({'replicationPort': 5440}, 'replicationPort')):
             with self.subTest(field=field):
                 path = self.write(platform={**PLATFORM, 'apps': [PLATFORM['apps'][0], {**second, **change}]})
@@ -108,6 +109,33 @@ class PlatformFileTests(unittest.TestCase):
                 (path.parent / 'apps/other/app.yaml').write_text(yaml.safe_dump({**other, **change}))
                 with self.assertRaisesRegex(ValueError, rf'share {field}'):
                     platform_file.load(path)
+
+    def test_an_image_is_built_from_a_context_relative_to_its_app(self):
+        app = {**SHOP, 'images': {
+            'backend': {'context': '../..', 'containerfile': 'src/backend/Containerfile'},
+            'site': {'context': '../../../elsewhere/site'},
+        }}
+        platform, _ = platform_file.load(self.write(app=app))
+        self.assertEqual(platform.apps[0].images, (
+            apps.AppImage(name='backend', context='.', containerfile='src/backend/Containerfile'),
+            apps.AppImage(name='site', context='../elsewhere/site', containerfile='Containerfile')))
+        self.assertEqual(apps.Platform.from_json(platform.to_json()), platform)
+
+    def test_images_are_checked(self):
+        for images, message in (
+            (None, r'app.yaml: missing images'),
+            ({}, r'images must map each image name'),
+            ({'Site': {'context': '.'}}, r'images.Site: must be a word'),
+            ({'site': {}}, r'images.site: missing context'),
+            ({'site': {'context': '.', 'tag': 'x'}}, r'images.site: unknown field tag'),
+            ({'site': {'context': '.', 'containerfile': '../Containerfile'}}, r'must be a path inside the context'),
+            ({'site': {'context': '.', 'containerfile': '/etc/Containerfile'}}, r'must be a path inside the context'),
+        ):
+            with self.subTest(message=message):
+                app = {key: value for key, value in SHOP.items() if key != 'images'}
+                if images is not None:
+                    app['images'] = images
+                self.refused(message, app=app)
 
     def test_keycloaks_database_port_is_taken(self):
         self.refused(r"apps/shop/app.yaml has replicationPort 5434, which is Keycloak's database's",

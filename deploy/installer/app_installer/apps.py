@@ -72,7 +72,9 @@ class App:
     Keycloak with the OAuth client keycloak_client ("" without login).
     pod_template is its own pod template (POD_TEMPLATE in its directory),
     relative to the project root; manifests.render_app renders it and
-    pod_contract checks the result.
+    pod_contract checks the result. containers are the long-running
+    containers that pod runs, as the loader read them from the rendered
+    template, so a host that never renders still knows what to wait for.
     ready is the HTTP path that answers 200 once the app can serve ("" for
     none: nothing waits for it beyond its started unit), checks the requests (Check) that must
     answer as declared after an install and a DR promotion (checks.py).
@@ -92,6 +94,7 @@ class App:
     ready: str = ""
     checks: tuple = ()
     pod_template: str = ""
+    containers: tuple = ()
 
     @property
     def names(self) -> stack.Names:
@@ -364,8 +367,9 @@ class Platform:
 
         An app host runs every workload; a database-only standby only the
         databases. The containers are the long-running ones: each database,
-        Keycloak if it runs, each app's backend and frontend, and nginx (their
-        names in deploy/manifests, kept by podman kube play --no-pod-prefix).
+        Keycloak if it runs, each app's own (App.containers, from its pod
+        template), and nginx (their names kept by podman kube play
+        --no-pod-prefix).
         """
         databases = [database.container for database in self.replicated_databases]
         if role == "standby":
@@ -373,7 +377,7 @@ class Platform:
         if role != "app":
             raise ValueError(f"role must be app or standby, not {role!r}")
         containers = [*databases, *(["keycloak"] if self.has_identity else []),
-                      *(app.names.resource(part) for app in self.apps for part in ("backend", "frontend")), "nginx"]
+                      *(container for app in self.apps for container in app.containers), "nginx"]
         return [workload.pod for workload in self.workloads()], containers
 
     def host_ports(self):
@@ -396,6 +400,7 @@ class Platform:
                           "routes": [{"path": route.path, "to": route.to, "exact": route.exact}
                                      for route in app.routes],
                           "ready": app.ready, "pod_template": app.pod_template,
+                          "containers": list(app.containers),
                           "checks": [{"path": check.path, "status": check.status} for check in app.checks]}
                          for app in self.apps]}
 
@@ -405,7 +410,7 @@ class Platform:
         fields = {"name": str, "hostname": str, "keycloak_client": str, "has_database": bool,
                   "replication_port": int,
                   "images": list, "endpoints": list, "routes": list, "ready": str, "checks": list,
-                  "pod_template": str}
+                  "pod_template": str, "containers": list}
         parts = {"images": (AppImage, {"name": str, "context": str, "containerfile": str}),
                  "endpoints": (Endpoint, {"name": str, "port": int}),
                  "routes": (Route, {"path": str, "to": str, "exact": bool}),
@@ -425,6 +430,9 @@ class Platform:
                             and all(type(part[name]) is type_ for name, type_ in part_fields.items())):
                         raise ValueError(f"Each of an app's {key} needs exactly {', '.join(part_fields)}: {part!r}")
                 values[key] = tuple(kind(**part) for part in entry[key])
+            if not all(isinstance(name, str) for name in entry["containers"]):
+                raise ValueError(f"An app's containers are names: {entry['containers']!r}")
+            values["containers"] = tuple(entry["containers"])
             apps.append(App(**values))
         return cls(apps=tuple(apps), identity_hostname=data["identity_hostname"])
 

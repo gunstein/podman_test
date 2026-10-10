@@ -71,13 +71,16 @@ class IndependentAppChartsTests(unittest.TestCase):
         config = next(d['data']['nginx.conf'] for d in documents
                       if d['metadata']['name'] == 'shared-nginx-config')
         environment = next(d['data'] for d in documents if d['metadata']['name'] == 'shared-nginx-env')
-        self.assertEqual(set(environment['APP_TLS_HOSTNAMES'].split()), {'todo.test', 'notes.test'})
+        self.assertEqual(set(environment['APP_TLS_HOSTNAMES'].split()), {'todo.test', 'notes.test', 'help.test'})
         for name in ('todo', 'notes'):
             self.assertIn('server_name ' + name + '.test;', config)
             self.assertIn('server ' + name + '-app:8000 resolve;', config)
             self.assertIn('server ' + name + '-app:8080 resolve;', config)
-        # Keycloak's own server and each app's send /auth/ to Keycloak, with the one certificate.
+        # Help is static: one site container, no login.
+        self.assertIn('server_name help.test;', config)
+        self.assertIn('server help-app:8080 resolve;', config)
+        # Keycloak's own server and each login app's send /auth/ to Keycloak; every server has the one certificate.
         self.assertIn('server_name auth.test;', config)
         self.assertEqual(config.count('proxy_pass http://shared_keycloak;'), 3)
-        self.assertEqual(config.count('ssl_certificate /var/lib/platform-tls/server.crt;'), 3)
-        self.assertEqual(config.count('ssl_certificate_key /var/lib/platform-tls/server.key;'), 3)
+        self.assertEqual(config.count('ssl_certificate /var/lib/platform-tls/server.crt;'), 4)
+        self.assertEqual(config.count('ssl_certificate_key /var/lib/platform-tls/server.key;'), 4)

@@ -89,7 +89,7 @@ the phase.
 
 ## 4. One resolved model
 
-Where it stands after phase 4f-2: `apps.Platform` has two fields, the apps in
+Where it stands after phase 4f-3: `apps.Platform` has two fields, the apps in
 start order and Keycloak's default hostname, and derives the rest (the DR
 group, workloads, services, and `database_apps`, `login_apps` and
 `has_identity`, so PostgreSQL and Keycloak run only when an app needs
@@ -102,7 +102,7 @@ has its own pod template (`App.pod_template`), checked once rendered
 (`pod_contract.py`). A build reads it from `platform.yaml` and each app's
 `examples/<app>/app.yaml` (`platform_file.load`, which also gives the
 environment's port and log level); there is no list of apps in the code.
-`bundle.json` (format version 11) carries it, and a host records it in
+`bundle.json` (format version 12) carries it, and a host records it in
 `~/.config/platform/platform.json`. The richer tree below grows with phases
 4 and 5 (images, routes, checks, database and login as app fields).
 
@@ -125,7 +125,7 @@ Writing more to JSON is not enough: the readers must stop reconstructing.
   argument. No YAML loading at import time, no module-level app lists, no
   default arguments that bind an app list. Two different platforms in one
   Python process must not share state (tested).
-- **Versions**: `bundle.json` keeps `format_version` (11 since phase 4f-1); the
+- **Versions**: `bundle.json` keeps `format_version` (12 since phase 4f-3); the
   installer and the DR tools refuse any other. Not yet built: `bundle.json`
   recording the image IDs of every image it carries, and the installer
   comparing installed image IDs with them. Today an image that is present
@@ -379,7 +379,9 @@ in small deliveries, each driven by what Help needs:
   installation **with Help only**, then with all three apps. In three
   deliveries: 4f-1 each app's own pod template and its check (5.9); 4f-2
   an app without a database or login installs (Help alone); 4f-3 the three
-  apps together, `rewrite` and the header policy (5.3), and a lab run.
+  apps together and a lab run. `rewrite` and the header policy (5.3) wait
+  for the first app that serves another app's help path: Help on its own
+  hostname needs neither.
 
 **Phase 5: Database and login through the same model.**
 Database and login are app fields since phase 4c-1; here come the setup task and
@@ -832,4 +834,32 @@ start order (`requires`) comes with the generated units in 4d.
 - Not yet (4f-3): Help in this checkout's `platform.yaml` beside Todo and
   Notes, its image in CI and the bundle, `rewrite` and the header policy,
   and a lab run.
+
+**Phase 4f-3, code done; acceptance run pending.**
+- This checkout's `platform.yaml` runs Help beside Todo and Notes, on
+  `help.test`: eight pods on a single host. The DR group stays todo, notes
+  and keycloak, since Help has no database; a database-only standby runs
+  the same three PostgreSQL pods as before.
+- Every rendered Todo and Notes file is unchanged. The render baseline
+  gains Help's Kube YAML, ConfigMap and unit, nginx gains Help's server
+  block and certificate name, and `bundle.json` the app; the bundle carries
+  8 image archives.
+- The lab guide's client lines (C9.4) take the names for `/etc/hosts` from
+  `app_installer platform hostnames` instead of writing them out, so they
+  follow `platform.yaml`; `docs/ACCEPTANCE.md` lists `help-app.service` and
+  checks Help's `/`. The install, failover and `wait-ready.sh` already check
+  Help through its own `ready` and `checks`.
+- Tests that wrote the two-app checkout out literally now describe three
+  apps; the services and units of the standby and DR paths are unchanged.
+- Adding Help found a bug: `Platform.ready("app")` named each app's
+  `<app>-backend` and `<app>-frontend`, so `wait-ready.sh` and failover's
+  services step would have waited for Help containers that do not exist.
+  Fixed: the loader renders each app's pod template and records its
+  long-running containers (`App.containers`, in `bundle.json`, format
+  version 12), and `pod_contract` checks the rendered pod runs exactly
+  those. The app unit's description is now "<App> app" instead of
+  "frontend and backend" (the render baseline's other change).
+- Not built, and not needed by Help on its own hostname: `rewrite` and the
+  header policy (5.3), which come with the first app that serves another
+  app's help path.
 

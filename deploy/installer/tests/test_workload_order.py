@@ -1,4 +1,4 @@
-"""The order the seven workloads start and stop in, written out literally (S5 step 0).
+"""The order the eight workloads start and stop in, written out literally (S5 step 0).
 
 Every expectation here is a literal list, not one derived from the code
 under test, so a refactor of how the order is computed cannot change it
@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[3]
 TODO = platform_file.checkout().select(['todo'])
 
 ALL_STARTS = ['todo-postgres', 'notes-postgres', 'keycloak-postgres', 'keycloak',
-              'todo-app', 'notes-app', 'shared-proxy']
+              'todo-app', 'notes-app', 'help-app', 'shared-proxy']
 TODO_STARTS = ['todo-postgres', 'keycloak-postgres', 'keycloak', 'todo-app', 'shared-proxy']
 # Server mode: each start, each wait for a healthy database, each role setup, in order.
 ALL_SERVER_EVENTS = [
@@ -43,6 +43,7 @@ ALL_SERVER_EVENTS = [
     ('start', 'keycloak'),
     ('start', 'todo-app'), ('roles', 'todo'),
     ('start', 'notes-app'), ('roles', 'notes'),
+    ('start', 'help-app'),
     ('start', 'shared-proxy'),
 ]
 TODO_SERVER_EVENTS = [
@@ -60,6 +61,7 @@ ALL_DEV_EVENTS = [
     ('play', 'keycloak.yaml', None),
     ('play', 'todo-app.yaml', 'todo-config.yaml'),
     ('play', 'notes-app.yaml', 'notes-config.yaml'),
+    ('play', 'help-app.yaml', 'help-config.yaml'),
     ('play', 'shared-proxy.yaml', None),
     ('roles', 'todo'), ('roles', 'notes'),
 ]
@@ -72,15 +74,15 @@ TODO_DEV_EVENTS = [
     ('roles', 'todo'),
 ]
 # Tear-down, one `podman kube play --down` after another: the reverse of the plays.
-ALL_TEARDOWN = ['shared-proxy.yaml', 'notes-app.yaml', 'todo-app.yaml', 'keycloak.yaml',
+ALL_TEARDOWN = ['shared-proxy.yaml', 'help-app.yaml', 'notes-app.yaml', 'todo-app.yaml', 'keycloak.yaml',
                 'keycloak-postgres.yaml', 'notes-postgres.yaml', 'todo-postgres.yaml']
 TODO_TEARDOWN = ['shared-proxy.yaml', 'todo-app.yaml', 'keycloak.yaml', 'keycloak-postgres.yaml', 'todo-postgres.yaml']
 ALL_MANIFESTS = {'todo-postgres.yaml', 'todo-config.yaml', 'todo-app.yaml', 'notes-postgres.yaml', 'notes-config.yaml',
                  'notes-app.yaml', 'keycloak-postgres.yaml', 'keycloak-config.yaml', 'keycloak.yaml',
-                 'shared-proxy.yaml'}
+                 'help-app.yaml', 'help-config.yaml', 'shared-proxy.yaml'}
 TODO_MANIFESTS = {'todo-postgres.yaml', 'todo-config.yaml', 'todo-app.yaml', 'keycloak-postgres.yaml',
                   'keycloak-config.yaml', 'keycloak.yaml', 'shared-proxy.yaml'}
-SERVING = {'shared-proxy.service', 'todo-app.service', 'notes-app.service', 'keycloak.service'}
+SERVING = {'shared-proxy.service', 'todo-app.service', 'notes-app.service', 'help-app.service', 'keycloak.service'}
 DATABASES = {'todo-postgres.service', 'notes-postgres.service', 'keycloak-postgres.service'}
 
 
@@ -196,7 +198,7 @@ class DevelopmentOrderTests(unittest.TestCase):
 class StopOrderTests(unittest.TestCase):
     def test_uninstall_removes_the_pods_in_reverse_start_order(self):
         pods = tuple(workload.pod for workload in reversed(platform_file.checkout().workloads()))
-        self.assertEqual(pods, ('shared-proxy', 'notes-app', 'todo-app', 'keycloak',
+        self.assertEqual(pods, ('shared-proxy', 'help-app', 'notes-app', 'todo-app', 'keycloak',
                                           'keycloak-postgres', 'notes-postgres', 'todo-postgres'))
 
     def test_uninstall_stops_every_current_and_old_service_at_once(self):
@@ -204,16 +206,18 @@ class StopOrderTests(unittest.TestCase):
             'todo-app', 'todo-frontend', 'todo-backend', 'todo-db-grants', 'todo-migrate', 'todo-db-setup',
             'todo-postgres', 'notes-app', 'notes-frontend', 'notes-backend', 'notes-db-grants',
             'notes-migrate', 'notes-db-setup', 'notes-postgres', 'keycloak', 'keycloak-postgres',
-            'shared-proxy', 'app-network-network',
-            # The old per-container install's (quadlet-reference-v1, V2).
+            'help-app', 'shared-proxy', 'app-network-network',
+            # The old per-container install's (quadlet-reference-v1, V2), whose names
+            # install.legacy_units derives for every app, Help too.
+            'help-frontend', 'help-backend', 'help-db-grants', 'help-migrate', 'help-db-setup', 'help-postgres',
             'todo-keycloak', 'todo-network', 'todo-postgres-data-volume'})
 
     def test_services_name_the_serving_tier_before_the_databases(self):
         services = platform_file.checkout().services()
         self.assertEqual(set(services), SERVING | DATABASES)
         self.assertEqual(services[0], 'shared-proxy.service')
-        self.assertEqual(set(services[:4]), SERVING)
-        self.assertEqual(set(services[4:]), DATABASES)
+        self.assertEqual(set(services[:5]), SERVING)
+        self.assertEqual(set(services[5:]), DATABASES)
         self.assertEqual(set(platform_file.checkout().services(databases=False)), SERVING)
         self.assertEqual(platform_file.checkout().services(databases=False)[0], 'shared-proxy.service')
         self.assertEqual(set(TODO.services()), {'shared-proxy.service', 'todo-app.service', 'keycloak.service',
@@ -243,8 +247,8 @@ class StopOrderTests(unittest.TestCase):
         self.assertEqual(sorted(again), sorted(ALL_STARTS))
         self.assertEqual(set(again[:3]), {'todo-postgres', 'notes-postgres', 'keycloak-postgres'})
         self.assertEqual(again[3], 'keycloak')
-        self.assertEqual(set(again[4:6]), {'todo-app', 'notes-app'})
-        self.assertEqual(again[6], 'shared-proxy')
+        self.assertEqual(set(again[4:7]), {'todo-app', 'notes-app', 'help-app'})
+        self.assertEqual(again[7], 'shared-proxy')
 
 
 if __name__ == '__main__':

@@ -65,6 +65,10 @@ def check(app, content):
         elif kinds == ['configMap'] and (volume['configMap'] or {}).get('name') != config:
             problems.append(f'volume {volume.get("name")} mounts ConfigMap {(volume["configMap"] or {}).get("name")}, '
                             f'not its own {config}')
+    names = tuple(container.get('name') for container in spec.get('containers') or [])
+    if app.containers and names != app.containers:
+        problems.append(f'it runs the containers {", ".join(map(str, names))}, not {", ".join(app.containers)} '
+                        '(App.containers, read from the same template when the platform was loaded)')
     problems += [f'no container port {endpoint.port} for endpoint {endpoint.name}'
                  for endpoint in app.endpoints if endpoint.port not in ports]
     if problems:

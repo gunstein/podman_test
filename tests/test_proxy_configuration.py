@@ -51,15 +51,20 @@ class ProxyConfigurationTests(unittest.TestCase):
         self.assertNotIn("unsafe-inline", csp)
         self.assertNotIn("unsafe-eval", csp)
         identity, *servers = config["nginx.conf"].split("server {")[1:]
-        self.assertEqual(len(servers), 2)
+        self.assertEqual(len(servers), 3)
         # Keycloak's own server: shared headers, /auth/ to Keycloak, nothing else.
         self.assertIn("include /etc/platform-nginx/security-headers.conf;", identity.split("location")[0])
         self.assertEqual(set(dict(re.findall(r"location ([^{]+)\{([^}]*)\}", identity))), {"/auth/ ", "/ "})
         self.assertNotIn("app-headers.conf", identity)
+        # todo and notes log in at Keycloak; Help is static and has no login.
+        expected = {"todo.test": {"/auth/ ", "/api/ ", "= /health ", "= /ready ", "/ "},
+                    "notes.test": {"/auth/ ", "/api/ ", "= /health ", "= /ready ", "/ "},
+                    "help.test": {"/ "}}
+        self.assertEqual([re.search(r"server_name ([^;]+);", server).group(1) for server in servers], list(expected))
         for server in servers:
             self.assertIn("include /etc/platform-nginx/security-headers.conf;", server.split("location")[0])
             locations = dict(re.findall(r"location ([^{]+)\{([^}]*)\}", server))
-            self.assertEqual(set(locations), {"/auth/ ", "/api/ ", "= /health ", "= /ready ", "/ "})
+            self.assertEqual(set(locations), expected[re.search(r"server_name ([^;]+);", server).group(1)])
             for name, body in locations.items():
                 # Keycloak sends its own CSP for its login pages.
                 self.assertEqual("app-headers.conf" in body, name != "/auth/ ", name)

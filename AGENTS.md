@@ -32,10 +32,13 @@ Current architecture and workflow:
   the standard library (target_render.py), on a single host and on DR primary
   and standby alike. An offline target needs only Python, never Helm or Jinja2
   (DR hosts also need PyYAML); only build mode renders on a host.
-- todo-app and notes-app each group migration init, FastAPI and HTTP-only frontend.
-  Each app has its own PostgreSQL pod. Shared nginx, Keycloak and Keycloak's
-  own keycloak-postgres pod bring the single-host topology to seven pods on
-  rootless app-network. App and Platform in
+- todo-app and notes-app each group migration init, FastAPI and HTTP-only frontend,
+  and each has its own PostgreSQL pod; help-app is static (one nginx, no
+  database, no login). Each app's pod comes from its own
+  examples/<app>/pod.yaml.j2 (checked by pod_contract.py); every .kube unit
+  from one template per kind in deploy/quadlet. Shared nginx, Keycloak and
+  Keycloak's own keycloak-postgres pod bring the single-host topology to eight
+  pods on rootless app-network. App and Platform in
   deploy/installer/app_installer/apps.py own per-app installer names.
   DR/backup/rebuild act on one group of three databases (todo, notes,
   keycloak; Platform.replicated_databases), never on a partial group. The

@@ -1,6 +1,7 @@
 # Todo and Notes demo
 
-Two small reference applications for learning rootless Podman on Oracle Linux.
+Two small reference applications and a static Help site for learning rootless
+Podman on Oracle Linux.
 See [System architecture](docs/ARCHITECTURE.md) for the complete model and responsibility boundaries.
 
 The repository demonstrates a complete lifecycle rather than only starting a
@@ -8,7 +9,7 @@ few containers: offline installation, least-privilege database access, HTTPS,
 authentication, physical replication, controlled promotion, application
 failover, backup, point-in-time recovery and restoration of redundancy for Todo,
 Notes and the shared Keycloak database as one DR group. Notes adds independent
-CRUD/storage and shared SSO.
+CRUD/storage and shared SSO. Help is static pages with no database or login.
 
 ## Architecture
 
@@ -23,7 +24,10 @@ shared nginx proxy ----> shared Keycloak (todo realm) ---> keycloak-postgres
    |    frontend + backend
    |
    +--> notes-app ---------> notes-postgres
-        frontend + backend
+   |    frontend + backend
+   |
+   +--> help-app
+        static pages (nginx)
 
 All three PostgreSQL databases replicate to the standby as one DR group.
 ```
@@ -61,6 +65,7 @@ and is no longer part of the active tree.
 |---|---|
 | Grouped application | `examples/todo/pod.yaml.j2` (the app's own pod template); Python renders `todo-app.kube` |
 | Notes app and database | `examples/notes/pod.yaml.j2`, `deploy/manifests/postgres.yaml.j2`; `notes-app.kube`, `notes-postgres.kube` |
+| Static Help app | `examples/help/pod.yaml.j2`; `help-app.kube`, container `help-site` |
 | Shared identity | `deploy/manifests/keycloak.yaml.j2`; `keycloak.kube` |
 | Persistent databases | `deploy/manifests/postgres.yaml.j2`; `todo-postgres.kube`, `notes-postgres.kube`, `keycloak-postgres.kube` |
 | Shared ingress | `deploy/manifests/shared-proxy.yaml.j2`; `shared-proxy.kube`, container `nginx` |
@@ -114,10 +119,10 @@ Use `--refresh-images` to rebuild/pull images. Direct development uses
 `--mode dev` and `python -m app_installer down`; the existing dev shell scripts
 remain thin wrappers. See [installer usage](deploy/installer/README.md).
 
-Both profiles expose <https://todo.test:8443> and <https://notes.test:8443>,
-and Keycloak on its own hostname, <https://auth.test:8443>.
-Map the three names to the serving host (127.0.0.1 for direct development). nginx
-creates one SAN certificate for the three names from a persistent local demo CA; install only its public root on clients that should trust it. HTTP health checks remain available on
+Both profiles expose <https://todo.test:8443>, <https://notes.test:8443> and
+<https://help.test:8443>, and Keycloak on its own hostname, <https://auth.test:8443>.
+Map the four names to the serving host (127.0.0.1 for direct development). nginx
+creates one SAN certificate for the four names from a persistent local demo CA; install only its public root on clients that should trust it. HTTP health checks remain available on
 <http://127.0.0.1:8080>.
 
 Inspect the running system:
@@ -130,6 +135,7 @@ systemctl --user is-active \
   notes-app.service \
   keycloak.service \
   todo-app.service \
+  help-app.service \
   shared-proxy.service
 podman ps
 podman secret ls
@@ -138,7 +144,7 @@ curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/ready
 
 Quadlets live below `~/.config/containers/systemd/`. `todo-app.service` pulls in
 `todo-postgres.service` and `keycloak.service`; `shared-proxy.service`
-pulls in both apps and Keycloak. The app pod runs a migration init container before
+pulls in every app and Keycloak. The app pod runs a migration init container before
 backend and the HTTP-only frontend. Database-role provisioning is separate.
 Generated units must not be enabled manually.
 

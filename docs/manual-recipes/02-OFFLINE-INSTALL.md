@@ -1,7 +1,7 @@
 # Offline install on one VM
 
-This demonstrates seven pods (Todo, Notes, Keycloak, their three databases and
-the shared proxy) delivered without target internet access, trusted
+This demonstrates eight pods (Todo, Notes, the static Help app, Keycloak, their
+three databases and the shared proxy) delivered without target internet access, trusted
 HTTPS, public reads and authenticated writes. Use a clean lab VM, enough disk,
 rootless Podman on the build laptop, verified SSH and the prepared service user.
 Building runs on the laptop; installation and service checks run inside the VM.
@@ -108,6 +108,7 @@ systemctl --user is-active \
   shared-proxy.service \
   todo-app.service \
   notes-app.service \
+  help-app.service \
   keycloak.service \
   todo-postgres.service \
   notes-postgres.service \
@@ -119,7 +120,7 @@ podman secret ls
 curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/ready
 ```
 
-All seven services should be active, and the readiness check should succeed.
+All eight services should be active, and the readiness check should succeed.
 
 The install also turns on the nightly backup timer, which takes a verified
 base backup of every database at 02:30 and keeps 7 days:
@@ -130,11 +131,12 @@ systemctl --user list-timers platform-backup.timer
 
 ## 6. Open Todo from the laptop
 
-This lab setup uses the hostnames `todo.test` and `notes.test`. Add the VM's IP
+This lab setup uses the hostnames `auth.test`, `todo.test`, `notes.test` and
+`help.test`. Add the VM's IP
 to the laptop's `/etc/hosts`:
 
 ```text
-192.168.1.50 auth.test todo.test notes.test
+192.168.1.50 auth.test todo.test notes.test help.test
 ```
 
 Then open <https://todo.test:8443>.
@@ -165,7 +167,8 @@ localhost.
 ## 7. Try public reads and login
 
 From the laptop, verify `curl --fail https://todo.test:8443/ready` and
-`curl --fail https://notes.test:8443/ready` both succeed without `-k`. Open
+`curl --fail https://notes.test:8443/ready` both succeed without `-k`, and that
+`curl --fail https://help.test:8443/` returns the Help page (it has no login). Open
 Todo: reads should work before login. In Keycloak's admin UI, create a lab
 user with email, first/last name, a non-temporary password and no required
 actions. Log in through Todo, create a uniquely named test Todo, edit it,

@@ -1,6 +1,6 @@
 # Where the logs are
 
-Everything the product runs on a host logs to journald: the seven pods'
+Everything the product runs on a host logs to journald: the eight pods'
 containers, their user systemd units and the three timers. The commands that
 change things (`app_installer`, so also `install.sh`, `app_dr_host`,
 `app-ops`, `app_dr.py`, `app_backup.py`) print their output to the terminal
@@ -15,7 +15,7 @@ Commands run as the service user on the host unless they say `sudo`.
 
 | What | Where it goes | Read it with |
 |---|---|---|
-| A container's output: nginx's access and error log, PostgreSQL, the backends, Keycloak, the migration init container | journald, through `LogDriver=journald` in every `.kube` unit; field `CONTAINER_NAME` | `podman logs nginx`, or `journalctl CONTAINER_NAME=nginx` |
+| A container's output: nginx's access and error log, PostgreSQL, the backends, Help's nginx, Keycloak, the migration init container | journald, through `LogDriver=journald` in every `.kube` unit; field `CONTAINER_NAME` | `podman logs nginx`, or `journalctl CONTAINER_NAME=nginx` |
 | A pod's unit: start, stop, failure, restart | journald, the user unit (`todo-app.service`, ...) | `journalctl --user -u todo-app.service` |
 | The timers' runs: nightly backup, DR check, replication certificate renewal | journald, their user services | `journalctl --user -u platform-backup.service -n 30 -o cat` |
 | `app_installer`, `app_dr_host`, `app-ops`, `app_dr.py`, `app_backup.py`: that they ran | one journald line per run, tagged with the tool | `journalctl -t app-installer -t app-dr-host -t app-ops -t app-dr -t app-backup` |
@@ -26,8 +26,8 @@ Commands run as the service user on the host unless they say `sudo`.
 
 Container names, by pod: `todo-postgres`, `notes-postgres`,
 `keycloak-postgres`, `keycloak`, `todo-migrate` with `todo-backend` and
-`todo-frontend` (pod `todo-app`), the same three for `notes-app`, and `nginx`
-(pod `shared-proxy`). The unit is the pod's name plus `.service`.
+`todo-frontend` (pod `todo-app`), the same three for `notes-app`, `help-site`
+(pod `help-app`), and `nginx` (pod `shared-proxy`). The unit is the pod's name plus `.service`.
 
 ## When `journalctl --user` shows nothing
 

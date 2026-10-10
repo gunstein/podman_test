@@ -32,7 +32,7 @@ from fake_host import FakeHost  # noqa: E402
 ROOT = TESTS.parents[2]
 HOSTNAME = 'shop.example.org'
 ADDRESS = '192.0.2.10'
-TODO_HOSTNAME, NOTES_HOSTNAME = 'TARGET_TODO_HOSTNAME', 'TARGET_NOTES_HOSTNAME'
+TODO_HOSTNAME, NOTES_HOSTNAME, HELP_HOSTNAME = 'TARGET_TODO_HOSTNAME', 'TARGET_NOTES_HOSTNAME', 'TARGET_HELP_HOSTNAME'
 
 
 def dollar_expressions(text):
@@ -56,10 +56,10 @@ class BundleContentTests(unittest.TestCase):
     def test_metadata_names_every_rendered_file(self):
         data = json.loads((self.bundle / 'bundle.json').read_text())
         self.assertEqual(data, self.metadata)
-        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 11))
+        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 12))
         self.assertEqual(data['platform'], platform_file.checkout().to_json())
         self.assertEqual(data['defaults'], {IDENTITY_HOSTNAME: 'auth.test', TODO_HOSTNAME: 'todo.test',
-                                            NOTES_HOSTNAME: 'notes.test'})
+                                            NOTES_HOSTNAME: 'notes.test', HELP_HOSTNAME: 'help.test'})
         manifests, units = install.offline_files(platform_file.checkout())
         self.assertEqual(set(data['manifests']['files']), manifests)
         self.assertEqual(set(data['quadlets']['files']), units)
@@ -75,9 +75,9 @@ class BundleContentTests(unittest.TestCase):
         manifests = self.bundle / 'generated/target/manifests'
         proxy = (manifests / 'shared-proxy.yaml').read_text()
         for line in ('PLATFORM_TLS_HOSTNAME: "${TARGET_IDENTITY_HOSTNAME}"',
-                     'APP_TLS_HOSTNAMES: "${TARGET_TODO_HOSTNAME} ${TARGET_NOTES_HOSTNAME}"',
+                     'APP_TLS_HOSTNAMES: "${TARGET_TODO_HOSTNAME} ${TARGET_NOTES_HOSTNAME} ${TARGET_HELP_HOSTNAME}"',
                      'server_name ${TARGET_IDENTITY_HOSTNAME};', 'server_name ${TARGET_TODO_HOSTNAME};',
-                     'server_name ${TARGET_NOTES_HOSTNAME};',
+                     'server_name ${TARGET_NOTES_HOSTNAME};', 'server_name ${TARGET_HELP_HOSTNAME};',
                      "connect-src 'self' https://${TARGET_IDENTITY_HOSTNAME}:8443;"):
             self.assertIn(line, proxy)
         for name in ('todo-config.yaml', 'notes-config.yaml'):
@@ -88,6 +88,7 @@ class BundleContentTests(unittest.TestCase):
         everything = ''.join(path.read_text() for path in manifests.iterdir())
         self.assertNotIn('todo.test', everything)
         self.assertNotIn('notes.test', everything)
+        self.assertNotIn('help.test', everything)
         self.assertNotIn('auth.test', everything)
 
     def test_the_target_files_are_the_normal_render_with_the_values_in_place(self):
@@ -97,7 +98,8 @@ class BundleContentTests(unittest.TestCase):
         normal = render.files(ROOT, platform, render.hostnames(platform), identity, prod.public_port, prod.log_level)
         self.assertEqual({name: (manifests / name).read_text().replace('${TARGET_IDENTITY_HOSTNAME}', identity)
                           .replace('${TARGET_TODO_HOSTNAME}', 'todo.test')
-                          .replace('${TARGET_NOTES_HOSTNAME}', 'notes.test').encode() for name in normal}, normal)
+                          .replace('${TARGET_NOTES_HOSTNAME}', 'notes.test')
+                          .replace('${TARGET_HELP_HOSTNAME}', 'help.test').encode() for name in normal}, normal)
         units = self.bundle / 'generated/target/quadlet'
         for database in platform_file.checkout().replicated_databases:
             self.assertEqual((units / database.unit).read_bytes(),
@@ -150,7 +152,7 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertFalse([name for name, text in files.items() if '${TARGET_' in text])
         proxy = files['shared-proxy.yaml']
         self.assertIn(f'PLATFORM_TLS_HOSTNAME: "{HOSTNAME}"', proxy)
-        self.assertIn('APP_TLS_HOSTNAMES: "todo.test notes.test"', proxy)
+        self.assertIn('APP_TLS_HOSTNAMES: "todo.test notes.test help.test"', proxy)
         self.assertIn(f'server_name {HOSTNAME};', proxy)
         self.assertIn('server_name todo.test;', proxy)
         self.assertIn(f'OIDC_ISSUER: "https://{HOSTNAME}:8443/auth/realms/todo"', files['todo-config.yaml'])
@@ -232,18 +234,18 @@ class OfflineInstallTests(unittest.TestCase):
             _changed, configure = self.install(host, notes='notes.example.org')
         files = self.installed()
         self.assertIn('server_name notes.example.org;', files['shared-proxy.yaml'])
-        self.assertIn('APP_TLS_HOSTNAMES: "todo.test notes.example.org"', files['shared-proxy.yaml'])
+        self.assertIn('APP_TLS_HOSTNAMES: "todo.test notes.example.org help.test"', files['shared-proxy.yaml'])
         configure.assert_called_once_with('fixture-password', [
             ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.example.org')])
 
     def test_the_host_records_its_hostnames_and_a_later_install_keeps_them(self):
         with FakeHost(unit_directory=self.runtime) as host, patch.dict('os.environ', {}, clear=False) as environment:
-            for name in (IDENTITY_HOSTNAME, TODO_HOSTNAME, NOTES_HOSTNAME):
+            for name in (IDENTITY_HOSTNAME, TODO_HOSTNAME, NOTES_HOSTNAME, HELP_HOSTNAME):
                 environment.pop(name, None)
             self.install(host, notes='notes.example.org')
             self.assertEqual(json.loads(host.record.read_text()),
                              {IDENTITY_HOSTNAME: HOSTNAME, TODO_HOSTNAME: 'todo.test',
-                              NOTES_HOSTNAME: 'notes.example.org'})
+                              NOTES_HOSTNAME: 'notes.example.org', HELP_HOSTNAME: 'help.test'})
             self.assertEqual(oct(host.record.stat().st_mode & 0o777), '0o644')
             # An update without the options keeps the names instead of going back to the bundle's defaults.
             host.calls.clear()

@@ -163,10 +163,11 @@ class CheckTests(ToolTest):
                 self.assertEqual(self.tool("--step", "03-4", "check", "services", "192.168.0.102", "app",
                                            rules=rules)[0], 1)
         rules = [("wait-ready", (0, "READY: x\n")), ("nginx -t", (1, "no nginx on a standby\n")),
-                 ("is-active", (3, "inactive\ninactive\ninactive\ninactive\n"))]
+                 # The serving tier: Keycloak, the three apps and nginx, none running on a standby.
+                 ("is-active", (3, "inactive\n" * 5))]
         self.assertEqual(self.tool("--step", "10-2", "check", "services", "192.168.0.102", "standby",
                                    rules=rules)[0], 0)
-        rules[2] = ("is-active", (0, "active\ninactive\ninactive\ninactive\n"))
+        rules[2] = ("is-active", (0, "active\n" + "inactive\n" * 4))
         self.assertEqual(self.tool("--step", "10-2", "check", "services", "192.168.0.102", "standby",
                                    rules=rules)[0], 1)
 

@@ -23,7 +23,7 @@ def recorder(order, name):
 
 class ReplicationTests(unittest.TestCase):
     def test_the_platform_replicates_each_independent_database(self):
-        self.assertEqual([app.name for app in platform_file.checkout().apps], ['todo', 'notes'])
+        self.assertEqual([app.name for app in platform_file.checkout().database_apps], ['todo', 'notes'])
         app = platform_file.checkout().apps[0].database
         self.assertEqual(app.replication_slot(), 'todo_standby')
         self.assertEqual(app.replication_slot(rebuilt=True), 'todo_rebuilt_standby')
@@ -148,7 +148,7 @@ class ReplicationTests(unittest.TestCase):
             run.assert_not_called()
 
     def test_streaming_requires_each_apps_own_usable_slot(self):
-        for app in [a.database for a in platform_file.checkout().apps]:
+        for app in [a.database for a in platform_file.checkout().database_apps]:
             slot = app.replication_slot()
             with patch.object(replication, 'require_primary'), patch.object(replication, 'sql') as sql:
                 sql.side_effect = [f'{slot}|192.0.2.51|streaming|async|0|t', f'{slot}|t|reserved|1000|']
@@ -160,7 +160,7 @@ class ReplicationTests(unittest.TestCase):
                         replication.streaming_status(app)
 
     def test_incomplete_promotion_record_cannot_expose_any_application(self):
-        names = [app.name for app in platform_file.checkout().apps]
+        names = [app.name for app in platform_file.checkout().database_apps]
         with tempfile.TemporaryDirectory() as temp:
             journal = Path(temp) / 'promotion.json'
             for decision in ({'state': 'failed', 'applications': names, 'completed': names},
@@ -207,7 +207,7 @@ class ReplicationTests(unittest.TestCase):
             run.assert_not_called()
 
     def test_reseed_failure_cannot_delete_data_or_backup(self):
-        for app in [a.database for a in platform_file.checkout().apps]:
+        for app in [a.database for a in platform_file.checkout().database_apps]:
             with patch.object(replication, 'reseed_check', side_effect=RuntimeError('authentication failed')), \
                     patch.object(replication, 'run') as run:
                 with self.assertRaisesRegex(RuntimeError, 'authentication failed'):
@@ -215,7 +215,7 @@ class ReplicationTests(unittest.TestCase):
                 run.assert_not_called()
 
     def test_confirmed_reseed_orders_checks_before_cleanup_before_deletion(self):
-        for app in [a.database for a in platform_file.checkout().apps]:
+        for app in [a.database for a in platform_file.checkout().database_apps]:
             order = []
             with patch.object(replication, 'reseed_check', side_effect=recorder(order, 'check')) as gate, \
                     patch.object(replication, 'authenticate', side_effect=recorder(order, 'authenticate')) as auth, \
@@ -255,7 +255,7 @@ class ReplicationTests(unittest.TestCase):
         # The rebuild preflight runs reseed_check before the primary has published
         # its LAN endpoint (postgres_redundancy_primary runs later in the same
         # rebuild). It must pass without any network replication probe.
-        for app in [a.database for a in platform_file.checkout().apps]:
+        for app in [a.database for a in platform_file.checkout().database_apps]:
             with tempfile.TemporaryDirectory() as temp:
                 quadlet_dir = Path(temp) / 'q'
                 kube_runtime_dir = quadlet_dir / 'platform-kube-runtime'
@@ -381,12 +381,13 @@ class PublishPrimariesTests(unittest.TestCase):
                          [d.container for d in self.DATABASES])
         self.assertIn(('systemctl', 'start', 'shared-proxy.service'), steps)
         self.assertEqual([s for s in steps if s[0] == 'wait'],
-                         [('wait', '/ready', app.hostname) for app in platform_file.checkout().apps])
+                         [('wait', app.ready, app.hostname) for app in platform_file.checkout().apps])
 
     def test_readiness_asks_for_the_hosts_own_public_hostnames(self):
         _result, steps = self.publish(False, TARGET_TODO_HOSTNAME='shop.example.org')
         self.assertEqual([s for s in steps if s[0] == 'wait'],
-                         [('wait', '/ready', 'shop.example.org'), ('wait', '/ready', 'notes.test')])
+                         [('wait', '/ready', 'shop.example.org'), ('wait', '/ready', 'notes.test'),
+                          ('wait', '/', 'help.test')])
 
     def test_changed_databases_restart_behind_one_application_tier_stop(self):
         changed = [d.name for d in self.DATABASES[1:]]
@@ -433,7 +434,8 @@ class ReseedGroupTests(unittest.TestCase):
             runtime = Path(directory) / 'platform-kube-runtime'
             runtime.mkdir()
             tier = ('keycloak.kube', 'keycloak.yaml', 'todo-app.kube', 'todo-app.yaml',
-                    'notes-app.kube', 'notes-app.yaml', 'shared-proxy.kube', 'shared-proxy.yaml')
+                    'notes-app.kube', 'notes-app.yaml', 'help-app.kube', 'help-app.yaml',
+                    'shared-proxy.kube', 'shared-proxy.yaml')
             self.assertEqual(set(replication.serving_tier_files(platform_file.checkout())), set(tier))
             for name in tier + tuple(d.unit for d in self.DATABASES):
                 (runtime / name).write_text('fixture')

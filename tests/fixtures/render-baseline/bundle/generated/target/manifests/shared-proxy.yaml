@@ -23,7 +23,7 @@ metadata:
   name: shared-nginx-env
 data:
   PLATFORM_TLS_HOSTNAME: "${TARGET_IDENTITY_HOSTNAME}"
-  APP_TLS_HOSTNAMES: "${TARGET_TODO_HOSTNAME} ${TARGET_NOTES_HOSTNAME}"
+  APP_TLS_HOSTNAMES: "${TARGET_TODO_HOSTNAME} ${TARGET_NOTES_HOSTNAME} ${TARGET_HELP_HOSTNAME}"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -73,6 +73,7 @@ data:
         upstream todo_backend { zone todo_backend 64k; server todo-app:8000 resolve; }
         upstream notes_frontend { zone notes_frontend 64k; server notes-app:8080 resolve; }
         upstream notes_backend { zone notes_backend 64k; server notes-app:8000 resolve; }
+        upstream help_site { zone help_site 64k; server help-app:8080 resolve; }
         server {
             listen 8080 default_server;
             listen 8443 ssl default_server;
@@ -161,6 +162,24 @@ data:
             }
             location / {
                 proxy_pass http://notes_frontend;
+                include /etc/nginx/platform-proxy-headers.conf;
+                include /etc/platform-nginx/app-headers.conf;
+            }
+        }
+        server {
+            listen 8080;
+            listen 8443 ssl;
+            server_name ${TARGET_HELP_HOSTNAME};
+            ssl_certificate /var/lib/platform-tls/server.crt;
+            ssl_certificate_key /var/lib/platform-tls/server.key;
+            ssl_protocols TLSv1.2 TLSv1.3;
+            ssl_session_tickets off;
+            root /usr/share/nginx/html;
+            index index.html;
+            include /etc/platform-nginx/security-headers.conf;
+
+            location / {
+                proxy_pass http://help_site;
                 include /etc/nginx/platform-proxy-headers.conf;
                 include /etc/platform-nginx/app-headers.conf;
             }

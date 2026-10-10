@@ -229,6 +229,6 @@ class RenderingHost(FakeHost):
         names = ['keycloak.yaml', 'shared-proxy.yaml', apps.KEYCLOAK_DATABASE.manifest,
                  apps.KEYCLOAK_DATABASE.config_manifest]
         for app in platform.apps:
-            names += [app.manifest, app.database.manifest, app.config_manifest]
+            names += [app.manifest, app.config_manifest] + ([app.database.manifest] if app.has_database else [])
         for name in names:
             (target / name).write_text('fixture: true\n')

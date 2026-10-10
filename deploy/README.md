@@ -1,8 +1,8 @@
 # Deployment sources
 
 This directory contains the build-time workload definitions and installation
-and operations tooling for the rootless Podman demo. The seven single-host workloads are
-`todo-app`, `todo-postgres`, `notes-app`, `notes-postgres`, `keycloak`,
+and operations tooling for the rootless Podman demo. The eight single-host workloads are
+`todo-app`, `todo-postgres`, `notes-app`, `notes-postgres`, `help-app`, `keycloak`,
 `keycloak-postgres` and `shared-proxy`. DR replicates, backs up, promotes and
 rebuilds the Todo, Notes and Keycloak databases as one group.
 
@@ -51,8 +51,8 @@ maintained.
 
 Rendering defaults to `generated/kube-runtime/` for production and
 `generated/dev/` for development. These ignored build outputs are separate from
-source templates. Rendering produces ten YAML files: Todo app/postgres/config,
-Notes notes-app/notes-postgres/notes-config, keycloak, keycloak-postgres,
+source templates. Rendering produces twelve YAML files: Todo app/postgres/config,
+Notes notes-app/notes-postgres/notes-config, Help help-app/help-config, keycloak, keycloak-postgres,
 keycloak-config and shared-proxy. Both delivery packages carry `bundle.json`
 and the rendered target files (`generated/target`); only the offline bundle
 contains OCI image archives. Build and distribute both packages from the same

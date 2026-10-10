@@ -1,5 +1,5 @@
 [Unit]
-Description=Notes frontend and backend Podman Kube workload
+Description=Notes app Podman Kube workload
 Requires=notes-postgres.service keycloak.service
 After=notes-postgres.service keycloak.service
 

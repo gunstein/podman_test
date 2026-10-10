@@ -32,7 +32,7 @@ class FailoverWorld(World):
         self.record, self.fail, self.tls_mode = record, fail, tls_mode
         # The public hostnames the promoted host recorded as a standby.
         self.hostnames = hostnames or {"TARGET_IDENTITY_HOSTNAME": "auth.test", "TARGET_TODO_HOSTNAME": "todo.test",
-                                       "TARGET_NOTES_HOSTNAME": "notes.test"}
+                                       "TARGET_NOTES_HOSTNAME": "notes.test", "TARGET_HELP_HOSTNAME": "help.test"}
 
     def answer(self, host, command, stdin):
         if command[0] == "env" and "target-values" in command:
@@ -82,7 +82,7 @@ class FailoverTests(unittest.TestCase):
         world = FailoverWorld()
         report = self.run_failover(world)
         self.assertEqual(self.kinds(world), ["read-record", "promote", "deploy-promoted", "require-promoted-group",
-                                             "app_backup.py", "wait-ready", "https", "https", "login-form", "csp",
+                                             "app_backup.py", "wait-ready", "https", "https", "https", "login-form", "csp",
                                              "login-form", "csp", "ca"])
         forms = [step for step in world.steps() if step[0] == "login-form"]
         self.assertEqual([step[1] for step in forms], ["auth.test", "auth.test"])
@@ -90,11 +90,12 @@ class FailoverTests(unittest.TestCase):
         self.assertIn("client_id=notes-frontend&redirect_uri=https%3A%2F%2Fnotes.test%3A8443%2F", forms[1][2])
         self.assertEqual([step[1] for step in world.steps() if step[0] == "csp"], ["todo.test", "notes.test"])
         self.assertIn(("promote", "todo-primary is fenced", "todo-standby"), world.steps())
-        self.assertEqual([step[1] for step in world.steps() if step[0] == "https"], ["todo.test", "notes.test"])
+        self.assertEqual([step[1] for step in world.steps() if step[0] == "https"],
+                         ["todo.test", "notes.test", "help.test"])
         self.assertTrue(all(step[2] == "192.0.2.11" for step in world.steps() if step[0] == "https"))
         self.assertTrue(report["changed"] and report["promoted_now"])
         self.assertEqual(report["users"]["ca_sha256"], "AA:BB")
-        self.assertIn("auth.test and todo.test and notes.test at 192.0.2.11", report["users"]["next"])
+        self.assertIn("auth.test and todo.test and notes.test and help.test at 192.0.2.11", report["users"]["next"])
         self.assertIn("checks the login page, not a login", report["users"]["next"])
         self.assertEqual(report["users"]["client_trust"], "required")
         self.assertIn("Have clients trust this host's CA, SHA-256 AA:BB", report["users"]["next"])
@@ -122,18 +123,20 @@ class FailoverTests(unittest.TestCase):
     def test_the_checks_use_the_public_hostnames_the_host_recorded(self):
         world = FailoverWorld(hostnames={"TARGET_IDENTITY_HOSTNAME": "auth.example.org",
                                          "TARGET_TODO_HOSTNAME": "shop.example.org",
-                                         "TARGET_NOTES_HOSTNAME": "notes.example.org"})
+                                         "TARGET_NOTES_HOSTNAME": "notes.example.org",
+                                         "TARGET_HELP_HOSTNAME": "help.example.org"})
         with unittest.mock.patch.object(failover, "connect_sources", return_value=["https://auth.example.org:8443"]):
             report = self.run_failover(world)
         order = [step[0] for step in world.steps()]
         self.assertLess(order.index("deploy-promoted"), order.index("target-values"))
         self.assertEqual([step[1] for step in world.steps() if step[0] == "https"],
-                         ["shop.example.org", "notes.example.org"])
+                         ["shop.example.org", "notes.example.org", "help.example.org"])
         wait_ready = next(command for _host, command in world.commands if command[:2] == ["bash", "-s"])
         pods, containers = platform_file.checkout().ready("app")
-        self.assertEqual(wait_ready[-5:], ["app", " ".join(pods), " ".join(containers),
-                                           "shop.example.org/ready", "notes.example.org/ready"])
-        self.assertEqual(report["users"]["hostnames"], ["auth.example.org", "shop.example.org", "notes.example.org"])
+        self.assertEqual(wait_ready[-6:], ["app", " ".join(pods), " ".join(containers),
+                                           "shop.example.org/ready", "notes.example.org/ready", "help.example.org/"])
+        self.assertEqual(report["users"]["hostnames"],
+                         ["auth.example.org", "shop.example.org", "notes.example.org", "help.example.org"])
         self.assertEqual({step[1] for step in world.steps() if step[0] == "login-form"}, {"auth.example.org"})
 
     def test_a_rerun_after_a_complete_promotion_skips_it(self):

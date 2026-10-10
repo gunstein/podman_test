@@ -133,7 +133,7 @@ class OperationsDistributionTests(unittest.TestCase):
             from app_installer import target_render
             target = target_render.load(Path(directory) / "platform-operations",
                                         {target_render.PUBLISH_ADDRESS: "192.0.2.10"}, environment={}, recorded={})
-            self.assertEqual(target.hostnames, {"todo": "todo.test", "notes": "notes.test"})
+            self.assertEqual(target.hostnames, {"todo": "todo.test", "notes": "notes.test", "help": "help.test"})
             self.assertIn(b"192.0.2.10:5432:5432", target.replicated["todo-postgres.kube"])
             for retired in (
                 "deploy/scripts/manual_dr_commands.py",

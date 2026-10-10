@@ -138,13 +138,14 @@ Before nginx starts, the installer (`install`, and `deploy-promoted` on a DR
 host) uses the OpenSSL in the proxy image to create:
 
 - a local demo CA (10 years);
-- one server key and SAN certificate (397 days) covering `todo.test` and
-  `notes.test` (the public hostnames, from `platform.yaml`); and
+- one server key and SAN certificate (397 days) covering `auth.test`,
+  `todo.test`, `notes.test` and `help.test` (the public hostnames, from
+  `platform.yaml`); and
 - a public `ca.crt` that an operator may explicitly install on a test client.
 
 They are host-local Podman secrets. The demo CA's private key stays in its own
 secret and never reaches nginx. A hostname addition causes a new leaf
-certificate from the same local CA. Both nginx server blocks use that same
+certificate from the same local CA. Every nginx server block uses that same
 leaf and key; there are no separate per-app CAs. Every install replaces a
 leaf within 30 days of its end, and so does
 `python3 -m app_installer tls-renew`, which then restarts nginx; it touches
@@ -176,7 +177,7 @@ lab failover time.
 For direct development, add this entry to the test client’s `/etc/hosts`:
 
 ```text
-127.0.0.1 auth.test todo.test notes.test
+127.0.0.1 auth.test todo.test notes.test help.test
 ```
 
 For a VM or server, use its serving IP instead. Export only the public CA:
@@ -185,6 +186,7 @@ For a VM or server, use its serving IP instead. Export only the public CA:
 podman exec nginx cat /var/lib/platform-tls/ca.crt > ./platform-nginx-root.crt
 curl --cacert ./platform-nginx-root.crt https://todo.test:8443/ready
 curl --cacert ./platform-nginx-root.crt https://notes.test:8443/ready
+curl --cacert ./platform-nginx-root.crt https://help.test:8443/
 ```
 
 Trust that CA in the browser as well. Both apps authenticate against the same

@@ -759,20 +759,23 @@ class ConfigureArchiveTests(unittest.TestCase):
         self.assertEqual([c[3] for c in stops], platform_file.checkout().services(databases=False))
         restarts = host.matching(lambda c: c[:3] == ["systemctl", "--user", "restart"])
         self.assertEqual([c[3] for c in restarts], [d.service for d in self.DATABASES])
-        start = host.index(lambda c: c == ["systemctl", "--user", "start", "keycloak.service", "todo-app.service", "notes-app.service", "shared-proxy.service"])
+        start = host.index(lambda c: c == ["systemctl", "--user", "start", "keycloak.service", "todo-app.service", "notes-app.service",
+                                                          "help-app.service", "shared-proxy.service"])
         self.assertLess(host.index(lambda c: c[:3] == ["systemctl", "--user", "stop"]),
                         host.index(lambda c: c[:3] == ["systemctl", "--user", "restart"]))
         self.assertLess(max(host.commands.index(c) for c in restarts), start)
         self.assertLess(start, host.index(lambda c: any('pg_create_restore_point' in part for part in c)))
         self.assertEqual(self.waits[:len(platform_file.checkout().apps)],
-                         [('/ready', app.hostname) for app in platform_file.checkout().apps])
+                         [(app.ready, app.hostname) for app in platform_file.checkout().apps])
 
     def test_readiness_uses_the_hostnames_this_host_serves(self):
         host = FakeHost()
         self.configure(host, recorded={'TARGET_IDENTITY_HOSTNAME': 'auth.example.org',
                                        'TARGET_TODO_HOSTNAME': 'todo.example.org',
-                                       'TARGET_NOTES_HOSTNAME': 'notes.example.org'})
-        self.assertEqual(self.waits[:2], [('/ready', 'todo.example.org'), ('/ready', 'notes.example.org')])
+                                       'TARGET_NOTES_HOSTNAME': 'notes.example.org',
+                                       'TARGET_HELP_HOSTNAME': 'help.example.org'})
+        self.assertEqual(self.waits[:3], [('/ready', 'todo.example.org'), ('/ready', 'notes.example.org'),
+                                          ('/', 'help.example.org')])
 
     def test_configured_group_is_left_running_and_unverified(self):
         host = FakeHost(configured={d.container for d in self.DATABASES},
@@ -783,7 +786,8 @@ class ConfigureArchiveTests(unittest.TestCase):
             self.assertEqual(host.matching(lambda c, verb=verb: c[:3] == ["systemctl", "--user", verb]), [])
         self.assertFalse(host.matching(lambda c: any('ALTER SYSTEM' in part or 'pg_switch_wal' in part
                                                      for part in c)))
-        self.assertTrue(host.matching(lambda c: c == ["systemctl", "--user", "start", "keycloak.service", "todo-app.service", "notes-app.service", "shared-proxy.service"]))
+        self.assertTrue(host.matching(lambda c: c == ["systemctl", "--user", "start", "keycloak.service", "todo-app.service", "notes-app.service",
+                                                          "help-app.service", "shared-proxy.service"]))
 
     def test_changed_replication_access_alone_reports_change_without_restart(self):
         host = FakeHost(configured={d.container for d in self.DATABASES},

@@ -26,3 +26,5 @@ apps:
   - path: examples/notes
     hostname: notes.test
     replicationPort: 5433
+  - path: examples/help
+    hostname: help.test

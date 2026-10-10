@@ -108,13 +108,13 @@ class KubeRuntimeTests(unittest.TestCase):
         keycloak = read(RUNTIME / "keycloak.kube")
         postgres = read(RUNTIME / "todo-postgres.kube")
 
-        self.assertIn("Requires=todo-app.service notes-app.service keycloak.service", app)
+        self.assertIn("Requires=todo-app.service notes-app.service help-app.service keycloak.service", app)
         self.assertIn("Requires=keycloak-postgres.service", keycloak)
         self.assertNotIn("[Install]", keycloak)
         self.assertIn("WantedBy=default.target", app)
         for unit in (app, keycloak, postgres, read(RUNTIME / "todo-app.kube"),
                      read(RUNTIME / "notes-app.kube"), read(RUNTIME / "notes-postgres.kube"),
-                     read(RUNTIME / "keycloak-postgres.kube")):
+                     read(RUNTIME / "keycloak-postgres.kube"), read(RUNTIME / "help-app.kube")):
             self.assertIn("PodmanArgs=--no-pod-prefix", unit)
             self.assertIn("ExitCodePropagation=any", unit)
             self.assertIn("Restart=on-failure", unit)
@@ -123,6 +123,8 @@ class KubeRuntimeTests(unittest.TestCase):
                     config = "notes-config.yaml"
                 elif "Yaml=keycloak-" in unit:
                     config = "keycloak-config.yaml"
+                elif "Yaml=help-" in unit:
+                    config = "help-config.yaml"
                 else:
                     config = "todo-config.yaml"
                 self.assertIn("ConfigMap=" + config, unit)
@@ -228,7 +230,7 @@ class KubeRuntimeTests(unittest.TestCase):
         from app_installer import platform_file
         self.assertEqual({workload.pod for workload in platform_file.checkout().workloads()}, {
             "todo-app", "notes-app", "keycloak", "todo-postgres", "notes-postgres",
-            "keycloak-postgres", "shared-proxy"})
+            "keycloak-postgres", "help-app", "shared-proxy"})
         self.assertIn("SourcePath", read(ROOT / "deploy/installer/app_installer/install.py"))
 
     def test_clean_dev_start_bootstraps_roles_before_shared_services(self):

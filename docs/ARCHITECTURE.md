@@ -37,11 +37,13 @@ shared nginx proxy ── /api/, /health, /ready ──► FastAPI ──► Pos
     └── /auth/ ─────────────────► Keycloak ───────┘
 ```
 
-The shared nginx proxy selects the application by hostname: `todo.test` or
-`notes.test`. Each host routes `/` to its HTTP-only frontend and `/api/`,
-`/health`, `/ready` to its own FastAPI backend, as its `app.yaml` declares
-(`endpoints` and `routes`; nginx is rendered from them). Both expose shared
-Keycloak at `/auth/`, which belongs to the platform. Keycloak has a hostname of its own, `auth.test`, nginx's default
+The shared nginx proxy selects the application by hostname: `todo.test`,
+`notes.test` or `help.test`. Todo and Notes route `/` to their HTTP-only
+frontend and `/api/`, `/health`, `/ready` to their own FastAPI backend; Help
+routes everything to its static nginx. Each app's `app.yaml` declares this
+(`endpoints` and `routes`; nginx is rendered from them). Todo and Notes, the
+apps with login, expose shared Keycloak at `/auth/`, which belongs to the
+platform; Help has no login and no `/auth/`. Keycloak has a hostname of its own, `auth.test`, nginx's default
 server, which serves only `/auth/`: a request without a known `Host` header
 reaches Keycloak, never an app. Reads are public; writes require a valid app-specific access token.
 Rows are shared rather than owned per user.
@@ -74,6 +76,8 @@ One service user's rootless Podman network: app-network
   │     ├── notes-migrate (init: schema migration)
   │     ├── notes-backend (FastAPI)
   │     └── notes-frontend (HTTP static assets)
+  ├── help-app pod (no database, no login)
+  │     └── help-site (static pages)
   ├── notes-postgres pod
   │     └── notes-postgres
   ├── keycloak pod
@@ -95,9 +99,9 @@ replace database or identity state. A rebuilt standby runs only PostgreSQL.
 The definitions are rendered from the Jinja2 templates in
 `deploy/manifests/*.yaml.j2` and `deploy/quadlet/*.kube.j2`: on the build host
 into the packages' `generated/target/`, or by build mode into
-`generated/kube-runtime/`. Each of the seven pods has
+`generated/kube-runtime/`. Each of the eight pods has
 one `.kube` unit and generated user service:
-`shared-proxy.service`, `todo-app.service`, `notes-app.service`,
+`shared-proxy.service`, `todo-app.service`, `notes-app.service`, `help-app.service`,
 `keycloak.service`, `todo-postgres.service`, `notes-postgres.service`,
 `keycloak-postgres.service`. `Platform.workloads()` (`apps.py`) is the one table of them,
 in start order (each database, Keycloak's database, Keycloak, the apps,
@@ -140,8 +144,9 @@ This is a tested baseline, not a claim about the capability's minimum version.
 Host network integration uses the shared `.network` Quadlet. Persistent storage
 is declared by Kube PVCs; no separate `.volume` Quadlets are needed here.
 User lingering enables services to run before interactive login.
-`shared-proxy.service` requires and starts after both apps and Keycloak;
-each app service depends on its own PostgreSQL and shared Keycloak; Keycloak
+`shared-proxy.service` requires and starts after every app and Keycloak;
+each app service depends on its own PostgreSQL and shared Keycloak, if it has
+them (Help has neither); Keycloak
 depends on `keycloak-postgres.service`; each PostgreSQL also has
 its own boot entrypoint to support a database-only host.
 
@@ -224,7 +229,7 @@ not rerun administrative role bootstrap.
 | Flow | Address boundary | Purpose |
 |---|---|---|
 | Browser → nginx | Published host HTTPS endpoint | Assets, API and identity proxy |
-| nginx → frontend | todo-app:8080 or notes-app:8080 on rootless network | Static assets |
+| nginx → frontend | todo-app:8080, notes-app:8080 or help-app:8080 on rootless network | Static assets |
 | nginx → backend | todo-app:8000 or notes-app:8000 on rootless network | API, health and readiness |
 | nginx → Keycloak | keycloak:8080 on rootless network | OIDC browser endpoints under /auth |
 | Backend → PostgreSQL | Its own app-postgres:5432 | Application queries with restricted DB role |

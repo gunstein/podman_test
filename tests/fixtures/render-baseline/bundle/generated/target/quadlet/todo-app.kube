@@ -1,5 +1,5 @@
 [Unit]
-Description=Todo frontend and backend Podman Kube workload
+Description=Todo app Podman Kube workload
 Requires=todo-postgres.service keycloak.service
 After=todo-postgres.service keycloak.service
 

@@ -11,6 +11,7 @@ settings. Only a build reads these files (it has PyYAML); an offline bundle
 carries the Platform in bundle.json and a host its record (target_render).
 Every mistake is a ValueError that names the file and the field.
 """
+import dataclasses
 import functools
 import os
 import re
@@ -218,13 +219,31 @@ def _app(directory, hostname, replication_port, root, where):
     pod_template = directory / POD_TEMPLATE
     if not pod_template.is_file():
         raise ValueError(f'{path}: the app needs its pod template {pod_template} (docs/PLATFORM-PLAN.md, section 5.9)')
-    return apps.App(name=_text(data['name'], f'{path}: name', NAME), hostname=hostname,
+    app = apps.App(name=_text(data['name'], f'{path}: name', NAME), hostname=hostname,
                     keycloak_client=_text(data['keycloakClient'], f'{path}: keycloakClient', WORD)
                     if 'keycloakClient' in data else '',
                     has_database=database, replication_port=replication_port or 0,
                     images=images, endpoints=endpoints,
                     routes=routes,
                     ready=ready, checks=checks, pod_template=Path(os.path.relpath(pod_template, root)).as_posix())
+    return dataclasses.replace(app, containers=_containers(app, root))
+
+
+def _containers(app, root):
+    """The long-running containers app's pod template runs, read from it rendered (pod_contract checks the rest)."""
+    import yaml
+    from jinja2 import TemplateError
+    try:
+        pod = yaml.safe_load(manifests.render_app(root, app))
+    except TemplateError as error:
+        raise ValueError(f'{app.pod_template}: cannot be rendered: {error}') from None
+    except yaml.YAMLError as error:
+        raise ValueError(f'{app.pod_template}: does not render one valid YAML document: {error}') from None
+    containers = (pod.get('spec') or {}).get('containers') if isinstance(pod, dict) else None
+    if not isinstance(containers, list) or not containers or not all(
+            isinstance(container, dict) and isinstance(container.get('name'), str) for container in containers):
+        raise ValueError(f'{app.pod_template}: must render a Pod with named spec.containers')
+    return tuple(container['name'] for container in containers)
 
 
 def load(path, environment='prod'):

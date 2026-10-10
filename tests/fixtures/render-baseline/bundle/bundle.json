@@ -1,9 +1,11 @@
 {
   "format": "platform-offline-bundle",
-  "format_version": 11,
+  "format_version": 12,
   "manifests": {
     "directory": "generated/target/manifests",
     "files": [
+      "help-app.yaml",
+      "help-config.yaml",
       "keycloak-config.yaml",
       "keycloak-postgres.yaml",
       "keycloak.yaml",
@@ -19,6 +21,7 @@
   "quadlets": {
     "directory": "generated/target/quadlet",
     "files": [
+      "help-app.kube",
       "keycloak-postgres.kube",
       "keycloak.kube",
       "notes-app.kube",
@@ -98,6 +101,10 @@
         ],
         "ready": "/ready",
         "pod_template": "examples/todo/pod.yaml.j2",
+        "containers": [
+          "todo-backend",
+          "todo-frontend"
+        ],
         "checks": [
           {
             "path": "/health",
@@ -161,6 +168,10 @@
         ],
         "ready": "/ready",
         "pod_template": "examples/notes/pod.yaml.j2",
+        "containers": [
+          "notes-backend",
+          "notes-frontend"
+        ],
         "checks": [
           {
             "path": "/health",
@@ -171,6 +182,44 @@
             "status": 200
           }
         ]
+      },
+      {
+        "name": "help",
+        "hostname": "help.test",
+        "keycloak_client": "",
+        "has_database": false,
+        "replication_port": 0,
+        "images": [
+          {
+            "name": "site",
+            "context": "examples/help",
+            "containerfile": "Containerfile"
+          }
+        ],
+        "endpoints": [
+          {
+            "name": "site",
+            "port": 8080
+          }
+        ],
+        "routes": [
+          {
+            "path": "/",
+            "to": "site",
+            "exact": false
+          }
+        ],
+        "ready": "/",
+        "pod_template": "examples/help/pod.yaml.j2",
+        "containers": [
+          "help-site"
+        ],
+        "checks": [
+          {
+            "path": "/",
+            "status": 200
+          }
+        ]
       }
     ]
   },
@@ -178,6 +227,7 @@
   "defaults": {
     "TARGET_IDENTITY_HOSTNAME": "auth.test",
     "TARGET_TODO_HOSTNAME": "todo.test",
-    "TARGET_NOTES_HOSTNAME": "notes.test"
+    "TARGET_NOTES_HOSTNAME": "notes.test",
+    "TARGET_HELP_HOSTNAME": "help.test"
   }
 }

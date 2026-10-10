@@ -51,18 +51,18 @@ The connected build machine renders everything with Jinja2 before packaging
 
 | In the bundle | What it is |
 |---|---|
-| `generated/target/manifests/` | Every Kube YAML file, with `${TARGET_IDENTITY_HOSTNAME}` where Keycloak's public hostname goes and `${TARGET_TODO_HOSTNAME}` and `${TARGET_NOTES_HOSTNAME}` where each app's goes |
+| `generated/target/manifests/` | Every Kube YAML file, with `${TARGET_IDENTITY_HOSTNAME}` where Keycloak's public hostname goes and `${TARGET_TODO_HOSTNAME}`, `${TARGET_NOTES_HOSTNAME}` and `${TARGET_HELP_HOSTNAME}` where each app's goes |
 | `generated/target/quadlet/` | Every `.kube` unit and `app-network.network`; the proxy unit also publishes HTTPS on `${TARGET_PUBLISH_ADDRESS}` |
 | `generated/target/quadlet/local-only/` | The proxy unit for a host that publishes only on 127.0.0.1 |
 | `generated/target/quadlet/replicated/` | The database units of a DR primary, which also publish replication on `${TARGET_PUBLISH_ADDRESS}` |
-| `bundle.json` | Format and version (`platform-offline-bundle`, 4), where each of the above is, the apps, the HTTPS port and the default target values |
+| `bundle.json` | Format and version (`platform-offline-bundle`, `target_render.BUNDLE_FORMAT_VERSION`), where each of the above is, the apps, the HTTPS port and the default target values |
 
 The build checks that putting the default hostnames into the target manifests
 gives exactly the normal render, so a placeholder only stands where a
 hostname stood. `VERSION` and `SHA256SUMS` cover every file, `bundle.json` and
 the target files included.
 
-This builds the backend, frontend, shared proxy and Keycloak images, pulls PostgreSQL, and
+This builds the backend, frontend, Help site, shared proxy and Keycloak images, pulls PostgreSQL, and
 creates both the archive and its external checksum:
 
 ```text
@@ -126,6 +126,7 @@ nothing is passed through a shell or expanded from the environment.
 | `${TARGET_IDENTITY_HOSTNAME}` | The public hostname of Keycloak: its nginx `server_name` (the default server), the TLS certificate's first name, the OIDC issuer and `KC_HOSTNAME`; every app logs in there | `--target-hostname identity=...`, then the environment variable `TARGET_IDENTITY_HOSTNAME`, then the host's record, then the bundle's default (`identityHostname` in the build's `platform.yaml`, `auth.test`) | A DNS name: lowercase labels of letters, digits and inner hyphens |
 | `${TARGET_TODO_HOSTNAME}` | The public hostname of the Todo app: its nginx `server_name`, the TLS certificate and its Keycloak client's redirect URL | `--target-hostname todo=...`, then `TARGET_TODO_HOSTNAME`, then the host's record, then the bundle's default (`platform.yaml`'s `todo.test`) | As above |
 | `${TARGET_NOTES_HOSTNAME}` | The public hostname of the Notes app, used as Todo's is | `--target-hostname notes=...`, then `TARGET_NOTES_HOSTNAME`, then the host's record, then the bundle's default (`platform.yaml`'s `notes.test`) | As above |
+| `${TARGET_HELP_HOSTNAME}` | The public hostname of the Help app: its nginx `server_name` and the TLS certificate (Help has no login, so no Keycloak client) | `--target-hostname help=...`, then `TARGET_HELP_HOSTNAME`, then the host's record, then the bundle's default (`platform.yaml`'s `help.test`) | As above |
 | `${TARGET_PUBLISH_ADDRESS}` | The host IPv4 address nginx publishes HTTPS on (and, on a DR primary, PostgreSQL replication) | `--publish-address` (default `127.0.0.1`, which selects the local-only proxy unit); never the environment, a record or a default | A host IPv4 address, not a wildcard, multicast or reserved one |
 
 Every app of the bundle's platform (`bundle.json`) gets its own
@@ -177,7 +178,7 @@ A bundle without `bundle.json` was built before the files were pre-rendered
 and needed Jinja2 on the target. This installer refuses it with
 `... has no bundle.json: it was built in an older format ...`, before anything
 changes, as it refuses a `bundle.json` of another format version (this
-installer reads version 3). Build a new
+installer reads `target_render.BUNDLE_FORMAT_VERSION`). Build a new
 bundle with `deploy/offline/build-bundle.sh`; an older bundle can still be
 installed with the installer it was shipped with, which is inside it.
 
@@ -269,8 +270,8 @@ backup data is never removed by this command.
 
 ## Source and runtime contract
 
-The bundle contains seven OCI archives, the target files described above (ten YAML files and
-seven units for seven pods, plus the network, and the replicated database units), `bundle.json`
+The bundle contains eight OCI archives, the target files described above (twelve YAML files and
+eight units for eight pods, plus the network, and the replicated database units), `bundle.json`
 and the portable Python installer. It carries no templates: rendering happens only on the build
 host, from the shared `deploy/manifests/*.yaml.j2` and `deploy/quadlet/*.kube.j2` templates in
 the source checkout, whose `deploy/runtime` contains guides. Packaging tests fill the packaged

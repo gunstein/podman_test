@@ -230,7 +230,7 @@ class RenderErrorTests(unittest.TestCase):
 
     def test_render_replaces_the_whole_output_directory(self):
         with tempfile.TemporaryDirectory() as directory:
-            todo, notes = platform_file.checkout().apps
+            todo, notes = platform_file.checkout().apps[:2]
             output = Path(directory) / "output"
             render.render(ROOT, LOCAL, output, PLATFORM)
             self.assertTrue((output / notes.manifest).is_file())

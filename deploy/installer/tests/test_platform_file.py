@@ -22,8 +22,8 @@ SHOP = {'name': 'shop', 'database': True, 'keycloakClient': 'shop-frontend',
         'routes': [{'path': '/api/', 'to': 'api'}, {'path': '/ready', 'to': 'api', 'exact': True},
                    {'path': '/', 'to': 'site'}]}
 
-# Any pod template: the loader only needs it to be there (pod_contract checks what it renders).
-POD = 'kind: Pod\n'
+# A pod template: the loader reads its containers' names (pod_contract checks the rest of what it renders).
+POD = 'kind: Pod\nspec:\n  containers:\n    - name: {{ app.names.resource("site") }}\n'
 
 
 class PlatformFileTests(unittest.TestCase):
@@ -41,13 +41,15 @@ class PlatformFileTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, message):
             platform_file.load(self.write(**files))
 
-    def test_the_repository_describes_todo_and_notes(self):
+    def test_the_repository_describes_todo_notes_and_help(self):
         platform, local = platform_file.load(ROOT / 'platform.yaml', 'local')
-        self.assertEqual([app.name for app in platform.apps], ['todo', 'notes'])
+        self.assertEqual([app.name for app in platform.apps], ['todo', 'notes', 'help'])
         self.assertEqual([(app.hostname, app.keycloak_client, app.replication_port, app.ready,
                            [(check.path, check.status) for check in app.checks]) for app in platform.apps],
                          [('todo.test', 'todo-frontend', 5432, '/ready', [('/health', 200), ('/api/todos', 200)]),
-                          ('notes.test', 'notes-frontend', 5433, '/ready', [('/health', 200), ('/api/notes', 200)])])
+                          ('notes.test', 'notes-frontend', 5433, '/ready', [('/health', 200), ('/api/notes', 200)]),
+                          # Help is static: no login and no database.
+                          ('help.test', '', 0, '/', [('/', 200)])])
         self.assertEqual(platform.identity_hostname, 'auth.test')
         self.assertEqual(local, platform_file.Environment(public_port=8443, log_level='debug'))
         self.assertEqual(platform_file.load(ROOT / 'platform.yaml', 'prod')[1].log_level, 'info')
@@ -62,7 +64,7 @@ class PlatformFileTests(unittest.TestCase):
             endpoints=(apps.Endpoint(name='site', port=8080), apps.Endpoint(name='api', port=8000)),
             routes=(apps.Route(path='/api/', to='api'), apps.Route(path='/ready', to='api', exact=True),
                     apps.Route(path='/', to='site')),
-            pod_template='apps/shop/pod.yaml.j2'),),
+            pod_template='apps/shop/pod.yaml.j2', containers=('shop-site',)),),
             identity_hostname='login.example.org'))
         self.assertEqual(prod, platform_file.Environment(public_port=8443, log_level='info'))
         path = self.write()
@@ -248,6 +250,19 @@ class PlatformFileTests(unittest.TestCase):
         ):
             with self.subTest(message=message):
                 self.refused(message, app={**SHOP, **change})
+
+    def test_the_pod_template_names_the_apps_containers(self):
+        path = self.write()
+        self.assertEqual(platform_file.load(path)[0].apps[0].containers, ('shop-site',))
+        self.assertEqual([app.containers for app in platform_file.checkout().apps],
+                         [('todo-backend', 'todo-frontend'), ('notes-backend', 'notes-frontend'), ('help-site',)])
+        for template, message in (('kind: Pod\n', r'apps/shop/pod.yaml.j2: must render a Pod with named spec.containers'),
+                                  ('{{ broken', r'apps/shop/pod.yaml.j2: cannot be rendered'),
+                                  ('{{ app.nothing }}', r'apps/shop/pod.yaml.j2: cannot be rendered')):
+            with self.subTest(message=message):
+                (path.parent / 'apps/shop/pod.yaml.j2').write_text(template)
+                with self.assertRaisesRegex(ValueError, message):
+                    platform_file.load(path)
 
     def test_keycloaks_database_port_is_taken(self):
         self.refused(r"apps/shop/app.yaml has replicationPort 5434, which is Keycloak's database's",

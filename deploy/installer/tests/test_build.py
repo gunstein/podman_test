@@ -32,10 +32,10 @@ class BuildInstallTests(unittest.TestCase):
                 # Rendered before the first image build (RenderingHost records it as no command).
                 self.assertEqual(host.rendered, [(platform_file.load(root / 'platform.yaml', profile)[1],
                                                   root / 'generated' / output, platform_file.checkout())])
-                self.assertEqual(sum(a[:2] == ['podman', 'build'] for a in calls), 6)
+                self.assertEqual(sum(a[:2] == ['podman', 'build'] for a in calls), 7)
                 self.assertEqual(sum(a[:2] == ['podman', 'pull'] for a in calls), 1)
                 self.assertEqual(recorded, {'TARGET_IDENTITY_HOSTNAME': 'auth.test', 'TARGET_TODO_HOSTNAME': 'todo.test',
-                                    'TARGET_NOTES_HOSTNAME': 'notes.test'}
+                                    'TARGET_NOTES_HOSTNAME': 'notes.test', 'TARGET_HELP_HOSTNAME': 'help.test'}
                                  if mode == 'server' else None)
 
     def test_the_platform_given_is_the_one_rendered(self):
@@ -82,4 +82,4 @@ class BuildInstallTests(unittest.TestCase):
                     patch('app_installer.keycloak.configure'):
                 install.install(root, mode='server', quadlet_dir=directory, refresh_images=True)
             self.assertEqual(host.ran('podman', 'pull'), [['podman', 'pull', 'docker.io/library/postgres:17.11']])
-            self.assertEqual(len(host.ran('podman', 'build')), 6)
+            self.assertEqual(len(host.ran('podman', 'build')), 7)

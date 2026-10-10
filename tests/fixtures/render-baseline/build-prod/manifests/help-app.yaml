@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "help-app"
+  labels:
+    app.kubernetes.io/name: "help"
+    app.kubernetes.io/component: application
+  annotations:
+    io.podman.annotations.pids-limit/help-site: "128"
+spec:
+  restartPolicy: Never
+  containers:
+    - name: "help-site"
+      image: "localhost/help-site:m12"
+      imagePullPolicy: Never
+      ports:
+        - name: site-http
+          containerPort: 8080
+      resources:
+        limits:
+          memory: "64Mi"
+      securityContext:
+        runAsUser: 101
+        runAsGroup: 101
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]

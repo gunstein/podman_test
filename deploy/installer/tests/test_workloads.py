@@ -155,7 +155,7 @@ class WorkloadsTests(unittest.TestCase):
         self.assertIn('PublishPort=127.0.0.1:5432:5432\n', rendered)
 
     def test_databases_publish_distinct_ports_from_platform_yaml(self):
-        for app in platform_file.checkout().apps:
+        for app in platform_file.checkout().database_apps:
             rendered = quadlet.render(ROOT, 'postgres.kube',
                                       workloads.postgres_variables(app.database, '192.0.2.50')).decode()
             self.assertIn(f'PublishPort=127.0.0.1:{app.replication_port}:5432\n', rendered)

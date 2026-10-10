@@ -26,11 +26,11 @@ are examples.
 Normal state:
 
 ```text
-todo.test, notes.test
+todo.test, notes.test, help.test
     |
     v
 VM1  todo-primary
-     Shared proxy + Todo + Notes + Keycloak + 3 PostgreSQL primaries
+     Shared proxy + Todo + Notes + Help + Keycloak + 3 PostgreSQL primaries
                        |
                        | async replication
                        v
@@ -40,11 +40,11 @@ VM2  todo-standby      3 PostgreSQL standbys (todo, notes, keycloak)
 After DR:
 
 ```text
-todo.test, notes.test
+todo.test, notes.test, help.test
     |
     v
 VM2  todo-standby
-     Shared proxy + Todo + Notes + Keycloak + 3 PostgreSQL primaries
+     Shared proxy + Todo + Notes + Help + Keycloak + 3 PostgreSQL primaries
 ```
 
 VM1 is then rebuilt as the new standby.
@@ -172,6 +172,7 @@ systemctl --user is-active \
   shared-proxy.service \
   todo-app.service \
   notes-app.service \
+  help-app.service \
   keycloak.service \
   todo-postgres.service \
   notes-postgres.service \
@@ -595,6 +596,7 @@ systemctl --user is-active \
   shared-proxy.service \
   todo-app.service \
   notes-app.service \
+  help-app.service \
   keycloak.service \
   todo-postgres.service \
   notes-postgres.service \
@@ -606,9 +608,10 @@ curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/api/todos
 curl --fail -H 'Host: notes.test' http://127.0.0.1:8080/api/notes
 ```
 
-## 19. Move todo.test and notes.test to VM2
+## 19. Move todo.test, notes.test and help.test to VM2
 
-On the laptop, `todo.test` and `notes.test` must now point to `192.168.1.51`.
+On the laptop, `auth.test`, `todo.test`, `notes.test` and `help.test` must now
+point to `192.168.1.51`.
 
 If you use `/etc/hosts`:
 
@@ -616,9 +619,10 @@ If you use `/etc/hosts`:
 sudo sed -i \
   -e '/[[:space:]]todo\.test\([[:space:]]\|$\)/d' \
   -e '/[[:space:]]notes\.test\([[:space:]]\|$\)/d' \
+  -e '/[[:space:]]help\.test\([[:space:]]\|$\)/d' \
   /etc/hosts
 
-echo '192.168.1.51 auth.test todo.test notes.test' | sudo tee -a /etc/hosts
+echo '192.168.1.51 auth.test todo.test notes.test help.test' | sudo tee -a /etc/hosts
 ```
 
 VM2 creates its own demo CA the first time nginx starts, so you also need to
@@ -674,7 +678,7 @@ This permanently replaces VM1's old database. First complete and review
 approval. Keep VM1 fenced. Use the existing specialized procedure:
 
 - [Proxmox quarantine](../PROXMOX-QUARANTINE.md): rehearse it while the initial
-  pair is healthy; for recovery boot with every link disconnected, stop all seven
+  pair is healthy; for recovery boot with every link disconnected, stop all eight
   registered services through Guest Agent, require completed `exitcode=0` and `STOPPED`,
   inspect IPv4/IPv6 rules before reconnecting restricted SSH.
 - [Restore redundancy](../../deploy/dr/RESTORE-REDUNDANCY.md) and
@@ -686,7 +690,7 @@ Substitute this recipe's actual addresses, VMIDs and service user in the linked
 procedures. Do not just start VM1 normally or interpret the stop helper as
 fencing. A failed or partial rebuild is a STOP condition; preserve evidence and
 never retry it blindly. Expected outcome: VM1 runs only read-only PostgreSQL,
-VM2 retains all seven workloads, and all three databases stream with zero lag.
+VM2 retains all eight workloads, and all three databases stream with zero lag.
 
 ## 26. Final check
 

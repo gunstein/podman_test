@@ -1,11 +1,9 @@
 [Unit]
-Description=Todo app Podman Kube workload
-Requires=todo-postgres.service keycloak.service
-After=todo-postgres.service keycloak.service
+Description=Help app Podman Kube workload
 
 [Kube]
-Yaml=todo-app.yaml
-ConfigMap=todo-config.yaml
+Yaml=help-app.yaml
+ConfigMap=help-config.yaml
 Network=app-network.network
 PodmanArgs=--no-pod-prefix
 ExitCodePropagation=any

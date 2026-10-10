@@ -12,16 +12,16 @@ do the DR tools on a primary and a standby.
 
 One installation is an `apps.Platform`: its apps, in start order, and
 Keycloak's default hostname. A build reads it from `platform.yaml` at the
-project root and each app's `app.yaml` (`platform_file.py`; today Todo and
-Notes, in `examples/`); an offline bundle carries the one it was built for in `bundle.json`,
+project root and each app's `app.yaml` (`platform_file.py`; today Todo,
+Notes and Help, in `examples/`); an offline bundle carries the one it was built for in `bundle.json`,
 and an install records it on the host (`~/.config/platform/platform.json`),
 which every later command on the host (backup, uninstall, the DR tools) reads
 instead of a list in the code. That record is written before an install
 changes anything, so it says what the host may hold, not that the install
 succeeded; the hostnames it was installed with are recorded only after
 success, in `target-values.json` (below). Each App owns its derived image, secret,
-manifest, service and volume names. Single-host installs run seven pods; Keycloak,
-its own `keycloak-postgres` database and the proxy run once. Both apps share the
+manifest, service and volume names. Single-host installs run eight pods; Keycloak,
+its own `keycloak-postgres` database and the proxy run once. Todo and Notes share the
 `todo` realm but have independent clients and PostgreSQL instances.
 `Platform.replicated_databases` (todo, notes, keycloak) is the DR group.
 
@@ -37,9 +37,9 @@ python3 -m app_installer down
 python3 -m app_installer uninstall
 ```
 
-Map `todo.test` and `notes.test` to the serving host (both to `127.0.0.1` for
-direct development) and trust the proxy CA as described in [TLS](../../docs/TLS.md).
-Both hosts use one SAN certificate and HTTPS port 8443. The installer keeps
+Map `auth.test`, `todo.test`, `notes.test` and `help.test` to the serving host (all to
+`127.0.0.1` for direct development) and trust the proxy CA as described in [TLS](../../docs/TLS.md).
+All hosts use one SAN certificate and HTTPS port 8443. The installer keeps
 nginx's CA and certificate as Podman secrets (`tls_secrets.py`) and makes them
 with the OpenSSL in the proxy image, so the host needs none; `tls_store.py`
 chooses between those secrets and the earlier TLS volume (`tls.py`).
@@ -117,7 +117,7 @@ project's own), and on a DR host the command refuses like every uninstall.
 Shell scripts ask the installer instead of keeping their own list of apps:
 
 ```bash
-python3 -m app_installer platform hostnames                  # auth.test todo.test notes.test
+python3 -m app_installer platform hostnames                  # auth.test todo.test notes.test help.test
 python3 -m app_installer platform hostname notes             # one: identity or an app
 python3 -m app_installer platform public-port --environment local
 python3 -m app_installer platform host-ports --bundle-dir .  # "CONTAINER PORT..." per line
@@ -149,7 +149,7 @@ offline bundle's filled-in files (`target=`). They return whether manifests,
 network or unit definitions changed. They always reload user systemd; they
 never restart services themselves.
 Callers control safe stop/start ordering, taken from `Platform.workloads()`: the
-seven pods in start order, each with its Kube YAML and ConfigMap files and
+eight pods in start order, each with its Kube YAML and ConfigMap files and
 whether a start waits for it to be healthy; stop is the reverse
 (`Platform.services()`). Every Kube YAML file is named after its pod's name,
 then its component (`todo-postgres.yaml`, `notes-config.yaml`); an install

@@ -17,7 +17,7 @@ class KubeSecretVolumeTests(unittest.TestCase):
         # The manifests mount these Kube secrets as `secret:` volumes (Keycloak's own
         # are environment variables, which leave no volume, and removing nothing is fine).
         names = secrets.kube_volume_names(platform_file.checkout())
-        for app in platform_file.checkout().apps:
+        for app in platform_file.checkout().database_apps:
             for name in (app.database.kube_secret, app.kube_secret('backend'), app.kube_secret('migrator')):
                 self.assertIn(name, names)
         self.assertIn(apps.KEYCLOAK_DATABASE.kube_secret, names)

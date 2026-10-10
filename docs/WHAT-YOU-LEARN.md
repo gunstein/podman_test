@@ -13,7 +13,7 @@ its lifecycle. See [`deploy/runtime/README.md`](../deploy/runtime/README.md).
 
 | Topic | Demonstrated here | Deliberate simplification / production concern |
 |---|---|---|
-| Jinja2 / Kube YAML | Build-time rendering, package/render consistency checks and seven lifecycle-grouped pods | Podman workload format, not Kubernetes orchestration; rendering never runs on targets |
+| Jinja2 / Kube YAML | Build-time rendering, package/render consistency checks and eight lifecycle-grouped pods | Podman workload format, not Kubernetes orchestration; rendering never runs on targets |
 | Target values | Rendered files carry `${TARGET_*}` placeholders for the public hostnames and the host's address; the installer and the DR tools fill them in with the standard library, the standby with the primary's hostnames | Only the values that differ between hosts are placeholders; everything else is fixed at build time |
 | Identity adapter | Both UIs use auth.js; the Keycloak SDK is isolated in keycloak-adapter.js; each backend validates issuer/JWKS/audience | Only Keycloak is implemented; changing IdP still requires configuration and integration tests |
 | Acceptance | Explicit operator gates, checksums, idempotence, trusted browser and full DR evidence, run step by step through `acceptance.py`, by a person with one command (`acceptance.py run`) or by an agent ([current verdict](../PROJECT.md#acceptance)) | Revision-specific acceptance; no automatic full DR controller |
@@ -54,7 +54,7 @@ optional later switchover, not an automatic part of disaster recovery.
 
 ```text
 Jinja2        renders workload YAML at build time; absent from target hosts
-Kube YAML     defines seven workloads, init containers and runtime settings
+Kube YAML     defines eight workloads, init containers and runtime settings
 .kube Quadlet connects each workload to user systemd
 systemd       owns service lifecycle and boot behavior, and runs the nightly
               backup and the DR check from user timers

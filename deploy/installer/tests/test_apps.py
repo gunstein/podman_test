@@ -25,13 +25,17 @@ REPLICATED_DATABASES = checkout().replicated_databases
 class AppRegistryTests(unittest.TestCase):
     def test_identities_are_unique_and_safe(self):
         self.assertTrue(APPS)
-        for field in ('name', 'hostname', 'keycloak_client', 'replication_port'):
-            values = [getattr(app, field) for app in APPS]
+        # An app without login has no client, one without a database no
+        # replication port; the others must not share theirs.
+        for field, apps in (('name', APPS), ('hostname', APPS), ('keycloak_client', checkout().login_apps),
+                            ('replication_port', checkout().database_apps)):
+            values = [getattr(app, field) for app in apps]
             self.assertEqual(len(values), len(set(values)), field)
         for app in APPS:
             self.assertRegex(app.name, r'^[a-z][a-z0-9-]*$')
             self.assertRegex(app.hostname, r'^[a-z0-9.-]+$')
-            self.assertTrue(re.fullmatch(r'[a-z0-9-]+', app.keycloak_client))
+            if app.keycloak_client:
+                self.assertTrue(re.fullmatch(r'[a-z0-9-]+', app.keycloak_client))
             with self.assertRaises(dataclasses.FrozenInstanceError):
                 app.name = 'changed'
 
@@ -76,7 +80,7 @@ class AppRegistryTests(unittest.TestCase):
         # a hostname or an OAuth client on them.
         for database in REPLICATED_DATABASES:
             self.assertIs(type(database), Database)
-        self.assertEqual(REPLICATED_DATABASES[:-1], tuple(app.database for app in APPS))
+        self.assertEqual(REPLICATED_DATABASES[:-1], tuple(app.database for app in checkout().database_apps))
 
     def test_replication_apps_details_match_the_acceptance_table(self):
         from app_installer import cli
@@ -129,9 +133,9 @@ class PlatformTests(unittest.TestCase):
         databases = ["todo-postgres", "notes-postgres", "keycloak-postgres"]
         self.assertEqual(checkout().ready("standby"), (databases, databases))
         pods, containers = checkout().ready("app")
-        self.assertEqual(pods, [*databases, "keycloak", "todo-app", "notes-app", "shared-proxy"])
+        self.assertEqual(pods, [*databases, "keycloak", "todo-app", "notes-app", "help-app", "shared-proxy"])
         self.assertEqual(containers, [*databases, "keycloak", "todo-backend", "todo-frontend",
-                                      "notes-backend", "notes-frontend", "nginx"])
+                                      "notes-backend", "notes-frontend", "help-site", "nginx"])
         with self.assertRaisesRegex(ValueError, "role must be app or standby"):
             checkout().ready("primary")
 
@@ -150,7 +154,7 @@ class PlatformTests(unittest.TestCase):
 
     def test_two_platforms_in_one_process_share_nothing(self):
         today, shop = checkout(), self.shop()
-        self.assertEqual([app.name for app in today.apps], ["todo", "notes"])
+        self.assertEqual([app.name for app in today.apps], ["todo", "notes", "help"])
         self.assertEqual([d.name for d in shop.replicated_databases], ["shop", "keycloak"])
         self.assertEqual([d.name for d in today.replicated_databases], ["todo", "notes", "keycloak"])
         self.assertEqual(shop.services(databases=False), ["shared-proxy.service", "shop-app.service",
@@ -186,7 +190,8 @@ class PlatformTests(unittest.TestCase):
         from app_installer import install, secrets, workloads
         shop = self.shop().apps[0]
         help_ = App(name="help", hostname="help.example.org", has_database=False, replication_port=0)
-        wiki = App(name="wiki", hostname="wiki.example.org", replication_port=5441)
+        wiki = App(name="wiki", hostname="wiki.example.org", replication_port=5441,
+                   containers=("wiki-backend", "wiki-frontend"))
         self.assertEqual((help_.has_database, help_.has_login, wiki.has_database, wiki.has_login),
                          (False, False, True, False))
         with self.assertRaisesRegex(ValueError, "The app help has no database"):

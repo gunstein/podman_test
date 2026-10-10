@@ -803,7 +803,8 @@ wait:
 
 ```bash
 IP=192.168.0.102
-sudo sed -i -e '/[[:space:]]auth\.test\([[:space:]]\|$\)/d' -e '/[[:space:]]todo\.test\([[:space:]]\|$\)/d' -e '/[[:space:]]notes\.test\([[:space:]]\|$\)/d' /etc/hosts && echo "$IP auth.test todo.test notes.test" | sudo tee -a /etc/hosts
+NAMES=$(PYTHONPATH=deploy/installer python3 -m app_installer platform hostnames)
+for name in $NAMES; do sudo sed -i "/[[:space:]]${name//./\\.}\([[:space:]]\|$\)/d" /etc/hosts; done && echo "$IP $NAMES" | sudo tee -a /etc/hosts
 deploy/scripts/lab/trust-serving-ca.sh "gunstein@$IP"
 ```
 

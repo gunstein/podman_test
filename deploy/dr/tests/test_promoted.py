@@ -132,7 +132,7 @@ class PromotedDeployTests(unittest.TestCase):
             starts = [s[2] for s in host.steps if s[:2] == ('systemctl', 'start')]
             # The serving tier in start order: Keycloak, the apps, nginx.
             self.assertEqual(starts, ['keycloak.service', 'todo-app.service', 'notes-app.service',
-                                      'shared-proxy.service'])
+                                      'help-app.service', 'shared-proxy.service'])
             # Keycloak first, then each app ready and its checks, through its own hostname.
             self.assertLess(self.index(host, ('request', promoted.DISCOVERY, None)), self.index(host, ('clients',)))
             for app in platform_file.checkout().apps:
@@ -191,16 +191,18 @@ class PromotedDeployTests(unittest.TestCase):
             record.parent.mkdir(parents=True)
             record.write_text(json.dumps({'TARGET_IDENTITY_HOSTNAME': 'auth.example.org',
                                           'TARGET_TODO_HOSTNAME': 'shop.example.org',
-                                          'TARGET_NOTES_HOSTNAME': 'notes.example.org'}))
+                                          'TARGET_NOTES_HOSTNAME': 'notes.example.org',
+                                          'TARGET_HELP_HOSTNAME': 'help.example.org'}))
             host = PromotedHost(issuers=['https://auth.example.org:8443/auth/realms/todo'])
             self.deploy(host, directory)
-            tls = ('tls', 'auth.example.org', 'shop.example.org', 'notes.example.org')
+            tls = ('tls', 'auth.example.org', 'shop.example.org', 'notes.example.org', 'help.example.org')
             self.assertLess(self.index(host, ('images',)), self.index(host, tls))
             self.assertLess(self.index(host, tls), self.index(host, ('install', 'application', 'todo')))
 
     def test_a_failed_check_or_foreign_issuer_stops_the_deployment(self):
         with tempfile.TemporaryDirectory() as directory:
-            app = platform_file.checkout().apps[-1]
+            # notes: Help's only check is its ready path, which fails as not ready instead.
+            app = platform_file.checkout().apps[1]
             host = PromotedHost(statuses={(app.hostname, app.checks[-1].path): 500})
             with self.assertRaisesRegex(RuntimeError, f'{app.name}: GET {app.checks[-1].path} on {app.hostname} '
                                                       'answered 500, not 200'):

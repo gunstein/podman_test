@@ -3,7 +3,7 @@
    frontend. Requires= and After= name what it needs, its database and
    Keycloak, from the model; systemd starts those first. #}
 [Unit]
-Description={{ name | capitalize }} frontend and backend Podman Kube workload
+Description={{ name | capitalize }} app Podman Kube workload
 {% if workload.requires %}
 Requires={{ workload.requires | join(' ') }}
 After={{ workload.requires | join(' ') }}

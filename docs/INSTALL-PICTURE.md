@@ -64,7 +64,7 @@ left and PROD on the right.
                      v                                      v
    +----------------------------------+   +----------------------------------+
    | 5. CONFIGURATION                 |   | 5. CONFIGURATION                 |
-   |    Kube secrets only;            |   |    Kube secrets + YAML + 7       |
+   |    Kube secrets only;            |   |    Kube secrets + YAML + 8       |
    |    no files installed            |   |    Quadlet .kube units;          |
    |                                  |   |    systemctl daemon-reload       |
    +-----------------+----------------+   +-----------------+----------------+
@@ -91,12 +91,14 @@ left and PROD on the right.
    |              |                                                          |
    |    todo-app, notes-app            migration, backend, frontend;         |
    |              |                    database roles again                  |
+   |    help-app                       static pages; no database or login    |
+   |              |                                                          |
    |    shared-proxy (nginx)           DEV: 127.0.0.1:8443  PROD: IP:8443    |
    +------------------------------------+------------------------------------+
                                         |
                                         v
    +-------------------------------------------------------------------------+
-   | 8. CONFIGURE KEYCLOAK   login protection, one client per app            |
+   | 8. CONFIGURE KEYCLOAK   login protection, one client per app with login |
    +------------------------------------+------------------------------------+
                                         |
                      +------------------+-------------------+
@@ -119,7 +121,7 @@ left and PROD on the right.
 
 ## What is the same
 
-Steps 3, 7 and 8 are the same code in the same order: passwords, the seven
+Steps 3, 7 and 8 are the same code in the same order: passwords, the eight
 pods with their database roles and migrations, and the Keycloak setup. Running
 the install again with nothing changed changes nothing.
 
@@ -149,7 +151,7 @@ tools it needs, among them Podman, systemd and Python (with PyYAML on a DR host)
   installing the bundle, and the host prerequisites.
 - [Python installer](../deploy/installer/README.md): what `install.sh` and
   `dev-up.sh` do, step by step.
-- [Architecture](ARCHITECTURE.md): the seven pods and why they are grouped
+- [Architecture](ARCHITECTURE.md): the eight pods and why they are grouped
   as they are.
 - [Secrets](SECRETS.md) and [TLS](TLS.md): passwords and certificates.
 - [app-ops](../deploy/dr/README.md): the second site, replication, failover

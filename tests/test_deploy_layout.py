@@ -21,7 +21,7 @@ class DeployLayoutTests(unittest.TestCase):
                 self.assertEqual({p.name for p in output.iterdir()}, {
                     "todo-app.yaml", "keycloak.yaml", "todo-postgres.yaml", "todo-config.yaml", "shared-proxy.yaml",
                     "notes-app.yaml", "notes-postgres.yaml", "notes-config.yaml",
-                    "keycloak-postgres.yaml", "keycloak-config.yaml",
+                    "keycloak-postgres.yaml", "keycloak-config.yaml", "help-app.yaml", "help-config.yaml",
                 })
                 config = list(yaml.safe_load_all((output / "todo-config.yaml").read_text()))
                 proxy = list(yaml.safe_load_all((output / "shared-proxy.yaml").read_text()))
@@ -32,5 +32,5 @@ class DeployLayoutTests(unittest.TestCase):
                         if d["kind"] == "Pod"]
                 self.assertEqual({d["metadata"]["name"] for d in pods}, {
                     "todo-app", "todo-postgres", "notes-app", "notes-postgres", "keycloak",
-                    "keycloak-postgres", "shared-proxy",
+                    "keycloak-postgres", "help-app", "shared-proxy",
                 })

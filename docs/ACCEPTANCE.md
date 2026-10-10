@@ -1,9 +1,10 @@
 # Acceptance
 
 This is the canonical normal execution sequence for full two-VM acceptance of
-the seven-pod, two-application Podman Kube architecture: Todo and Notes, shared
-Keycloak and shared nginx, with three independently replicated PostgreSQL
-databases (Todo, Notes and Keycloak). Use the direct DR tools and the
+the eight-pod, three-application Podman Kube architecture: Todo and Notes, the
+static Help app (no database, no login), shared Keycloak and shared nginx,
+with three independently replicated PostgreSQL databases (Todo, Notes and
+Keycloak). Use the direct DR tools and the
 plain-SSH `app-ops` commands below ([app-ops](../deploy/dr/README.md)). The final rebuild permanently replaces old-primary database
 data; use disposable lab hosts and explicit infrastructure fencing.
 
@@ -113,7 +114,7 @@ firewalld, the system Python 3.9 with PyYAML (for the DR tools), user lingering,
 an 18 GiB home filesystem per VM.
 
 These values describe the lab used for the earlier four-pod runs. The
-seven-pod topology runs three PostgreSQL instances plus Keycloak per host; record
+eight-pod topology runs three PostgreSQL instances plus Keycloak per host; record
 free memory (`free -m`) in phase 1 and STOP if the hosts swap heavily after
 phase 3.
 
@@ -138,6 +139,7 @@ PYTHONPATH=deploy/installer python3 -c 'from app_installer import platform_file;
 | `shared-proxy` / `shared-proxy.service` | `nginx` (TLS, routing by hostname) | Serving host |
 | `todo-app` / `todo-app.service` | `todo-migrate` init, `todo-backend`, `todo-frontend` | Serving host |
 | `notes-app` / `notes-app.service` | `notes-migrate` init, `notes-backend`, `notes-frontend` | Serving host |
+| `help-app` / `help-app.service` | `help-site` (static pages) | Serving host |
 | `keycloak` / `keycloak.service` | `keycloak` | Serving host |
 | `todo-postgres` / `todo-postgres.service` | `todo-postgres` | Both hosts |
 | `notes-postgres` / `notes-postgres.service` | `notes-postgres` | Both hosts |
@@ -151,7 +153,7 @@ PYTHONPATH=deploy/installer python3 -c 'from app_installer import platform_file;
 
 All three databases are one DR group: bootstrap, promotion, backup, rebuild and
 status always act on the complete group, never on one database alone. A
-serving host runs all seven services; a rebuilt standby runs only the three
+serving host runs all eight services; a rebuilt standby runs only the three
 PostgreSQL services. Clients use `https://todo.test:8443` and
 `https://notes.test:8443`, and log in at Keycloak's `https://auth.test:8443`;
 the three names map to the serving host and are covered by one SAN
@@ -328,18 +330,19 @@ sudo firewall-cmd --permanent --zone=public \
 sudo firewall-cmd --reload
 ```
 
-On the client laptop, map both `todo.test` and `notes.test` to `192.168.0.102` and install the new
+On the client laptop, map `auth.test`, `todo.test`, `notes.test` and `help.test` to `192.168.0.102` and install the new
 public demo CA as described in `docs/TLS.md`. A prior drill may have left
 `todo.test` pointing to `.108` and an obsolete CA in the trust store.
 
-Require all seven long-running services, no failed user units, nginx image identity,
-valid nginx configuration, health and readiness of both apps, and Keycloak discovery:
+Require all eight long-running services, no failed user units, nginx image identity,
+valid nginx configuration, health and readiness of the apps, and Keycloak discovery:
 
 ```bash
 systemctl --user is-active \
   shared-proxy.service \
   todo-app.service \
   notes-app.service \
+  help-app.service \
   keycloak.service \
   todo-postgres.service \
   notes-postgres.service \
@@ -352,6 +355,7 @@ curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/health
 curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/ready
 curl --fail -H 'Host: notes.test' http://127.0.0.1:8080/health
 curl --fail -H 'Host: notes.test' http://127.0.0.1:8080/ready
+curl --fail -H 'Host: help.test' http://127.0.0.1:8080/
 curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
 ```
 
@@ -462,7 +466,7 @@ The tests delete their own rows; create one separate authenticated persistent
 marker in each app through the UI and record both IDs/titles for replication and
 reboot checks.
 
-Reboot the VM. Repeat the seven-service and nginx configuration checks above;
+Reboot the VM. Repeat the eight-service and nginx configuration checks above;
 verify both markers and unchanged TLS CA fingerprint (the secret
 `platform-proxy-ca-cert`, as nginx serves it from `/var/lib/platform-tls/ca.crt`).
 
@@ -804,7 +808,7 @@ root. Require system-trust HTTPS, health/readiness, stable issuer
 SSO tests, and a persistent authenticated failover marker in each app.
 
 Rerun `deploy-promoted-application` and require `{"changed": false}`. Reboot promoted host and verify all
-seven workload services listed in phase 3, writable PostgreSQL,
+eight workload services listed in phase 3, writable PostgreSQL,
 `podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf`, marker data
 and unchanged CA hash. Each app pod shares loopback between frontend and backend,
 but the proxy reaches both over DNS; frontend serves HTTP only and holds no TLS keys.
@@ -1006,7 +1010,7 @@ after a failure.
 2. Require `t|on` for all three databases, only the three PostgreSQL services and resumed streaming.
 3. Run `cluster-status`.
 4. Reboot only current primary.
-5. Require all seven workload services from phase 3,
+5. Require all eight workload services from phase 3,
    `podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf`, `f|off|on|1h` for
    every database, persistent backups, unchanged TLS CA and readiness of both apps.
 6. Run `cluster-status` again.
@@ -1033,6 +1037,7 @@ workload services and pods:
 shared-proxy.service       shared-proxy pod (container: nginx)
 todo-app.service           todo-app pod
 notes-app.service          notes-app pod
+help-app.service           help-app pod
 keycloak.service           keycloak pod
 todo-postgres.service      todo-postgres pod
 notes-postgres.service     notes-postgres pod
@@ -1063,7 +1068,7 @@ sequential final reboots and new authenticated Todo and Notes markers read on
 rebuilt standby.
 Record repairs as REPAIRED FUNCTIONAL PASS, preserving original failures.
 Keep quarantine through verification. The stop helper is not a rebuilt-standby
-management tool: it expects all seven registered workload units (including `shared-proxy.service`).
+management tool: it expects all eight registered workload units (including `shared-proxy.service`).
 
 Finally remove the run's passwordless sudo on both VMs, and require a non-zero
 exit; a run that leaves the file in place is not complete:

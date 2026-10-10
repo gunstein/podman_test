@@ -56,14 +56,15 @@ class InstallTests(unittest.TestCase):
                 calls = host.calls
                 install.install(project, mode=mode, quadlet_dir=directory, platform=platform, **how)
                 configure.assert_called_once_with('fixture-password', [
-                    (app.keycloak_client, app.hostname) for app in applications])
+                    (app.keycloak_client, app.hostname) for app in platform.login_apps])
                 # Each app ready, then its checks, through nginx with its hostname (checks.verify).
                 self.assertEqual(host.requests, [(app.hostname, path) for app in applications
                                                  for path in (app.ready, *(check.path for check in app.checks))])
                 if mode == 'server':
-                    self.assertEqual(len(list(runtime.glob('*.kube'))), 2 * len(applications) + 3)
-                    self.assertEqual(len(host.ran('systemctl', '--user', 'show')),
-                                     2 * len(applications) + 3)
+                    # Each app's pod, each database app's PostgreSQL, Keycloak, its PostgreSQL and nginx.
+                    pods = len(applications) + len(platform.database_apps) + 3
+                    self.assertEqual(len(list(runtime.glob('*.kube'))), pods)
+                    self.assertEqual(len(host.ran('systemctl', '--user', 'show')), pods)
                 else:
                     self.assertFalse(directory.exists())
                 if repeat:
@@ -71,7 +72,7 @@ class InstallTests(unittest.TestCase):
                     install.install(project, mode=mode, quadlet_dir=directory, platform=platform, **how)
                     self.assertFalse(host.ran('systemctl', '--user', 'stop'))
             bootstrap = [i for i, a in enumerate(calls) if a[-1] == 'backend.setup_roles']
-            self.assertEqual(len(bootstrap), 2 * len(applications))
+            self.assertEqual(len(bootstrap), 2 * len(platform.database_apps))
             wait = next(i for i, a in enumerate(calls) if a[:2] == ['podman', 'wait'])
             self.assertLess(wait, bootstrap[0])
             for index in bootstrap:
@@ -79,9 +80,9 @@ class InstallTests(unittest.TestCase):
                 self.assertIn('no-new-privileges', calls[index])
             return calls, bootstrap
 
-    def test_six_pod_server_and_repeat(self):
+    def test_every_pod_server_and_repeat(self):
         calls, bootstrap = self.exercise_install('server', applications=platform_file.checkout().apps, repeat=True)
-        for app in platform_file.checkout().apps:
+        for app in platform_file.checkout().database_apps:
             setup = [calls[i] for i in bootstrap if f'DATABASE_HOST={app.database.container}' in calls[i]]
             self.assertEqual(len(setup), 2)
             for command in setup:
@@ -91,12 +92,13 @@ class InstallTests(unittest.TestCase):
         for service in ('keycloak', 'keycloak-postgres', 'shared-proxy'):
             self.assertEqual(calls.count(['systemctl', '--user', 'start', service + '.service']), 1)
 
-    def test_six_pod_dev_order(self):
+    def test_every_pod_dev_order(self):
         calls, bootstrap = self.exercise_install('dev', applications=platform_file.checkout().apps)
         plays = [(i, a) for i, a in enumerate(calls)
                  if a[:3] == ['podman', 'kube', 'play'] and '--help' not in a]
         self.assertEqual([Path(a[-1]).stem for _, a in plays], [
-            'todo-postgres', 'notes-postgres', 'keycloak-postgres', 'keycloak', 'todo-app', 'notes-app', 'shared-proxy'])
+            'todo-postgres', 'notes-postgres', 'keycloak-postgres', 'keycloak', 'todo-app', 'notes-app', 'help-app',
+            'shared-proxy'])
         self.assertLess(bootstrap[1], plays[2][0])
         self.assertLess(plays[-1][0], bootstrap[2])
 
@@ -506,7 +508,7 @@ class UninstallTests(unittest.TestCase):
             commands = [call.args[0] for call in run.call_args_list]
             removals = [command for command in commands if command[:3] == ['podman', 'pod', 'rm']]
             self.assertEqual([command[-1] for command in removals],
-                             ['shared-proxy', 'notes-app', 'todo-app', 'keycloak', 'keycloak-postgres',
+                             ['shared-proxy', 'help-app', 'notes-app', 'todo-app', 'keycloak', 'keycloak-postgres',
                               'notes-postgres', 'todo-postgres'])
             network = commands.index(['podman', 'network', 'rm', 'app-network'])
             self.assertTrue(all(commands.index(command) < network for command in removals))

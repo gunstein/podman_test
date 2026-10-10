@@ -17,6 +17,7 @@ app-network
   shared-proxy (nginx, one SAN certificate)
     ├── todo-app  ── todo-postgres (Todo only)
     ├── notes-app ── notes-postgres (Notes only)
+    ├── help-app (static pages; no database, no login)
     └── keycloak (shared todo realm) ── keycloak-postgres (Keycloak only)
 ```
 
@@ -24,6 +25,7 @@ app-network
 |---|---|---|
 | `todo-app` | `todo-app.service` | `todo-backend`, `todo-frontend` |
 | `notes-app` | `notes-app.service` | `notes-backend`, `notes-frontend` |
+| `help-app` | `help-app.service` | `help-site` |
 | `notes-postgres` | `notes-postgres.service` | `notes-postgres` |
 | `keycloak` | `keycloak.service` | `keycloak` |
 | `keycloak-postgres` | `keycloak-postgres.service` | `keycloak-postgres` |
@@ -47,7 +49,8 @@ deploy/quadlet/app-network.network           shared rootless network
 Jinja2 is a build-time renderer, not a runtime orchestrator. Production rendering
 writes `todo-app.yaml`, `keycloak.yaml`, `todo-postgres.yaml`, `todo-config.yaml` and
 `shared-proxy.yaml`, plus `notes-app.yaml`, `notes-postgres.yaml`,
-`notes-config.yaml`, `keycloak-postgres.yaml` and `keycloak-config.yaml` under
+`notes-config.yaml`, `help-app.yaml`, `help-config.yaml`,
+`keycloak-postgres.yaml` and `keycloak-config.yaml` under
 `generated/kube-runtime/` by default. Development uses
 `generated/dev/`; both output directories are ignored by Git. This directory
 contains documentation only.
@@ -61,11 +64,11 @@ with the standard library (`target_render.py`) and install the files under
 Build mode renders the same files on the host. CI compares the packages with
 fresh rendering; see [offline delivery](../offline/README.md#target-values).
 
-All seven `.kube` units use `--no-pod-prefix`, so the grouped containers keep
+All eight `.kube` units use `--no-pod-prefix`, so the grouped containers keep
 the stable names `todo-backend` and `todo-frontend` while one
 `todo-app.service` owns their shared lifecycle. The separate `shared-proxy.service` owns container `nginx`, terminates TLS with the
 files of the Podman secret `platform-kube-proxy-tls-secret`, and routes to `todo-app:8080` (frontend), `todo-app:8000`
-(backend), the corresponding `notes-app` ports, and `keycloak:8080`. The frontend is HTTP-only; no TLS material
+(backend), the corresponding `notes-app` ports, `help-app:8080`, and `keycloak:8080`. The frontend is HTTP-only; no TLS material
 belongs in `todo-frontend`. App containers share loopback, but the proxy does not.
 
 The `migrate` init container runs
@@ -87,8 +90,8 @@ installer builds from eight raw ones (`secrets.py`):
 - `keycloak-kube-postgres-secret`, the password of Keycloak's own database;
 - `keycloak-kube-admin-secret`, Keycloak's `bootstrap-admin-password`.
 
-Raw credentials are separate for each app and for Keycloak. Each app has its
-own owner, migrator and runtime database roles (`todo_migrator`, `todo_app`,
+Raw credentials are separate for each app and for Keycloak. Each app with a
+database has its own owner, migrator and runtime database roles (`todo_migrator`, `todo_app`,
 `notes_migrator`, `notes_app`); Keycloak keeps its tables in its own
 `keycloak-postgres`.
 
@@ -114,7 +117,7 @@ physical replication slot. A minimal educational workload would keep only the
 data claim; this runtime keeps both details to preserve the validated backup and
 replication contracts.
 
-All seven `.kube` units pass `--no-pod-prefix`. PostgreSQL therefore retains
+All eight `.kube` units pass `--no-pod-prefix`. PostgreSQL therefore retains
 the exact `todo-postgres`, `notes-postgres` and `keycloak-postgres` container
 names used by DR and backup commands, while
 the grouped app retains stable `todo-migrate`, `todo-backend` and
@@ -132,13 +135,13 @@ uses the active DR runbooks, not runtime-format migration.
 
 Direct development provisions the eight Kube-compatible Podman secrets from
 host-local raw secrets. Install Python 3.9+, Jinja2 and PyYAML first. Render
-and start the seven workloads with:
+and start the eight workloads with:
 
 ```bash
 deploy/scripts/dev/dev-up.sh
 ```
 
-Map `auth.test` (Keycloak), `todo.test` and `notes.test` to the serving host and trust one shared
+Map `auth.test` (Keycloak), `todo.test`, `notes.test` and `help.test` to the serving host and trust one shared
 CA; see [TLS instructions](../../docs/TLS.md). Both apps use the same `todo`
 realm, separate clients, and a single SAN certificate.
 

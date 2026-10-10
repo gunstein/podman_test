@@ -15,8 +15,9 @@ from app_installer.target_render import (  # noqa: E402
     TargetError,
 )
 
-TODO, NOTES = 'TARGET_TODO_HOSTNAME', 'TARGET_NOTES_HOSTNAME'
+TODO, NOTES, HELP = 'TARGET_TODO_HOSTNAME', 'TARGET_NOTES_HOSTNAME', 'TARGET_HELP_HOSTNAME'
 VALUES = {IDENTITY_HOSTNAME: 'shop.example.org', TODO: 'todo.example.org', NOTES: 'notes.example.org',
+          HELP: 'help.example.org',
           PUBLISH_ADDRESS: '192.0.2.10'}
 NAMES = [IDENTITY_HOSTNAME, PUBLISH_ADDRESS]  # Keycloak's hostname and the address, unless a test says otherwise
 
@@ -42,10 +43,11 @@ class SubstituteTests(unittest.TestCase):
 
 class ResolveTests(unittest.TestCase):
     def test_keycloak_and_every_app_have_their_own_hostname_value(self):
-        self.assertEqual(target_render.hostname_targets(platform_file.checkout()), [IDENTITY_HOSTNAME, TODO, NOTES])
-        self.assertEqual([target_render.hostname_target(app) for app in platform_file.checkout().apps], [TODO, NOTES])
+        self.assertEqual(target_render.hostname_targets(platform_file.checkout()), [IDENTITY_HOSTNAME, TODO, NOTES, HELP])
+        self.assertEqual([target_render.hostname_target(app) for app in platform_file.checkout().apps],
+                         [TODO, NOTES, HELP])
         self.assertEqual(target_render.hostnames(VALUES, platform_file.checkout()),
-                         {'todo': 'todo.example.org', 'notes': 'notes.example.org'})
+                         {'todo': 'todo.example.org', 'notes': 'notes.example.org', 'help': 'help.example.org'})
         self.assertEqual(target_render.identity_hostname(VALUES), 'shop.example.org')
 
     def test_command_line_then_environment_then_host_record_then_bundle_default(self):
@@ -102,7 +104,8 @@ class RecordTests(unittest.TestCase):
                 self.assertFalse(target_render.write_record(VALUES))
                 self.assertEqual(target_render.read_record(), {IDENTITY_HOSTNAME: 'shop.example.org',
                                                                TODO: 'todo.example.org',
-                                                               NOTES: 'notes.example.org'})
+                                                               NOTES: 'notes.example.org',
+                                                               HELP: 'help.example.org'})
                 self.assertEqual(oct(path.parent.stat().st_mode & 0o777), '0o700')
                 path.write_text(json.dumps({PUBLISH_ADDRESS: '192.0.2.10'}))
                 with self.assertRaisesRegex(TargetError, 'may hold only'):
@@ -146,7 +149,7 @@ class MetadataTests(unittest.TestCase):
         with self.assertRaisesRegex(TargetError, 'no bundle.json: it was built in an older format'):
             self.load()
         self.write(format_version=2)
-        with self.assertRaisesRegex(TargetError, 'format version 2; this installer reads version 11'):
+        with self.assertRaisesRegex(TargetError, 'format version 2; this installer reads version 12'):
             self.load()
         self.write(format='something-else')
         with self.assertRaisesRegex(TargetError, 'does not describe a platform-offline-bundle'):

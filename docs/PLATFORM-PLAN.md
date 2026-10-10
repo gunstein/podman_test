@@ -467,7 +467,9 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
   contract), and the proxy entrypoint tests need a writable `/tmp`.
   Name guard: 51 known files left.
 
-**Phase 3, code done; understandability check pending.**
+**Phase 3, code done; understandability check pending.** Commits `048fa3d`
+(the files and the loader) and `d74b768` (the callers; its subject says
+"Phase 3b" by mistake: it is phase 3, and phase 3b is still to come).
 - `platform.yaml` (the operator's: Keycloak's hostname, the public port and
   log level with a `local` and a `prod` environment that may change only
   those two, and the apps by directory with their hostnames and replication

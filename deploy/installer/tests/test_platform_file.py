@@ -91,9 +91,35 @@ class PlatformFileTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.refused(message, app=app)
 
-    def test_two_apps_may_not_share_a_hostname(self):
-        platform = {**PLATFORM, 'apps': [PLATFORM['apps'][0], {**PLATFORM['apps'][0], 'replicationPort': 5441}]}
-        self.refused(r'platform.yaml: Two apps share a name', platform=platform)
+    def test_two_apps_may_not_share_a_name_client_hostname_or_port(self):
+        second = {'path': 'apps/other', 'hostname': 'other.example.org', 'replicationPort': 5441}
+        other = {'name': 'other', 'keycloakClient': 'other-frontend'}
+        for change, field in (({'hostname': 'shop.example.org'}, 'hostname'), ({'replicationPort': 5440}, 'replicationPort')):
+            with self.subTest(field=field):
+                path = self.write(platform={**PLATFORM, 'apps': [PLATFORM['apps'][0], {**second, **change}]})
+                (path.parent / 'apps/other').mkdir()
+                (path.parent / 'apps/other/app.yaml').write_text(yaml.safe_dump(other))
+                with self.assertRaisesRegex(ValueError, rf'the apps apps/shop/app.yaml and apps/other/app.yaml share {field}'):
+                    platform_file.load(path)
+        for change, field in (({'name': 'shop'}, 'name'), ({'keycloakClient': 'shop-frontend'}, 'keycloakClient')):
+            with self.subTest(field=field):
+                path = self.write(platform={**PLATFORM, 'apps': [PLATFORM['apps'][0], second]})
+                (path.parent / 'apps/other').mkdir()
+                (path.parent / 'apps/other/app.yaml').write_text(yaml.safe_dump({**other, **change}))
+                with self.assertRaisesRegex(ValueError, rf'share {field}'):
+                    platform_file.load(path)
+
+    def test_keycloaks_database_port_is_taken(self):
+        self.refused(r"apps/shop/app.yaml has replicationPort 5434, which is Keycloak's database's",
+                     platform={**PLATFORM, 'apps': [{**PLATFORM['apps'][0], 'replicationPort': 5434}]})
+
+    def test_an_environment_is_a_mapping_or_empty(self):
+        for value in (False, [], 'debug'):
+            with self.subTest(value=value):
+                self.refused(r'environments.prod: must be a mapping',
+                             platform={**PLATFORM, 'environments': {'local': {}, 'prod': value}})
+        self.assertEqual(platform_file.load(self.write(
+            platform={**PLATFORM, 'environments': {'local': None, 'prod': None}}))[1].log_level, 'info')
 
     def test_not_yaml_is_an_error_that_names_the_file(self):
         path = self.write()

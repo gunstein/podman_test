@@ -6,4 +6,5 @@
 name: notes
 # The OAuth client its frontend logs in with (notes-frontend/keycloak-adapter.js).
 keycloakClient: notes-frontend
-# nginx routes /api/notes (apiCollection, by default the name) to the backend.
+# apiCollection is left out: the DR tools check the app by reading /api/notes,
+# the name (see examples/todo/app.yaml).

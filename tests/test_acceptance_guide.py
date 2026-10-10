@@ -102,7 +102,7 @@ class AcceptanceGuideTests(unittest.TestCase):
         self.assertTrue(any('e2e/test_notes_flow.py' in line for line in browser))
         self.assertTrue(any('e2e/test_multi_app.py' in line for line in browser))
 
-    def test_registered_group_table_matches_the_app_registry(self):
+    def test_registered_group_table_matches_platform_yaml(self):
         guide = (ROOT / 'docs/ACCEPTANCE.md').read_text()
         for service in platform_file.checkout().services():
             self.assertIn(f'`{service}`', guide)

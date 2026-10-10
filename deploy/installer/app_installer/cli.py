@@ -136,7 +136,8 @@ def main(argv=None):
     deploy.add_argument('--bundle-dir', default='')
     deploy.add_argument('--refresh-images', action='store_true')
     deploy.add_argument('--publish-address', default='127.0.0.1')
-    deploy.add_argument('--service-port', type=int, default=settings.HTTPS_PORT)
+    deploy.add_argument('--service-port', type=int,
+                        help="HTTPS port; by default platform.yaml's publicPort or the bundle's, and it must match them")
     deploy.add_argument('--target-hostname', action='append', metavar='NAME=HOSTNAME',
                         help='a public hostname for an offline bundle: NAME is identity (Keycloak) or an app '
                              'of the bundle; repeat it for each (see target_render.py)')

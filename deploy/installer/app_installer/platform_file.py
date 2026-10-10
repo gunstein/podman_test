@@ -99,7 +99,9 @@ def load(path, environment='prod'):
     """
     path = Path(path)
     data = _fields(_yaml(path), path, ('identityHostname', 'publicPort', 'logLevel', 'environments', 'apps'))
-    environments = {name: _fields(changes or {}, f'{path}: environments.{name}', (), ('publicPort', 'logLevel'))
+    # An empty environment (prod: {} or prod:) changes nothing.
+    environments = {name: _fields({} if changes is None else changes, f'{path}: environments.{name}', (),
+                                  ('publicPort', 'logLevel'))
                     for name, changes in _fields(data['environments'], f'{path}: environments', ENVIRONMENTS).items()}
     if environment not in ENVIRONMENTS:
         raise ValueError(f'{path}: no environment {environment!r}; the environments are {", ".join(ENVIRONMENTS)}')
@@ -114,12 +116,35 @@ def load(path, environment='prod'):
                           _hostname(entry['hostname'], f'{path}: apps[{index}].hostname'),
                           _port(entry['replicationPort'], f'{path}: apps[{index}].replicationPort', 1024))
                      for index, entry in enumerate(entries))
+    _require_distinct(path, entries, app_list)
     identity = _hostname(data['identityHostname'], f'{path}: identityHostname')
     try:
         platform = apps.Platform(apps=app_list, identity_hostname=identity)
-    except ValueError as error:  # two apps share a name, hostname, client or port
+    except ValueError as error:  # the reserved name identity
         raise ValueError(f'{path}: {error}') from None
     return platform, chosen
+
+
+def _require_distinct(path, entries, app_list):
+    """No two apps share a name, client, hostname or replication port; Keycloak's database port is taken.
+
+    The message names the YAML field and the apps (by their app.yaml), so
+    the fix needs no Python. apps.Platform checks the same, for JSON.
+    """
+    sources = [f'{entry["path"]}/{APP_FILE}' for entry in entries]
+    for field, attribute in (('name', 'name'), ('keycloakClient', 'keycloak_client'),
+                             ('hostname', 'hostname'), ('replicationPort', 'replication_port')):
+        seen = {}
+        for source, app in zip(sources, app_list):
+            value = getattr(app, attribute)
+            if value in seen:
+                raise ValueError(f'{path}: the apps {seen[value]} and {source} share {field} {value!r}')
+            seen[value] = source
+    keycloak = apps.KEYCLOAK_DATABASE.replication_port
+    for source, app in zip(sources, app_list):
+        if app.replication_port == keycloak:
+            raise ValueError(f'{path}: the app {source} has replicationPort {keycloak}, '
+                             "which is Keycloak's database's")
 
 
 @functools.lru_cache(maxsize=None)
@@ -127,5 +152,6 @@ def checkout():
     """The platform of this checkout's own platform.yaml: the example apps, for the tests and the lab tools.
 
     Only in a Git checkout, where app_installer is deploy/installer/app_installer.
+    Read once per process: a long-running tool does not see later edits.
     """
     return load(Path(__file__).resolve().parents[3] / FILE)[0]

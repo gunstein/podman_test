@@ -89,8 +89,8 @@ def load_target(bundle_directory, platform, publish_address, service_port, targe
 
     Runs before anything on the host changes: a missing or invalid target
     value, an older bundle, a bundle for another platform than the one asked
-    for (platform, None for the bundle's own) or another port stops the
-    install here.
+    for (platform, None for the bundle's own) or another port than
+    service_port (None: the bundle's own) stops the install here.
     """
     target = target_render.load(bundle_directory, {**(target_values or {}),
                                                    target_render.PUBLISH_ADDRESS: publish_address},
@@ -98,7 +98,7 @@ def load_target(bundle_directory, platform, publish_address, service_port, targe
     if platform is not None and platform != target.platform:
         raise ValueError(f'The bundle was built for {", ".join(app.name for app in target.platform.apps)}; '
                          'an offline install installs exactly its own platform.')
-    if service_port != target.public_port:
+    if service_port is not None and service_port != target.public_port:
         raise ValueError(f'The bundle was built for HTTPS port {target.public_port}, not {service_port}.')
     manifests, units = offline_files(target.platform)
     missing = sorted((manifests - set(target.manifests)) | (units - set(target.quadlets)))
@@ -112,12 +112,18 @@ def environment_name(mode):
     return 'local' if mode == 'dev' else 'prod'
 
 
-def build_platform(project_root, mode):
-    """The platform a build or dev mode install installs: project_root's platform.yaml.
+def build_settings(project_root, mode, service_port):
+    """(Platform, Environment) of a build or dev mode install, from project_root's platform.yaml.
 
-    Reading it needs PyYAML, which those modes have.
+    service_port, if given, must be the environment's publicPort: the
+    rendered URLs and the published port come from the same number.
+    Reading platform.yaml needs PyYAML, which those modes have.
     """
-    return platform_file.load(Path(project_root) / platform_file.FILE, environment_name(mode))[0]
+    platform, environment = platform_file.load(Path(project_root) / platform_file.FILE, environment_name(mode))
+    if service_port is not None and service_port != environment.public_port:
+        raise ValueError(f'platform.yaml gives the {environment_name(mode)} environment HTTPS port '
+                         f'{environment.public_port}, not {service_port}: change publicPort there.')
+    return platform, environment
 
 
 def public_hostnames(platform, target):
@@ -142,14 +148,17 @@ def _contents(path):
 
 def check(project_root, mode, deployment_mode, bundle_directory, refresh_images, publish_address,
           service_port, quadlet_dir, kube_runtime_dir, platform, target_values):
-    """Everything install checks before anything changes; return (platform, root, quadlet dir, runtime dir, target).
+    """Everything install checks before anything changes.
 
+    Returns (platform, environment, port, root, quadlet dir, runtime dir, target).
     The arguments must fit together, an offline bundle must load with its
     target values and fit this port (and platform, if one is given), the
     host must not be a DR node or carry the old per-container units, and
     Podman must answer. platform is the one to install: the bundle's, else
-    the one given, else build_platform's. target is the bundle's files
-    filled in, or None in build mode.
+    the one given, else platform.yaml's. environment is platform.yaml's
+    (platform_file.Environment), None offline; port is the HTTPS port, the
+    environment's or the bundle's. target is the bundle's files filled in,
+    or None in build mode.
     """
     if mode not in ('dev', 'server'):
         raise ValueError('mode must be dev or server')
@@ -157,7 +166,7 @@ def check(project_root, mode, deployment_mode, bundle_directory, refresh_images,
         deployment_mode == 'offline' and (not bundle_directory or refresh_images)
     ):
         raise ValueError('Offline deployment requires bundle_directory and forbids refresh_images.')
-    target = None
+    target = environment = None
     if deployment_mode == 'offline':
         if mode != 'server':
             raise ValueError('An offline bundle installs in server mode only.')
@@ -165,7 +174,11 @@ def check(project_root, mode, deployment_mode, bundle_directory, refresh_images,
     elif target_values and any(target_values.values()):
         raise ValueError('Target values only apply to an offline bundle (--deployment-mode offline).')
     root = Path(project_root).resolve()
-    platform = target.platform if target is not None else platform or build_platform(root, mode)
+    if target is None:
+        configured, environment = build_settings(root, mode, service_port)
+        platform, port = platform or configured, environment.public_port
+    else:
+        platform, port = target.platform, target.public_port
     require_single_host('install', platform)
     directory = Path(quadlet_dir or settings.QUADLET_DIR).resolve()
     runtime = Path(kube_runtime_dir or directory / settings.KUBE_RUNTIME).resolve()
@@ -173,10 +186,10 @@ def check(project_root, mode, deployment_mode, bundle_directory, refresh_images,
         raise ValueError(f'kube_runtime_dir must be quadlet_dir/{settings.KUBE_RUNTIME}')
     preflight(directory, platform)
     run('podman', '--version')
-    return platform, root, directory, runtime, target
+    return platform, environment, port, root, directory, runtime, target
 
 
-def prepare(root, mode, deployment_mode, bundle_directory, refresh_images, platform, target):
+def prepare(root, mode, deployment_mode, bundle_directory, refresh_images, platform, environment, target):
     """Record the platform, render (build mode), passwords, images and nginx's TLS secrets.
 
     Returns (rendered, image_changes, shared_images, hostnames, identity, tls_changed):
@@ -190,7 +203,6 @@ def prepare(root, mode, deployment_mode, bundle_directory, refresh_images, platf
     rendered = None if deployment_mode == 'offline' else root / 'generated' / ('dev' if mode == 'dev' else 'kube-runtime')
     if deployment_mode == 'build':
         from . import render  # Jinja2 and PyYAML: build mode only
-        environment = platform_file.load(root / platform_file.FILE, environment_name(mode))[1]
         render.render(root, environment, rendered, platform)
     secrets.provision(platform)
     image_changes = {}
@@ -292,13 +304,14 @@ def finish(platform, runtime, target, hostnames, identity):
 
 
 def install(project_root, mode='server', deployment_mode='build', bundle_directory='',
-            refresh_images=False, publish_address='127.0.0.1', service_port=settings.HTTPS_PORT,
+            refresh_images=False, publish_address='127.0.0.1', service_port=None,
             quadlet_dir=None, kube_runtime_dir=None, platform=None, target_values=None):
     """Install or update the whole single-host stack. Safe to run again.
 
     platform is what to install: by default an offline bundle's own, or in
-    build and dev mode platform.yaml's (build_platform). The host records it
-    first (target_render.record_platform).
+    build and dev mode platform.yaml's (build_settings). The host records it
+    first (target_render.record_platform). The HTTPS port is platform.yaml's
+    publicPort or the bundle's; service_port, if given, must be the same.
     Steps: check the host, render the Kube YAML (build mode) or use the
     bundle's (offline mode), create missing passwords, build or load
     images, give nginx its TLS files as Podman secrets (tls_secrets, when
@@ -309,7 +322,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     healthy, and again after the app starts, so the tables its migrations
     created get their grants. Finally Keycloak is configured and every unit
     is checked to run from the expected Kube file, and the nightly backup timer
-    is turned on. mode='dev' renders with the local values and runs the YAML
+    is turned on. mode='dev' renders with platform.yaml's local environment and runs the YAML
     with podman kube play directly, without systemd.
 
     An offline install takes the bundle's pre-rendered files and fills in the
@@ -323,11 +336,11 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
 
     Returns True if anything changed.
     """
-    platform, root, directory, runtime, target = check(
+    platform, environment, port, root, directory, runtime, target = check(
         project_root, mode, deployment_mode, bundle_directory, refresh_images, publish_address,
         service_port, quadlet_dir, kube_runtime_dir, platform, target_values)
     rendered, image_changes, shared_images, hostnames, identity, tls_changed = prepare(
-        root, mode, deployment_mode, bundle_directory, refresh_images, platform, target)
+        root, mode, deployment_mode, bundle_directory, refresh_images, platform, environment, target)
     images_changed = any(shared_images.values()) or any(
         any(changes.values()) for changes in image_changes.values())
     if mode == 'dev':
@@ -341,7 +354,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         configured = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(platform, hostnames))
         return changed or configured or tls_changed
     changed, restart = write_definitions(root, directory, runtime, rendered, platform, publish_address,
-                                         service_port, target, image_changes, shared_images, tls_changed)
+                                         port, target, image_changes, shared_images, tls_changed)
     start_in_order(platform, restart)
     configured, backups_changed = finish(platform, runtime, target, hostnames, identity)
     return changed or images_changed or tls_changed or configured or backups_changed

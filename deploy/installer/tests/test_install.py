@@ -551,7 +551,7 @@ class FailureBoundaryTests(unittest.TestCase):
                     patch('app_installer.install.run') as run, \
                     patch('app_installer.install.secrets.provision') as provision:
                 with self.assertRaisesRegex(RuntimeError, 'install only supports a single-host deployment'):
-                    install.install('/nonexistent-project', platform=platform_file.checkout())
+                    install.install(ROOT, platform=platform_file.checkout())
                 run.assert_not_called()
                 provision.assert_not_called()
 

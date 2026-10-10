@@ -51,6 +51,26 @@ class BuildInstallTests(unittest.TestCase):
                 install.install(root, mode='server', quadlet_dir=directory, platform=notes)
             self.assertEqual([platform for _values, _output, platform in host.rendered], [notes])
 
+    def test_platform_yaml_gives_the_published_port_and_a_different_one_is_refused(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for part in ('deploy/quadlet', 'examples'):
+                shutil.copytree(ROOT / part, root / part)
+            (root / 'platform.yaml').write_text(
+                (ROOT / 'platform.yaml').read_text().replace('publicPort: 8443', 'publicPort: 9443'))
+            directory = root / 'quadlet'
+            with RenderingHost(unit_directory=directory / 'platform-kube-runtime') as host, \
+                    patch('app_installer.keycloak.configure'):
+                with self.assertRaisesRegex(ValueError, 'gives the prod environment HTTPS port 9443, not 8443'):
+                    install.install(root, mode='server', quadlet_dir=directory, publish_address='192.0.2.5',
+                                    service_port=8443)
+                self.assertEqual(host.rendered, [])
+                install.install(root, mode='server', quadlet_dir=directory, publish_address='192.0.2.5')
+            # The rendered URLs and the published port are the same number.
+            self.assertEqual(host.rendered[0][0].public_port, 9443)
+            proxy = (directory / 'platform-kube-runtime/shared-proxy.kube').read_text()
+            self.assertIn('PublishPort=192.0.2.5:9443:8443', proxy)
+
     def test_a_refresh_pulls_the_shared_postgres_image_once_for_every_app(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

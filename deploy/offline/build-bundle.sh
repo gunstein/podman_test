@@ -49,7 +49,7 @@ cp "$project_root/deploy/offline/install.sh" "$project_root/deploy/offline/prefl
 cp "$project_root/deploy/offline/README.md" "$project_root/deploy/offline/FAPOLICYD.md" \
   "$bundle_directory/deploy/offline/"
 
-printf '%s\n' '# Todo offline bundle' '' \
+printf '%s\n' '# Platform offline bundle' '' \
   'See [offline installation](deploy/offline/README.md) for verification and installation.' \
   > "$bundle_directory/README.md"
 

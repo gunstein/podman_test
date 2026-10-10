@@ -82,8 +82,10 @@ install with running pods returns unchanged and preserves container IDs;
 explicit cleanup before the installer takes ownership.
 
 `--refresh-images` rebuilds application images and pulls PostgreSQL in build
-mode; offline mode rejects it. `--service-port` selects the external proxy port;
-loopback bindings remain 8080 and 8443, matching the canonical template. It has
+mode; offline mode rejects it. The external proxy port is `publicPort` in
+`platform.yaml` (build mode) or the bundle's (offline), the same number the
+rendered URLs use; `--service-port` may only repeat it, and a different one is
+refused. Loopback bindings remain 8080 and 8443, matching the canonical template. The port has
 no effect without a non-default `--publish-address`: with the default loopback
 address there is nothing external to bind it to. `--publish-address` must be
 the host's own address, never a wildcard (`0.0.0.0` or `::`): the template

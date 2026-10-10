@@ -6,5 +6,7 @@
 name: todo
 # The OAuth client its frontend logs in with (todo-frontend/keycloak-adapter.js).
 keycloakClient: todo-frontend
-# nginx routes /api/<apiCollection> to the backend.
+# The DR tools check the app by reading /api/<apiCollection> (by default the
+# name), which must answer a public read with a list. nginx forwards all of
+# /api/ to the backend either way.
 apiCollection: todos

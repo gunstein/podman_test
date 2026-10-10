@@ -22,7 +22,7 @@ def recorder(order, name):
 
 
 class ReplicationTests(unittest.TestCase):
-    def test_registry_replicates_each_independent_database(self):
+    def test_the_platform_replicates_each_independent_database(self):
         self.assertEqual([app.name for app in platform_file.checkout().apps], ['todo', 'notes'])
         app = platform_file.checkout().apps[0].database
         self.assertEqual(app.replication_slot(), 'todo_standby')

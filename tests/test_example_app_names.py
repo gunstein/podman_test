@@ -53,7 +53,6 @@ KNOWN = {
     "deploy/installer/app_installer/workloads.py",
     "deploy/manifests/app-config.yaml.j2",
     "deploy/manifests/keycloak.yaml.j2",
-    "deploy/offline/build-bundle.sh",
     "deploy/offline/install.sh",
     "deploy/offline/preflight.sh",
     "deploy/quadlet/keycloak.kube.j2",

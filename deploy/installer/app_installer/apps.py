@@ -39,7 +39,11 @@ class App:
         return stack.Database(self.name, self.replication_port)
 
     def api_path(self) -> str:
-        """The REST collection nginx routes to this app's backend, e.g. /api/todos."""
+        """The REST collection the DR tools read to check the app answers, e.g. /api/todos.
+
+        After a promotion, promoted.require_application expects a list there
+        (a public read). nginx itself forwards all of /api/ to the backend.
+        """
         return "/api/" + (self.api_collection or self.name)
 
     # The app pod: migration, backend and frontend.

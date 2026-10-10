@@ -129,6 +129,16 @@ tested.
 
 ### 5.1 Configuration files
 
+Implemented so far (phase 3): `platform.yaml` with `identityHostname`,
+`publicPort`, `logLevel`, the `local` and `prod` environments and each app's
+`path`, `hostname` and `replicationPort`; `app.yaml` with `name`,
+`keycloakClient` and `apiCollection`. Everything else below comes with the
+phase that needs it; until then an app's source, images, routes, setup and
+checks follow today's conventions: the sources in `<name>-backend/` and
+`<name>-frontend/` (`images.py`), the images' names (`stack.Names`), and the
+backend's `python -m backend.migrate` (`app.yaml.j2`) and
+`python -m backend.setup_roles` (`install.setup_roles`).
+
 - `platform.yaml` is the operator's: hostnames, which realm each app uses,
   each database's `replicationPort`, which app serves another app's help
   path, environments (`publicPort`, `logLevel`).
@@ -467,7 +477,7 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
   contract), and the proxy entrypoint tests need a writable `/tmp`.
   Name guard: 51 known files left.
 
-**Phase 3, code done; understandability check pending.** Commits `048fa3d`
+**Phase 3, code done; acceptance run with phase 3b.** Commits `048fa3d`
 (the files and the loader) and `d74b768` (the callers; its subject says
 "Phase 3b" by mistake: it is phase 3, and phase 3b is still to come).
 - `platform.yaml` (the operator's: Keycloak's hostname, the public port and
@@ -490,3 +500,30 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
 - Not in v1 of the files, because nothing uses it yet: the realm each app
   uses (all apps share the `todo` realm today) and `which app serves another
   app's help path`; they come with the phases that need them.
+- Understandability check (fresh agent, at a9117f8): **YELLOW**. The loader
+  needs no framework, its messages for a typo or a bad hostname say what to
+  fix, and a small change (an experimental environment override) took one
+  file and its test. But the files do not yet describe everything an app
+  needs, and adding one is still repository-wide knowledge. Its findings and
+  what was done:
+  1. `publicPort` and `--service-port` were two sources for one port: a
+     build could render URLs for one port and publish another. Fixed: the
+     port is `platform.yaml`'s (build mode) or the bundle's (offline);
+     `--service-port` may only repeat it, and a test publishes 9443 from
+     `platform.yaml` alone.
+  2. Hand-kept lists in scripts, acceptance and CI: phase 3b.
+  3. `install.prepare` read `platform.yaml` a second time for the
+     environment: fixed, `check` loads (Platform, Environment) once
+     (`install.build_settings`) and passes both on.
+  4. Clashes between apps were reported with Python field names and no apps:
+     fixed, `platform_file` names the YAML field and both apps' `app.yaml`
+     (and Keycloak's port 5434); an environment that is not a mapping (for
+     example `false`) is an error, not "no changes".
+  5. `apiCollection` was described as nginx routing; it is what the DR tools
+     read to check the app (nginx forwards all of `/api/`): the comments say
+     so. Section 5.1 now says which fields exist today.
+  Also: the bundle README no longer calls itself the Todo bundle (name guard
+  50), test names no longer say "registry", and `checkout()` says it reads
+  once per process. Noted, not changed: `apps[].path` locates only
+  `app.yaml` (sources until phase 5), the setup still assumes Python entry
+  points (phase 5), and the proxy entrypoint tests need a writable `/tmp`.

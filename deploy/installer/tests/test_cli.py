@@ -37,7 +37,7 @@ class CLITests(unittest.TestCase):
         self.assertEqual(output.getvalue(), '')
         self.assertEqual(error.getvalue(), 'app-installer: failed\n')
 
-    def test_only_the_single_host_commands_and_the_registry_remain(self):
+    def test_only_the_single_host_commands_and_replication_apps_remain(self):
         # The DR tools import the installer's functions; nothing runs workload commands.
         for command in ('install-workload', 'configure-clients', 'services'):
             with self.subTest(command=command), contextlib.redirect_stderr(io.StringIO()), \

@@ -4,7 +4,12 @@
 # todo-frontend/ at the repository root; phase 5 moves it here.
 
 name: todo
-# The OAuth client its frontend logs in with (todo-frontend/keycloak-adapter.js).
+# Its own PostgreSQL database, replicated for DR (platform.yaml gives the
+# replicationPort). Without database: true the platform makes none.
+database: true
+# The OAuth client its frontend logs in with at the shared Keycloak
+# (todo-frontend/keycloak-adapter.js). Without keycloakClient the app has no
+# login; Keycloak runs only when some app has one.
 keycloakClient: todo-frontend
 # The DR tools check the app by reading /api/<apiCollection> (by default the
 # name), which must answer a public read with a list. nginx forwards all of

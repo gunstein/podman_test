@@ -84,7 +84,7 @@ class PromotedHost:
                          lambda path, *a, hostname=None, **k: self.steps.append(('wait', path, hostname))),
             patch.object(promoted.keycloak, 'request', self.request),
             patch.object(promoted.keycloak, 'configure', self.configure),
-            patch.object(promoted.secrets, 'read', lambda name: 'admin-password'),
+            patch.object(promoted.install.secrets, 'read', lambda name: 'admin-password'),
             patch.object(promoted.time, 'sleep', lambda seconds: None),
             patch.object(target_render, 'record_path', return_value=self.record(directory)),
             # A pair in local mode, whatever the machine running the tests holds (test_nginx_tls has provided).

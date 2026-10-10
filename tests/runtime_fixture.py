@@ -27,7 +27,7 @@ def render_units(destination, publish_address, postgres_address=""):
             "publish_address": publish_address,
             "service_port": 8443,
             "postgres_publish_address": postgres_address,
-            "app_services": ["todo-app.service", "notes-app.service"],
+            "required_services": ["todo-app.service", "notes-app.service", "keycloak.service"],
         }))
 
 

@@ -29,10 +29,11 @@ def postgres_variables(database, publish_address=""):
 RENAMED_MANIFESTS = ("postgres.yaml", "config.yaml", "app.yaml")
 
 
-def proxy_variables(publish_address, service_port, applications):
-    """The unit template's values for nginx: where it publishes HTTPS and the app services it needs."""
+def proxy_variables(publish_address, service_port, platform):
+    """The unit template's values for nginx: where it publishes HTTPS and the services it needs."""
     return {"publish_address": publish_address, "service_port": service_port,
-            "app_services": [app.service for app in applications]}
+            "required_services": [app.service for app in platform.apps]
+            + (["keycloak.service"] if platform.has_identity else [])}
 
 
 def _install(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir, *,
@@ -133,7 +134,7 @@ def install_keycloak(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
 
 def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
                          publish_address="127.0.0.1", service_port=settings.HTTPS_PORT, *,
-                         applications, target=None):
+                         platform, target=None):
     """Install the shared nginx proxy, published on publish_address:service_port.
 
     It always also listens on 127.0.0.1, so a wildcard address such as
@@ -153,5 +154,5 @@ def install_shared_proxy(project_root, quadlet_dir, kube_runtime_dir, rendered_m
         manifests=("shared-proxy.yaml",), units=("shared-proxy.kube",),
         obsolete=(apps.NGINX_TLS_VOLUME,),
         capability="shared proxy", mapping={},
-        variables=proxy_variables(publish_address, service_port, applications), target=target,
+        variables=proxy_variables(publish_address, service_port, platform), target=target,
     )

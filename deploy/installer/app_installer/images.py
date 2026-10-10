@@ -23,22 +23,30 @@ class Image:
     containerfile: str = "Containerfile"
 
 
+# nginx's image, which every platform runs (and a standby loads for nginx's TLS, prepare_proxy).
+PROXY = Image("proxy", apps.PROXY_IMAGE, apps.PROXY_ARCHIVE, ".", "proxy/Containerfile")
+
+
 def image_list(app: apps.App) -> tuple[Image, ...]:
     """The images one app builds, as its app.yaml declares them (apps.AppImage)."""
     return tuple(Image(image.name, app.image(image.name), app.image_archive(image.name), image.context,
                        image.containerfile) for image in app.images)
 
 
-def shared_images() -> tuple[Image, ...]:
-    """The images that are prepared once however many apps there are.
+def shared_images(platform: apps.Platform) -> tuple[Image, ...]:
+    """The images that are prepared once however many apps there are, and only if platform needs them.
 
     PostgreSQL runs every database (each app's and Keycloak's), so it is one
-    shared image like the nginx proxy and Keycloak, not one per app.
+    shared image like the nginx proxy and Keycloak, not one per app. nginx
+    always runs; PostgreSQL when there is a database, Keycloak when some app
+    has login.
     """
     postgres = apps.KEYCLOAK_DATABASE  # every Database has the same image and archive
-    return (Image("postgres", postgres.image, postgres.image_archive, None),
-            Image("proxy", apps.PROXY_IMAGE, apps.PROXY_ARCHIVE, ".", "proxy/Containerfile"),
-            Image("keycloak", apps.KEYCLOAK_IMAGE, apps.KEYCLOAK_ARCHIVE, ".", "keycloak/Containerfile"))
+    return (*([Image("postgres", postgres.image, postgres.image_archive, None)]
+              if platform.replicated_databases else []),
+            PROXY,
+            *([Image("keycloak", apps.KEYCLOAK_IMAGE, apps.KEYCLOAK_ARCHIVE, ".", "keycloak/Containerfile")]
+              if platform.has_identity else []))
 
 
 def _prepare(project_root, deployment_mode, bundle_directory, refresh_images, specifications):
@@ -82,33 +90,33 @@ def _prepare(project_root, deployment_mode, bundle_directory, refresh_images, sp
     return changed
 
 
-def prepare(project_root, deployment_mode, bundle_directory="", refresh_images=False,
-            *, app: apps.App, include_shared=True):
-    """Prepare one app's images, plus the shared ones unless include_shared is False."""
-    specifications = image_list(app)
-    if include_shared:
-        specifications += shared_images()
-    return _prepare(project_root, deployment_mode, bundle_directory, refresh_images, specifications)
+def prepare(project_root, deployment_mode, bundle_directory="", refresh_images=False, *, app: apps.App):
+    """Prepare one app's images."""
+    return _prepare(project_root, deployment_mode, bundle_directory, refresh_images, image_list(app))
 
 
-def prepare_shared(project_root, deployment_mode, bundle_directory="", refresh_images=False):
-    """Prepare only the shared images: PostgreSQL, the proxy and Keycloak."""
-    return _prepare(project_root, deployment_mode, bundle_directory, refresh_images, shared_images())
+def prepare_shared(project_root, deployment_mode, bundle_directory, refresh_images, platform):
+    """Prepare only the shared images the platform needs (shared_images)."""
+    return _prepare(project_root, deployment_mode, bundle_directory, refresh_images, shared_images(platform))
+
+
+def prepare_proxy(bundle_directory):
+    """Load nginx's image from a verified bundle: what a standby needs for nginx's TLS before a failover."""
+    return _prepare(bundle_directory, 'offline', bundle_directory, False, (PROXY,))
 
 
 def prepare_offline_group(bundle_directory, platform):
     """Load every missing image of the platform from a verified bundle; nothing is built or pulled."""
-    changed = any(prepare_shared(bundle_directory, 'offline', bundle_directory).values())
+    changed = any(prepare_shared(bundle_directory, 'offline', bundle_directory, False, platform).values())
     for app in platform.apps:
-        changed = any(prepare(bundle_directory, 'offline', bundle_directory,
-                              app=app, include_shared=False).values()) or changed
+        changed = any(prepare(bundle_directory, 'offline', bundle_directory, app=app).values()) or changed
     return changed
 
 
 def build_and_export(project_root, destination, platform):
     """Build and export each distinct image of the platform once for offline delivery."""
     specifications = {image.reference: image for app in platform.apps for image in image_list(app)}
-    specifications.update({image.reference: image for image in shared_images()})
+    specifications.update({image.reference: image for image in shared_images(platform)})
     _prepare(project_root, 'build', '', True, specifications.values())
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)

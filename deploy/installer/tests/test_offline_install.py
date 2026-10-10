@@ -56,7 +56,7 @@ class BundleContentTests(unittest.TestCase):
     def test_metadata_names_every_rendered_file(self):
         data = json.loads((self.bundle / 'bundle.json').read_text())
         self.assertEqual(data, self.metadata)
-        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 8))
+        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 9))
         self.assertEqual(data['platform'], platform_file.checkout().to_json())
         self.assertEqual(data['defaults'], {IDENTITY_HOSTNAME: 'auth.test', TODO_HOSTNAME: 'todo.test',
                                             NOTES_HOSTNAME: 'notes.test'})
@@ -108,9 +108,9 @@ class BundleContentTests(unittest.TestCase):
                 ROOT, database.unit, workloads.postgres_variables(database, ADDRESS)))
         published = (units / 'shared-proxy.kube').read_text().replace('${TARGET_PUBLISH_ADDRESS}', ADDRESS)
         self.assertEqual(published.encode(), quadlet.render(
-            ROOT, 'shared-proxy.kube', workloads.proxy_variables(ADDRESS, prod.public_port, platform_file.checkout().apps)))
+            ROOT, 'shared-proxy.kube', workloads.proxy_variables(ADDRESS, prod.public_port, platform_file.checkout())))
         self.assertEqual((units / 'local-only/shared-proxy.kube').read_bytes(), quadlet.render(
-            ROOT, 'shared-proxy.kube', workloads.proxy_variables('127.0.0.1', prod.public_port, platform_file.checkout().apps)))
+            ROOT, 'shared-proxy.kube', workloads.proxy_variables('127.0.0.1', prod.public_port, platform_file.checkout())))
         for path in units.glob('*.kube'):
             text = path.read_text()
             self.assertEqual(re.findall(r'^Network=(.*)$', text, re.M), ['app-network.network'], path.name)

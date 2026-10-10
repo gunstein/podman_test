@@ -34,18 +34,24 @@ def files(project_root, platform, hostnames, identity_hostname, port, log_level)
     hostname = identity_hostname
     result = {}
     for app in platform.apps:
+        if not (app.has_database and app.has_login):
+            # The one shared app pod template (app.yaml.j2) runs a migration and an OIDC backend.
+            raise ValueError(f'The app {app.name} needs database: true and a keycloakClient: the shared app pod '
+                             'template is the only one so far, and it uses both')
         result[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
         result[app.config_manifest] = (manifests.render_postgres_config(root, app.database) + b'---\n'
                                        + manifests.render_app_config(root, app, hostname, port, log_level))
         result[app.manifest] = manifests.render_app(root, app, app.image('backend'), app.image('frontend'))
 
-    result['keycloak.yaml'] = manifests.render_keycloak(
-        root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_KUBE_ADMIN_SECRET, hostname, port, apps.KEYCLOAK_IMAGE)
-    result[apps.KEYCLOAK_DATABASE.manifest] = manifests.render_postgres(
-        root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_DATABASE.image)
-    result[apps.KEYCLOAK_DATABASE.config_manifest] = manifests.render_postgres_config(root, apps.KEYCLOAK_DATABASE)
+    if platform.has_identity:
+        result['keycloak.yaml'] = manifests.render_keycloak(
+            root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_KUBE_ADMIN_SECRET, hostname, port, apps.KEYCLOAK_IMAGE)
+        result[apps.KEYCLOAK_DATABASE.manifest] = manifests.render_postgres(
+            root, apps.KEYCLOAK_DATABASE, apps.KEYCLOAK_DATABASE.image)
+        result[apps.KEYCLOAK_DATABASE.config_manifest] = manifests.render_postgres_config(
+            root, apps.KEYCLOAK_DATABASE)
     result['shared-proxy.yaml'] = manifests.render_shared_proxy(
-        root, platform.apps, hostnames, identity_hostname, port, apps.PROXY_IMAGE)
+        root, platform, hostnames, identity_hostname, port, apps.PROXY_IMAGE)
 
     for name, content in result.items():
         _validate(name, content)

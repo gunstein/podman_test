@@ -78,12 +78,13 @@ def render_keycloak(project_root, database, admin_secret, hostname, port, image)
                    hostname=hostname, port=port, image=image)
 
 
-def render_shared_proxy(project_root, applications, hostnames, identity_hostname, port, image):
+def render_shared_proxy(project_root, platform, hostnames, identity_hostname, port, image):
     """The nginx pod that terminates TLS and routes each hostname to its app, and Keycloak's to Keycloak.
 
     hostnames maps each app's name to its public hostname; identity_hostname
     is where Keycloak serves every app's login and tokens, which goes into
-    the CSP. Every hostname is checked before it is written into
+    the CSP. Keycloak's /auth/ is served only if it runs (some app has
+    login), and on an app's hostname only if that app has login. Every hostname is checked before it is written into
     nginx.conf, except a ${TARGET_...} placeholder of an offline bundle: the
     host checks the value that replaces it (target_render.check_hostname)
     before anything is installed.
@@ -93,14 +94,15 @@ def render_shared_proxy(project_root, applications, hostnames, identity_hostname
     context = [{
         "name": app.name,
         "hostname": hostnames[app.name],
+        "login": app.has_login,
         "upstreams": [{"name": f"{app.name}_{endpoint.name}", "server": f"{app.pod}:{endpoint.port}"}
                       for endpoint in app.endpoints],
         "routes": [{"location": route.location, "upstream": f"{app.name}_{route.to}"} for route in app.routes],
-    } for app in applications]
+    } for app in platform.apps]
     for hostname in [identity_hostname] + [entry["hostname"] for entry in context]:
         if not hostname.startswith("${TARGET_"):
             validate_hostname(hostname)
     hostname = identity_hostname
     return _render(project_root, "shared-proxy.yaml.j2", applications=context, hostname=hostname,
-                   identity_origin=f"https://{hostname}:{int(port)}", image=image,
+                   identity=platform.has_identity, identity_origin=f"https://{hostname}:{int(port)}", image=image,
                    tls_secret=apps.PROXY_KUBE_TLS_SECRET)

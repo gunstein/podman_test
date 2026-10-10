@@ -71,8 +71,8 @@ These rules apply to planning and to every code review.
 | Small deliveries | Each change has one purpose and can be reviewed without understanding the whole refactoring. |
 
 No class hierarchy is decided in advance. Optional capabilities of an app
-are optional fields (`app.database`, `app.login`); code says
-`if app.database:`. A shared interface is introduced only when two or more
+are optional fields (`app.has_database`, `app.has_login`, since phase 4c-1);
+code says `if app.has_database:`. A shared interface is introduced only when two or more
 concrete implementations show what is actually common.
 
 **Understandability check, after every phase.** A developer or an agent
@@ -89,14 +89,16 @@ the phase.
 
 ## 4. One resolved model
 
-Where it stands after phase 4b: `apps.Platform` has two fields, the apps in
+Where it stands after phase 4c-1: `apps.Platform` has two fields, the apps in
 start order and Keycloak's default hostname, and derives the rest (the DR
-group, workloads, services); each app holds the images it builds
-(`apps.AppImage`) and its endpoints and routes (`apps.Endpoint`,
+group, workloads, services, and `database_apps`, `login_apps` and
+`has_identity`, so PostgreSQL and Keycloak run only when an app needs
+them); each app holds whether it has a database and login, the images it
+builds (`apps.AppImage`) and its endpoints and routes (`apps.Endpoint`,
 `apps.Route`). A build reads it from `platform.yaml` and each app's
 `examples/<app>/app.yaml` (`platform_file.load`, which also gives the
 environment's port and log level); there is no list of apps in the code.
-`bundle.json` (format version 8) carries it, and a host records it in
+`bundle.json` (format version 9) carries it, and a host records it in
 `~/.config/platform/platform.json`. The richer tree below grows with phases
 4 and 5 (images, routes, checks, database and login as app fields).
 
@@ -119,7 +121,7 @@ Writing more to JSON is not enough: the readers must stop reconstructing.
   argument. No YAML loading at import time, no module-level app lists, no
   default arguments that bind an app list. Two different platforms in one
   Python process must not share state (tested).
-- **Versions**: `bundle.json` keeps `format_version` (8 since phase 4b); the
+- **Versions**: `bundle.json` keeps `format_version` (9 since phase 4c-1); the
   installer and the DR tools refuse any other. Not yet built: `bundle.json`
   recording the image IDs of every image it carries, and the installer
   comparing installed image IDs with them. Today an image that is present
@@ -133,12 +135,14 @@ tested.
 
 ### 5.1 Configuration files
 
-Implemented so far (phases 3 to 4b): `platform.yaml` with
+Implemented so far (phases 3 to 4c-1): `platform.yaml` with
 `identityHostname`, `publicPort`, `logLevel`, the `local` and `prod`
-environments and each app's `path`, `hostname` and `replicationPort`;
-`app.yaml` with `name`, `keycloakClient`, `apiCollection`, `images` (each
-built image's `context` and `containerfile`, section 5.2), `endpoints` (each
-one's `port`) and `routes` (`path`, `to`, `exact`, section 5.3). Everything
+environments and each app's `path`, `hostname` and, exactly when the app
+has a database, `replicationPort`; `app.yaml` with `name`, `database`
+(true or false, default false), `keycloakClient` (optional: without it
+the app has no login), `apiCollection`, `images` (each built image's
+`context` and `containerfile`, section 5.2), `endpoints` (each one's
+`port`) and `routes` (`path`, `to`, `exact`, section 5.3). Everything
 else below comes with the phase that needs it; until then an app's setup and
 checks follow today's conventions: the shared app pod template uses its
 `backend` and `frontend` images (`app.yaml.j2`), and the backend's
@@ -166,7 +170,8 @@ checks follow today's conventions: the shared app pod template uses its
   images come with the first app that needs one.
 - The model decides exactly which images the bundle carries. A static-only
   installation carries nginx, Keycloak only if some app needs login, and
-  PostgreSQL only if some app needs a database.
+  PostgreSQL only if some app needs a database (`images.shared_images`,
+  phase 4c-1).
 
 ### 5.3 Endpoints and routes
 
@@ -333,14 +338,16 @@ in small deliveries, each driven by what Help needs:
 - 4a images contract (5.2), including external context paths;
 - 4b endpoints and routes (5.3), nginx rendered from routes;
 - 4c start, readiness and checks in the model (5.4), with Keycloak and
-  PostgreSQL only when needed;
+  PostgreSQL only when needed: 4c-1 database and login as app fields, and
+  PostgreSQL and Keycloak only when an app needs them; 4c-2 readiness and
+  checks;
 - 4d generated `.kube` units and `kube play` order from the model;
 - 4e (moved to phase 3b);
 - 4f `examples/help`: build, bundle, install, check and stop an
   installation **with Help only**, then with all three apps.
 
 **Phase 5: Database and login through the same model.**
-`app.database` and `app.login` as optional fields; the setup task and
+Database and login are app fields since phase 4c-1; here come the setup task and
 migration grants (5.5); checks replace `require_application`; pod template
 validation (5.9). Todo and Notes move to `examples/`.
 
@@ -625,4 +632,38 @@ probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
   only change in the render baseline.
 - Not yet: `rewrite` and the header policy (phase 4f, for Help), and an
   endpoint's container (with pod templates, 5.9).
+
+**Phase 4c-1, code done; acceptance run with the next phase that changes a host.**
+Phase 4c is split: 4c-1 makes PostgreSQL and Keycloak run only when an app
+needs them; 4c-2 brings readiness and checks into the model (5.4). The
+start order (`requires`) comes with the generated units in 4d.
+- An `app.yaml` says `database: true` when the app needs its own
+  PostgreSQL, and names a `keycloakClient` when its users log in; both are
+  optional (no database, no login). `platform.yaml` gives a
+  `replicationPort` exactly to the apps with a database. `App.has_database`
+  and `App.has_login` hold them; `App.database` of an app without one is an
+  error that names the app.
+- `Platform.database_apps`, `login_apps` and `has_identity` (some app has
+  login) are what the consumers ask: the DR group, workloads, services and
+  readiness; the Kube secrets and generated passwords; the shared images
+  (PostgreSQL only with a database, Keycloak only with login); the rendered
+  files and units (Keycloak, its database and `keycloak.kube` only with
+  login, and `shared-proxy.kube` requires `keycloak.service` only then);
+  nginx (Keycloak's upstream, `/auth/` on an app's hostname only for an app
+  with login, and the CSP's identity origin only when Keycloak runs);
+  install and development mode (no role setup without a database, no
+  Keycloak configuration without login); DR (the promoted host's Keycloak,
+  issuer check and clients, the backup restart's issuer wait, failover's
+  login page check per login app). app-ops refuses a platform without any
+  database: it has no DR group.
+- Todo and Notes say `database: true` and keep their clients, so every
+  rendered file is as before; `bundle.json` carries `has_database` (format
+  version 9), the only change in the render baseline. Tests use synthetic
+  platforms without a database, without login, and with neither.
+- Not yet: an app without a database or login cannot be rendered, because
+  the one shared app pod template uses both; the render says so. Its own
+  pod template comes with Help (4f). `identityHostname` is still required
+  when no app has login (it names nginx's default server). Removing
+  Keycloak's units from a host whose platform no longer needs it is app
+  removal (5.8).
 

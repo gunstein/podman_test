@@ -24,8 +24,8 @@ def unit_lines(text):
 
 
 class WorkloadUnitTests(unittest.TestCase):
-    def rendered(self, workload, applications):
-        variables = workloads.proxy_variables('127.0.0.1', 8443, applications) \
+    def rendered(self, workload, platform):
+        variables = workloads.proxy_variables('127.0.0.1', 8443, platform) \
             if workload.pod == 'shared-proxy' else {}
         return unit_lines(quadlet.render(ROOT, workload.unit, variables).decode())
 
@@ -34,7 +34,7 @@ class WorkloadUnitTests(unittest.TestCase):
             order = [workload.service for workload in platform.workloads()]
             for index, workload in enumerate(platform.workloads()):
                 with self.subTest(unit=workload.unit, apps=[app.name for app in platform.apps]):
-                    lines = self.rendered(workload, platform.apps)
+                    lines = self.rendered(workload, platform)
                     for key in ('Requires', 'After'):
                         for service in lines.get(key, []):
                             self.assertIn(service, order[:index], f'{key}={service}')
@@ -43,7 +43,7 @@ class WorkloadUnitTests(unittest.TestCase):
     def test_every_unit_runs_its_own_kube_yaml_and_configmap(self):
         for workload in platform_file.checkout().workloads():
             with self.subTest(unit=workload.unit):
-                lines = self.rendered(workload, platform_file.checkout().apps)
+                lines = self.rendered(workload, platform_file.checkout())
                 self.assertEqual(lines['Yaml'], [workload.yaml])
                 self.assertEqual(lines.get('ConfigMap', []), [workload.config] if workload.config else [])
 

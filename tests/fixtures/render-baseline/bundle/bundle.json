@@ -1,6 +1,6 @@
 {
   "format": "platform-offline-bundle",
-  "format_version": 8,
+  "format_version": 9,
   "manifests": {
     "directory": "generated/target/manifests",
     "files": [
@@ -50,6 +50,7 @@
         "name": "todo",
         "hostname": "todo.test",
         "keycloak_client": "todo-frontend",
+        "has_database": true,
         "replication_port": 5432,
         "api_collection": "todos",
         "images": [
@@ -101,6 +102,7 @@
         "name": "notes",
         "hostname": "notes.test",
         "keycloak_client": "notes-frontend",
+        "has_database": true,
         "replication_port": 5433,
         "api_collection": "",
         "images": [

@@ -29,6 +29,10 @@ def _app(name="widget"):
     return apps.App(name=name, hostname=name + ".test", keycloak_client=name + "-frontend")
 
 
+def _platform(*members):
+    return apps.Platform(apps=members, identity_hostname="auth.test")
+
+
 class ManifestFunctionTests(unittest.TestCase):
     """Direct, isolated coverage of each manifests.py render_* function."""
 
@@ -71,7 +75,7 @@ class ManifestFunctionTests(unittest.TestCase):
                         routes=(apps.Route(path="/docs/", to="pages"), apps.Route(path="/ping", to="api", exact=True),
                                 apps.Route(path="/", to="pages")))
         docs = list(yaml.safe_load_all(manifests.render_shared_proxy(
-            ROOT, [site], {"site": "site.test"}, "auth.test", 8443, "localhost/platform-proxy:m12")))
+            ROOT, _platform(site), {"site": "site.test"}, "auth.test", 8443, "localhost/platform-proxy:m12")))
         conf = next(d["data"] for d in docs if d["metadata"]["name"] == "shared-nginx-config")["nginx.conf"]
         self.assertIn("upstream site_pages { zone site_pages 64k; server site-app:8081 resolve; }", conf)
         self.assertIn("upstream site_api { zone site_api 64k; server site-app:9000 resolve; }", conf)
@@ -82,10 +86,38 @@ class ManifestFunctionTests(unittest.TestCase):
         self.assertRegex(server, r"location = /ping \{\s+proxy_pass http://site_api;")
         self.assertRegex(server, r"location / \{\s+proxy_pass http://site_pages;")
 
+    def test_render_shared_proxy_sends_auth_to_keycloak_only_for_an_app_with_login(self):
+        routes = (apps.Route(path="/", to="site"),)
+        endpoints = (apps.Endpoint(name="site", port=8080),)
+        shop = apps.App(name="shop", hostname="shop.test", keycloak_client="shop-frontend",
+                        endpoints=endpoints, routes=routes)
+        help_ = apps.App(name="help", hostname="help.test", has_database=False, replication_port=0,
+                         endpoints=endpoints, routes=routes)
+
+        def rendered(platform):
+            docs = list(yaml.safe_load_all(manifests.render_shared_proxy(
+                ROOT, platform, {app.name: app.hostname for app in platform.apps}, "auth.test", 8443,
+                "localhost/platform-proxy:m12")))
+            return next(d["data"] for d in docs if d["metadata"]["name"] == "shared-nginx-config")
+
+        data = rendered(_platform(shop, help_))
+        servers = data["nginx.conf"].split("server {")
+        self.assertIn("upstream shared_keycloak", data["nginx.conf"])
+        self.assertIn("location /auth/", next(s for s in servers if "server_name auth.test;" in s))
+        self.assertIn("location /auth/", next(s for s in servers if "server_name shop.test;" in s))
+        self.assertNotIn("location /auth/", next(s for s in servers if "server_name help.test;" in s))
+        self.assertIn("connect-src 'self' https://auth.test:8443;", data["app-headers.conf"])
+        # No app with login: Keycloak does not run, and nothing names it.
+        data = rendered(_platform(help_))
+        self.assertNotIn("keycloak", data["nginx.conf"])
+        self.assertNotIn("/auth/", data["nginx.conf"])
+        self.assertIn("connect-src 'self';", data["app-headers.conf"])
+
     def test_render_shared_proxy_resolves_the_identity_hostname(self):
-        widget, gadget = _app("widget"), _app("gadget")
+        widget = _app("widget")
+        gadget = apps.App(name="gadget", hostname="gadget.test", keycloak_client="gadget-frontend", replication_port=5433)
         docs = list(yaml.safe_load_all(manifests.render_shared_proxy(
-            ROOT, [widget, gadget], {"widget": "widget.test", "gadget": "gadget.test"}, "auth.test", 8443,
+            ROOT, _platform(widget, gadget), {"widget": "widget.test", "gadget": "gadget.test"}, "auth.test", 8443,
             "localhost/platform-proxy:m12")))
         data = next(d["data"] for d in docs if d["metadata"]["name"] == "shared-nginx-config")
         conf = data["nginx.conf"]
@@ -138,17 +170,17 @@ class TemplateSafetyTests(unittest.TestCase):
         for value in self.ADVERSARIAL:
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
-                    manifests.render_shared_proxy(ROOT, [app], {app.name: value}, "auth.test", 8443,
+                    manifests.render_shared_proxy(ROOT, _platform(app), {app.name: value}, "auth.test", 8443,
                                                   "localhost/platform-proxy:m12")
                 with self.assertRaises(ValueError):
-                    manifests.render_shared_proxy(ROOT, [app], {app.name: "app.test"}, value, 8443,
+                    manifests.render_shared_proxy(ROOT, _platform(app), {app.name: "app.test"}, value, 8443,
                                                   "localhost/platform-proxy:m12")
 
     def test_shared_proxy_rejects_an_unsafe_second_app_hostname_too(self):
         first, other = _app("first"), apps.App(
             name="other", hostname="evil.test; return 200 pwned", keycloak_client="other-frontend")
         with self.assertRaises(ValueError):
-            manifests.render_shared_proxy(ROOT, [first, other], {"first": "first.test", "other": other.hostname},
+            manifests.render_shared_proxy(ROOT, _platform(first, other), {"first": "first.test", "other": other.hostname},
                                           "auth.test", 8443, "localhost/platform-proxy:m12")
 
 

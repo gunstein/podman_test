@@ -137,8 +137,15 @@ def public_hostnames(platform, target):
 
 
 def clients(platform, hostnames):
-    """Each app's Keycloak client and the hostname it is served on."""
-    return [(app.keycloak_client, hostnames[app.name]) for app in platform.apps]
+    """Each login app's Keycloak client and the hostname it is served on."""
+    return [(app.keycloak_client, hostnames[app.name]) for app in platform.login_apps]
+
+
+def configure_identity(platform, hostnames):
+    """Configure Keycloak's clients (keycloak.configure) if it runs; True if Keycloak changed."""
+    if not platform.has_identity:
+        return False
+    return keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(platform, hostnames))
 
 
 def _contents(path):
@@ -207,9 +214,8 @@ def prepare(root, mode, deployment_mode, bundle_directory, refresh_images, platf
     secrets.provision(platform)
     image_changes = {}
     for app in platform.apps:
-        image_changes[app.name] = images.prepare(
-            root, deployment_mode, bundle_directory, refresh_images, app=app, include_shared=False)
-    shared_images = images.prepare_shared(root, deployment_mode, bundle_directory, refresh_images)
+        image_changes[app.name] = images.prepare(root, deployment_mode, bundle_directory, refresh_images, app=app)
+    shared_images = images.prepare_shared(root, deployment_mode, bundle_directory, refresh_images, platform)
     hostnames, identity = public_hostnames(platform, target)
     # nginx's TLS files as Podman secrets, before nginx starts (tls_secrets);
     # with the TLS volume, the shared-proxy pod's init container makes them.
@@ -230,34 +236,36 @@ def write_definitions(root, directory, runtime, rendered, platform, publish_addr
     # postgres image change restarts every postgres service; backend/frontend images are
     # per-app and only ever restart that app's own service. This keeps an unrelated app's
     # (or component's) update from taking down the whole stack.
-    postgres_image_changed = shared_images['postgres']
+    postgres_image_changed = shared_images.get('postgres', False)
     # An app's ConfigMap file (OIDC issuer, log level) is shared with its database
     # pod, whose install writes it first; install_application then finds it
     # unchanged. So compare it with what was installed before this run.
     configs_before = {app.name: _contents(runtime / app.config_manifest) for app in platform.apps}
     restart = set()
     for app in platform.apps:
-        postgres_changed = workloads.install_postgres(*arguments, database=app.database, target=target)
-        changed = postgres_changed or changed
-        if postgres_changed or postgres_image_changed:
-            restart.add(app.database.container)
+        if app.has_database:
+            postgres_changed = workloads.install_postgres(*arguments, database=app.database, target=target)
+            changed = postgres_changed or changed
+            if postgres_changed or postgres_image_changed:
+                restart.add(app.database.container)
         application_changed = workloads.install_application(*arguments, app=app, target=target)
         changed = application_changed or changed
         config_changed = _contents(runtime / app.config_manifest) != configs_before[app.name]
         if (application_changed or config_changed or image_changes[app.name]['backend']
                 or image_changes[app.name]['frontend']):
             restart.add(app.pod)
-    keycloak_database_changed = workloads.install_postgres(*arguments, database=apps.KEYCLOAK_DATABASE,
-                                                           target=target)
-    changed = keycloak_database_changed or changed
-    if keycloak_database_changed or postgres_image_changed:
-        restart.add(apps.KEYCLOAK_DATABASE.container)
-    keycloak_changed = workloads.install_keycloak(*arguments, target=target)
-    changed = keycloak_changed or changed
-    if keycloak_changed or shared_images['keycloak']:
-        restart.add('keycloak')
+    if platform.has_identity:
+        keycloak_database_changed = workloads.install_postgres(*arguments, database=apps.KEYCLOAK_DATABASE,
+                                                               target=target)
+        changed = keycloak_database_changed or changed
+        if keycloak_database_changed or postgres_image_changed:
+            restart.add(apps.KEYCLOAK_DATABASE.container)
+        keycloak_changed = workloads.install_keycloak(*arguments, target=target)
+        changed = keycloak_changed or changed
+        if keycloak_changed or shared_images['keycloak']:
+            restart.add('keycloak')
     proxy_changed = workloads.install_shared_proxy(
-        *arguments, publish_address, service_port, applications=platform.apps, target=target)
+        *arguments, publish_address, service_port, platform=platform, target=target)
     changed = proxy_changed or changed
     if proxy_changed or shared_images['proxy'] or tls_changed:
         restart.add('shared-proxy')
@@ -274,7 +282,7 @@ def start_in_order(platform, restart):
     for workload in reversed(selected):
         if workload.pod in restart:
             quadlet.systemctl('stop', workload.service)
-    roles = {pod: app for app in platform.apps for pod in (app.database.container, app.pod)}
+    roles = {pod: app for app in platform.database_apps for pod in (app.database.container, app.pod)}
     for workload in selected:
         quadlet.systemctl('start', workload.service)
         if workload.wait_healthy:
@@ -284,11 +292,11 @@ def start_in_order(platform, restart):
 
 
 def finish(platform, runtime, target, hostnames, identity):
-    """Configure Keycloak, check every unit's SourcePath, record the hostnames, turn the backup on.
+    """Configure Keycloak (if it runs), check every unit's SourcePath, record the hostnames, turn the backup on.
 
     Returns (Keycloak changed, backup timer changed).
     """
-    configured = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(platform, hostnames))
+    configured = configure_identity(platform, hostnames)
     for workload in platform.workloads():
         source = quadlet.systemctl('show', workload.service, '--property=SourcePath', '--value').stdout.strip()
         if source != str(runtime / workload.unit):
@@ -345,13 +353,9 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
         any(changes.values()) for changes in image_changes.values())
     if mode == 'dev':
         from .kube_play import up
-        for app in platform.apps:
-            secrets.create_kube(secrets.postgres_secret_mapping(app.database))
-            secrets.create_kube(secrets.application_secret_mapping(app))
-        secrets.create_kube(secrets.postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
-        secrets.create_kube(secrets.keycloak_secret_mapping())
+        secrets.create_kube(secrets.kube_mappings(platform))
         changed = up(rendered, platform, settings.DEV_STATE_FILE, images_changed or tls_changed)
-        configured = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET), clients(platform, hostnames))
+        configured = configure_identity(platform, hostnames)
         return changed or configured or tls_changed
     changed, restart = write_definitions(root, directory, runtime, rendered, platform, publish_address,
                                          port, target, image_changes, shared_images, tls_changed)

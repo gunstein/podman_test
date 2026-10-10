@@ -194,7 +194,7 @@ def restore(platform, confirm_restore, quadlet_dir=None):
         chosen[database] = name
     # Every service in stop order (nginx first, the databases last), but not those of an app not installed here.
     absent = {pod for app in platform.apps if not (runtime(quadlet_dir) / app.unit).exists()
-              for pod in (app.pod, app.database.container)}
+              for pod in (app.pod, *([app.database.container] if app.has_database else []))}
     services = [workload.service for workload in reversed(platform.workloads()) if workload.pod not in absent]
     run('systemctl', '--user', 'stop', *services, allowed=(0, 5), timeout=settings.COMMAND_TIMEOUT)
     for database, name in chosen.items():

@@ -222,5 +222,16 @@ class TransportTimeoutTests(unittest.TestCase):
         self.assertGreater(steps.copy_step_timeout(platform_file.checkout().replicated_databases), steps.STEP_TIMEOUT)
         self.assertGreater(steps.STEP_TIMEOUT, transport.COMMAND_TIMEOUT)
 
+    def test_a_platform_without_a_database_has_no_dr(self):
+        from unittest.mock import patch
+
+        from app_installer import apps
+        from app_ops import steps
+        static = apps.Platform(apps=(apps.App(name="help", hostname="help.test", has_database=False,
+                                              replication_port=0),), identity_hostname="auth.test")
+        with patch.object(steps.target_render, "bundle_platform", lambda root: static), \
+                self.assertRaisesRegex(RuntimeError, "no database to replicate"):
+            steps.platform("/package")
+
 if __name__ == "__main__":
     unittest.main()

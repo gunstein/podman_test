@@ -16,8 +16,16 @@ STEP_TIMEOUT = 2 * 3600
 
 
 def platform(project_root):
-    """The platform of the operations package app-ops runs from: its bundle.json's."""
-    return target_render.bundle_platform(project_root)
+    """The platform of the operations package app-ops runs from: its bundle.json's.
+
+    DR replicates the platform's databases, so a platform without any (no
+    app with a database or login) has nothing for app-ops to act on.
+    """
+    found = target_render.bundle_platform(project_root)
+    if not found.replicated_databases:
+        raise RuntimeError('This platform has no database to replicate (no app has a database or login), '
+                           'so DR has nothing to do: install its bundle on another host instead')
+    return found
 
 
 def public_port(project_root):

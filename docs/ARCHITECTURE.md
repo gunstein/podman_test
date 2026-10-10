@@ -101,7 +101,9 @@ one `.kube` unit and generated user service:
 `keycloak.service`, `todo-postgres.service`, `notes-postgres.service`,
 `keycloak-postgres.service`. `Platform.workloads()` (`apps.py`) is the one table of them,
 in start order (each database, Keycloak's database, Keycloak, the apps,
-nginx), with each pod's Kube YAML and ConfigMap files; `Platform.services()`
+nginx), with each pod's Kube YAML and ConfigMap files. An app has a database
+only when its `app.yaml` says `database: true`, and Keycloak with its
+database runs only when some app names a `keycloakClient` (login); `Platform.services()`
 returns the services in stop order, the reverse, and `Platform.serving_workloads()`
 the serving tier without the databases. The installer, development mode,
 uninstall and the DR tools (the promoted host's start, a rebuilt standby's

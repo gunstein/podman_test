@@ -4,7 +4,12 @@
 # notes-frontend/ at the repository root; phase 5 moves it here.
 
 name: notes
-# The OAuth client its frontend logs in with (notes-frontend/keycloak-adapter.js).
+# Its own PostgreSQL database, replicated for DR (platform.yaml gives the
+# replicationPort). Without database: true the platform makes none.
+database: true
+# The OAuth client its frontend logs in with at the shared Keycloak
+# (notes-frontend/keycloak-adapter.js). Without keycloakClient the app has no
+# login; Keycloak runs only when some app has one.
 keycloakClient: notes-frontend
 # apiCollection is left out: the DR tools check the app by reading /api/notes,
 # the name (see examples/todo/app.yaml).

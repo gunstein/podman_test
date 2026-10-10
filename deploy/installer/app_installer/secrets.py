@@ -25,13 +25,14 @@ def keycloak_secret_mapping():
 
 
 def kube_mappings(platform):
-    """The mappings above for every pod of the platform: each app's two pods, Keycloak's two."""
+    """The mappings above for every pod of the platform: each database app's two pods, Keycloak's two."""
     mapping = {}
-    for app in platform.apps:
+    for app in platform.database_apps:
         mapping.update(postgres_secret_mapping(app.database))
         mapping.update(application_secret_mapping(app))
-    mapping.update(postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
-    mapping.update(keycloak_secret_mapping())
+    if platform.has_identity:
+        mapping.update(postgres_secret_mapping(apps.KEYCLOAK_DATABASE))
+        mapping.update(keycloak_secret_mapping())
     return mapping
 
 
@@ -105,10 +106,13 @@ def _kube_data(name):
 
 
 def installed_names(platform):
-    """The raw Podman secrets an install creates: each app's three database
-    passwords, Keycloak's database password and its admin password."""
-    names = [app.database.secret(role) for app in platform.apps for role in ("db", "migrator", "app")]
-    return names + [apps.KEYCLOAK_DATABASE.secret("db"), apps.KEYCLOAK_ADMIN_SECRET]
+    """The raw Podman secrets an install creates: each database app's three
+    database passwords and, if Keycloak runs, its database password and its
+    admin password."""
+    names = [app.database.secret(role) for app in platform.database_apps for role in ("db", "migrator", "app")]
+    if platform.has_identity:
+        names += [apps.KEYCLOAK_DATABASE.secret("db"), apps.KEYCLOAK_ADMIN_SECRET]
+    return names
 
 
 def provision(platform):

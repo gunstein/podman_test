@@ -100,9 +100,13 @@ class AppRegistryTests(unittest.TestCase):
                          [(".", "notes-backend/Containerfile"), ("../help", "Containerfile")])
         with self.assertRaisesRegex(ValueError, "The app notes declares no image 'frontend'"):
             app.image("frontend")
-        # PostgreSQL runs every database, so it is shared, not one per app.
-        self.assertEqual([image.reference for image in shared_images()], [
-            "docker.io/library/postgres:17.11", "localhost/platform-proxy:m12", "localhost/keycloak:m12"])
+        # PostgreSQL runs every database, so it is shared, not one per app; and
+        # like Keycloak it is there only when some app needs it.
+        self.assertEqual([image.reference for image in shared_images(Platform(apps=(app,), identity_hostname="a.test"))],
+                         ["docker.io/library/postgres:17.11", "localhost/platform-proxy:m12", "localhost/keycloak:m12"])
+        static = App(name="help", hostname="help.test", has_database=False, replication_port=0)
+        self.assertEqual([image.reference for image in shared_images(Platform(apps=(static,), identity_hostname="a.test"))],
+                         ["localhost/platform-proxy:m12"])
 
     def test_secret_names_are_isolated_between_apps(self):
         from app_installer.secrets import application_secret_mapping, postgres_secret_mapping
@@ -177,6 +181,51 @@ class PlatformTests(unittest.TestCase):
             checkout().select(["shop"])
         with self.assertRaisesRegex(ValueError, "No app named 'shop'"):
             checkout().app("shop")
+
+    def test_postgres_and_keycloak_run_only_when_an_app_needs_them(self):
+        from app_installer import install, render, secrets, workloads
+        shop = self.shop().apps[0]
+        help_ = App(name="help", hostname="help.example.org", has_database=False, replication_port=0)
+        wiki = App(name="wiki", hostname="wiki.example.org", replication_port=5441)
+        self.assertEqual((help_.has_database, help_.has_login, wiki.has_database, wiki.has_login),
+                         (False, False, True, False))
+        with self.assertRaisesRegex(ValueError, "The app help has no database"):
+            _ = help_.database
+
+        mixed = Platform(apps=(shop, help_), identity_hostname="login.example.org")
+        self.assertEqual([d.name for d in mixed.replicated_databases], ["shop", "keycloak"])
+        self.assertEqual(mixed.ready("app")[0],
+                         ["shop-postgres", "keycloak-postgres", "keycloak", "shop-app", "help-app", "shared-proxy"])
+
+        # Without login Keycloak and its database are not there, nor its secrets, client or unit dependency.
+        data_only = Platform(apps=(wiki,), identity_hostname="login.example.org")
+        self.assertFalse(data_only.has_identity)
+        self.assertEqual([d.name for d in data_only.replicated_databases], ["wiki"])
+        self.assertEqual(data_only.ready("app")[1], ["wiki-postgres", "wiki-backend", "wiki-frontend", "nginx"])
+        self.assertEqual(sorted(secrets.installed_names(data_only)),
+                         ["wiki-app-password", "wiki-db-password", "wiki-migrator-password"])
+        self.assertEqual(install.clients(data_only, {"wiki": "wiki.example.org"}), [])
+        self.assertFalse(install.configure_identity(data_only, {"wiki": "wiki.example.org"}))
+
+        # Without a database PostgreSQL is not there either: an app pod and nginx.
+        static = Platform(apps=(help_,), identity_hostname="login.example.org")
+        self.assertEqual(static.replicated_databases, ())
+        self.assertEqual(static.services(), ["shared-proxy.service", "help-app.service"])
+        self.assertEqual(static.ready("standby"), ([], []))
+        self.assertEqual(static.host_ports(), {"nginx": (8080, 8443)})
+        self.assertEqual((secrets.kube_mappings(static), secrets.installed_names(static)), ({}, []))
+        self.assertEqual(workloads.proxy_variables("127.0.0.1", 8443, static)["required_services"],
+                         ["help-app.service"])
+        self.assertEqual(Platform.from_json(json.loads(json.dumps(static.to_json()))), static)
+        # The one shared app pod template needs both, until an app brings its own (phase 4f).
+        with self.assertRaisesRegex(ValueError, "help needs database: true and a keycloakClient"):
+            render.files(Path(__file__).resolve().parents[3], static, {"help": "help.example.org"},
+                         "login.example.org", 8443, "info")
+
+    def test_apps_without_login_or_a_database_need_no_client_or_port_of_their_own(self):
+        apps = tuple(App(name=name, hostname=f"{name}.test", has_database=False, replication_port=0)
+                     for name in ("help", "docs"))
+        self.assertEqual(Platform(apps=apps, identity_hostname="auth.test").login_apps, ())
 
     def test_keycloaks_replication_port_is_not_an_apps(self):
         with self.assertRaisesRegex(ValueError, "Keycloak's database"):

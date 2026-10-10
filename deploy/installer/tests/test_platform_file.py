@@ -16,7 +16,7 @@ PLATFORM = {
     'environments': {'local': {'logLevel': 'debug'}, 'prod': {}},
     'apps': [{'path': 'apps/shop', 'hostname': 'shop.example.org', 'replicationPort': 5440}],
 }
-SHOP = {'name': 'shop', 'keycloakClient': 'shop-frontend',
+SHOP = {'name': 'shop', 'database': True, 'keycloakClient': 'shop-frontend',
         'images': {'backend': {'context': '.'}, 'frontend': {'context': '.'}},
         'endpoints': {'site': {'port': 8080}, 'api': {'port': 8000}},
         'routes': [{'path': '/api/', 'to': 'api'}, {'path': '/ready', 'to': 'api', 'exact': True},
@@ -65,8 +65,8 @@ class PlatformFileTests(unittest.TestCase):
         self.refused(r'platform.yaml: unknown field realm', platform={**PLATFORM, 'realm': 'todo'})
         self.refused(r'platform.yaml: missing identityHostname',
                      platform={key: value for key, value in PLATFORM.items() if key != 'identityHostname'})
-        self.refused(r'app.yaml: unknown field database', app={**SHOP, 'database': True})
-        self.refused(r'app.yaml: missing keycloakClient', app={'name': 'shop'})
+        self.refused(r'app.yaml: unknown field storage', app={**SHOP, 'storage': True})
+        self.refused(r'app.yaml: missing images', app={'name': 'shop'})
         self.refused(r'apps\[0\]: unknown field name',
                      platform={**PLATFORM, 'apps': [{**PLATFORM['apps'][0], 'name': 'shop'}]})
 
@@ -179,6 +179,38 @@ class PlatformFileTests(unittest.TestCase):
                 if images is not None:
                     app['images'] = images
                 self.refused(message, app=app)
+
+    def test_an_app_has_a_database_and_login_only_when_its_app_yaml_says_so(self):
+        static = {key: value for key, value in SHOP.items() if key not in ('database', 'keycloakClient')}
+        no_port = {**PLATFORM, 'apps': [{'path': 'apps/shop', 'hostname': 'shop.example.org'}]}
+        platform, _ = platform_file.load(self.write(platform=no_port, app=static))
+        app = platform.apps[0]
+        self.assertEqual((app.has_database, app.has_login, app.replication_port, app.keycloak_client),
+                         (False, False, 0, ''))
+        self.assertEqual(apps.Platform.from_json(platform.to_json()), platform)
+        self.refused(r"apps\[0\]: replicationPort is only for an app with a database, and .*apps/shop/app.yaml "
+                     "has none", app=static)
+        self.refused(r'apps\[0\]: replicationPort is required: .*apps/shop/app.yaml says database: true',
+                     platform=no_port)
+        self.refused(r'app.yaml: database: must be true or false', app={**SHOP, 'database': 'yes'})
+        # A login without a database, and the other way round.
+        login_only = {**static, 'keycloakClient': 'shop-frontend'}
+        app = platform_file.load(self.write(platform=no_port, app=login_only))[0].apps[0]
+        self.assertEqual((app.has_database, app.has_login), (False, True))
+        app = platform_file.load(self.write(app={**static, 'database': True}))[0].apps[0]
+        self.assertEqual((app.has_database, app.has_login, app.replication_port), (True, False, 5440))
+
+    def test_apps_without_a_database_or_login_share_no_port_or_client(self):
+        static = {key: value for key, value in SHOP.items() if key not in ('database', 'keycloakClient')}
+        path = self.write(platform={**PLATFORM, 'apps': [PLATFORM['apps'][0],
+                                                         {'path': 'apps/other', 'hostname': 'other.example.org'},
+                                                         {'path': 'apps/third', 'hostname': 'third.example.org'}]})
+        for name in ('other', 'third'):
+            (path.parent / 'apps' / name).mkdir()
+            (path.parent / 'apps' / name / 'app.yaml').write_text(yaml.safe_dump({**static, 'name': name}))
+        platform = platform_file.load(path)[0]
+        self.assertEqual([app.name for app in platform.database_apps], ['shop'])
+        self.assertEqual([app.name for app in platform.login_apps], ['shop'])
 
     def test_keycloaks_database_port_is_taken(self):
         self.refused(r"apps/shop/app.yaml has replicationPort 5434, which is Keycloak's database's",

@@ -3,13 +3,11 @@ import time
 from pathlib import Path
 
 from app_installer import (
-    apps,
     images,
     install,
     keycloak,
     preflight,
     quadlet,
-    secrets,
     settings,
     target_render,
     workloads,
@@ -38,16 +36,17 @@ def require_identity(inventory_hostname, node_address, service_port):
 
 
 def install_workloads(project_root, quadlet_dir, target, node_address, service_port):
-    """Install every app, Keycloak and the proxy from the bundle's files, published on this host's own address."""
+    """Install every app, Keycloak (if it runs) and the proxy from the bundle's files, published on this host's own address."""
     install.preflight(quadlet_dir, target.platform)
     runtime = quadlet_dir / settings.KUBE_RUNTIME
     arguments = (project_root, quadlet_dir, runtime, None)
     changed = False
     for app in target.platform.apps:
         changed = workloads.install_application(*arguments, app=app, target=target) or changed
-    changed = workloads.install_keycloak(*arguments, target=target) or changed
+    if target.platform.has_identity:
+        changed = workloads.install_keycloak(*arguments, target=target) or changed
     return workloads.install_shared_proxy(*arguments, node_address, service_port,
-                                          applications=target.platform.apps, target=target) or changed
+                                          platform=target.platform, target=target) or changed
 
 
 def require_application(app, hostname):
@@ -118,9 +117,9 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
         quadlet.systemctl('start', workload.service)
     for app in platform.apps:
         require_application(app, hostnames[app.name])
-    require_issuer(f'https://{target.identity_hostname}:{service_port}/auth/realms/todo')
-    clients_changed = keycloak.configure(secrets.read(apps.KEYCLOAK_ADMIN_SECRET),
-                                         install.clients(platform, hostnames))
+    if platform.has_identity:
+        require_issuer(f'https://{target.identity_hostname}:{service_port}/auth/realms/todo')
+    clients_changed = install.configure_identity(platform, hostnames)
     target_render.write_record(target.values)
     certificate = run('podman', 'exec', 'nginx', 'cat', CA_CERTIFICATE).stdout.strip() + '\n'
     certificate_changed = quadlet.write(config_dir / 'platform-nginx-root.crt', certificate.encode(), 0o644)

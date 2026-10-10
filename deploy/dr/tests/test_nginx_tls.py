@@ -71,7 +71,7 @@ class NginxTlsTest(unittest.TestCase):
                 (tls, 'ENTRYPOINT', str(ROOT / 'proxy/proxy-entrypoint.sh')),
                 (tls, 'KEY', 'rsa:2048'),
                 (settings, 'NGINX_TLS_STORAGE', 'volume'),
-                (nginx_tls.images, 'prepare_shared', lambda *args: self.loaded.append(args) or {'proxy': False})):
+                (nginx_tls.images, 'prepare_proxy', lambda *args: self.loaded.append(args) or {'proxy': False})):
             patcher = patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -101,7 +101,7 @@ class StandbyTests(NginxTlsTest):
         csr, names = nginx_tls.request(*self.where())
         self.assertEqual(names, NAMES)
         self.assertEqual(app_ca.requested_names(self.write(csr)), NAMES)
-        self.assertEqual(self.loaded, [('/home/todo/platform-offline-m12', 'offline', '/home/todo/platform-offline-m12')])
+        self.assertEqual(self.loaded, [('/home/todo/platform-offline-m12',)])
         self.assertEqual(len(self.podman.claims), 1)
         self.assertIn('name: platform-nginx-data', self.podman.claims[0])
         self.assertIn('volume.podman.io/uid', self.podman.claims[0])

@@ -44,7 +44,7 @@ data:
   # hostname fetches its tokens from there.
   app-headers.conf: |
     include /etc/platform-nginx/security-headers.conf;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' {{ identity_origin }}; frame-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'{% if identity %} {{ identity_origin }}{% endif %}; frame-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'" always;
     add_header X-Frame-Options DENY always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
   nginx.conf: |
@@ -71,7 +71,9 @@ data:
    entrypoint writes the resolver), so the proxy starts even when an app pod
    is missing, and follows a pod that restarts with a new address. #}
         include /tmp/podman-resolver.conf;
+{% if identity %}
         upstream shared_keycloak { zone shared_keycloak 64k; server keycloak:8080 resolve; }
+{% endif %}
 {% for app in applications %}
 {% for upstream in app.upstreams %}
         upstream {{ upstream.name }} { zone {{ upstream.name }} 64k; server {{ upstream.server }} resolve; }
@@ -82,9 +84,11 @@ data:
    8443 with the one leaf certificate.
    Keycloak's hostname comes first and is the default server, so a request
    without a known Host header reaches Keycloak and nothing else: only /auth/
-   is served there. Each app's server sends /auth/ to the same Keycloak too
-   (an app reads the issuer from its own origin), and each of its routes
-   (app.yaml: a path and the endpoint it goes to) to that endpoint. #}
+   is served there. Each app with login sends /auth/ to the same Keycloak too
+   (an app reads the issuer from its own origin), and each app sends each of
+   its routes (app.yaml: a path and the endpoint it goes to) to that
+   endpoint. Without any app with login Keycloak does not run, and the
+   default server answers every request with 404. #}
         server {
             listen 8080 default_server;
             listen 8443 ssl default_server;
@@ -95,10 +99,12 @@ data:
             ssl_session_tickets off;
             include /etc/platform-nginx/security-headers.conf;
 
+{% if identity %}
             location /auth/ {
                 proxy_pass http://shared_keycloak;
                 include /etc/nginx/platform-proxy-headers.conf;
             }
+{% endif %}
             location / {
                 return 404;
             }
@@ -116,10 +122,12 @@ data:
             index index.html;
             include /etc/platform-nginx/security-headers.conf;
 
+{% if app.login %}
             location /auth/ {
                 proxy_pass http://shared_keycloak;
                 include /etc/nginx/platform-proxy-headers.conf;
             }
+{% endif %}
 {% for route in app.routes %}
             location {{ route.location }} {
                 proxy_pass http://{{ route.upstream }};

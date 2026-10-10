@@ -88,12 +88,12 @@ def connect_sources(headers):
 
 
 def login_page(host, platform, hostnames, identity, port):
-    """Raise unless each app's login can start: Keycloak accepts its redirect, and its CSP allows the token.
+    """Raise unless each login app's login can start: Keycloak accepts its redirect, and its CSP allows the token.
 
     hostnames is {app name: hostname}, identity Keycloak's hostname, port the HTTPS port.
     """
     identity_origin = f'https://{identity}:{port}'
-    for app in platform.apps:
+    for app in platform.login_apps:
         origin = f'https://{hostnames[app.name]}:{port}'
         query = urlencode({'client_id': app.keycloak_client, 'redirect_uri': origin + '/', 'response_type': 'code',
                            'scope': 'openid', 'code_challenge': PKCE_CHALLENGE, 'code_challenge_method': 'S256'})

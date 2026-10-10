@@ -75,7 +75,7 @@ def prepare(project_root, bundle_dir, node_address):
     the one nginx will use after a failover, owned by the nginx user
     (volume.podman.io/uid).
     """
-    changed = any(images.prepare_shared(bundle_dir, 'offline', bundle_dir).values())
+    changed = any(images.prepare_proxy(bundle_dir).values())
     if tls_store.secret_storage():
         return changed
     if not exists('volume', apps.NGINX_TLS_VOLUME):

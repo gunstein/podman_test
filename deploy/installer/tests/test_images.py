@@ -25,7 +25,7 @@ class ImageErrorTests(unittest.TestCase):
         for mode in ('build', 'offline'):
             with self.subTest(mode), WrongLabelHost(), tempfile.TemporaryDirectory() as bundle:
                 with self.assertRaisesRegex(RuntimeError, 'does not identify nginx.*refresh_images=true'):
-                    images.prepare_shared(ROOT, mode, bundle)
+                    images.prepare_shared(ROOT, mode, bundle, False, platform_file.checkout())
 
     def test_offline_refuses_a_refresh_or_a_missing_bundle_before_any_command(self):
         for bundle, refresh in (('/bundle', True), ('', False)):
@@ -57,7 +57,7 @@ class BuildTests(unittest.TestCase):
         app = apps.App(name='shop', hostname='shop.test', keycloak_client='shop-frontend',
                        images=(apps.AppImage(name='proxy', context='.'),))
         with WrongLabelHost(images_present=False) as host:
-            self.assertEqual(images.prepare('/project', 'build', app=app, include_shared=False), {'proxy': True})
+            self.assertEqual(images.prepare('/project', 'build', app=app), {'proxy': True})
         self.assertFalse(host.ran('podman', 'image', 'inspect'))
 
     def test_each_image_builds_from_its_declared_context_and_containerfile(self):
@@ -65,7 +65,7 @@ class BuildTests(unittest.TestCase):
                        images=(apps.AppImage(name='backend', context='.', containerfile='shop-backend/Containerfile'),
                                apps.AppImage(name='site', context='../help')))
         with FakeHost(images_present=False) as host:
-            images.prepare('/project', 'build', app=app, include_shared=False)
+            images.prepare('/project', 'build', app=app)
         builds = host.ran('podman', 'build')
         self.assertEqual([build[-5:] for build in builds], [
             ['--file', '/project/shop-backend/Containerfile', '--tag', 'localhost/shop-backend:m12', '/project'],

@@ -50,15 +50,18 @@ class Route:
 
 @dataclass(frozen=True)
 class App:
-    """One web application: its public hostname, OAuth client and database.
+    """One web application: its public hostname and, if it needs them, its database and login.
 
     Its resource names come from its name through stack.Names, so the "todo"
     app runs the todo-app pod (unit todo-app.kube, service todo-app.service).
     images are the images it builds (AppImage, from its app.yaml); its
     backend image is localhost/todo-backend.
-    Its PostgreSQL workload is self.database (todo-postgres, todo-db-password,
-    the todo_migrator role and so on). An App is not a database: code that
-    works on the replicated database group asks Platform.replicated_databases.
+    has_database: it has its own PostgreSQL workload, self.database
+    (todo-postgres, todo-db-password, the todo_migrator role and so on),
+    replicating on replication_port (0 without a database). An App is not a
+    database: code that works on the replicated database group asks
+    Platform.replicated_databases. has_login: its users log in at the shared
+    Keycloak with the OAuth client keycloak_client ("" without login).
     Build an App with keyword arguments only (tests/test_apps.py checks it):
     the string fields are easy to mix up, and the hosts' Python 3.9 has no
     dataclass kw_only.
@@ -66,7 +69,8 @@ class App:
 
     name: str
     hostname: str
-    keycloak_client: str
+    keycloak_client: str = ""
+    has_database: bool = True
     replication_port: int = 5432
     api_collection: str = ""
     images: tuple = ()
@@ -79,8 +83,15 @@ class App:
         return stack.Names(self.name)
 
     @property
+    def has_login(self) -> bool:
+        """Its users log in at the shared Keycloak (its app.yaml names a keycloakClient)."""
+        return self.keycloak_client != ""
+
+    @property
     def database(self) -> stack.Database:
-        """The PostgreSQL workload this application owns."""
+        """The PostgreSQL workload this application owns; only an app that has_database has one."""
+        if not self.has_database:
+            raise ValueError(f"The app {self.name} has no database (its app.yaml says database: false)")
         return stack.Database(self.name, self.replication_port)
 
     def api_path(self) -> str:
@@ -201,6 +212,10 @@ class Workload:
 class Platform:
     """One installation: its apps, in start order, and Keycloak's default hostname.
 
+    The platform runs PostgreSQL and Keycloak only when an app needs them:
+    a database for each app that has_database (database_apps), and Keycloak
+    with its own database when at least one app has_login (has_identity).
+
     Every part of the installer and the DR tools that acts on an
     installation takes one Platform and asks it, instead of reading a list
     kept in a module. A build reads it from platform.yaml (platform_file);
@@ -218,12 +233,28 @@ class Platform:
         # identity names Keycloak in --target-hostname and TARGET_IDENTITY_HOSTNAME (target_render.name_target).
         if any(app.name == "identity" for app in self.apps):
             raise ValueError("The app name identity is reserved for Keycloak's hostname")
-        for field in ("name", "hostname", "keycloak_client", "replication_port"):
-            values = [getattr(app, field) for app in self.apps]
+        for field, among in (("name", self.apps), ("hostname", self.apps),
+                             ("keycloak_client", self.login_apps), ("replication_port", self.database_apps)):
+            values = [getattr(app, field) for app in among]
             if len(values) != len(set(values)):
                 raise ValueError(f"Two apps share a {field}: {values}")
-        if KEYCLOAK_DATABASE.replication_port in (app.replication_port for app in self.apps):
+        if KEYCLOAK_DATABASE.replication_port in (app.replication_port for app in self.database_apps):
             raise ValueError(f"Port {KEYCLOAK_DATABASE.replication_port} is Keycloak's database's")
+
+    @property
+    def database_apps(self):
+        """The apps that have their own database, in start order."""
+        return tuple(app for app in self.apps if app.has_database)
+
+    @property
+    def login_apps(self):
+        """The apps whose users log in at Keycloak, in start order."""
+        return tuple(app for app in self.apps if app.has_login)
+
+    @property
+    def has_identity(self):
+        """Keycloak runs, with its own database, because at least one app has login."""
+        return bool(self.login_apps)
 
     def app(self, name):
         """The app with this name."""
@@ -244,25 +275,28 @@ class Platform:
 
     @property
     def replicated_databases(self):
-        """The DR group: every app's database, then Keycloak's. Bootstrap, promotion,
-        backup and rebuild always act on all of them together."""
-        return tuple(app.database for app in self.apps) + (KEYCLOAK_DATABASE,)
+        """The DR group: each app's database, then Keycloak's if it runs. Bootstrap,
+        promotion, backup and rebuild always act on all of them together."""
+        return (tuple(app.database for app in self.database_apps)
+                + ((KEYCLOAK_DATABASE,) if self.has_identity else ()))
 
     def workloads(self):
         """Every workload, in start order; stop goes the other way.
 
-        Each app's database first, then Keycloak's, Keycloak, the apps, and
-        nginx last: each starts after what it needs (deploy/quadlet/*.kube.j2
-        say the same in Requires= and After=). A database is healthy before the
-        next workload starts. An app shares its ConfigMap file with its database;
-        nginx's ConfigMaps are in its own shared-proxy.yaml.
+        Each app's database first, then Keycloak's and Keycloak (if some app
+        has login), the apps, and nginx last: each starts after what it needs
+        (deploy/quadlet/*.kube.j2 say the same in Requires= and After=). A
+        database is healthy before the next workload starts. An app shares its
+        ConfigMap file with its database; nginx's ConfigMaps are in its own
+        shared-proxy.yaml.
         """
+        identity = (Workload(KEYCLOAK_DATABASE.container, KEYCLOAK_DATABASE.manifest,
+                             KEYCLOAK_DATABASE.config_manifest, wait_healthy=True),
+                    Workload("keycloak", "keycloak.yaml")) if self.has_identity else ()
         return (
             *(Workload(app.database.container, app.database.manifest, app.database.config_manifest,
-                       wait_healthy=True) for app in self.apps),
-            Workload(KEYCLOAK_DATABASE.container, KEYCLOAK_DATABASE.manifest, KEYCLOAK_DATABASE.config_manifest,
-                     wait_healthy=True),
-            Workload("keycloak", "keycloak.yaml"),
+                       wait_healthy=True) for app in self.database_apps),
+            *identity,
             *(Workload(app.pod, app.manifest, app.config_manifest) for app in self.apps),
             Workload("shared-proxy", "shared-proxy.yaml"),
         )
@@ -289,15 +323,15 @@ class Platform:
 
         An app host runs every workload; a database-only standby only the
         databases. The containers are the long-running ones: each database,
-        Keycloak, each app's backend and frontend, and nginx (their names in
-        deploy/manifests, kept by podman kube play --no-pod-prefix).
+        Keycloak if it runs, each app's backend and frontend, and nginx (their
+        names in deploy/manifests, kept by podman kube play --no-pod-prefix).
         """
         databases = [database.container for database in self.replicated_databases]
         if role == "standby":
             return databases, databases
         if role != "app":
             raise ValueError(f"role must be app or standby, not {role!r}")
-        containers = [*databases, "keycloak",
+        containers = [*databases, *(["keycloak"] if self.has_identity else []),
                       *(app.names.resource(part) for app in self.apps for part in ("backend", "frontend")), "nginx"]
         return [workload.pod for workload in self.workloads()], containers
 
@@ -314,7 +348,7 @@ class Platform:
         """This platform as plain data, for bundle.json and a host's record."""
         return {"identity_hostname": self.identity_hostname,
                 "apps": [{"name": app.name, "hostname": app.hostname, "keycloak_client": app.keycloak_client,
-                          "replication_port": app.replication_port, "api_collection": app.api_collection,
+                          "has_database": app.has_database, "replication_port": app.replication_port, "api_collection": app.api_collection,
                           "images": [{"name": image.name, "context": image.context,
                                       "containerfile": image.containerfile} for image in app.images],
                           "endpoints": [{"name": endpoint.name, "port": endpoint.port} for endpoint in app.endpoints],
@@ -325,7 +359,8 @@ class Platform:
     @classmethod
     def from_json(cls, data):
         """The platform to_json wrote; anything else is a ValueError that says what is wrong."""
-        fields = {"name": str, "hostname": str, "keycloak_client": str, "replication_port": int,
+        fields = {"name": str, "hostname": str, "keycloak_client": str, "has_database": bool,
+                  "replication_port": int,
                   "api_collection": str, "images": list, "endpoints": list, "routes": list}
         parts = {"images": (AppImage, {"name": str, "context": str, "containerfile": str}),
                  "endpoints": (Endpoint, {"name": str, "port": int}),

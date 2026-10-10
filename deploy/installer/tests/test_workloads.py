@@ -25,7 +25,7 @@ class WorkloadsTests(unittest.TestCase):
              ['notes-postgres-data', 'notes-postgres-backup']),
             (partial(workloads.install_application, app=platform_file.checkout().apps[1]), ['notes-app'], []),
             (workloads.install_keycloak, ['keycloak'], []),
-            (partial(workloads.install_shared_proxy, applications=platform_file.checkout().apps), ['shared-proxy'],
+            (partial(workloads.install_shared_proxy, platform=platform_file.checkout()), ['shared-proxy'],
              ['platform-nginx-data']),
         ):
             with self.subTest(function=str(function)), tempfile.TemporaryDirectory() as temp:
@@ -128,12 +128,14 @@ class WorkloadsTests(unittest.TestCase):
             with patch('subprocess.run') as run:
                 with self.assertRaisesRegex(ValueError, 'wildcard address'):
                     workloads.install_shared_proxy(ROOT, '/tmp/q', '/tmp/q/platform-kube-runtime',
-                                                   '/tmp/rendered', publish_address=wildcard, applications=())
+                                                   '/tmp/rendered', publish_address=wildcard,
+                                                   platform=platform_file.checkout())
                 run.assert_not_called()
         with patch('subprocess.run') as run:
             with self.assertRaises(ValueError):
                 workloads.install_shared_proxy(ROOT, '/tmp/q', '/tmp/q/platform-kube-runtime',
-                                               '/tmp/rendered', publish_address='not-an-address', applications=())
+                                               '/tmp/rendered', publish_address='not-an-address',
+                                               platform=platform_file.checkout())
             run.assert_not_called()
 
     def test_default_postgres_address_is_optional_in_plain_jinja(self):
@@ -162,10 +164,12 @@ class WorkloadsTests(unittest.TestCase):
             with self.subTest(mode=mode, present=present, refresh=refresh), \
                     FakeHost(images_present=present) as host, tempfile.TemporaryDirectory() as bundle:
                 (Path(bundle) / 'images').mkdir()
-                for image in images.image_list(platform_file.checkout().apps[0]) + images.shared_images():
+                platform = platform_file.checkout()
+                for image in images.image_list(platform.apps[0]) + images.shared_images(platform):
                     (Path(bundle) / 'images' / image.archive).touch()
                 calls = host.calls
-                changed = images.prepare(ROOT, mode, bundle, refresh, app=platform_file.checkout().apps[0])
+                changed = {**images.prepare(ROOT, mode, bundle, refresh, app=platform.apps[0]),
+                           **images.prepare_shared(ROOT, mode, bundle, refresh, platform)}
                 self.assertEqual(set(changed.values()), {not present or refresh})
                 if mode == 'offline':
                     self.assertEqual(sum(a[1] == 'load' for a in calls), 5)

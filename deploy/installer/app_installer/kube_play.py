@@ -50,7 +50,7 @@ def up(rendered_manifest_dir, platform, state_file=None, refresh=False):
             *arguments, *ports, directory / manifest)
 
     # Roles are set up once an app's database is healthy, and again after every pod started.
-    databases = {app.database.container: app for app in platform.apps}
+    databases = {app.database.container: app for app in platform.database_apps}
     for workload in selected:
         if workload.pod == 'shared-proxy':
             # nginx publishes its ports on loopback; its own ConfigMaps are in shared-proxy.yaml.
@@ -63,7 +63,7 @@ def up(rendered_manifest_dir, platform, state_file=None, refresh=False):
             run('podman', 'wait', '--condition', 'healthy', workload.pod, timeout=settings.HEALTH_TIMEOUT)
         if workload.pod in databases:
             setup_roles(databases[workload.pod])
-    for app in platform.apps:
+    for app in platform.database_apps:
         setup_roles(app)
     teardown = [workload.yaml for workload in reversed(selected)]
     state_file.parent.mkdir(parents=True, exist_ok=True)

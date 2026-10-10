@@ -45,9 +45,10 @@ def quadlets(project_root, platform, port, publish_address):
         units[database.unit] = quadlet.render(root, database.unit, workloads.postgres_variables(database))
     for app in platform.apps:
         units[app.unit] = quadlet.render(root, app.unit, {})
-    units['keycloak.kube'] = quadlet.render(root, 'keycloak.kube', {})
+    if platform.has_identity:
+        units['keycloak.kube'] = quadlet.render(root, 'keycloak.kube', {})
     units['shared-proxy.kube'] = quadlet.render(
-        root, 'shared-proxy.kube', workloads.proxy_variables(publish_address, port, platform.apps))
+        root, 'shared-proxy.kube', workloads.proxy_variables(publish_address, port, platform))
     return units
 
 

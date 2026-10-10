@@ -168,15 +168,28 @@ def _routes(data, path, endpoints):
     return tuple(routes)
 
 
-def _app(directory, hostname, replication_port, root):
-    """The App in directory/app.yaml, served on hostname, its database replicating on replication_port."""
+def _app(directory, hostname, replication_port, root, where):
+    """The App in directory/app.yaml, served on hostname.
+
+    database: true in app.yaml gives the app its own PostgreSQL, and then
+    platform.yaml must give it a replicationPort (replication_port, None if
+    absent; where names that entry); keycloakClient gives it login.
+    """
     path = directory / APP_FILE
-    data = _fields(_yaml(path), path, ('name', 'keycloakClient', 'images', 'endpoints', 'routes'),
-                   ('apiCollection',))
+    data = _fields(_yaml(path), path, ('name', 'images', 'endpoints', 'routes'),
+                   ('database', 'keycloakClient', 'apiCollection'))
+    database = data.get('database', False)
+    if type(database) is not bool:
+        raise ValueError(f'{path}: database: must be true or false, not {database!r}')
+    if database and replication_port is None:
+        raise ValueError(f'{where}: replicationPort is required: {path} says database: true')
+    if not database and replication_port is not None:
+        raise ValueError(f'{where}: replicationPort is only for an app with a database, and {path} has none')
     endpoints = _endpoints(data['endpoints'], path)
     return apps.App(name=_text(data['name'], f'{path}: name', NAME), hostname=hostname,
-                    keycloak_client=_text(data['keycloakClient'], f'{path}: keycloakClient', WORD),
-                    replication_port=replication_port,
+                    keycloak_client=_text(data['keycloakClient'], f'{path}: keycloakClient', WORD)
+                    if 'keycloakClient' in data else '',
+                    has_database=database, replication_port=replication_port or 0,
                     api_collection=_text(data['apiCollection'], f'{path}: apiCollection', WORD)
                     if 'apiCollection' in data else '',
                     images=_images(data['images'], path, root), endpoints=endpoints,
@@ -201,12 +214,13 @@ def load(path, environment='prod'):
                          log_level=_text(settings['logLevel'], f'{path}: logLevel'))
     if not isinstance(data['apps'], list) or not data['apps']:
         raise ValueError(f'{path}: apps must be a list of at least one app')
-    entries = [_fields(entry, f'{path}: apps[{index}]', ('path', 'hostname', 'replicationPort'))
+    entries = [_fields(entry, f'{path}: apps[{index}]', ('path', 'hostname'), ('replicationPort',))
                for index, entry in enumerate(data['apps'])]
     app_list = tuple(_app(path.parent / _text(entry['path'], f'{path}: apps[{index}].path'),
                           _hostname(entry['hostname'], f'{path}: apps[{index}].hostname'),
-                          _port(entry['replicationPort'], f'{path}: apps[{index}].replicationPort', 1024),
-                          path.parent)
+                          _port(entry['replicationPort'], f'{path}: apps[{index}].replicationPort', 1024)
+                          if 'replicationPort' in entry else None,
+                          path.parent, f'{path}: apps[{index}]')
                      for index, entry in enumerate(entries))
     _require_distinct(path, entries, app_list)
     identity = _hostname(data['identityHostname'], f'{path}: identityHostname')
@@ -220,21 +234,26 @@ def load(path, environment='prod'):
 def _require_distinct(path, entries, app_list):
     """No two apps share a name, client, hostname or replication port; Keycloak's database port is taken.
 
-    The message names the YAML field and the apps (by their app.yaml), so
-    the fix needs no Python. apps.Platform checks the same, for JSON.
+    Clients count only for apps with login, ports only for apps with a
+    database. The message names the YAML field and the apps (by their
+    app.yaml), so the fix needs no Python. apps.Platform checks the same,
+    for JSON.
     """
     sources = [f'{entry["path"]}/{APP_FILE}' for entry in entries]
-    for field, attribute in (('name', 'name'), ('keycloakClient', 'keycloak_client'),
-                             ('hostname', 'hostname'), ('replicationPort', 'replication_port')):
+    for field, attribute, needed in (('name', 'name', None), ('keycloakClient', 'keycloak_client', 'has_login'),
+                                     ('hostname', 'hostname', None),
+                                     ('replicationPort', 'replication_port', 'has_database')):
         seen = {}
         for source, app in zip(sources, app_list):
+            if needed and not getattr(app, needed):
+                continue
             value = getattr(app, attribute)
             if value in seen:
                 raise ValueError(f'{path}: the apps {seen[value]} and {source} share {field} {value!r}')
             seen[value] = source
     keycloak = apps.KEYCLOAK_DATABASE.replication_port
     for source, app in zip(sources, app_list):
-        if app.replication_port == keycloak:
+        if app.has_database and app.replication_port == keycloak:
             raise ValueError(f'{path}: the app {source} has replicationPort {keycloak}, '
                              "which is Keycloak's database's")
 

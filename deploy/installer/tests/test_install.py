@@ -127,6 +127,27 @@ class InstallTests(unittest.TestCase):
             stopped = {a[3] for a in host.ran('systemctl', '--user', 'stop')}
             self.assertEqual(stopped, {'todo-app.service'})
 
+    def test_without_login_keycloak_is_neither_installed_nor_started(self):
+        wiki = apps.App(name='wiki', hostname='wiki.test', replication_port=5441,
+                        images=(apps.AppImage(name='backend', context='.'), apps.AppImage(name='frontend', context='.')))
+        platform = apps.Platform(apps=(wiki,), identity_hostname='auth.test')
+        installed, started, roles = [], [], []
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(install.workloads, 'install_postgres',
+                             lambda *a, database, target: installed.append(database.container)), \
+                patch.object(install.workloads, 'install_application', lambda *a, app, target: installed.append(app.pod)), \
+                patch.object(install.workloads, 'install_keycloak', lambda *a, target: installed.append('keycloak')), \
+                patch.object(install.workloads, 'install_shared_proxy',
+                             lambda *a, platform, target: installed.append('shared-proxy')), \
+                patch.object(install.quadlet, 'systemctl', lambda *a: started.append(a[1])), \
+                patch.object(install, 'run'), patch.object(install, 'setup_roles', roles.append):
+            install.write_definitions(ROOT, Path(temp), Path(temp), None, platform, '127.0.0.1', 8443, None,
+                                      {'wiki': {'backend': False, 'frontend': False}}, {'proxy': False}, False)
+            install.start_in_order(platform, set())
+        self.assertEqual(installed, ['wiki-postgres', 'wiki-app', 'shared-proxy'])
+        self.assertEqual(started, ['wiki-postgres.service', 'wiki-app.service', 'shared-proxy.service'])
+        self.assertEqual(roles, [wiki, wiki])
+
     def test_source_path_must_be_the_expected_workload_unit(self):
         for source in ('/tmp/todo-app.container', '/tmp/todo-app.kube',
                        '/tmp/platform-kube-runtime/unrelated.kube'):

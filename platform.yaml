@@ -17,7 +17,8 @@ environments:
   prod: {}
 
 # The apps, in start order. path is the app's directory, relative to this
-# file; replicationPort is its database's port for DR replication.
+# file; replicationPort is its database's port for DR replication, given
+# exactly when its app.yaml says database: true.
 apps:
   - path: examples/todo
     hostname: todo.test

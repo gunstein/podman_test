@@ -77,7 +77,7 @@ serve_read_only
 # and the demo CA is gone.
 printf 'smoke test passphrase\n' > "$work_directory/passphrase"
 python3 "$project_root/deploy/scripts/app_ca.py" init --directory "$work_directory/ca" \
-  --domain todo.test --domain notes.test --passphrase-file "$work_directory/passphrase"
+  --domain auth.test --domain todo.test --domain notes.test --passphrase-file "$work_directory/passphrase"
 tls() {
   PYTHONPATH="$project_root/deploy/installer" python3 - "$work_directory" "$volume" "$image" "$@" <<'PY'
 import json
@@ -87,7 +87,7 @@ from pathlib import Path
 from app_installer import tls
 
 work, volume, image, step = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
-where = {'volume': volume, 'image': image, 'hostnames': ['todo.test', 'notes.test']}
+where = {'volume': volume, 'image': image, 'hostnames': ['auth.test', 'todo.test', 'notes.test']}
 if step == 'request':
     print(json.dumps(tls.request(work / 'host.csr', **where)))
 elif step == 'status':
@@ -137,7 +137,7 @@ work, image, prefix, step = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.arg
 apps.PROXY_IMAGE = image
 tls_secrets.FILES = {name: prefix + secret for name, secret in tls_secrets.FILES.items()}
 tls_secrets.KUBE_SECRET = prefix + 'kube-tls'
-names = ['todo.test', 'notes.test']
+names = ['auth.test', 'todo.test', 'notes.test']  # Keycloak's first, as recorded_hostnames gives them
 if step == 'provision':
     print(json.dumps(tls_secrets.provision(names)))
 elif step == 'mounts':

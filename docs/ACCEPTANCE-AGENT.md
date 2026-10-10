@@ -693,6 +693,14 @@ under a block asks for. If it does not match: STOP, even when `step` said PASS.
 
 #### C9.2 Phases 1 and 2 — Clean hosts, build and stage (pre-approved reset)
 
+A readiness check that fails must say what to fix (P2). With a listener of
+its own on port 8080 and a wrong primary hostname, it must exit 1 and end
+with both FAIL lines, the host's section and what holds the port:
+
+```bash
+product 01-0-readiness-refused sh -c 'python3 -m http.server 8080 --bind 127.0.0.1 >/dev/null 2>&1 & listener=$!; sleep 2; python3 deploy/scripts/lab/acceptance_preflight.py --snapshot clean-agent --primary-hostname wrong-name; status=$?; kill $listener; exit $status'   # → "Failed checks, by section:", "[wrong-name (192.168.0.102) over SSH, read-only (running state, not the snapshot)] FAIL  Hostname: todo-primary", "Local port 8080 free (SSH tunnel for test-user provisioning): held by python3"
+```
+
 ```bash
 $A --step 01-1 do proxmox-firewall 107 off     # an earlier run may have left it on
 $A --step 01-2 do proxmox-firewall 108 off
@@ -721,6 +729,26 @@ not a deviation.
 
 ```bash
 vm 03-1-trust 192.168.0.102 'cd ~/todo-offline-m12 && for source in "$PWD"/deploy/installer/app_installer/*.py; do source=$(realpath "$source"); sudo -n fapolicyd-cli --file update "$source" --trust-file app-installer || sudo -n fapolicyd-cli --file add "$source" --trust-file app-installer; done && sudo -n fapolicyd-cli --update'
+```
+
+First an install that `uninstall` must take away completely (V1, V2): the
+Kube secrets' volumes exist while the stack runs; then the remains of an old
+per-container install (`quadlet-reference-v1`) are added, and `uninstall
+--remove-data --remove-backups` must name them and leave no container, pod,
+volume, secret, network, image (but PostgreSQL's and Podman's own pause
+image), Quadlet file or unit of the project:
+
+```bash
+vm 03-1u1-install 192.168.0.102 'cd ~/todo-offline-m12 && sh ./preflight.sh && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": true}
+vm 03-1u2-kube-secret-volumes 192.168.0.102 'podman volume ls --format "{{.Name}}"'   # → "todo-kube-backend-secret", "notes-kube-migrator-secret", "keycloak-kube-postgres-secret", "todo-kube-proxy-tls-secret"
+vm 03-1u3-old-install 192.168.0.102 'cd ~/.config/containers/systemd && printf "[Container]\nImage=localhost/todo-keycloak:m12\nContainerName=todo-keycloak\n" > todo-keycloak.container && printf "[Network]\nNetworkName=todo-network\n" > todo.network && podman tag localhost/keycloak:m12 localhost/todo-keycloak:m12 && podman create --name todo-keycloak localhost/todo-keycloak:m12 && podman network create todo-network && systemctl --user daemon-reload'
+vm 03-1u4-uninstall 192.168.0.102 'cd ~/todo-offline-m12 && PYTHONPATH=deploy/installer python3 -m app_installer uninstall --remove-data --remove-backups'   # → "Removed the old per-container install (quadlet-reference-v1): ", "todo-keycloak.container", "nothing of this install can be restored"
+vm 03-1u5-nothing-left 192.168.0.102 'podman ps -a --format "{{.Names}}"; podman pod ps --format "{{.Name}}"; podman volume ls --format "{{.Name}}"; podman secret ls --format "{{.Name}}"; podman network ls --format "{{.Name}}" | grep -vx podman; podman images --format "{{.Repository}}:{{.Tag}}" | grep -v -e "^docker.io/library/postgres:" -e "^localhost/podman-pause:"; ls -A ~/.config/containers/systemd; systemctl --user list-unit-files --no-legend "todo-*" "notes-*" "keycloak*" "shared-proxy*" "app-network*"; true'   # → nothing
+```
+
+Then the install the rest of the run uses, on the now empty host:
+
+```bash
 vm 03-2-install 192.168.0.102 'cd ~/todo-offline-m12 && sh ./preflight.sh && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": true}
 $A --step 03-3 do firewall-https 192.168.0.102 192.168.0.100
 $A --step 03-4 check services 192.168.0.102 app

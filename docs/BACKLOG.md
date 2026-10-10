@@ -31,9 +31,9 @@ operator, not code; *[decision]* needs the owner's choice before any work.
 
 ## Order
 
-1. Done in code, still to see in the lab: V1 and V2 (an `uninstall` leaves
-   nothing behind; no acceptance run uninstalls) and P2 (a failing readiness
-   check). Owner's steps: Q3 (Dependabot on the default branch), L4 (the
+1. Done in code, and in the acceptance guide since 2026-10-10 (steps
+   `03-1u1` to `03-1u5`, `01-0-readiness-refused`, and the CI check after
+   `dev-down.sh`): V1, V2 and P2, to pass the next run. Owner's steps: Q3 (Dependabot on the default branch), L4 (the
    journal in the clean snapshots, K1) and a review of T3's procedure.
 2. The rest of failover to Trondheim within 30 minutes (see the goal below):
    G4 (the disaster drill in the lab, which also tests T3) and G5
@@ -57,8 +57,8 @@ between sites, and replication across it uses TLS.
 
 ## Secrets and leftovers on disk
 
-- **V1. Kube secret volumes that outlive their secrets.** *[done; no acceptance
-  run exercises it yet]* Found 2026-10-09 with Podman 4.9 while nginx's TLS files moved
+- **V1. Kube secret volumes that outlive their secrets.** *[done; in acceptance
+  from the next run]* Found 2026-10-09 with Podman 4.9 while nginx's TLS files moved
   to Podman secrets: `podman kube play` writes the files of every `secret:`
   volume, passwords included, into a named volume called after the Kube
   secret, rewrites it at every play, and keeps it after `kube down` and
@@ -70,8 +70,8 @@ between sites, and replication across it uses TLS.
   live. Still to see on the lab's Podman 5.8: `podman volume ls` lists the
   `*-kube-*-secret` volumes while the stack runs and none after `uninstall`.
 
-- **V2. One uninstall that leaves nothing behind.** *[done; no acceptance
-  run exercises it yet]* Found 2026-10-09 on the acceptance client: an old
+- **V2. One uninstall that leaves nothing behind.** *[done; in acceptance
+  from the next run]* Found 2026-10-09 on the acceptance client: an old
   per-container install from `quadlet-reference-v1` started at every login
   and held port 8080, and `uninstall --remove-data` removed only part of it.
   Done 2026-10-09, from the lists of the retired playbook
@@ -601,7 +601,7 @@ limited to 1.2 and 1.3.
   the Proxmox paths in `acceptance.py`, phases 1, 5, 6 and 9 and
   PROXMOX-QUARANTINE.md.
 
-- **P2. A readiness stop shows its FAIL lines.** *[done; no acceptance run exercises it yet]*
+- **P2. A readiness stop shows its FAIL lines.** *[done; in acceptance from the next run]*
   Done 2026-10-09: the readiness check ends with `Failed checks, by section:`,
   every FAIL with its `== ...` heading, so the tail a stop shows holds them;
   a busy port 8080 names its process and pid (`ss`), for `rootlessport` the

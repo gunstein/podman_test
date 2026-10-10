@@ -14,8 +14,8 @@ state or authorization. A NEW run evaluates its own clean revision. Use
 [Proxmox quarantine](PROXMOX-QUARANTINE.md) supplies the specialized
 infrastructure procedure. The lab runs it in one of two ways, with the same
 steps and the same report: a person runs one command,
-[`acceptance.py run`](ACCEPTANCE-HUMAN.md) (about 35 minutes, two sudo
-prompts), or an agent follows [ACCEPTANCE-AGENT.md](ACCEPTANCE-AGENT.md) for
+[`acceptance.py run`](ACCEPTANCE-HUMAN.md) (about 35 minutes, one sudo
+prompt), or an agent follows [ACCEPTANCE-AGENT.md](ACCEPTANCE-AGENT.md) for
 Proxmox API, sudo, secret and evidence handling. The pages under [deploy/dr](../deploy/dr/README.md#the-workflows)
 describe each operation's contract, not another acceptance sequence. Ansible is
 retired; runs before `f1f07b5` used its playbooks.
@@ -199,7 +199,7 @@ replicated pair requires a separate maintenance plan.
 
 - **Where:** Client/build host for approval and topology; Proxmox node Shell for manual reset; both guests for checks.
 - **Preconditions:** Explicit NEW/reset approval, identified disposable VMs and exact clean snapshots. CONTINUATION starts at its verified pending phase, not here.
-- **PASS:** Distinct expected identities, enforcing security, rootless runtime and clean Todo baseline.
+- **PASS:** Distinct expected identities, enforcing security, rootless runtime and clean Todo baseline; a readiness check made to fail (a wrong hostname, port 8080 held) exits 1 and names each FAIL, its host and what holds the port.
 - **Evidence:** Reset approval, VM/snapshot IDs, addresses, security and empty-state output.
 - **STOP if:** Wrong identity, leftover Todo state, uncertain reset scope or unexpected external firewall state.
 
@@ -302,7 +302,7 @@ Stop if an extracted package and its archive identify different revisions.
 
 - **Where:** Initial primary via SSH; client/build host for trust and browser tests; Proxmox node Shell for reboot.
 - **Preconditions:** Phase 2 passed; initial primary identity confirmed; client source IP known.
-- **PASS:** Healthy app/identity/database, trusted HTTPS and real authenticated browser flow; marker/CA survive reboot; the nightly backup and a restore from it work; repeat preserves definitions, credentials and running containers.
+- **PASS:** A first install, with the remains of an old per-container install added, is taken away by `uninstall --remove-data --remove-backups`, which names those remains and leaves no container, pod, volume (the Kube secrets' copies included), secret, network, image but PostgreSQL's, Quadlet file or unit of the project; then healthy app/identity/database, trusted HTTPS and real authenticated browser flow; marker/CA survive reboot; the nightly backup and a restore from it work; repeat preserves definitions, credentials and running containers.
 - **Evidence:** Installer results, browser results with no skips or TLS bypass, Todo ID/title, CA fingerprint and boot IDs.
 - **STOP if:** Skipped login test, TLS error, missing marker, failed services or non-idempotent repeat.
 

@@ -213,6 +213,20 @@ jobs:
         if: always()
         run: deploy/scripts/dev/dev-down.sh
 
+      # V1: kube play copies each mounted Kube secret, passwords and nginx's key,
+      # into a volume called after it; dev-down must leave no pod and none of
+      # those volumes (the data volumes stay, by design).
+      - name: dev-down leaves no pod and no Kube secret volume
+        run: |
+          set -euo pipefail
+          podman volume ls --format '{{.Name}}'
+          test -z "$(podman pod ps --quiet)"
+          if podman volume ls --format '{{.Name}}' | grep -E -- '-kube-.*-secret$'; then
+            echo "Kube secret volumes are left after dev-down" >&2
+            exit 1
+          fi
+          podman volume ls --format '{{.Name}}' | grep -Fx todo-postgres-data
+
 
   keycloak-pfx-spike:
     # BACKLOG X1 step 2, before any installer work: Keycloak signs a realm's

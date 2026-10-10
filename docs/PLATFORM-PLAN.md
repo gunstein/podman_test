@@ -374,7 +374,7 @@ updated. Understandability check: not needed, no installer or DR code
 changed; the three new tests each explain in their docstring why they fail
 and what to do.
 
-**Phase 1, code done; acceptance run pending.**
+**Phase 1, done: accepted with phase 2 in run 2026-10-10-run-50.**
 - 1a: every shared `todo-` name is now `platform-` (proxy image, TLS
   secrets and volume, nginx paths, host directories, bundle and operations
   package, DR timers, CA wrapper). The lab's own names (VM names, firewall
@@ -411,7 +411,11 @@ and what to do.
   contract), checksum and shell preflight run only in `install.sh`, and
   the proxy entrypoint tests need a writable `/tmp`.
 
-**Phase 2, code done; acceptance run pending (together with phase 1).**
+**Phase 2, done: accepted in run 2026-10-10-run-50 on `425f6b3`**
+([record](history/ACCEPTANCE-425f6b3.md)). The lab found two things the
+tests had not: the quarantine helper's own Python still imported a removed
+name (its test faked `python3`; now a test runs it), and the preflight port
+probe failed on TIME_WAIT right after an uninstall (`SO_REUSEADDR` now).
 - `apps.Platform` (apps in start order, Keycloak's default hostname) answers
   the DR group, workloads and services; `apps.registry()` is the only list
   of apps in the code, used by build and dev mode, `replication-apps`, the

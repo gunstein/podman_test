@@ -10,9 +10,10 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `8ef9e83` for the seven-pod, three-database
+**Current verdict: CLEAN PASS** on `425f6b3` (`feature/platform`, platform
+phases 1 and 2) for the seven-pod, three-database
 topology in a full two-VM run without an agent (`acceptance.py run`,
-[record](docs/history/ACCEPTANCE-8ef9e83.md)),
+[record](docs/history/ACCEPTANCE-425f6b3.md)),
 with nginx's TLS files as Podman secrets (local mode), replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 121 steps PASS
@@ -39,11 +40,21 @@ CI also runs the Todo API as `todo_app` and the whole stack with the browser
 tests on Podman 5.7. The single-host installer (`deploy/installer`) and DR
 (`deploy/dr`) are separate in the tree; the code clean-up since `24b32ee` (R5,
 S2, S3, an earlier S5) was accepted in run 27, the new S5's phase 1 in run
-2026-10-09-run-3 and phase 2 in run 2026-10-10-run-1.
+2026-10-09-run-3 and phase 2 in run 2026-10-10-run-1. The platform work
+(docs/PLATFORM-PLAN.md) was accepted through phase 2 in run 2026-10-10-run-50:
+shared `platform-` names, Keycloak on its own hostname (`auth.test`), and one
+`Platform` per installation, carried in `bundle.json` and recorded on each host.
 Final topology: VM 108 primary with application and backup, VM 107
 database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
+
+- `425f6b3` run 2026-10-10-run-50: CLEAN PASS
+  ([record](docs/history/ACCEPTANCE-425f6b3.md)), accepting platform phases 1
+  and 2: 121 steps, failover 3 min 33 s, the whole run 35 min 39 s, no
+  deviations. Runs 47 and 48 before it stopped at `03-2` (the preflight port
+  probe and TIME_WAIT, fixed by `b8469cd`), run 49 at `05-6` (the quarantine
+  helper's import, fixed by `425f6b3`).
 
 - `8ef9e83` run 2026-10-10-run-1: CLEAN PASS
   ([record](docs/history/ACCEPTANCE-8ef9e83.md)), accepting S5 phase 2, the

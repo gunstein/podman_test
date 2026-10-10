@@ -1,0 +1,22 @@
+# The app developer's file: what the Help app is (docs/PLATFORM-PLAN.md,
+# section 5.1). Help is static: plain HTML served by nginx, with no database
+# and no login, so the platform runs neither PostgreSQL nor Keycloak for it.
+
+name: help
+# The image it builds (section 5.2): localhost/help-site, from this directory.
+images:
+  site:
+    context: .
+# The port in its pod that nginx sends requests to (section 5.3).
+endpoints:
+  site:
+    port: 8080
+# Every path on its own hostname goes to its nginx.
+routes:
+  - path: /
+    to: site
+# Ready when its start page answers, and checked the same way.
+ready: /
+checks:
+  - path: /
+    status: 200

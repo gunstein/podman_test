@@ -134,11 +134,12 @@ def install_postgres(project_root, quadlet_dir, kube_runtime_dir, rendered_manif
 
 def install_application(project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir, *,
                         app: apps.App, target=None):
-    """Install one app's pod (migration, backend and frontend)."""
+    """Install one app's pod, and its Kube secrets if it has a database."""
     return _install(
         project_root, quadlet_dir, kube_runtime_dir, rendered_manifest_dir,
         manifests=(app.manifest, app.config_manifest), obsolete=(),
-        capability="application", mapping=secrets.application_secret_mapping(app),
+        capability="application",
+        mapping=secrets.application_secret_mapping(app) if app.has_database else {},
         variables=app_variables(app), target=target,
     )
 

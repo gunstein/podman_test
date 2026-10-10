@@ -1,0 +1,10 @@
+# Help's static pages, served by an unprivileged nginx on port 8080.
+FROM docker.io/library/nginx:1.30.4-alpine
+
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY html/ /usr/share/nginx/html/
+
+USER nginx
+EXPOSE 8080
+
+CMD ["nginx", "-g", "daemon off;"]

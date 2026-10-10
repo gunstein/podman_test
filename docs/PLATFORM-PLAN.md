@@ -89,7 +89,7 @@ the phase.
 
 ## 4. One resolved model
 
-Where it stands after phase 4f-1: `apps.Platform` has two fields, the apps in
+Where it stands after phase 4f-2: `apps.Platform` has two fields, the apps in
 start order and Keycloak's default hostname, and derives the rest (the DR
 group, workloads, services, and `database_apps`, `login_apps` and
 `has_identity`, so PostgreSQL and Keycloak run only when an app needs
@@ -301,9 +301,9 @@ privilege stays per table, and the app no longer ships role code.
   container; only the app's own secrets and ConfigMap, and otherwise only
   `emptyDir` volumes (an app's data is in PostgreSQL, 5.6); and a container
   port for each endpoint. A build install renders and checks before the
-  host records anything. Not yet: the variables an app without a database
-  or login gets (4f-2), `hostPath` and others by name (they are refused as
-  not one of the allowed kinds), and resource limits other than memory.
+  host records anything. An app without a database or login gets the same
+  variables; its ConfigMap holds only `LOG_LEVEL` (phase 4f-2). Not yet:
+  resource limits other than memory.
 
 ### 5.10 Dependencies by host role
 
@@ -813,4 +813,23 @@ start order (`requires`) comes with the generated units in 4d.
 - Every rendered Kube YAML file is byte for byte as before; `bundle.json`
   carries `pod_template` (format version 11), the only change in the render
   baseline.
+
+**Phase 4f-2, code done; acceptance run with phase 4f-3.**
+- `examples/help` is the static example app: one unprivileged nginx serving
+  plain HTML (`html/`), its own `Containerfile` and `pod.yaml.j2`, one
+  endpoint and the route `/`, `ready: /` and a check of `/`. No database,
+  no login, so no secret and no setup.
+- An app without a database or login now installs: its ConfigMap holds only
+  `LOG_LEVEL` (`app-config.yaml.j2` adds the database's and OIDC settings
+  only for an app with them), it gets no Kube secrets, and a change of any
+  of its images restarts it (not only `backend` and `frontend`). The early
+  refusal of such apps is gone.
+- Tested with a platform of Help alone: its bundle is built, and the
+  offline install runs only `help-app` and `shared-proxy`, no PostgreSQL,
+  no Keycloak and no role setup, creates only nginx's TLS secrets, and
+  checks Help's `/` through nginx. Todo and Notes render as before; the
+  render baseline is unchanged.
+- Not yet (4f-3): Help in this checkout's `platform.yaml` beside Todo and
+  Notes, its image in CI and the bundle, `rewrite` and the header policy,
+  and a lab run.
 

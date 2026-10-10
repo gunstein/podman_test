@@ -22,27 +22,13 @@ def hostnames(platform):
     return {app.name: app.hostname for app in platform.apps}
 
 
-def require_database_and_login(platform):
-    """Raise unless every app of platform has a database and login, which an install still needs.
-
-    The Kube secrets, the role setup and the app's ConfigMap assume both
-    until phase 4f-2 makes them optional there too.
-    """
-    for app in platform.apps:
-        if not (app.has_database and app.has_login):
-            raise ValueError(f'The app {app.name} needs database: true and a keycloakClient: installing an app '
-                             'without them comes with phase 4f-2')
-
-
 def require_supported(project_root, platform):
     """Raise unless every workload of platform can be rendered, naming what is missing.
 
-    Every app needs a database and login (require_database_and_login), and
-    each workload's unit template must exist; each app's pod template is
+    Each workload's unit template must exist; each app's pod template is
     checked once it is rendered (pod_contract). install.check and bundle.build
     call this before anything is written.
     """
-    require_database_and_login(platform)
     for workload in platform.workloads():
         if not (Path(project_root) / 'deploy/quadlet' / (workload.template + '.j2')).is_file():
             raise ValueError(f'{workload.pod} needs the unit template deploy/quadlet/{workload.template}.j2')
@@ -57,13 +43,15 @@ def files(project_root, platform, hostnames, identity_hostname, port, log_level)
     the files are otherwise the same.
     """
     root = Path(project_root)
-    require_database_and_login(platform)
     hostname = identity_hostname
     result = {}
     for app in platform.apps:
-        result[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
-        result[app.config_manifest] = (manifests.render_postgres_config(root, app.database) + b'---\n'
-                                       + manifests.render_app_config(root, app, hostname, port, log_level))
+        # An app's ConfigMap file: its database's settings, if it has one, then its own.
+        config = manifests.render_app_config(root, app, hostname, port, log_level)
+        if app.has_database:
+            result[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
+            config = manifests.render_postgres_config(root, app.database) + b'---\n' + config
+        result[app.config_manifest] = config
         result[app.manifest] = manifests.render_app(root, app)
         _validate(app.manifest, result[app.manifest])
         pod_contract.check(app, result[app.manifest])

@@ -77,7 +77,8 @@ def render_app(project_root, app):
 
 
 def render_app_config(project_root, app, hostname, port, log_level):
-    """The ConfigMap the app's backend and frontend read (hostname, port, OIDC settings)."""
+    """The app's ConfigMap (app.names.resource("backend-config")): its log level, and its database's
+    and OIDC settings if it has a database and login."""
     return _render(project_root, "app-config.yaml.j2", app=app,
                    hostname=hostname, port=port, log_level=log_level)
 

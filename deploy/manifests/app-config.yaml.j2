@@ -3,10 +3,14 @@ kind: ConfigMap
 metadata:
   name: {{ app.names.resource("backend-config") | tojson }}
 data:
+{% if app.has_database %}
   DATABASE_HOST: {{ app.database.container | tojson }}
   DATABASE_PORT: "5432"
   DATABASE_NAME: {{ app.name | tojson }}
+{% endif %}
   LOG_LEVEL: {{ log_level | tojson }}
+{% if app.has_login %}
   OIDC_ISSUER: {{ ("https://" + hostname + ":" + port|string + "/auth/realms/todo") | tojson }}
   OIDC_JWKS_URL: http://keycloak:8080/auth/realms/todo/protocol/openid-connect/certs
   OIDC_AUDIENCE: {{ app.keycloak_client | tojson }}
+{% endif %}

@@ -183,7 +183,7 @@ class PlatformTests(unittest.TestCase):
             checkout().app("shop")
 
     def test_postgres_and_keycloak_run_only_when_an_app_needs_them(self):
-        from app_installer import install, render, secrets, workloads
+        from app_installer import install, secrets, workloads
         shop = self.shop().apps[0]
         help_ = App(name="help", hostname="help.example.org", has_database=False, replication_port=0)
         wiki = App(name="wiki", hostname="wiki.example.org", replication_port=5441)
@@ -217,10 +217,6 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(workloads.proxy_variables("127.0.0.1", 8443, static)["workload"].requires,
                          ("help-app.service",))
         self.assertEqual(Platform.from_json(json.loads(json.dumps(static.to_json()))), static)
-        # The one shared app pod template needs both, until an app brings its own (phase 4f).
-        with self.assertRaisesRegex(ValueError, "help needs database: true and a keycloakClient"):
-            render.files(Path(__file__).resolve().parents[3], static, {"help": "help.example.org"},
-                         "login.example.org", 8443, "info")
 
     def test_apps_without_login_or_a_database_need_no_client_or_port_of_their_own(self):
         apps = tuple(App(name=name, hostname=f"{name}.test", has_database=False, replication_port=0)

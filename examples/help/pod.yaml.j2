@@ -1,0 +1,32 @@
+{# Help's pod (docs/PLATFORM-PLAN.md, section 5.9): one unprivileged nginx
+   serving its static pages. The platform renders it with app and images and
+   checks it (pod_contract.py). No database and no login, so no secret and no
+   ConfigMap. #}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ app.pod | tojson }}
+  labels:
+    app.kubernetes.io/name: {{ app.name | tojson }}
+    app.kubernetes.io/component: application
+  annotations:
+    io.podman.annotations.pids-limit/{{ app.names.resource("site") }}: "128"
+spec:
+{# systemd restarts the unit, never Podman a single container. #}
+  restartPolicy: Never
+  containers:
+    - name: {{ app.names.resource("site") | tojson }}
+      image: {{ images.site | tojson }}
+      imagePullPolicy: Never
+      ports:
+        - name: site-http
+          containerPort: 8080
+      resources:
+        limits:
+          memory: "64Mi"
+      securityContext:
+        runAsUser: 101
+        runAsGroup: 101
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]

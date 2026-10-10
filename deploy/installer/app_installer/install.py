@@ -255,8 +255,7 @@ def write_definitions(root, directory, runtime, rendered, platform, publish_addr
         application_changed = workloads.install_application(*arguments, app=app, target=target)
         changed = application_changed or changed
         config_changed = _contents(runtime / app.config_manifest) != configs_before[app.name]
-        if (application_changed or config_changed or image_changes[app.name]['backend']
-                or image_changes[app.name]['frontend']):
+        if application_changed or config_changed or any(image_changes[app.name].values()):
             restart.add(app.pod)
     if platform.has_identity:
         keycloak_database_changed = workloads.install_postgres(*arguments, database=apps.KEYCLOAK_DATABASE,

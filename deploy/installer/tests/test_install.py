@@ -151,16 +151,52 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(started, ['wiki-postgres.service', 'wiki-app.service', 'shared-proxy.service'])
         self.assertEqual(roles, [wiki, wiki])
 
-    def test_an_app_that_cannot_be_installed_yet_is_refused_before_the_host_records_it(self):
-        help_ = apps.App(name='help', hostname='help.test', has_database=False, replication_port=0)
+    def test_a_pod_that_breaks_the_rules_is_refused_before_the_host_records_it(self):
+        # Help's pod has no container port 9000, so this endpoint breaks the pod contract.
+        help_ = apps.App(name='help', hostname='help.test', has_database=False, replication_port=0,
+                         images=(apps.AppImage(name='site', context='examples/help'),),
+                         endpoints=(apps.Endpoint(name='site', port=9000),),
+                         routes=(apps.Route(path='/', to='site'),), pod_template='examples/help/pod.yaml.j2')
         for platform, message in (
-                (apps.Platform(apps=(help_,), identity_hostname='auth.test'), 'help needs database: true'),):
+                (apps.Platform(apps=(help_,), identity_hostname='auth.test'), 'no container port 9000'),):
             with self.subTest(message=message), tempfile.TemporaryDirectory() as temp, \
                     FakeHost(unit_directory=Path(temp) / 'quadlet/platform-kube-runtime') as host:
                 with self.assertRaisesRegex(ValueError, message):
                     install.install(ROOT, quadlet_dir=Path(temp) / 'quadlet', platform=platform)
-                self.assertEqual(host.calls, [])
+                # Only read-only checks of Podman ran.
+                self.assertTrue(all(call in (['podman', 'kube', 'play', '--help'], ['podman', '--version'])
+                                    for call in host.calls), host.calls)
                 self.assertEqual(json.loads(host.platform_record.read_text()), host.platform.to_json())
+
+    def test_a_static_app_alone_installs_without_postgres_or_keycloak(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            project = root / 'project'
+            for part in ('examples', 'deploy/manifests', 'deploy/quadlet'):
+                shutil.copytree(ROOT / part, project / part)
+            (project / 'platform.yaml').write_text(
+                'identityHostname: auth.test\npublicPort: 8443\nlogLevel: info\n'
+                'environments: {local: {}, prod: {}}\n'
+                'apps:\n  - path: examples/help\n    hostname: help.test\n')
+            from app_installer import bundle
+            data = bundle.build(project, 'prod', root / 'bundle')
+            platform = apps.Platform.from_json(data['platform'])
+            self.assertEqual([(w.pod, w.requires) for w in platform.workloads()],
+                             [('help-app', ()), ('shared-proxy', ('help-app.service',))])
+            directory = root / 'quadlet'
+            runtime = directory / 'platform-kube-runtime'
+            with FakeHost(unit_directory=runtime, platform=platform) as host, \
+                    patch.object(keycloak, 'configure') as configure:
+                self.assertTrue(install.install(ROOT, mode='server', deployment_mode='offline',
+                                                bundle_directory=root / 'bundle', quadlet_dir=directory))
+            configure.assert_not_called()
+            self.assertEqual(sorted(path.name for path in runtime.glob('*.kube')), ['help-app.kube', 'shared-proxy.kube'])
+            self.assertEqual(host.requests, [('help.test', '/'), ('help.test', '/')])
+            self.assertFalse([call for call in host.calls if 'backend.setup_roles' in call or call[:2] == ['podman', 'wait']])
+            # Only nginx's TLS secrets: no database password, no Keycloak admin.
+            self.assertTrue(all(call[3].startswith('platform-') for call in host.ran('podman', 'secret', 'create')))
+            self.assertEqual([call[3] for call in host.ran('systemctl', '--user', 'start')],
+                             ['help-app.service', 'shared-proxy.service'])
 
     def test_source_path_must_be_the_expected_workload_unit(self):
         for source in ('/tmp/todo-app.container', '/tmp/todo-app.kube',

@@ -42,7 +42,8 @@ refuse it).
 ## 2. The token contract of a backend
 
 Each backend (`examples/todo/backend/main.py`, `examples/notes/backend/main.py`,
-`validate_access_token`) checks every write request's bearer token itself;
+`examples/guestbook/backend/main.py`,
+`validate_access_token`) checks every protected request's bearer token itself;
 nginx only routes. It requires:
 
 - a signature by a key from `OIDC_JWKS_URL`, algorithm RS256 only;
@@ -62,8 +63,9 @@ client ID: Keycloak's ID token for the frontend names the client
 which takes the real ID tokens from Keycloak's token endpoint and sends
 them to the API.
 
-Access model: reading is public; any user with a valid token for the app may
-create, change and delete. No row records who wrote it, so the apps' data
+Access model: Todo and Notes allow public reads; Guestbook requires login
+for reads too. Any user with a valid token for the app may use its write
+operations (Guestbook exposes create and delete, not update). No row records who wrote it, so the apps' data
 does not depend on a user's `sub`. An app that records ownership must store
 `sub` (with the issuer), never a username or e-mail, and a provider switch
 then needs a mapping from old to new identities.
@@ -173,7 +175,8 @@ and `getUsername`. The app uses nothing else. The Keycloak adapter:
 - **logout**: Keycloak ends the session and sends the browser back to the
   app's origin.
 
-A new app with login, as a checklist:
+For the complete current schema and pod variables, start with
+[Adding an app](ADDING-AN-APP.md). A new app with login, as a checklist:
 
 - in `app.yaml`, `login.client` and `login.audience`, two words no other app
   uses (the loader refuses a clash), and the app's entry in `platform.yaml`;
@@ -222,14 +225,16 @@ outside it. Then, in this order, with a test at each step:
 
 ## 8. Tests that guard login
 
-- `examples/todo/backend/unit_tests/test_auth.py`, `examples/notes/backend/unit_tests/test_notes_auth.py`:
+- `examples/todo/backend/unit_tests/test_auth.py`, `examples/notes/backend/unit_tests/test_notes_auth.py`,
+  `examples/guestbook/backend/unit_tests/test_guestbook_auth.py`:
   the token checks without a database (wrong issuer, audience, expiry,
   signature, algorithm, a missing claim, another app's token, an ID token,
   no configured audience).
 - `e2e/test_auth_adapter.py`: the adapter contract against a fake SDK.
 - `e2e/test_todo_flow.py`, `e2e/test_notes_flow.py`, `e2e/test_multi_app.py`:
   real browser login, SSO between the apps, each access token's API
-  audience, a Todo token refused by Notes and the real ID tokens refused.
+  audience, a Todo token refused by Notes and Guestbook, and real ID tokens
+  refused (including Guestbook's own ID token).
 - `deploy/installer/tests/test_install.py`, `test_keycloak_http.py`:
   a client made from the defaults, an existing one corrected (owned fields,
   PKCE, audience mappers) keeping the rest, one already right left alone,

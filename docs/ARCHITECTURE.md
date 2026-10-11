@@ -1,6 +1,6 @@
 # System architecture
 
-This is the architectural overview of the current Todo and Notes demo: what runs,
+This is the architectural overview of the current Todo, Notes, Guestbook and Help demo: what runs,
 which boundary owns each responsibility, and why. It describes the
 implementation, not an aspirational production platform.
 
@@ -38,14 +38,15 @@ shared nginx proxy ── /api/, /health, /ready ──► FastAPI ──► Pos
 ```
 
 The shared nginx proxy selects the application by hostname: `todo.test`,
-`notes.test` or `help.test`. Todo and Notes route `/` to their HTTP-only
+`notes.test`, `guestbook.test` or `help.test`. Todo, Notes and Guestbook route `/` to their HTTP-only
 frontend and `/api/`, `/health`, `/ready` to their own FastAPI backend; Help
 routes everything to its static nginx. Each app's `app.yaml` declares this
-(`endpoints` and `routes`; nginx is rendered from them). Todo and Notes, the
+(`endpoints` and `routes`; nginx is rendered from them). Todo, Notes and Guestbook, the
 apps with login, expose shared Keycloak at `/auth/`, which belongs to the
 platform; Help has no login and no `/auth/`. Keycloak has a hostname of its own, `auth.test`, nginx's default
 server, which serves only `/auth/`: a request without a known `Host` header
-reaches Keycloak, never an app. Reads are public; writes require a valid app-specific access token.
+reaches Keycloak, never an app. Todo and Notes allow public reads; Guestbook requires a valid app-specific
+access token for reads as well as writes.
 Rows are shared rather than owned per user.
 Each app has independent PostgreSQL data, bootstrap, migration and runtime
 identities. Keycloak has its own PostgreSQL pod, `keycloak-postgres`; shared
@@ -53,8 +54,8 @@ login therefore depends on that database, not on Todo's.
 
 Clients reach the profile's HTTPS hostname rather than a pod address.
 Both local and production profiles use `https://auth.test:8443`,
-`https://todo.test:8443` and `https://notes.test:8443`. One SAN certificate
-covers the three hostnames. Map all three names to the serving host; direct
+`https://todo.test:8443`, `https://notes.test:8443`, `https://guestbook.test:8443`
+and `https://help.test:8443`. One SAN certificate covers the five hostnames. Map all five names to the serving host; direct
 development uses 127.0.0.1. `platform.yaml` sets Keycloak's hostname
 (`identityHostname`), each application's hostname and, per environment, the
 port.
@@ -76,6 +77,12 @@ One service user's rootless Podman network: app-network
   │     ├── notes-migrate (init: schema migration)
   │     ├── notes-backend (FastAPI)
   │     └── notes-frontend (HTTP static assets)
+  ├── guestbook-app pod
+  │     ├── guestbook-migrate (init: schema migration)
+  │     ├── guestbook-backend (FastAPI)
+  │     └── guestbook-frontend (HTTP static assets)
+  ├── guestbook-postgres pod
+  │     └── guestbook-postgres
   ├── help-app pod (no database, no login)
   │     └── help-site (static pages)
   ├── notes-postgres pod
@@ -99,10 +106,11 @@ replace database or identity state. A rebuilt standby runs only PostgreSQL.
 The definitions are rendered from the Jinja2 templates in
 `deploy/manifests/*.yaml.j2` and `deploy/quadlet/*.kube.j2`: on the build host
 into the packages' `generated/target/`, or by build mode into
-`generated/kube-runtime/`. Each of the eight pods has
+`generated/kube-runtime/`. Each of the ten pods has
 one `.kube` unit and generated user service:
 `shared-proxy.service`, `todo-app.service`, `notes-app.service`, `help-app.service`,
 `keycloak.service`, `todo-postgres.service`, `notes-postgres.service`,
+`guestbook-app.service`, `guestbook-postgres.service`,
 `keycloak-postgres.service`. `Platform.workloads()` (`apps.py`) is the one table of them,
 in start order (each database, Keycloak's database, Keycloak, the apps,
 nginx), with each pod's Kube YAML and ConfigMap files. An app has a database
@@ -233,14 +241,14 @@ the roles and grants are in the replicated database.
 | Flow | Address boundary | Purpose |
 |---|---|---|
 | Browser → nginx | Published host HTTPS endpoint | Assets, API and identity proxy |
-| nginx → frontend | todo-app:8080, notes-app:8080 or help-app:8080 on rootless network | Static assets |
-| nginx → backend | todo-app:8000 or notes-app:8000 on rootless network | API, health and readiness |
+| nginx → frontend | todo-app:8080, notes-app:8080, guestbook-app:8080 or help-app:8080 on rootless network | Static assets |
+| nginx → backend | todo-app:8000, notes-app:8000 or guestbook-app:8000 on rootless network | API, health and readiness |
 | nginx → Keycloak | keycloak:8080 on rootless network | OIDC browser endpoints under /auth |
 | Backend → PostgreSQL | Its own app-postgres:5432 | Application queries with restricted DB role |
 | Migrator → PostgreSQL | Its own app-postgres:5432 | Schema changes with migration identity |
 | Keycloak → PostgreSQL | keycloak-postgres:5432 | Identity persistence in its own database |
 | Backend → Keycloak | Internal configured JWKS endpoint | Signing-key retrieval for JWT validation |
-| Standby → current primary | Explicit host TCP5432 (todo), 5433 (notes), 5434 (keycloak) publication | Physical replication, one stream per database |
+| Standby → current primary | Explicit host TCP5432 (todo), 5433 (notes), 5434 (keycloak), 5435 (guestbook) publication | Physical replication, one stream per database |
 
 The network resource is declared in `app-network.network`; its runtime name is
 `app-network`. Loopback is shared only within a pod. Cross-pod communication
@@ -313,7 +321,7 @@ Standby bootstrap and approved reseed play only the data PVC extracted from the
 package's PostgreSQL YAML of each database before `pg_basebackup`;
 they do not start PostgreSQL against an empty directory. Bootstrap still refuses
 existing data; reseed still requires all fencing and confirmation gates before
-deleting only the three `<database>-postgres-data` volumes. The existing helper ownership/SELinux handoff is preserved.
+deleting only the four `<database>-postgres-data` volumes. The existing helper ownership/SELinux handoff is preserved.
 Backup configuration requires the existing backup volume mounted read-write at
 `/var/lib/postgresql/backup` in active PostgreSQL; helpers still mount it at
 `/backup`. Runtime roles remove obsolete volume Quadlet files from earlier Kube
@@ -363,7 +371,7 @@ Do not disable SELinux or fapolicyd to repair application failures.
 
 ## 10. Availability and disaster recovery
 
-The DR flow covers one group of three databases: Todo, Notes and Keycloak
+The DR flow covers one group of four databases: Todo, Notes, Guestbook and Keycloak
 (`Platform.replicated_databases`). Bootstrap, promotion, backup, rebuild and status
 always act on the complete group; app-ops refuses a partial application
 override. Each database has its own replication port, slot, replication
@@ -376,13 +384,13 @@ an atomic group switch.
 One PostgreSQL server per app is a deliberate choice (decided 2026-09-27,
 instead of one shared server with three databases). Each app keeps its own
 upgrades, restarts, settings, failures and PITR, as the workload boundary in
-section 3 requires. The price is three WAL streams, slots, archives, backups
+section 3 requires. The price is four WAL streams, slots, archives, backups
 and replication ports instead of one, and no single exact moment across the
-group: after a failover or PITR the three databases are close to, but not
+group: after a failover or PITR the four databases are close to, but not
 exactly at, the same point, so a Todo or Notes row can refer to a Keycloak user
 whose creation was lost in the last seconds.
 
-Initially one host serves both applications and a second streams each
+Initially one host serves all applications and a second streams each
 PostgreSQL database's WAL asynchronously. Physical slots retain needed WAL within a configured bound;
 lag and invalidated slots require monitoring: `platform-dr-check.timer` runs
 `app_dr.py check` on both hosts every 15 minutes, which also checks that the
@@ -447,7 +455,7 @@ a time.
 Their job is to run those steps in the right order for the whole group, check
 each result, refuse when a check fails and tell the operator why.
 
-The reasons: the setup is small and fixed (two hosts, three databases, one
+The reasons: the setup is small and fixed (two hosts, four databases, one
 standby, a human decides on failover), and every product would be one more
 piece of third-party code to package, review for security, update and test
 together with Podman on both hosts. The price is that the project owns the

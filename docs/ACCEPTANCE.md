@@ -157,10 +157,10 @@ PYTHONPATH=deploy/installer python3 -c 'from app_installer import platform_file;
 All four databases are one DR group: bootstrap, promotion, backup, rebuild and
 status always act on the complete group, never on one database alone. A
 serving host runs all ten services; a rebuilt standby runs only the four
-PostgreSQL services. Clients use `https://todo.test:8443` and
-`https://notes.test:8443`, and log in at Keycloak's `https://auth.test:8443`;
-the three names map to the serving host and are covered by one SAN
-certificate. The shared issuer is
+PostgreSQL services. Clients use `https://todo.test:8443`,
+`https://notes.test:8443`, `https://guestbook.test:8443` and the static
+`https://help.test:8443`, and log in at Keycloak's `https://auth.test:8443`.
+All five names map to the serving host and are covered by one SAN certificate. The shared issuer is
 `https://auth.test:8443/auth/realms/todo`.
 
 ## Acceptance rules

@@ -1301,3 +1301,43 @@ audience, isolated frontend config, and rejection of anonymous requests,
 Guestbook's real Keycloak ID token and Todo's access token for both reads
 and writes. The same test runs in the lab before and after failover.
 No platform runtime code or render baseline changed.
+
+**Phase 5-4d, code done; the lab step runs in the phase's acceptance run.**
+Step 5-4c passed CI #405 on `fed1440`, including the Guestbook PostgreSQL
+role test and real browser token tests. `docs/ADDING-AN-APP.md`, linked from
+README and IDENTITY, describes today's complete schema, pod variables,
+config/secret mounts, roles, build/check commands and the two test scopes.
+The registered-group table was updated in 5-4a to keep its CI check green.
+
+The third-app author's [notes](../examples/guestbook/AUTHOR-NOTES.md), starting
+at `f635938`, and the integration review at `e918141`: **YELLOW**. The app
+needed no platform implementation change, but tests and author guidance
+needed work. This is the app-author review, not phase 5's final fresh-agent
+understandability check. Findings and disposition:
+
+1. No starting guide: added the short guide, with runnable Guestbook/Help
+   references and the build and verification commands.
+2. Planned versus implemented fields: the guide lists all current fields,
+   defaults and excluded future fields; it is separate from this plan.
+3. Pod variables and settings: the guide names `app`, `images`, resource
+   and secret names, database roles, every ConfigMap key and password-file
+   mounts. It links the complete checked pod template and preserves the
+   frontend's single-key login mount.
+4. Replication port reservation: documented 5434 beside `replicationPort`
+   in platform.yaml and the guide, with all occupied ports. Guestbook's
+   fourth database is in the acceptance table; carrying its row and port
+   through the lab is the next delivery, 5-4e.
+5. Authenticated reads versus anonymous checks: the guide explains an
+   expected 401, a public migrated-table readiness check, and why CI must
+   also prove authenticated CRUD. FakeHost honours that status (5-4a);
+   real browser reads/writes and rejected tokens pass CI (5-4c).
+6. Deletion and ownership: retained the explicit app-local decision that
+   any signed-in user can delete any entry; the guide requires documenting
+   that choice, and IDENTITY now distinguishes Guestbook's private reads.
+7. Tests coupled to the old app set: fixed fixtures in 5-4a; the guide lists
+   the tests that intentionally keep the checkout's app set and explains
+   intended baseline updates. This integration changed no render baseline.
+8. Author environment lacked Podman: recorded as a limit, not proof of a
+   failure. The real full-stack job passed on `e918141`; 5-4c adds green
+   PostgreSQL role, authenticated browser CRUD and token-isolation coverage.
+   Target-host DR remains for phase 5's operator-run acceptance.

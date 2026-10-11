@@ -17,7 +17,9 @@ steps without an agent: [ACCEPTANCE-HUMAN.md](ACCEPTANCE-HUMAN.md)
 If this document and ACCEPTANCE.md disagree on a safety gate, the stricter rule
 wins. If either disagrees with `platform.yaml` and the naming rules in
 `deploy/installer/app_installer/apps.py` on a name, port or service, those
-win and the agent records the drift.
+win and the agent records the drift. The [registered workload table](ACCEPTANCE.md#registered-workload-group)
+includes `guestbook-app.service` and `guestbook-postgres.service`: ten serving
+services and four databases, with Guestbook replication on port 5435.
 
 ---
 

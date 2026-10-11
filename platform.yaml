@@ -18,7 +18,8 @@ environments:
 
 # The apps, in start order. path is the app's directory, relative to this
 # file; replicationPort is its database's port for DR replication, given
-# exactly when its app.yaml says database: true.
+# exactly when its app.yaml says database: true. 5434 is reserved for Keycloak.
+# See docs/ADDING-AN-APP.md for the schema and the matching DR/firewall steps.
 apps:
   - path: examples/todo
     hostname: todo.test

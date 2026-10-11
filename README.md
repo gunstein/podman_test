@@ -8,7 +8,7 @@ The repository demonstrates a complete lifecycle rather than only starting a
 few containers: offline installation, least-privilege database access, HTTPS,
 authentication, physical replication, controlled promotion, application
 failover, backup, point-in-time recovery and restoration of redundancy for Todo,
-Notes and the shared Keycloak database as one DR group. Notes adds independent
+Notes, Guestbook and the shared Keycloak database as one DR group. Notes adds independent
 CRUD/storage and shared SSO. Help is static pages with no database or login.
 
 ## Architecture
@@ -26,10 +26,13 @@ shared nginx proxy ----> shared Keycloak (todo realm) ---> keycloak-postgres
    +--> notes-app ---------> notes-postgres
    |    frontend + backend
    |
+   +--> guestbook-app -----> guestbook-postgres
+   |    frontend + backend
+   |
    +--> help-app
         static pages (nginx)
 
-All three PostgreSQL databases replicate to the standby as one DR group.
+All four PostgreSQL databases replicate to the standby as one DR group.
 ```
 
 - Plain HTML, CSS and JavaScript frontend
@@ -65,9 +68,10 @@ and is no longer part of the active tree.
 |---|---|
 | Grouped application | `examples/todo/pod.yaml.j2` (the app's own pod template); Python renders `todo-app.kube` |
 | Notes app and database | `examples/notes/pod.yaml.j2`, `deploy/manifests/postgres.yaml.j2`; `notes-app.kube`, `notes-postgres.kube` |
+| Guestbook app and database | `examples/guestbook/pod.yaml.j2`; `guestbook-app.kube`, `guestbook-postgres.kube` |
 | Static Help app | `examples/help/pod.yaml.j2`; `help-app.kube`, container `help-site` |
 | Shared identity | `deploy/manifests/keycloak.yaml.j2`; `keycloak.kube` |
-| Persistent databases | `deploy/manifests/postgres.yaml.j2`; `todo-postgres.kube`, `notes-postgres.kube`, `keycloak-postgres.kube` |
+| Persistent databases | `deploy/manifests/postgres.yaml.j2`; `todo-postgres.kube`, `notes-postgres.kube`, `guestbook-postgres.kube`, `keycloak-postgres.kube` |
 | Shared ingress | `deploy/manifests/shared-proxy.yaml.j2`; `shared-proxy.kube`, container `nginx` |
 | Jinja2 manifest templates | [`deploy/manifests/`](deploy/manifests/) |
 | Shared network | [`app-network.network`](deploy/quadlet/app-network.network) |
@@ -119,10 +123,11 @@ Use `--refresh-images` to rebuild/pull images. Direct development uses
 `--mode dev` and `python -m app_installer down`; the existing dev shell scripts
 remain thin wrappers. See [installer usage](deploy/installer/README.md).
 
-Both profiles expose <https://todo.test:8443>, <https://notes.test:8443> and
+Both profiles expose <https://todo.test:8443>, <https://notes.test:8443>,
+<https://guestbook.test:8443> and
 <https://help.test:8443>, and Keycloak on its own hostname, <https://auth.test:8443>.
-Map the four names to the serving host (127.0.0.1 for direct development). nginx
-creates one SAN certificate for the four names from a persistent local demo CA; install only its public root on clients that should trust it. HTTP health checks remain available on
+Map the five names to the serving host (127.0.0.1 for direct development). nginx
+creates one SAN certificate for the five names from a persistent local demo CA; install only its public root on clients that should trust it. HTTP health checks remain available on
 <http://127.0.0.1:8080>.
 
 Inspect the running system:
@@ -131,8 +136,10 @@ Inspect the running system:
 systemctl --user is-active \
   todo-postgres.service \
   notes-postgres.service \
+  guestbook-postgres.service \
   keycloak-postgres.service \
   notes-app.service \
+  guestbook-app.service \
   keycloak.service \
   todo-app.service \
   help-app.service \
@@ -281,6 +288,7 @@ manual lab acceptance test.
 | Operate deployment and recovery | [app-ops operations](deploy/dr/README.md) |
 | Understand SELinux and rootless ownership | [SELinux](docs/SELINUX.md) |
 | Understand runtime credentials | [Secrets](docs/SECRETS.md) |
+| Add an app | [Current app contract and worked example](docs/ADDING-AN-APP.md) |
 | Understand or change login | [Identity](docs/IDENTITY.md) |
 | Understand nginx and certificate trust | [TLS](docs/TLS.md) |
 | Install without network access | [Offline bundle](deploy/offline/README.md) |

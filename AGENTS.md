@@ -25,8 +25,9 @@ Platform work:
 Working routine (for whoever continues the platform work):
 - Where it stands: the phase log at the end of docs/PLATFORM-PLAN.md, newest
   last; PROJECT.md#acceptance for the last accepted revision. Phase 5-2 is
-  accepted; 5-3 (Todo and Notes in examples/<app>/) is done in code; next is
-  5-4, the third app (plan, phase 5).
+  accepted; 5-3 (Todo and Notes in examples/<app>/) and the Guestbook app are
+  done in code. Phase 5-4 integration is in progress; the phase log records
+  each CI gate. Lab acceptance and the fresh understandability check follow.
 - Before every push: ruff check ., pyright, and
   PYTHONPATH=deploy/installer:deploy/dr:tests python3 -m unittest discover -s tests
   (about 850 tests; the name guard counts tracked files only, so git add
@@ -68,16 +69,16 @@ Current architecture and workflow:
   the standard library (target_render.py), on a single host and on DR primary
   and standby alike. An offline target needs only Python, never Helm or Jinja2
   (DR hosts also need PyYAML); only build mode renders on a host.
-- todo-app and notes-app each group migration init, FastAPI and HTTP-only frontend,
+- todo-app, notes-app and guestbook-app each group migration init, FastAPI and HTTP-only frontend,
   and each has its own PostgreSQL pod; help-app is static (one nginx, no
   database, no login). Each app's pod comes from its own
   examples/<app>/pod.yaml.j2 (checked by pod_contract.py); every .kube unit
   from one template per kind in deploy/quadlet. Shared nginx, Keycloak and
-  Keycloak's own keycloak-postgres pod bring the single-host topology to eight
+  Keycloak's own keycloak-postgres pod bring the single-host topology to ten
   pods on rootless app-network. App and Platform in
   deploy/installer/app_installer/apps.py own per-app installer names.
-  DR/backup/rebuild act on one group of three databases (todo, notes,
-  keycloak; Platform.replicated_databases), never on a partial group. The
+  DR/backup/rebuild act on one group of four databases (todo, notes,
+  guestbook, keycloak; Platform.replicated_databases), never on a partial group. The
   Platform comes from bundle.json or the host's record; a build reads it from
   platform.yaml and each app's examples/<app>/app.yaml (platform_file.py).
   There is no list of apps in the code.

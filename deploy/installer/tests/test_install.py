@@ -476,6 +476,20 @@ class InstallTests(unittest.TestCase):
         self.assertNotIn('protocolMappers', corrected)
         self.assertEqual(writes[-1][2], keycloak.audience_mapper('todo-api'))
 
+    def test_an_audience_mapper_that_also_names_a_client_audience_is_replaced(self):
+        # Keycloak prefers included.client.audience to the custom one: right custom audience or not,
+        # such a mapper gives tokens the client's audience, so the platform replaces it.
+        origin = 'https://todo.test:8443'
+        client = {'clientId': 'todo-frontend', **keycloak.owned_client_fields(origin),
+                  'attributes': {'pkce.code.challenge.method': 'S256'}}
+        mapper = keycloak.audience_mapper('todo-api')
+        mapper = {**mapper, 'id': 'both', 'config': {**mapper['config'], 'included.client.audience': 'todo-frontend'}}
+        api = self.AdminApi([client], {'todo-frontend': [mapper]})
+        self.assertTrue(self.configure(api, [('todo-frontend', 'todo.test', 'todo-api')]))
+        self.assertEqual([(method, path) for method, path, _ in api.writes()], [
+            ('DELETE', '/clients/todo-frontend/protocol-mappers/models/both'),
+            ('POST', '/clients/todo-frontend/protocol-mappers/models')])
+
     def test_a_client_as_the_platform_defines_it_is_left_alone(self):
         origin = 'https://todo.test:8443'
         client = {'clientId': 'todo-frontend', 'operator': 'kept', **keycloak.owned_client_fields(origin),

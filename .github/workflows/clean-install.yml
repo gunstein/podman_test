@@ -180,6 +180,9 @@ jobs:
           set -euo pipefail
           PYTHONPATH=deploy/installer:deploy/dr python deploy/scripts/dev/check_failover_login_page.py
 
+      - name: A Keycloak client broken by hand is put right by the client setup
+        run: PYTHONPATH=deploy/installer python deploy/scripts/dev/check_client_repair.py
+
       - name: Browser tests through nginx with a real Keycloak login
         shell: bash
         run: |

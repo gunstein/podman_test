@@ -52,7 +52,7 @@ nginx only routes. It requires:
 
 The three values come from the app's ConfigMap
 (`deploy/manifests/app-config.yaml.j2`), which the platform renders from
-`keycloak.issuer`, `keycloak.JWKS_URL` and the app's login client.
+`keycloak.issuer`, `keycloak.JWKS_URL` and the app's `login.audience`.
 
 `OIDC_AUDIENCE` is the app's `login.audience` (`todo-api`), never its
 client ID: Keycloak's ID token for the frontend names the client
@@ -74,12 +74,33 @@ then needs a mapping from old to new identities.
 |---|---|---|
 | The browser | the discovery document, then the login page and the token | first its own app's origin (`/auth/...`), then the identity hostname, which every app logs in at so they share one login cookie |
 | A backend | the signing keys | `keycloak.JWKS_URL`, inside the app network; it never does discovery |
-| The installer, DR and backup | the discovery document and, for Keycloak, its admin API | the local nginx on `127.0.0.1` with the identity hostname as Host (`keycloak.request`) |
+| The installer, DR and backup | the discovery document and, for Keycloak, its admin API | the local nginx on `127.0.0.1` without a Host header (`keycloak.request`): Keycloak's hostname is nginx's default server, so the request reaches Keycloak (`shared-proxy.yaml.j2`) |
 | Failover's login check | the authorization endpoint named in discovery | the promoted host's HTTPS, as a browser would |
 
 Keycloak is configured after nginx starts (`install.finish`), because the
 installer reaches it through nginx. Moving that wait before nginx would
 block the install.
+
+One login, file by file, for Todo (Notes is the same):
+
+1. `examples/todo/app.yaml` (`login: client, audience`) →
+   `platform_file._login` checks them → `App.login_client`,
+   `App.login_audience`.
+2. `manifests.render_app_config` → `deploy/manifests/app-config.yaml.j2`:
+   the backend's `OIDC_ISSUER`, `OIDC_JWKS_URL`, `OIDC_AUDIENCE`, and
+   `FRONTEND_LOGIN` (`keycloak.frontend_login`).
+3. `examples/todo/pod.yaml.j2`: the backend reads the ConfigMap as
+   environment (`envFrom`); the frontend mounts only `FRONTEND_LOGIN` as
+   `/config/login.json` (its `volumeMounts` and the `frontend-login` volume);
+   `todo-frontend/nginx.conf` serves `/config/` as a file or 404.
+4. `todo-frontend/keycloak-adapter.js` reads `login.json` and discovery and
+   starts keycloak.js (`check-sso`, PKCE); `vendor/keycloak.js` (the SDK)
+   sends the browser to Keycloak and exchanges the code for the tokens.
+5. `todo-frontend/app.js` sends `getAccessToken()` as `Authorization:
+   Bearer`; `todo-backend/main.py` `validate_access_token` checks it, and
+   `require_user` on each write endpoint is what enforces it.
+6. At install, `install.finish` → `install.configure_identity` →
+   `keycloak.configure` makes or corrects the client (section 4).
 
 ## 4. Plain OIDC and Keycloak administration
 
@@ -93,13 +114,19 @@ Keycloak's own, which another provider replaces with its own mechanism:
 - `deploy/installer/app_installer/keycloak.py`: the admin token from the
   `master` realm with `admin-cli`, the realm's admin API
   (`ADMIN_TOKEN`, `ADMIN_REALM`), the login protection (`REALM_SECURITY`,
-  `secure_realm`), and the clients (`configure`): a missing client is made
-  from the platform's defaults (`new_client`); an existing one gets the
-  fields the platform owns corrected (`owned_client_fields`, PKCE S256:
-  public, code flow only, the app's redirect URI and web origin) and keeps
-  every other field, and its audience mappers are made exactly one, the
-  app's API audience in access tokens only (`audience_mapper`), because
-  another audience could let one app's token pass another app's backend;
+  `secure_realm`), and the clients (`configure`), field by field:
+
+  | Field | Made | Corrected on every install and promotion |
+  |---|---|---|
+  | `publicClient` true, `standardFlowEnabled` true; `implicitFlowEnabled`, `directAccessGrantsEnabled`, `serviceAccountsEnabled` false | yes | yes (`owned_client_fields`) |
+  | `redirectUris`, `webOrigins`: the app's origin | yes | yes |
+  | `pkce.code.challenge.method` S256 | yes | yes (`PKCE`) |
+  | audience mappers: exactly one, the app's API audience in access tokens only, no client audience | yes | yes (`correct_audience`; another audience could let one app's token pass another app's backend) |
+  | `clientId`, `name`, `protocol`, `enabled` | yes (`new_client`) | no: an operator may disable a client on purpose |
+  | anything else (themes, consent, other mappers) | no | no: the operator's |
+
+  `deploy/scripts/dev/check_client_repair.py` breaks Todo's client in the
+  real Keycloak in CI and checks that the setup puts it right;
 - `keycloak/Containerfile` and `keycloak/todo-realm.json`: the image and the
   realm import, which holds the realm's settings and no client;
 - `deploy/manifests/keycloak.yaml.j2` and `deploy/quadlet/keycloak.kube.j2`:
@@ -146,8 +173,25 @@ and `getUsername`. The app uses nothing else. The Keycloak adapter:
 - **logout**: Keycloak ends the session and sends the browser back to the
   app's origin.
 
-A new app's frontend copies the adapter and the two pod-template lines
-that mount `FRONTEND_LOGIN`; its client ID is only in its `app.yaml`.
+A new app with login, as a checklist:
+
+- in `app.yaml`, `login.client` and `login.audience`, two words no other app
+  uses (the loader refuses a clash), and the app's entry in `platform.yaml`;
+- in its pod template, the backend reads the app's ConfigMap (`envFrom`), and
+  the frontend mounts **only** the key `FRONTEND_LOGIN` as
+  `/config/login.json`: both the `volumeMounts` entry and the volume with
+  `items` (copy Todo's), never the whole ConfigMap, which holds the
+  database settings too;
+- the frontend ships `auth.js`, the adapter and `vendor/keycloak.js`,
+  serves `/config/` as a file or 404, calls `init`, `login` and
+  `getAccessToken`, and sends the token as `Authorization: Bearer`;
+- **the backend enforces access itself**: `login:` gives the app a client
+  and its settings, it protects nothing. Validate the token on every
+  endpoint that needs a user (Todo's `require_user`), with the checks in
+  section 2;
+- tests: no token, an expired token, another app's token and an ID token
+  are refused, and a valid access token is accepted (Todo's
+  `unit_tests/test_auth.py`).
 
 ## 7. If the provider is replaced
 
@@ -192,4 +236,22 @@ outside it. Then, in this order, with a test at each step:
   and the admin API calls.
 - `tests/test_app_ops_failover.py`, `deploy/dr/tests/test_promoted.py`:
   failover's login check and the promoted host's issuer.
+- `deploy/scripts/dev/check_client_repair.py` (CI, real Keycloak): a client
+  broken by hand is put right, and a second setup changes nothing.
 - The lab: `check browser` before and after a failover.
+
+What each check proves, from least to most:
+
+1. **Issuer**: the promoted host's Keycloak names exactly the expected issuer
+   (`promoted.require_issuer`).
+2. **Login page**: for each app, discovery names an authorization endpoint
+   that accepts the app's client, redirect and PKCE, shows Keycloak's login
+   form (`id="username"`, so a theme without it stops this check while
+   login still works), and the app's CSP lets the browser fetch the token
+   (`failover.login_page`). No password is tried, no token issued, no API
+   called: a client with a wrong audience passes this check.
+3. **Real login and API**: the browser test (`e2e/test_multi_app.py`, the
+   lab's `check browser`) logs in, checks each access token's audience,
+   writes through each API, and sends an ID token and the other app's token,
+   which must be refused. Only this proves the whole chain; failover tells
+   the operator to confirm a login for that reason.

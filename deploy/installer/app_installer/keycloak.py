@@ -151,6 +151,19 @@ def correct_client(path, origin, token):
     return True
 
 
+def audience_mapper_is(mapper, wanted):
+    """True if Keycloak's mapper puts exactly wanted's audience in tokens as wanted says.
+
+    Keycloak's own config keys besides these (introspection.token.claim and
+    the like) may differ. But a client audience (included.client.audience)
+    must be empty: Keycloak prefers it to the custom one, so a mapper that
+    names both would give tokens another app's client as their audience.
+    """
+    config = mapper.get('config') or {}
+    return (not config.get('included.client.audience')
+            and all(config.get(key) == value for key, value in wanted['config'].items()))
+
+
 def correct_audience(path, audience, token):
     """Leave the client at path exactly one audience mapper, audience_mapper(audience); True if it changed.
 
@@ -161,8 +174,7 @@ def correct_audience(path, audience, token):
     mappers = request(path + '/protocol-mappers/models', token=token)
     found = [mapper for mapper in mappers if mapper.get('protocolMapper') == 'oidc-audience-mapper']
     wanted = audience_mapper(audience)
-    if len(found) == 1 and all((found[0].get('config') or {}).get(key) == value
-                               for key, value in wanted['config'].items()):
+    if len(found) == 1 and audience_mapper_is(found[0], wanted):
         return False
     for mapper in found:
         request(f"{path}/protocol-mappers/models/{mapper['id']}", 'DELETE', token=token)

@@ -1174,6 +1174,30 @@ named volume of a ConfigMap a pod mounts, and uninstall removed only nginx's
 (`shared-nginx-config`), so `todo-backend-config` and `notes-backend-config`
 were left. `uninstall.config_volumes(platform)` now names each app's
 ConfigMap volume too (absent ones are skipped).
+- Understandability check of phase 5-1 (fresh agent, at eb3e839):
+  **YELLOW**. The login chain can be followed without the history, and the
+  client/audience split and its reason are well explained. Its findings
+  and what was done:
+  1. `correct_audience` took a mapper with the right custom audience but
+     also an `included.client.audience` as right, and Keycloak prefers the
+     client audience: fixed (`keycloak.audience_mapper_is` requires the
+     client audience empty), with a test.
+  2. "A wrong client is put right" said more than the code does: a table in
+     `docs/IDENTITY.md` says which fields are made and which corrected
+     (`enabled` stays the operator's), and CI now breaks Todo's client in
+     the real Keycloak and checks the setup puts it right
+     (`deploy/scripts/dev/check_client_repair.py`), before the browser
+     tests log in with it.
+  3. The way from file to file had to be found: `docs/IDENTITY.md` lists one
+     login file by file.
+  4. Two sentences were wrong (the backend's audience comes from
+     `login.audience`; the installer reaches Keycloak as nginx's default
+     server, without a Host header): corrected.
+  5. "Two pod-template lines" was too short where a mistake is serious: a
+     checklist for a new app with login, saying that `login:` protects
+     nothing and the backend enforces access itself.
+  6. What the DR checks prove: issuer, login page, real login and API, each
+     named, with the login page's limits.
 - Understandability check of phase 4h (fresh agent, at 2cf33d3):
   **YELLOW**. Install's steps read in order, and `Plan` and `Prepared` are
   of a reasonable size with a clear job; the host record and the guard

@@ -76,5 +76,51 @@ class BuildTests(unittest.TestCase):
                          [('.', 'todo-backend/Containerfile'), ('.', 'todo-frontend/Containerfile')])
 
 
+
+class GroupTests(unittest.TestCase):
+    """Every image of a platform, from a bundle on a standby or into a bundle on a build host."""
+
+    def every_image(self, platform):
+        return {image.reference: image for app in platform.apps for image in images.image_list(app)} | {
+            image.reference: image for image in images.shared_images(platform)}
+
+    def test_a_standby_loads_every_missing_image_from_the_bundle_and_never_builds_or_pulls(self):
+        platform = platform_file.checkout()
+        with tempfile.TemporaryDirectory() as bundle, FakeHost(images_present=False) as host:
+            (Path(bundle) / 'images').mkdir()
+            for image in self.every_image(platform).values():
+                (Path(bundle) / 'images' / image.archive).write_text('archive')
+            self.assertTrue(images.prepare_offline_group(bundle, platform))
+            loaded = [Path(argv[-1]).name for argv in host.ran('podman', 'load')]
+            self.assertEqual(sorted(loaded), sorted(image.archive for image in self.every_image(platform).values()))
+            self.assertEqual(host.ran('podman', 'build') + host.ran('podman', 'pull'), [])
+            # A missing archive stops the load and names it.
+            (Path(bundle) / 'images' / platform.apps[0].image_archive('backend')).unlink()
+            with self.assertRaisesRegex(FileNotFoundError, platform.apps[0].image_archive('backend')):
+                images.prepare_offline_group(bundle, platform)
+
+    def test_images_that_are_present_are_not_loaded_again(self):
+        with tempfile.TemporaryDirectory() as bundle, FakeHost() as host:
+            self.assertFalse(images.prepare_offline_group(bundle, platform_file.checkout()))
+            self.assertEqual(host.ran('podman', 'load'), [])
+
+    def test_a_bundle_build_makes_and_saves_each_distinct_image_once(self):
+        platform = platform_file.checkout()
+        # PostgreSQL serves three databases and nginx every app; each is still made and saved once.
+        with tempfile.TemporaryDirectory() as destination, FakeHost(images_present=False) as host:
+            images.build_and_export(ROOT, destination, platform)
+            expected = self.every_image(platform)
+            saved = [argv[argv.index('--output') + 1] for argv in host.ran('podman', 'save')]
+            self.assertEqual(sorted(Path(path).name for path in saved),
+                             sorted(image.archive for image in expected.values()))
+            self.assertTrue(all(Path(path).parent == Path(destination) for path in saved))
+            built = [argv[argv.index('--tag') + 1] for argv in host.ran('podman', 'build')]
+            pulled = [argv[-1] for argv in host.ran('podman', 'pull')]
+            self.assertEqual(sorted(built + pulled), sorted(expected))
+            # PostgreSQL is pulled; everything else is built from its Containerfile, with --pull.
+            self.assertEqual(pulled, [apps.KEYCLOAK_DATABASE.image])
+            self.assertTrue(all('--pull' in argv for argv in host.ran('podman', 'build')))
+
+
 if __name__ == '__main__':
     unittest.main()

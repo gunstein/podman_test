@@ -7,6 +7,16 @@ removes an argument or returns `True` instead of `False`. Then it runs the
 tests. If a test fails, the mutant is *killed*. If every test still passes, the
 mutant *survived*: the tests would not have caught that mistake.
 
+CI reports line and branch coverage, for information and not as a gate: the
+platform's Python in the tests job, the Todo and Notes backends in the backend
+job. A high number there says that code ran, not that it is right. Most
+installer and DR tests run against fake hosts (`deploy/installer/tests/fake_host.py`)
+that answer every command with a prepared reply, so they prove the Python's
+control flow, but not that a Podman command, a systemd unit or an SQL statement
+is correct. Those are proven where they really run: the CI jobs against real
+rootless Podman and PostgreSQL (`clean-install.yml`) and the lab acceptance.
+Keep both; a fake that accepts anything is no reason to drop a real-host test.
+
 ## What is mutated, and why only that
 
 Only the read-only checks in

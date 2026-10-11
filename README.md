@@ -281,6 +281,7 @@ manual lab acceptance test.
 | Operate deployment and recovery | [app-ops operations](deploy/dr/README.md) |
 | Understand SELinux and rootless ownership | [SELinux](docs/SELINUX.md) |
 | Understand runtime credentials | [Secrets](docs/SECRETS.md) |
+| Understand or change login | [Identity](docs/IDENTITY.md) |
 | Understand nginx and certificate trust | [TLS](docs/TLS.md) |
 | Install without network access | [Offline bundle](deploy/offline/README.md) |
 | Diagnose `fapolicyd` | [fapolicyd](deploy/offline/FAPOLICYD.md) |

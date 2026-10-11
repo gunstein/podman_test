@@ -1106,6 +1106,23 @@ version zero (no migration from earlier states is owed):
    (`spec.containers[0].name must be a string`). No schema framework.
 5. An install stopped between writing files and restarting pods: phase 5b,
    with the fix it needs.
+
+**Phase 5-1a, code done; the lab step runs in the next acceptance run.**
+The identity contract, first part. `docs/IDENTITY.md` says what a login
+provider must deliver (issuer, discovery, JWKS, the token a backend
+accepts, one client per app, the `/auth/` route, readiness, its state in the
+DR group), which part is plain OIDC and which Keycloak's administration,
+which address the browser, a backend and the installer and DR use, what
+`has_login` and `has_identity` mean, the access model, the frontend
+adapter's behaviour, and the order of work for a switch, with the tests
+that guard login. Its limits are stated with the phase that lifts them.
+`keycloak.py` holds every Keycloak address (`REALM_PATH`, `DISCOVERY`,
+`issuer()`, `JWKS_URL`, `ADMIN_TOKEN`, `ADMIN_REALM`); the app ConfigMap,
+the promoted host's issuer check, backup, the lab and the CI login check use
+them, and failover's login check takes the authorization endpoint from
+discovery. `/auth/realms/todo` is now written out only in the frontends'
+adapters (5-1c). Four platform files leave the example-name guard. Render
+baseline: `OIDC_JWKS_URL` quoted like the other values.
 - Understandability check of phase 4h (fresh agent, at 2cf33d3):
   **YELLOW**. Install's steps read in order, and `Plan` and `Prepared` are
   of a reasonable size with a clear job; the host record and the guard

@@ -274,6 +274,8 @@ the profile's public issuer.
 Only Keycloak is implemented. Another provider requires a new adapter, provider
 configuration, compatible token claims and real browser/integration testing.
 An adapter seam is not evidence that Duende or another provider already works.
+[Identity](IDENTITY.md) lists what a provider must deliver, which part is
+plain OIDC and which Keycloak's administration, and where each piece is.
 
 ## 8. Persistence and secrets
 
@@ -488,7 +490,7 @@ outside the demonstrated recovery scope.
 | How do I run acceptance safely? | [Acceptance sequence and criteria](ACCEPTANCE.md) |
 | How does old-primary isolation work? | [Quarantine](PROXMOX-QUARANTINE.md) |
 | How do backup and reseeding work? | [Backup/PITR](../deploy/dr/BACKUP-PITR.md), [restore redundancy](../deploy/dr/RESTORE-REDUNDANCY.md) |
-| How are security details handled? | [SELinux](SELINUX.md), [secrets](SECRETS.md), [TLS](TLS.md) |
+| How are security details handled? | [SELinux](SELINUX.md), [secrets](SECRETS.md), [TLS](TLS.md), [identity](IDENTITY.md) |
 
 Source paths identify implementation, not a second source of configuration.
 When code and this overview diverge, verify the implementation and correct the

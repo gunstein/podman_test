@@ -55,11 +55,31 @@ class AcceptanceGuideTests(unittest.TestCase):
         # named point from the 08-4 backup, Notes to the time 08-7 printed.
         lines = (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text().splitlines()
         todo = next(line for line in lines if line.startswith('vm 08-9-'))
-        notes = next(line for line in lines if line.startswith('vm 08-10-'))
+        notes = next(line for line in lines if line.startswith('vm 08-10a-'))
         mark = next(line for line in lines if line.startswith('vm 08-7-'))
         self.assertIn('--app todo restore --backup $(backup_name todo) --target acceptance_before_after', todo)
         self.assertIn('--app notes restore --target-time $(restore_time) && ', notes)
         self.assertIn("sleep 1 && date --utc +%Y-%m-%dT%H:%M:%SZ && sleep 1", mark)
+
+    def test_guestbook_rows_and_port_follow_the_complete_lab_sequence(self):
+        lines = (ROOT / 'docs/ACCEPTANCE-AGENT.md').read_text().splitlines()
+        restore = next(line for line in lines if line.startswith('vm 08-10b-restore-guestbook'))
+        self.assertIn('--app guestbook restore --backup $(backup_name guestbook)', restore)
+        self.assertIn('--target acceptance_before_after', restore)
+        self.assertIn('podman inspect guestbook-postgres-restore', restore)
+        self.assertIn('recovery|paused|read_only = t|t|on', restore)
+        self.assertEqual(restore.count('--set ON_ERROR_STOP=1'), 2)
+        self.assertIn("'PITR after restore point') = 0", restore)
+        self.assertIn("'PITR after restore point') = 1", restore)
+        for prefix in ('vm 03-12b-', 'vm 03-12d-', 'vm 08-6-', 'vm 08-8-', 'vm 08-11-'):
+            line = next(line for line in lines if line.startswith(prefix))
+            self.assertIn('guestbook', line)
+        for step, outcome in (('05-8-1b-guestbook', 'open'), ('05-8-3d-guestbook', 'blocked'),
+                              ('09-11c-guestbook', 'open')):
+            line = next(line for line in lines if line.startswith('$A --step ' + step + ' '))
+            self.assertTrue(line.endswith('5435 ' + outcome))
+        for step in ('09-11h', '09-13h'):
+            self.assertTrue(any(line.startswith('$A --step ' + step + ' check markers ') for line in lines))
 
     def test_direct_mutation_examples_keep_exact_confirmation_arguments(self):
         commands = '\n'.join(shell_blocks()).replace('\\\n', '')

@@ -206,6 +206,8 @@ jobs:
           E2E_BASE_URL=$(origin todo) python -m pytest e2e/test_todo_flow.py --browser chromium -rs
           E2E_NOTES_URL=$(origin notes) python -m pytest e2e/test_notes_flow.py --browser chromium -rs
           E2E_MULTI_APP=1 E2E_CA_FILE="$ca_file" python -m pytest e2e/test_multi_app.py -rs
+          # The lab's persistent marker path, including Guestbook's authenticated read.
+          MARKER="CI marker ${GITHUB_RUN_ID}" python e2e/create_markers.py
 
       - name: Show pods and logs on failure
         if: failure()

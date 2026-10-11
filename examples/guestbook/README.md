@@ -41,7 +41,8 @@ PYTHONPATH=deploy/installer python3 -m app_installer down
 The operator's `platform.yaml` assigns replication port 5435: 5434 belongs
 to Keycloak. Adding this database changes the DR group. Existing DR hosts
 need the documented standby rebuild and replication firewall change; the
-phase 5-4 maintainer must extend the lab's markers and acceptance checks.
+lab carries an authenticated Guestbook marker through failover, nightly restore,
+PITR and standby rebuild/re-seed. Run the phase acceptance to prove it on the hosts.
 
 ## Tests
 

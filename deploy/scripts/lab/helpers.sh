@@ -31,7 +31,7 @@ product() {
 vm() { product "$1" ssh -o BatchMode=yes gunstein@"$2" "$3"; }
 ops() { vm "$1" "$2" "cd ~/platform-operations && PYTHONPATH=\$PWD/deploy/dr PYTHONDONTWRITEBYTECODE=1 python3 -m app_ops $3"; }
 
-# The base backup that step 08-4 logged for one database (todo or notes),
+# The base backup that step 08-4 logged for one database (todo, notes or guestbook),
 # such as base-20260928T191946Z; empty if the log has none.
 backup_name() {
   sed -n "s/^$1: Verified base backup: \(base-[0-9TZ]*\)\$/\1/p" "$RUN/logs/08-4-backup-create.log"

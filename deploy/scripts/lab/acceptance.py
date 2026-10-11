@@ -56,11 +56,11 @@ Commands:
   check ca HOST                          saves the public CA; same as last time
   check headers                          HSTS, CSP and frame headers from here
   check browser                          Todo, Notes and SSO tests, 0 skipped
-  do    markers PHASE                    one Todo and one Note marker
+  do    markers PHASE                    one Todo, Note and Guestbook marker
   check markers HOST                     every recorded marker is on HOST
   do    reboot VMID HOST app|standby     new boot ID, then check services
-  check roles HOST primary|archiving|standby   f|off, f|off|on|1h or t|on, all three
-  check write-probe HOST                 the guide's rolled-back Todo and Notes inserts
+  check roles HOST primary|archiving|standby   f|off, f|off|on|1h or t|on, every database
+  check write-probe HOST                 the guide's rolled-back app inserts
   check replication-tls HOST             every standby connection streams over TLS
   check disk HOST                        backup and WAL sizes, at least 2 GiB free
   check monitor HOST ok|alert            the DR check timer is on; one run passes, ready to take over,
@@ -109,6 +109,7 @@ IDENTITY_ORIGIN = f'https://{PLATFORM.identity_hostname}:{PUBLIC_PORT}'
 # The example apps' own checks (browser flows, markers, write probes, PITR rows) name them.
 TODO_URL = f'https://{PLATFORM.app("todo").hostname}:{PUBLIC_PORT}'
 NOTES_URL = f'https://{PLATFORM.app("notes").hostname}:{PUBLIC_PORT}'
+GUESTBOOK_URL = f'https://{PLATFORM.app("guestbook").hostname}:{PUBLIC_PORT}'
 ZONE = 'public'  # the firewalld zone of the lab VMs' LAN interface (ACCEPTANCE.md phase 3)
 CA_PATH = '/var/lib/platform-tls/ca.crt'
 PYTHON = ROOT / 'e2e/.venv/bin/python'
@@ -405,7 +406,9 @@ def check_browser(step):
     for name, test, extra in (
             ('Todo', 'e2e/test_todo_flow.py', dict(E2E_BASE_URL=TODO_URL)),
             ('Notes', 'e2e/test_notes_flow.py', dict(E2E_NOTES_URL=NOTES_URL)),
-            ('multi-app SSO', 'e2e/test_multi_app.py', dict(E2E_MULTI_APP='1', E2E_CA_FILE=str(ca)))):
+            ('multi-app SSO', 'e2e/test_multi_app.py', dict(E2E_MULTI_APP='1', E2E_CA_FILE=str(ca),
+                                                       E2E_IDENTITY_URL=IDENTITY_ORIGIN, E2E_TODO_URL=TODO_URL,
+                                                       E2E_NOTES_URL=NOTES_URL, E2E_GUESTBOOK_URL=GUESTBOOK_URL))):
         arguments = [PYTHON, '-m', 'pytest', test, '-q', '-rs']
         if 'multi_app' not in test:
             arguments[4:4] = ['--browser', 'chromium']
@@ -422,10 +425,12 @@ def check_markers(step, host):
                 if entry['kind'] == 'do' and entry['command'] == 'markers' and entry['result'] == 'PASS']
     step.expect(bool(expected), 'this run has created markers')
     run_id = step.run_directory.name
-    for database, table, key in (('todo', 'todos', 'todo_id'), ('notes', 'notes', 'note_id')):
+    for database, table, field, key in (('todo', 'todos', 'title', 'todo_id'),
+                                       ('notes', 'notes', 'title', 'note_id'),
+                                       ('guestbook', 'entries', 'message', 'guestbook_id')):
         rows = step.ssh(host, f"podman exec {database}-postgres psql --username {database} --dbname {database} "
-                              f"-At -F '|' -c \"SELECT id, title FROM {table} "
-                              f"WHERE title LIKE 'acceptance {run_id} %' ORDER BY id\"")
+                              f"-At -F '|' -c \"SELECT id, {field} FROM {table} "
+                              f"WHERE {field} LIKE 'acceptance {run_id} %' ORDER BY id\"")
         found = dict(line.split('|', 1) for line in rows.stdout.splitlines() if '|' in line)
         for marker in expected:
             identifier = str(marker[key])
@@ -441,7 +446,7 @@ def psql(step, host, database, statement):
 
 
 def check_roles(step, host, role):
-    """All three databases in the same role: primary f|off, archiving f|off|on|1h, standby t|on."""
+    """Every registered database in the same role: primary f|off, archiving f|off|on|1h, standby t|on."""
     statement, expected = {
         'primary': ("SELECT pg_is_in_recovery(), current_setting('default_transaction_read_only');", 'f|off'),
         'archiving': ("SELECT pg_is_in_recovery(), current_setting('default_transaction_read_only'), "
@@ -455,10 +460,11 @@ def check_roles(step, host, role):
 
 
 def check_write_probe(step, host):
-    """ACCEPTANCE.md phase 6: a rolled-back insert in Todo and in Notes on the promoted host."""
+    """ACCEPTANCE.md phase 6: a rolled-back insert in Todo, Notes and Guestbook on the promoted host."""
     for database, statement in (
             ('todo', "BEGIN; INSERT INTO todos (title, completed) VALUES ('promotion write probe', false); ROLLBACK;"),
-            ('notes', "BEGIN; INSERT INTO notes (title) VALUES ('promotion write probe'); ROLLBACK;")):
+            ('notes', "BEGIN; INSERT INTO notes (title) VALUES ('promotion write probe'); ROLLBACK;"),
+            ('guestbook', "BEGIN; INSERT INTO entries (message) VALUES ('promotion write probe'); ROLLBACK;")):
         result = psql(step, host, database, statement)
         step.expect(result.returncode == 0 and 'INSERT 0 1' in result.stdout and 'ROLLBACK' in result.stdout,
                     f'{database} on {host}: insert accepted and rolled back')
@@ -612,12 +618,15 @@ def do_firewall_https(step, host, client):
 
 
 def do_markers(step, phase):
-    """One authenticated Todo and one Note titled "acceptance RUN PHASE"; records their IDs."""
+    """One authenticated marker per database app, named "acceptance RUN PHASE"; record their IDs."""
     title = f'acceptance {step.run_directory.name} {phase}'
-    result = step.run([PYTHON, ROOT / 'e2e/create_markers.py'], env=password_environment(MARKER=title), timeout=300)
-    match = re.search(re.escape(repr(title)) + r': todo id=(\d+) note id=(\d+)', result.stdout)
+    environment = password_environment(MARKER=title, E2E_TODO_URL=TODO_URL,
+                                       E2E_NOTES_URL=NOTES_URL, E2E_GUESTBOOK_URL=GUESTBOOK_URL)
+    result = step.run([PYTHON, ROOT / 'e2e/create_markers.py'], env=environment, timeout=300)
+    match = re.search(re.escape(repr(title)) + r': todo id=(\d+) note id=(\d+) guestbook id=(\d+)', result.stdout)
     if step.expect(result.returncode == 0 and match is not None, f'markers "{title}" created') and match:
-        step.values.update(title=title, todo_id=int(match.group(1)), note_id=int(match.group(2)))
+        step.values.update(title=title, todo_id=int(match.group(1)), note_id=int(match.group(2)),
+                           guestbook_id=int(match.group(3)))
 
 
 def do_reboot(step, vmid, host, mode):
@@ -1054,7 +1063,7 @@ def timing(run_directory):
 # The logs a reviewer reads after a run, by the start of their name, in run order.
 EVIDENCE_LOGS = ('00-readiness', '03-2-install', '03-12a-', '03-12c-restore', '03-12d-restored',
                  '03-13-install-again', '05-1-install-dr-tool', '05-7a-', '06-10-failover', '06-15-',
-                 '08-7-mark', '08-9-restore-todo', '08-10-restore-notes', '08-15-backup-status', '08-16-',
+                 '08-7-mark', '08-9-restore-todo', '08-10', '08-15-backup-status', '08-16-',
                  '09-10-rebuild', '09-11d-cluster-status', '09-13c-reseed', '09-13f-cluster-status', '10-7d-',
                  '10-7e-', '11-4-restarts')
 EVIDENCE_TAIL = 25

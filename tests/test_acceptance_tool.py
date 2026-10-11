@@ -152,10 +152,10 @@ class RecordTests(ToolTest):
         self.assertEqual(self.record()[-1]["approved"], "rule added by hand, checked")
 
     def test_markers_run_once_per_phase(self):
-        rules = [("create_markers.py", (0, "MARKER 'acceptance run-1 phase3': todo id=3 note id=4\n"))]
+        rules = [("create_markers.py", (0, "MARKER 'acceptance run-1 phase3': todo id=3 note id=4 guestbook id=5\n"))]
         self.assertEqual(self.tool("--step", "03-8", "do", "markers", "phase3", rules=rules)[0], 0)
         self.assertEqual(self.record()[-1]["values"],
-                         {"title": "acceptance run-1 phase3", "todo_id": 3, "note_id": 4})
+                         {"title": "acceptance run-1 phase3", "todo_id": 3, "note_id": 4, "guestbook_id": 5})
         self.assertEqual(self.tool("--step", "03-8", "do", "markers", "phase3", rules=rules)[0], 3)
         self.assertEqual(self.tool("--step", "04-5", "do", "markers", "phase4", rules=rules)[0], 1)
 
@@ -249,11 +249,12 @@ class CheckTests(ToolTest):
         self.assertEqual(self.tool("--step", "03-7", "check", "browser", rules=skipped)[0], 1)
 
     def test_markers_on_a_host_are_compared_with_the_recorded_ones(self):
-        created = [("create_markers.py", (0, "MARKER 'acceptance run-1 phase3': todo id=3 note id=4\n"))]
+        created = [("create_markers.py", (0, "MARKER 'acceptance run-1 phase3': todo id=3 note id=4 guestbook id=5\n"))]
         self.tool("--step", "03-8", "do", "markers", "phase3", rules=created)
-        present = [("FROM todos", (0, "3|acceptance run-1 phase3\n")), ("FROM notes", (0, "4|acceptance run-1 phase3\n"))]
+        present = [("FROM todos", (0, "3|acceptance run-1 phase3\n")), ("FROM notes", (0, "4|acceptance run-1 phase3\n")),
+                   ("FROM entries", (0, "5|acceptance run-1 phase3\n"))]
         self.assertEqual(self.tool("--step", "03-9", "check", "markers", "192.168.0.102", rules=present)[0], 0)
-        missing = [("FROM todos", (0, "3|acceptance run-1 phase3\n")), ("FROM notes", (0, ""))]
+        missing = [("FROM entries", (0, "")), *present]
         self.assertEqual(self.tool("--step", "03-9", "check", "markers", "192.168.0.102", rules=missing)[0], 1)
 
     def test_clean_host(self):
@@ -337,7 +338,9 @@ class FullRunTests(ToolTest):
         self.assertEqual(code, 0)
         self.assertTrue(any("INSERT INTO notes (title) VALUES ('promotion write probe'); ROLLBACK;" in call
                             for call in fake.calls))
-        broken = [("notes-postgres", (1, 'ERROR:  column "content" does not exist\n')), ("psql", ok[0][1])]
+        self.assertTrue(any("INSERT INTO entries (message) VALUES ('promotion write probe'); ROLLBACK;" in call
+                            for call in fake.calls))
+        broken = [("guestbook-postgres", (1, 'ERROR: permission denied\n')), ("psql", ok[0][1])]
         self.assertEqual(self.tool("--step", "06-5", "check", "write-probe", "192.168.0.108", rules=broken)[0], 1)
 
     def test_replication_must_stream_over_tls_for_every_database(self):
@@ -405,6 +408,27 @@ class FullRunTests(ToolTest):
         self.assertEqual(self.tool("--step", "08-16", "do", "backup-nightly", "192.168.0.108", "--operator-approved",
                                    "retry in the test",
                                    rules=[timer, ("start platform-backup.service", (0, "exit=1\n"))])[0], 1)
+
+    def test_guestbook_backup_is_required_in_the_four_database_lab(self):
+        databases = ('todo', 'notes', 'guestbook', 'keycloak')
+        timer = ("is-enabled platform-backup.timer", (0, "enabled\nactive\n"))
+        journal = "".join(f"{d}: verified base backup base-20261002T200000Z; deleted 0 older than 7 days\n"
+                          for d in databases if d != 'guestbook')
+        with patch.object(acceptance, 'DATABASES', databases):
+            code, _ = self.tool('--step', '08-16', 'do', 'backup-nightly', '192.168.0.108',
+                                rules=[timer, ('start platform-backup.service', (0, 'exit=0\n' + journal))])
+        self.assertEqual(code, 1)
+        self.assertIn('FAIL: a verified base backup of every database', self.log(self.record()[-1]))
+
+    def test_guestbook_replication_port_is_in_the_lab_firewall_rule(self):
+        from app_installer import platform_file
+        ports = sorted(database.replication_port for database in platform_file.checkout().replicated_databases)
+        with patch.object(acceptance, 'REPLICATION_PORTS', ports):
+            rule = acceptance.replication_rule('192.168.0.108', '192.168.0.102')
+        self.assertIn('5432-5435', rule)
+        replication = dict(acceptance.QUARANTINE_RULES)['todo-quarantine-replication']
+        self.assertEqual(replication['dport'], '5432:5435')
+        self.assertEqual(replication['enable'], '0')  # closed until the guarded rebuild step
 
     def test_replication_rule_is_added_and_removed_permanently(self):
         rule = acceptance.replication_rule("192.168.0.108", "192.168.0.102")
@@ -511,7 +535,7 @@ class ReportTests(ToolTest):
 
     def test_a_clean_run_passes_and_takes_every_value_from_the_record(self):
         self.tool("--step", "03-8", "do", "markers", "phase3",
-                  rules=[("create_markers.py", (0, "MARKER 'acceptance run-1 phase3': todo id=3 note id=4\n"))])
+                  rules=[("create_markers.py", (0, "MARKER 'acceptance run-1 phase3': todo id=3 note id=4 guestbook id=5\n"))])
         self.tool("--step", "04-2", "check", "headers", rules=[("curl", (0, APP_HEADERS))])
         self.product_log("03-2-install.log", "Preflight checks passed.", '{"changed": true}', "exit=0")
         self.product_log("04-3-preflight-refused.log", "app-ops: no rich rule", "exit=1")

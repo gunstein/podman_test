@@ -26,8 +26,8 @@ Working routine (for whoever continues the platform work):
 - Where it stands: the phase log at the end of docs/PLATFORM-PLAN.md, newest
   last; PROJECT.md#acceptance for the last accepted revision. Phase 5-2 is
   accepted; 5-3 (Todo and Notes in examples/<app>/) and the Guestbook app are
-  done in code. Phase 5-4 integration is in progress; the phase log records
-  each CI gate. Lab acceptance and the fresh understandability check follow.
+  done in code, including Phase 5-4 integration; the phase log records each
+  CI gate. Next: phase 5 lab acceptance, then the fresh understandability check.
 - Before every push: ruff check ., pyright, and
   PYTHONPATH=deploy/installer:deploy/dr:tests python3 -m unittest discover -s tests
   (about 850 tests; the name guard counts tracked files only, so git add

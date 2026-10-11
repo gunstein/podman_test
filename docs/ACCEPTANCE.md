@@ -1,10 +1,10 @@
 # Acceptance
 
 This is the canonical normal execution sequence for full two-VM acceptance of
-the eight-pod, three-application Podman Kube architecture: Todo and Notes, the
+the ten-pod, four-application Podman Kube architecture: Todo, Notes and Guestbook, the
 static Help app (no database, no login), shared Keycloak and shared nginx,
-with three independently replicated PostgreSQL databases (Todo, Notes and
-Keycloak). Use the direct DR tools and the
+with four independently replicated PostgreSQL databases (Todo, Notes,
+Guestbook and Keycloak). Use the direct DR tools and the
 plain-SSH `app-ops` commands below ([app-ops](../deploy/dr/README.md)). The final rebuild permanently replaces old-primary database
 data; use disposable lab hosts and explicit infrastructure fencing.
 
@@ -77,7 +77,7 @@ Topology: initial primary hostname/IP/VMID/NIC; initial standby equivalents;
 Current roles and fencing: which DB is writable, VM power/link/firewall state:
 Last completed phase / exact command / result and evidence:
 Next phase / where to run it / approval still required:
-Markers: original Todo and Notes ID/title; final authenticated Todo and Notes ID/title:
+Markers: original and final authenticated Todo/Notes ID/title and Guestbook ID/message:
 Backup name per database / restore-point name / isolated comparisons / cleanup:
 Boot IDs before/after / TLS CA fingerprint / browser tests (no skips):
 Operations tool: app-ops (deploy/dr)
@@ -114,7 +114,7 @@ firewalld, the system Python 3.9 with PyYAML (for the DR tools), user lingering,
 an 18 GiB home filesystem per VM.
 
 These values describe the lab used for the earlier four-pod runs. The
-eight-pod topology runs three PostgreSQL instances plus Keycloak per host; record
+ten-pod topology runs four PostgreSQL instances plus Keycloak per host; record
 free memory (`free -m`) in phase 1 and STOP if the hosts swap heavily after
 phase 3.
 
@@ -189,7 +189,7 @@ require changing the realm, frontend, certificate hostname or manifest templates
 | Replication and SSH | Primary's `platform-operations/initial.yaml` | Each host's own IPv4 (`address`), matching `ip -4 address` on that host |
 | Recovery/rebuild | Promoted host's `platform-operations/recovery.yaml` | Same machine IPs, reversed roles (`current_primary`, `rebuild_standby`) |
 | Browser destination | Client DNS or `/etc/hosts` | `PRIMARY_IP auth.test todo.test notes.test`; change to promoted host after failover |
-| Firewall | VM firewalld and manual hypervisor fencing/quarantine | Replace source/destination IPs in the rules; HTTPS 8443 from client, replication 5432-5434 from peer |
+| Firewall | VM firewalld and manual hypervisor fencing/quarantine | Replace source/destination IPs in the rules; HTTPS 8443 from client, replication 5432-5435 from peer |
 
 With NAT, check the source address seen by the destination. Our primary saw
 `192.168.0.100` in `SSH_CLIENT`, different from the ThinkPad's own LAN address.
@@ -232,7 +232,7 @@ ls -ld "$HOME/.config/platform" /opt/platform/bin/app_dr.py /opt/platform/bin/ap
 ```
 
 For a clean baseline, require distinct machine IDs and expected hostnames/IPs,
-no Todo, Notes or Keycloak containers, volumes, secrets, no `app-network`
+no Todo, Notes, Guestbook or Keycloak containers, volumes, secrets, no `app-network`
 network or Quadlet files, no Todo config
 directory and no installed DR/backup tools. Missing paths in the last two
 commands are expected; distinguish absence from access errors. Unrelated Podman
@@ -337,7 +337,7 @@ On the client laptop, map `auth.test`, `todo.test`, `notes.test` and `help.test`
 public demo CA as described in `docs/TLS.md`. A prior drill may have left
 `todo.test` pointing to `.108` and an obsolete CA in the trust store.
 
-Require all eight long-running services, no failed user units, nginx image identity,
+Require all ten long-running services, no failed user units, nginx image identity,
 valid nginx configuration, health and readiness of the apps, and Keycloak discovery:
 
 ```bash
@@ -360,14 +360,18 @@ curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/health
 curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/ready
 curl --fail -H 'Host: notes.test' http://127.0.0.1:8080/health
 curl --fail -H 'Host: notes.test' http://127.0.0.1:8080/ready
+curl --fail -H 'Host: guestbook.test' http://127.0.0.1:8080/health
+curl --fail -H 'Host: guestbook.test' http://127.0.0.1:8080/ready
+# An anonymous read must be refused (the browser flow proves authenticated CRUD).
+test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' -H 'Host: guestbook.test' http://127.0.0.1:8080/api/entries)" = 401
 curl --fail -H 'Host: help.test' http://127.0.0.1:8080/
 curl --fail -H 'Host: todo.test' http://127.0.0.1:8080/auth/realms/todo/.well-known/openid-configuration
 ```
 
-Export only the public demo root, trust it on the client, verify HTTPS for both
-hostnames, run the Todo and Notes Playwright flows and the Todo/Notes SSO flow,
+Export only the public demo root, trust it on the client, verify HTTPS for all configured
+hostnames, run the Todo and Notes Playwright flows and the Todo/Notes/Guestbook SSO flow,
 and leave one persistent authenticated Todo marker and one persistent
-authenticated Notes marker.
+authenticated Notes marker and one authenticated Guestbook marker.
 Use `curl` without `-k` and browser tests with
 `E2E_IGNORE_HTTPS_ERRORS=false`. Configure the actual Chromium trust database
 as described below. The development `run-e2e.sh` enables TLS
@@ -471,17 +475,17 @@ The tests delete their own rows; create one separate authenticated persistent
 marker in each app through the UI and record both IDs/titles for replication and
 reboot checks.
 
-Reboot the VM. Repeat the eight-service and nginx configuration checks above;
-verify both markers and unchanged TLS CA fingerprint (the secret
+Reboot the VM. Repeat the ten-service and nginx configuration checks above;
+verify all three app markers and unchanged TLS CA fingerprint (the secret
 `platform-proxy-ca-cert`, as nginx serves it from `/var/lib/platform-tls/ca.crt`).
 
 The install turned on the nightly backup (`platform-backup.timer`). Start
-`platform-backup.service` once and require a verified base backup of todo, notes
-and keycloak in its journal. Then write one Todo row, restore the three
+`platform-backup.service` once and require a verified base backup of todo, notes,
+guestbook and keycloak in its journal. Then write one Todo and one Guestbook row, restore the four
 databases from that backup with
 `PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore todo-primary`
-from the bundle root, and require that the row is gone, every service is
-ready again and both markers remain (they were written before the backup).
+from the bundle root, and require that both later rows are gone, every service is
+ready again and all three app markers remain (they were written before the backup).
 
 Then rerun
 `sh ./install.sh --publish-address 192.168.0.102`. Pass when the second
@@ -593,7 +597,7 @@ sudo -n true && echo "passwordless sudo ok"
 
 - **Where:** Initial primary is the app-ops controller; standby is remote target; Proxmox node Shell reboots standby.
 - **Preconditions:** Phase 3 passed; verified controller-to-standby SSH; dedicated guest replication firewall rule.
-- **PASS:** For each of the three databases: streaming async over TLS, zero lag, active usable slot, read-only standby; both markers persist.
+- **PASS:** For each of the four databases: streaming async over TLS, zero lag, active usable slot, read-only standby; all three app markers persist.
 - **Evidence:** Role/LSN outputs and slot state per database, marker queries, app-ops JSON results and standby boot IDs.
 - **STOP if:** Failed preflight, role mismatch, unusable slot, lag or absent marker.
 
@@ -617,11 +621,11 @@ python3 -m app_ops --inventory initial.yaml preflight-standby; echo "exit=$?"
 ```
 
 Require exit 1 and a message naming the missing rule. Then allow only standby
-to reach the three initial replication endpoints:
+to reach the four initial replication endpoints:
 
 ```bash
 sudo firewall-cmd --permanent --zone=public \
-  --add-rich-rule='rule family="ipv4" source address="192.168.0.108/32" destination address="192.168.0.102" port port="5432-5434" protocol="tcp" accept'
+  --add-rich-rule='rule family="ipv4" source address="192.168.0.108/32" destination address="192.168.0.102" port port="5432-5435" protocol="tcp" accept'
 sudo firewall-cmd --reload
 ```
 
@@ -639,15 +643,16 @@ secrets travel stdin to stdin and are never written on the controller:
 `find "$HOME/platform-operations" -newer SHA256SUMS -type f` lists only the two
 inventory files. Pass when, for every database, primary reports `streaming|async`, the slot is
 active and usable, measured lag is zero, and standby reports recovery with
-matching receive/replay LSNs. Verify both markers directly on the standby
+matching receive/replay LSNs. Verify all three app markers directly on the standby
 databases, for example:
 
 ```bash
 podman exec todo-postgres psql --username todo --dbname todo --command "SELECT id, title FROM todos ORDER BY id;"
 podman exec notes-postgres psql --username notes --dbname notes --command "SELECT id, title FROM notes ORDER BY id;"
+podman exec guestbook-postgres psql --username guestbook --dbname guestbook --command "SELECT id, message FROM entries ORDER BY id;"
 ```
 
-Reboot standby and require recovery plus streaming to resume for all three.
+Reboot standby and require recovery plus streaming to resume for all four.
 
 ## 5. Local DR tool
 
@@ -713,11 +718,11 @@ operation and streaming before proceeding to fencing.
 
 - **Where:** Proxmox node Shell for fencing; initial standby for preflight and `failover`.
 - **Preconditions:** Replicated persistent marker; tested quarantine; independent fencing evidence and explicit promotion approval.
-- **PASS:** `failover` completes every step once; all three databases report f|off, write validation passes and all markers remain.
+- **PASS:** `failover` completes every step once; all four databases report f|off, write validation passes and all markers remain.
 - **Evidence:** Hypervisor fencing output, approval, preflight, the `failover` JSON, status and marker IDs.
 - **STOP if:** Any fencing uncertainty, reachable old DB, nonzero local apply lag or any failed `failover` step. Never blindly retry.
 
-Create a persistent pre-failover marker in Todo and in Notes and verify both on standby. Fence
+Create a persistent pre-failover marker in Todo, Notes and Guestbook and verify all three on standby. Fence
 `todo-primary` at the virtualization layer.
 
 What this phase does not show: it fences only after the last marker has
@@ -779,6 +784,8 @@ podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP
   --command "BEGIN; INSERT INTO todos (title, completed) VALUES ('promotion write probe', false); ROLLBACK;"
 podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 \
   --command "BEGIN; INSERT INTO notes (title) VALUES ('promotion write probe'); ROLLBACK;"
+podman exec guestbook-postgres psql --username guestbook --dbname guestbook --set ON_ERROR_STOP=1 \
+  --command "BEGIN; INSERT INTO entries (message) VALUES ('promotion write probe'); ROLLBACK;"
 ```
 
 Pass when every database reports `f|off`, the rolled-back writes succeed and all
@@ -813,7 +820,7 @@ root. Require system-trust HTTPS, health/readiness, stable issuer
 SSO tests, and a persistent authenticated failover marker in each app.
 
 Rerun `deploy-promoted-application` and require `{"changed": false}`. Reboot promoted host and verify all
-eight workload services listed in phase 3, writable PostgreSQL,
+ten workload services listed in phase 3, writable PostgreSQL,
 `podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf`, marker data
 and unchanged CA hash. Each app pod shares loopback between frontend and backend,
 but the proxy reaches both over DNS; frontend serves HTTP only and holds no TLS keys.
@@ -822,7 +829,7 @@ but the proxy reaches both over DNS; frontend serves HTTP only and holds no TLS 
 
 - **Where:** Current primary via SSH; Proxmox node Shell for reboot.
 - **Preconditions:** Phase 7 passed; old primary fenced; sufficient disk; record any existing restore state.
-- **PASS:** For Todo and Notes: before-row only in restored view, both live rows retained, restore network-disabled/read-only; all three archives work after reboot.
+- **PASS:** For Todo, Notes and Guestbook: before-row only in restored view, both live rows retained, restore network-disabled/read-only; all four archives work after reboot.
 - **Evidence:** Backup and restore-point names, comparison, cleanup output, archive counters, capacity and boot IDs.
 - **STOP if:** Unverified backup, missing WAL, wrong restore target, archive failure or low space.
 
@@ -834,7 +841,7 @@ trust and configured archiving. The same step on its own must now print
 python3 -m app_ops --inventory recovery.yaml configure-backup
 ```
 
-Without `--app`, `status`, `create` and `mark` act on all three databases and
+Without `--app`, `status`, `create` and `mark` act on all four databases and
 prefix each line with the database name. Require, for each, writable database,
 `archive_mode=on`, `archive_timeout=1h`, an exact archived segment and zero
 failures:
@@ -845,8 +852,8 @@ python3 /opt/platform/bin/app_backup.py create
 ```
 
 Record the returned backup name for each database; they are separate backups.
-On the current primary, create a before-row in Todo and Notes, archive one
-named restore point in every database, then create an after-row in both.
+On the current primary, create a before-row in Todo, Notes and Guestbook, archive one
+named restore point in every database, then create an after-row in all three.
 Disposable restore operations require an explicit `--app`, given before the
 subcommand:
 
@@ -855,11 +862,15 @@ podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP
   --command "INSERT INTO todos (title, completed) VALUES ('PITR before restore point', false);"
 podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 \
   --command "INSERT INTO notes (title) VALUES ('PITR before restore point');"
+podman exec guestbook-postgres psql --username guestbook --dbname guestbook --set ON_ERROR_STOP=1 \
+  --command "INSERT INTO entries (message) VALUES ('PITR before restore point');"
 python3 /opt/platform/bin/app_backup.py mark --name acceptance_before_after
 podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 \
   --command "INSERT INTO todos (title, completed) VALUES ('PITR after restore point', false);"
 podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 \
   --command "INSERT INTO notes (title) VALUES ('PITR after restore point');"
+podman exec guestbook-postgres psql --username guestbook --dbname guestbook --set ON_ERROR_STOP=1 \
+  --command "INSERT INTO entries (message) VALUES ('PITR after restore point');"
 python3 /opt/platform/bin/app_backup.py --app todo restore \
   --backup base-YYYYMMDDTHHMMSSZ --target acceptance_before_after
 python3 /opt/platform/bin/app_backup.py --app todo restore-status
@@ -874,11 +885,20 @@ python3 /opt/platform/bin/app_backup.py --app notes restore-status
 podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}'
 podman exec notes-postgres-restore psql --username notes --dbname notes \
   --command "SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;"
+python3 /opt/platform/bin/app_backup.py --app guestbook restore \
+  --backup base-YYYYMMDDTHHMMSSZ --target acceptance_before_after
+python3 /opt/platform/bin/app_backup.py --app guestbook restore-status
+podman inspect guestbook-postgres-restore --format '{{.HostConfig.NetworkMode}}'
+podman exec guestbook-postgres-restore psql --username guestbook --dbname guestbook \
+  --command "SELECT id, message FROM entries WHERE message LIKE 'PITR % restore point' ORDER BY id;"
 podman exec notes-postgres psql --username notes --dbname notes \
   --command "SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;"
+podman exec guestbook-postgres psql --username guestbook --dbname guestbook \
+  --command "SELECT id, message FROM entries WHERE message LIKE 'PITR % restore point' ORDER BY id;"
 ```
 
-Todo goes back to the named restore point, from its recorded verified backup.
+Todo and Guestbook go back to the named restore point, each from its own
+recorded verified backup.
 Notes goes back to a time, which acceptance takes with `date --utc` right
 after the restore point and before the after-rows: without `--backup`,
 `app_backup.py` chooses the newest base backup before that time and first
@@ -893,10 +913,11 @@ After explicit cleanup approval:
 ```bash
 python3 /opt/platform/bin/app_backup.py --app todo cleanup-restore --confirm todo-postgres-restore
 python3 /opt/platform/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore
+python3 /opt/platform/bin/app_backup.py --app guestbook cleanup-restore --confirm guestbook-postgres-restore
 ```
 
 Verify that only disposable restore resources disappeared; live data and all
-three backup volumes must remain. Record the comparison and cleanup evidence. The
+four backup volumes must remain. Record the comparison and cleanup evidence. The
 backup is on the same VM and does not protect against VM/host loss.
 
 Rerun `configure-backup` and require `{"changed": false}`. Reboot current primary and verify
@@ -913,7 +934,7 @@ backup of todo, notes and keycloak in the journal.
 
 - **Where:** Proxmox node Shell for isolated boot/quarantine; current primary runs app-ops.
 - **Preconditions:** Phase 8 passed; reviewed backup/PITR evidence; old primary remains fenced; explicit reseed approval.
-- **PASS:** Authenticated replication check precedes deletion for every database; all three rebuilt databases are read-only and streaming with zero lag; new authenticated markers replicate.
+- **PASS:** Authenticated replication check precedes deletion for every database; all four rebuilt databases are read-only and streaming with zero lag; new authenticated markers replicate.
 - **Evidence:** Approvals, STOPPED and active firewall rules, app-ops JSON results, slot/role checks and marker ID.
 - **STOP if:** Any failed gate or partial rebuild: preserve state, diagnose, never repeat destructive reseed blindly.
 
@@ -927,7 +948,7 @@ A helper installation alone is not proof that quarantine works.
 Stopped services may be inactive or failed only with zero MainPID/ControlPID
 and no running user containers; preserve failure evidence. Remove the old
 inbound replication rule on .102. On current primary allow only .102 to reach
-.108:5432-5434. Establish verified key-based SSH from current primary to rebuild
+.108:5432-5435. Establish verified key-based SSH from current primary to rebuild
 host. Enable only the inspected Proxmox outbound replication exception.
 
 First prove the confirmation gate. Wrong confirmations must refuse before
@@ -963,7 +984,7 @@ port; `replication port ... is not reachable` means a firewall step above is
 missing, and nothing was deleted. Never rerun it after a failure. Pass when,
 for every database, authenticated `IDENTIFY_SYSTEM` precedes volume deletion,
 a fresh base backup initializes `.102`, and final state is `streaming|async`;
-from `.102`, ports 5432-5434 on `.108` now connect.
+from `.102`, ports 5432-5435 on `.108` now connect.
 
 Run `python3 -m app_ops --inventory recovery.yaml cluster-status`; it reports every registered
 database. Create an authenticated Todo through `todo.test` and an authenticated
@@ -994,10 +1015,10 @@ It checks both hosts against the inventory and the primary's firewall rule,
 finds each database's one slot on the primary, and requires `.102` to prove,
 for every database, that it is a read-only standby, that no application
 service runs there, and that it reaches and logs in to `.108` over TLS. Only
-then does it stop and erase `.102`'s three databases; `.108` drops each idle
+then does it stop and erase `.102`'s four databases; `.108` drops each idle
 slot, `.102` takes a fresh base backup of each with the same slot name, its
-DR check is installed again, and the run ends when all three stream. Pass on
-`{"changed": true}`, `t|on` for all three on `.102`, `cluster-status` with
+DR check is installed again, and the run ends when all four stream. Pass on
+`{"changed": true}`, `t|on` for all four on `.102`, `cluster-status` with
 the same slots streaming at zero lag, a new authenticated marker on `.102`,
 and the DR check passing on both hosts. If it fails after the erase, `.108`
 is untouched; `bootstrap-standby` builds `.102` again. Never run it twice
@@ -1012,10 +1033,10 @@ after a failure.
 - **STOP if:** Standby not recovered, replication unhealthy or any data/TLS failure. Do not reboot the other host.
 
 1. Reboot only rebuilt standby.
-2. Require `t|on` for all three databases, only the three PostgreSQL services and resumed streaming.
+2. Require `t|on` for all four databases, only the four PostgreSQL services and resumed streaming.
 3. Run `cluster-status`.
 4. Reboot only current primary.
-5. Require all eight workload services from phase 3,
+5. Require all ten workload services from phase 3,
    `podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf`, `f|off|on|1h` for
    every database, persistent backups, unchanged TLS CA and readiness of both apps.
 6. Run `cluster-status` again.
@@ -1046,6 +1067,8 @@ help-app.service           help-app pod
 keycloak.service           keycloak pod
 todo-postgres.service      todo-postgres pod
 notes-postgres.service     notes-postgres pod
+guestbook-postgres.service guestbook-postgres pod
+guestbook-app.service      guestbook-app pod
 keycloak-postgres.service  keycloak-postgres pod
 ```
 
@@ -1057,23 +1080,24 @@ python3 -m app_ops --inventory recovery.yaml cluster-status
 
 Inspect reported lag and LSNs for every database in the JSON; exit 0 alone
 does not prove zero lag or complete acceptance.
-Require schema migrations applied by both init containers, healthy
+Require schema migrations applied by all three app init containers, healthy
 backends/frontends, proxy DNS routing to `todo-app:8080`/`todo-app:8000` and
-`notes-app:8080`/`notes-app:8000`, proxy-to-Keycloak DNS routing to
+`notes-app:8080`/`notes-app:8000` and
+`guestbook-app:8080`/`guestbook-app:8000`, proxy-to-Keycloak DNS routing to
 `keycloak:8080` through `app-network.network`, unchanged PostgreSQL identities,
 persistent data, streaming replication and WAL archive health.
 
 Use the sequential reboot evidence from phase 10; do not add another reboot.
 After those boots, require `NRestarts=0` for `todo-app.service`,
-`notes-app.service` and `shared-proxy.service`, no failed user
+`notes-app.service`, `guestbook-app.service` and `shared-proxy.service`, no failed user
 units, readiness, stable issuer and trusted browser E2E, including the
 Notes and multi-app SSO tests, with no skipped tests.
 CLEAN PASS requires every phase on the same clean revision, isolated PITR,
-sequential final reboots and new authenticated Todo and Notes markers read on
+sequential final reboots and new authenticated Todo, Notes and Guestbook markers read on
 rebuilt standby.
 Record repairs as REPAIRED FUNCTIONAL PASS, preserving original failures.
 Keep quarantine through verification. The stop helper is not a rebuilt-standby
-management tool: it expects all eight registered workload units (including `shared-proxy.service`).
+management tool: it expects all ten registered workload units (including `shared-proxy.service`).
 
 Finally remove the run's passwordless sudo on both VMs, and require a non-zero
 exit; a run that leaves the file in place is not complete:

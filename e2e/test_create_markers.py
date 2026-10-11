@@ -18,7 +18,8 @@ import create_markers
 import pytest
 from playwright.sync_api import Error
 
-ROWS = {'/api/todos': [{'id': 7, 'title': 'marker'}, {'id': 8, 'title': 'other'}],
+ROWS = {'/api/entries': [{'id': 9, 'message': 'marker'}],
+        '/api/todos': [{'id': 7, 'title': 'marker'}, {'id': 8, 'title': 'other'}],
         '/api/notes': [{'id': 3, 'title': 'twice'}, {'id': 4, 'title': 'twice'}]}
 
 
@@ -26,6 +27,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/':
             body, kind, status = b'<!doctype html><title>app</title>', 'text/html', 200
+        elif self.path == '/auth.js':
+            body = b"export default {getAccessToken: async () => 'fixture-access-token'};"
+            kind, status = 'text/javascript', 200
+        elif self.path == '/api/entries' and self.headers.get('Authorization') != 'Bearer fixture-access-token':
+            body, kind, status = b'{"detail": "Unauthorized"}', 'application/json', 401
         elif self.path in ROWS:
             body, kind, status = json.dumps(ROWS[self.path]).encode(), 'application/json', 200
         else:
@@ -90,3 +96,9 @@ def test_marker_id_requires_exactly_one_row(page):
 def test_marker_id_reports_an_http_error(page):
     with pytest.raises(Error, match='HTTP 404'):
         create_markers.marker_id(page, '/api/unknown', 'marker')
+
+
+def test_guestbook_marker_uses_the_browser_access_token_and_message(page):
+    with pytest.raises(Error, match='HTTP 401'):
+        create_markers.marker_id(page, '/api/entries', 'marker', field='message')
+    assert create_markers.marker_id(page, '/api/entries', 'marker', field='message', authenticated=True) == 9

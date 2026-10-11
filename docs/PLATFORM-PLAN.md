@@ -1326,7 +1326,7 @@ understandability check. Findings and disposition:
 4. Replication port reservation: documented 5434 beside `replicationPort`
    in platform.yaml and the guide, with all occupied ports. Guestbook's
    fourth database is in the acceptance table; carrying its row and port
-   through the lab is the next delivery, 5-4e.
+   through the lab is implemented in 5-4e, awaiting the operator's run.
 5. Authenticated reads versus anonymous checks: the guide explains an
    expected 401, a public migrated-table readiness check, and why CI must
    also prove authenticated CRUD. FakeHost honours that status (5-4a);
@@ -1341,3 +1341,26 @@ understandability check. Findings and disposition:
    failure. The real full-stack job passed on `e918141`; 5-4c adds green
    PostgreSQL role, authenticated browser CRUD and token-isolation coverage.
    Target-host DR remains for phase 5's operator-run acceptance.
+
+**Phase 5-4e, code done; the lab step runs in the phase's acceptance run.**
+Step 5-4d passed CI #407 on `5ce08f7`. The lab creates a Guestbook message
+through real SSO, reads it with the frontend's access token, records its ID,
+and compares ID/message on each host alongside Todo and Notes. Those same
+marker checks run after failover, nightly restore, standby rebuild, a second
+re-seed and final reboots. Full-stack CI now also runs the marker helper.
+The single-host nightly-restore exercise writes a later Guestbook row and
+requires it gone while the earlier marker survives. The four-database backup
+journal is required in full; a missing Guestbook backup fails the check.
+PITR inserts before/after messages and restores Guestbook from its own named
+backup into its own network-disabled restore container. For all three app
+PITR probes, separate SQL assertions require the exact restored and live
+row sets; the runner also checks paused read-only recovery and network
+`none`. Cleanup names each disposable container explicitly and preserves
+all four backup volumes. Port 5435 is covered by the peer firewall range,
+open/blocked quarantine proofs, fencing probes and the post-rebuild check.
+The installer's and DR tools' fencing, promotion, full-group, backup, PITR
+and deletion gates are unchanged. No render baseline update was needed.
+
+Phase 5 still awaits the operator's unchanged-revision acceptance evidence
+and its final fresh-agent understandability check. Record the evidence and
+verdict as AGENTS.md describes before marking these deliveries accepted.

@@ -213,11 +213,11 @@ Pre-approvals (durable for this run only; every STOP rule still applies):
   [x] Guest Agent guest-exec opt-in and SELinux helper entrypoint opt-in on VM 107
   [x] Quarantine rehearsal with a brief outage of VM 107 before promotion
   [x] Fence VM 107 and promote the standby database group
-  [x] Destructive reseed of VM 107's three databases after verified backup/PITR
-  [x] A second reseed of VM 107's three databases, without a failover (09-13c)
+  [x] Destructive reseed of VM 107's four databases after verified backup/PITR
+  [x] A second reseed of VM 107's four databases, without a failover (09-13c)
   [x] Cleanup of the disposable PITR restore containers/volumes
   [x] One nightly backup run on VM 107 (03-12a) and the restore of VM 107's
-      three databases from it (03-12c), which discards the row written after it
+      four databases from it (03-12c), which discards the rows written after it
   [x] One nightly backup run on VM 108 (08-16), which also deletes archived
       WAL older than the oldest kept base backup
   [x] Store the generated testuser password in a 0600 tmpfs file for this run
@@ -471,8 +471,8 @@ python3 deploy/scripts/lab/pve_lab.py get /nodes/{node}/qemu/107/firewall/rules
 python3 deploy/scripts/lab/pve_lab.py get /cluster/firewall/options
 python3 deploy/scripts/lab/pve_lab.py get /cluster/ha/resources
 python3 deploy/scripts/lab/pve_lab.py fence 107
-bash deploy/scripts/lab/ports-closed.sh 192.168.0.102 22 5432 5433 5434 8443
-ssh gunstein@192.168.0.108 'bash -s' -- 192.168.0.102 22 5432 5433 5434 8443 < deploy/scripts/lab/ports-closed.sh
+bash deploy/scripts/lab/ports-closed.sh 192.168.0.102 22 5432 5433 5434 5435 8443
+ssh gunstein@192.168.0.108 'bash -s' -- 192.168.0.102 22 5432 5433 5434 5435 8443 < deploy/scripts/lab/ports-closed.sh
 ```
 
 `exec` prints `exited`, `exitcode`, `out-data` and `err-data` and exits with the
@@ -777,15 +777,15 @@ $A --step 03-12 check markers 192.168.0.102
 ```
 
 The single host's nightly backup: `install.sh` turned on
-`platform-backup.timer`. Run it once, write one Todo row after it, restore the
-three databases from that backup, and check that the row is gone while the
+`platform-backup.timer`. Run it once, write one Todo and one Guestbook row after it, restore the
+four databases from that backup, and check that both later rows are gone while the
 markers, written before the backup, remain:
 
 ```bash
 $A --step 03-12a do backup-nightly 192.168.0.102
-vm 03-12b-after-backup 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('written after the nightly backup', false);\""
-vm 03-12c-restore 192.168.0.102 'cd ~/platform-offline-m12 && PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore todo-primary'   # → {"changed": true}; after one "restored" line each for todo, notes and keycloak
-vm 03-12d-restored 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"SELECT 1 / (CASE WHEN count(*) = 0 THEN 1 ELSE 0 END) AS row_gone FROM todos WHERE title = 'written after the nightly backup';\""   # → 1; division by zero if the row survived
+vm 03-12b-after-backup 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('written after the nightly backup', false);\" && podman exec guestbook-postgres psql --username guestbook --dbname guestbook --set ON_ERROR_STOP=1 --command \"INSERT INTO entries (message) VALUES ('written after the nightly backup');\""
+vm 03-12c-restore 192.168.0.102 'cd ~/platform-offline-m12 && PYTHONPATH=deploy/installer python3 -m app_installer backup restore --confirm-restore todo-primary'   # → {"changed": true}; after one "restored" line each for todo, notes, guestbook and keycloak
+vm 03-12d-restored 192.168.0.102 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"SELECT 1 / (CASE WHEN count(*) = 0 THEN 1 ELSE 0 END) AS row_gone FROM todos WHERE title = 'written after the nightly backup';\" && podman exec guestbook-postgres psql --username guestbook --dbname guestbook --set ON_ERROR_STOP=1 --command \"SELECT 1 / (CASE WHEN count(*) = 0 THEN 1 ELSE 0 END) AS row_gone FROM entries WHERE message = 'written after the nightly backup';\""   # → 1; division by zero if the row survived
 $A --step 03-12e check services 192.168.0.102 app
 $A --step 03-12f check markers 192.168.0.102
 vm 03-13-install-again 192.168.0.102 'cd ~/platform-offline-m12 && sh ./install.sh --publish-address 192.168.0.102'   # → {"changed": false}
@@ -850,7 +850,7 @@ $A --step 04-20 check markers 192.168.0.108
 ```bash
 ops 05-1-install-dr-tool 192.168.0.102 '--inventory initial.yaml install-dr-tool'          # → {"changed": true}
 ops 05-2-install-dr-tool-again 192.168.0.102 '--inventory initial.yaml install-dr-tool'    # → {"changed": false}
-vm 05-3-dr-status 192.168.0.108 'python3 /opt/platform/bin/app_dr.py status'                   # → 3× "Database role: standby", 3× "Writable: no", 3× "Local apply lag: 0 bytes", 3× ": reachable"
+vm 05-3-dr-status 192.168.0.108 'python3 /opt/platform/bin/app_dr.py status'                   # → 4× "Database role: standby", 4× "Writable: no", 4× "Local apply lag: 0 bytes", 4× ": reachable"
 ops 05-4-install-quarantine-tool 192.168.0.102 '--inventory initial.yaml install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint'        # → {"changed": true}
 ops 05-5-install-quarantine-tool-again 192.168.0.102 '--inventory initial.yaml install-quarantine-tool --enable-guest-exec --enable-selinux-entrypoint'  # → {"changed": false}
 $A --step 05-6 check quarantine-ready 107 todo-primary
@@ -868,6 +868,7 @@ into quarantine; only 7 and 8 take it out again.
 # 1. Baseline, firewall still off
 $A --step 05-8-1a check connect client 192.168.0.102 8443 open
 $A --step 05-8-1b check connect 192.168.0.108 192.168.0.102 5432 open
+$A --step 05-8-1b-guestbook check connect 192.168.0.108 192.168.0.102 5435 open
 $A --step 05-8-1c check connect 192.168.0.102 192.168.0.108 22 open
 # 2. Firewall on (the tool waits 20 s for it to apply)
 $A --step 05-8-2 do proxmox-firewall 107 on
@@ -876,6 +877,7 @@ $A --step 05-8-3a check connect client 192.168.0.102 22 open
 $A --step 05-8-3b check connect client 192.168.0.102 8443 blocked
 $A --step 05-8-3c check connect 192.168.0.108 192.168.0.102 22 open
 $A --step 05-8-3d check connect 192.168.0.108 192.168.0.102 5432 blocked
+$A --step 05-8-3d-guestbook check connect 192.168.0.108 192.168.0.102 5435 blocked
 $A --step 05-8-3e check connect 192.168.0.102 192.168.0.108 22 blocked
 vm 05-8-3f-ipv6 192.168.0.102 'ip -6 addr show scope global'   # → nothing; a global IPv6 address: STOP
 # 4-6. Links down, start isolated, stop the services through the Guest Agent
@@ -952,16 +954,16 @@ $A --step 07-15 check markers 192.168.0.108
 ```bash
 ops 08-1-configure-backup 192.168.0.108 '--inventory recovery.yaml configure-backup'   # → {"changed": false}; failover configured it
 $A --step 08-2 check roles 192.168.0.108 archiving
-vm 08-3-backup-status 192.168.0.108 'python3 /opt/platform/bin/app_backup.py status'        # → 3× "Archive mode: on", 3× "Failed archive attempts: 0"
-vm 08-4-backup-create 192.168.0.108 'python3 /opt/platform/bin/app_backup.py create'        # → 3× "Verified base backup: base-"; 08-9 reads the todo one
+vm 08-3-backup-status 192.168.0.108 'python3 /opt/platform/bin/app_backup.py status'        # → 4× "Archive mode: on", 4× "Failed archive attempts: 0"
+vm 08-4-backup-create 192.168.0.108 'python3 /opt/platform/bin/app_backup.py create'        # → 4× "Verified base backup: base-"; 08-9 reads each app's backup
 vm 08-5-restore-state 192.168.0.108 'podman ps -a --filter name=restore --format "{{.Names}}"; podman volume ls --filter name=restore --format "{{.Name}}"'   # → nothing
-vm 08-6-before-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR before restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR before restore point');\""
-vm 08-7-mark 192.168.0.108 'python3 /opt/platform/bin/app_backup.py mark --name acceptance_before_after && sleep 1 && date --utc +%Y-%m-%dT%H:%M:%SZ && sleep 1'   # → 3× "Archived restore point acceptance_before_after"; 08-10 reads the time
-vm 08-8-after-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR after restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR after restore point');\""
+vm 08-6-before-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR before restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR before restore point');\" && podman exec guestbook-postgres psql --username guestbook --dbname guestbook --set ON_ERROR_STOP=1 --command \"INSERT INTO entries (message) VALUES ('PITR before restore point');\""
+vm 08-7-mark 192.168.0.108 'python3 /opt/platform/bin/app_backup.py mark --name acceptance_before_after && sleep 1 && date --utc +%Y-%m-%dT%H:%M:%SZ && sleep 1'   # → 4× "Archived restore point acceptance_before_after"; 08-10 reads the time
+vm 08-8-after-rows 192.168.0.108 "podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"INSERT INTO todos (title, completed) VALUES ('PITR after restore point', false);\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"INSERT INTO notes (title) VALUES ('PITR after restore point');\" && podman exec guestbook-postgres psql --username guestbook --dbname guestbook --set ON_ERROR_STOP=1 --command \"INSERT INTO entries (message) VALUES ('PITR after restore point');\""
 ```
 
-Todo is restored to the named restore point, from the backup name that `08-4`
-logged (`backup_name todo` in `helpers.sh`). Notes is restored to the time
+Todo and Guestbook are restored to the named restore point, from the backup name that `08-4`
+logged (`backup_name todo` and `backup_name guestbook` in `helpers.sh`). Notes is restored to the time
 `08-7` printed between the rows (`restore_time`), with no backup named:
 `app_backup.py` chooses the newest base backup before that time and first
 archives the live WAL. The seconds of sleep around that time keep each row
@@ -969,19 +971,21 @@ on its own side of it. If a value is missing, `app_backup.py` refuses before
 it changes anything, and the step is a STOP.
 
 ```bash
-vm 08-9-restore-todo 192.168.0.108 "python3 /opt/platform/bin/app_backup.py --app todo restore --backup $(backup_name todo) --target acceptance_before_after && python3 /opt/platform/bin/app_backup.py --app todo restore-status && podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec todo-postgres-restore psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec todo-postgres psql --username todo --dbname todo --command \"SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
-vm 08-10-restore-notes 192.168.0.108 "python3 /opt/platform/bin/app_backup.py --app notes restore --target-time $(restore_time) && python3 /opt/platform/bin/app_backup.py --app notes restore-status && podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec notes-postgres-restore psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec notes-postgres psql --username notes --dbname notes --command \"SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\""
+vm 08-9-restore-todo 192.168.0.108 "python3 /opt/platform/bin/app_backup.py --app todo restore --backup $(backup_name todo) --target acceptance_before_after && python3 /opt/platform/bin/app_backup.py --app todo restore-status && podman inspect todo-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec todo-postgres-restore psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"SELECT 1 / CASE WHEN count(*) FILTER (WHERE title = 'PITR before restore point') = 1 AND count(*) FILTER (WHERE title = 'PITR after restore point') = 0 THEN 1 ELSE 0 END AS rows_match FROM todos; SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec todo-postgres psql --username todo --dbname todo --set ON_ERROR_STOP=1 --command \"SELECT 1 / CASE WHEN count(*) FILTER (WHERE title = 'PITR before restore point') = 1 AND count(*) FILTER (WHERE title = 'PITR after restore point') = 1 THEN 1 ELSE 0 END AS rows_match FROM todos; SELECT id, title FROM todos WHERE title LIKE 'PITR % restore point' ORDER BY id;\""   # → "recovery|paused|read_only = t|t|on", none, 2× "PITR before restore point", 1× "PITR after restore point"
+vm 08-10a-restore-notes 192.168.0.108 "python3 /opt/platform/bin/app_backup.py --app notes restore --target-time $(restore_time) && python3 /opt/platform/bin/app_backup.py --app notes restore-status && podman inspect notes-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec notes-postgres-restore psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"SELECT 1 / CASE WHEN count(*) FILTER (WHERE title = 'PITR before restore point') = 1 AND count(*) FILTER (WHERE title = 'PITR after restore point') = 0 THEN 1 ELSE 0 END AS rows_match FROM notes; SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\" && podman exec notes-postgres psql --username notes --dbname notes --set ON_ERROR_STOP=1 --command \"SELECT 1 / CASE WHEN count(*) FILTER (WHERE title = 'PITR before restore point') = 1 AND count(*) FILTER (WHERE title = 'PITR after restore point') = 1 THEN 1 ELSE 0 END AS rows_match FROM notes; SELECT id, title FROM notes WHERE title LIKE 'PITR % restore point' ORDER BY id;\""   # → "recovery|paused|read_only = t|t|on", none, 2× "PITR before restore point", 1× "PITR after restore point"
+vm 08-10b-restore-guestbook 192.168.0.108 "python3 /opt/platform/bin/app_backup.py --app guestbook restore --backup $(backup_name guestbook) --target acceptance_before_after && python3 /opt/platform/bin/app_backup.py --app guestbook restore-status && podman inspect guestbook-postgres-restore --format '{{.HostConfig.NetworkMode}}' && podman exec guestbook-postgres-restore psql --username guestbook --dbname guestbook --set ON_ERROR_STOP=1 --command \"SELECT 1 / CASE WHEN count(*) FILTER (WHERE message = 'PITR before restore point') = 1 AND count(*) FILTER (WHERE message = 'PITR after restore point') = 0 THEN 1 ELSE 0 END AS rows_match FROM entries; SELECT id, message FROM entries WHERE message LIKE 'PITR % restore point' ORDER BY id;\" && podman exec guestbook-postgres psql --username guestbook --dbname guestbook --set ON_ERROR_STOP=1 --command \"SELECT 1 / CASE WHEN count(*) FILTER (WHERE message = 'PITR before restore point') = 1 AND count(*) FILTER (WHERE message = 'PITR after restore point') = 1 THEN 1 ELSE 0 END AS rows_match FROM entries; SELECT id, message FROM entries WHERE message LIKE 'PITR % restore point' ORDER BY id;\""   # → "recovery|paused|read_only = t|t|on", none, 2× "PITR before restore point", 1× "PITR after restore point"
 ```
 
-Each must show `recovery|paused|read_only = t|t|on`, network `none`, only the
+Each query fails if its own before/after row counts differ from the expected
+ones; the guide comments also check the output. Each must show `recovery|paused|read_only = t|t|on`, network `none`, only the
 before-row in the restored view and both rows in the live view. Then:
 
 ```bash
-vm 08-11-cleanup 192.168.0.108 'python3 /opt/platform/bin/app_backup.py --app todo cleanup-restore --confirm todo-postgres-restore && python3 /opt/platform/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore && echo "restore containers: $(podman ps -aq --filter name=restore | wc -l)" && echo "restore volumes: $(podman volume ls -q --filter name=restore | wc -l)" && echo "backup volumes: $(podman volume ls -q --filter name=postgres-backup | wc -l)"'   # → "restore containers: 0", "restore volumes: 0", "backup volumes: 3"
+vm 08-11-cleanup 192.168.0.108 'python3 /opt/platform/bin/app_backup.py --app todo cleanup-restore --confirm todo-postgres-restore && python3 /opt/platform/bin/app_backup.py --app notes cleanup-restore --confirm notes-postgres-restore && python3 /opt/platform/bin/app_backup.py --app guestbook cleanup-restore --confirm guestbook-postgres-restore && echo "restore containers: $(podman ps -aq --filter name=restore | wc -l)" && echo "restore volumes: $(podman volume ls -q --filter name=restore | wc -l)" && echo "backup volumes: $(podman volume ls -q --filter name=postgres-backup | wc -l)"'   # → "restore containers: 0", "restore volumes: 0", "backup volumes: 4"
 ops 08-12-configure-backup-again 192.168.0.108 '--inventory recovery.yaml configure-backup'   # → {"changed": false}
 $A --step 08-13 do reboot 108 192.168.0.108 app
 $A --step 08-14 check roles 192.168.0.108 archiving
-vm 08-15-backup-status 192.168.0.108 'python3 /opt/platform/bin/app_backup.py status'   # → 3× "Archive mode: on", 3× "Failed archive attempts: 0"
+vm 08-15-backup-status 192.168.0.108 'python3 /opt/platform/bin/app_backup.py status'   # → 4× "Archive mode: on", 4× "Failed archive attempts: 0"
 $A --step 08-16 do backup-nightly 192.168.0.108   # one run of the nightly backup that failover turned on
 ```
 
@@ -997,7 +1001,7 @@ $A --step 09-4a do link 107 up 192.168.0.102
 $A --step 09-4b check connect 192.168.0.108 192.168.0.102 22 open
 $A --step 09-4c check connect 192.168.0.102 192.168.0.108 22 blocked
 $A --step 09-5a check stopped 192.168.0.102
-vm 09-5b-journal 192.168.0.102 'for unit in todo-postgres notes-postgres keycloak-postgres; do journalctl -b _SYSTEMD_USER_UNIT=$unit.service --no-pager | tail -n 20; done; true'
+vm 09-5b-journal 192.168.0.102 'for unit in todo-postgres notes-postgres guestbook-postgres keycloak-postgres; do journalctl -b _SYSTEMD_USER_UNIT=$unit.service --no-pager | tail -n 20; done; true'
 $A --step 09-6a do firewall-replication 192.168.0.108 192.168.0.102 remove
 $A --step 09-6b do firewall-replication 192.168.0.102 192.168.0.108 add
 $A --step 09-7 do pin-ssh 192.168.0.108 192.168.0.102
@@ -1007,7 +1011,7 @@ ops 09-9b-preflight 192.168.0.108 "--inventory recovery.yaml preflight-standby-r
 ops 09-10-rebuild 192.168.0.108 "--inventory recovery.yaml rebuild-standby --confirm-fenced 'todo-primary is fenced' --confirm-reseed todo-primary" &   # → {"changed": true}; wait for exit=
 ```
 
-Do not probe ports 5432-5434 before 09-10: until the rebuild publishes them,
+Do not probe ports 5432-5435 before 09-10: until the rebuild publishes them,
 `.108` listens there only on `127.0.0.1` and an open path looks like a
 blocked one. `rebuild-standby` checks the path itself. If it fails in any way,
 including `replication port ... is not reachable`: STOP, never run it again.
@@ -1016,6 +1020,7 @@ including `replication port ... is not reachable`: STOP, never run it again.
 $A --step 09-11a check connect 192.168.0.102 192.168.0.108 5432 open
 $A --step 09-11b check connect 192.168.0.102 192.168.0.108 5433 open
 $A --step 09-11c check connect 192.168.0.102 192.168.0.108 5434 open
+$A --step 09-11c-guestbook check connect 192.168.0.102 192.168.0.108 5435 open
 ops 09-11d-cluster-status 192.168.0.108 '--inventory recovery.yaml cluster-status'   # → {"changed": false}; it exits 1 unless every database streams, async, with an active slot
 $A --step 09-11e check roles 192.168.0.102 standby
 $A --step 09-11f check replication-tls 192.168.0.108
@@ -1031,7 +1036,7 @@ Then copy the standby again without a failover, as for a standby that lost
 its slot (`docs/runbooks/standby-rebuild.md` 2b, pre-approved). `.108` keeps
 serving throughout. The pair inventory names the current roles,
 `.108` as primary and `.102` as standby. A wrong confirmation must refuse
-before anything changes; the real run deletes `.102`'s three databases only
+before anything changes; the real run deletes `.102`'s four databases only
 after `.102` proved it is a read-only standby that reaches `.108`.
 
 ```bash
@@ -1053,7 +1058,7 @@ If it failed after, `.108` is untouched: STOP and report; never run it again.
 #### C9.11 Phases 10 and 11 — Final reboots and verdict
 
 ```bash
-$A --step 10-1 do reboot 107 192.168.0.102 standby    # includes: only the three PostgreSQL services
+$A --step 10-1 do reboot 107 192.168.0.102 standby    # includes: only the four PostgreSQL services
 $A --step 10-2 check roles 192.168.0.102 standby
 ops 10-3-cluster-status 192.168.0.108 '--inventory recovery.yaml cluster-status'
 $A --step 10-4 do reboot 108 192.168.0.108 app

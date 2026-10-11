@@ -14,12 +14,12 @@ firewalld or SSH/TLS verification to continue.
 | `pve-firewall status` says pending changes | Wait and inspect again. Verify actual IPv4 AND IPv6 rules before reconnecting under quarantine. |
 | PostgreSQL failed on disconnected DHCP boot | Inspect the journal for `bind: cannot assign requested address`. The helper accepts inactive/failed only after stop, zero service PIDs and no running containers; it preserves the failure warning. Do not start the old database after promotion. |
 | Helper reports hostname missing after an update | Inspect `ls -lZ` through Guest Agent. Required label: `virt_qemu_ga_unconfined_exec_t`. The installer restores existing persistent policy after replacement. Do not disable SELinux or broadly enable Guest Agent commands. |
-| Direct Guest Agent diagnostic is denied | Do not keep guessing privileged commands. Use reviewed restricted SSH only after stop/process/container and active firewall evidence is available. Read `journalctl -b _SYSTEMD_USER_UNIT=todo-postgres.service` (likewise `notes-postgres.service` and `keycloak-postgres.service`); `--user` may see no journal here. |
+| Direct Guest Agent diagnostic is denied | Do not keep guessing privileged commands. Use reviewed restricted SSH only after stop/process/container and active firewall evidence is available. Read `journalctl -b _SYSTEMD_USER_UNIT=todo-postgres.service` (likewise `notes-postgres.service`, `guestbook-postgres.service` and `keycloak-postgres.service`); `--user` may see no journal here. |
 | fapolicyd trust step retries then succeeds | Normal asynchronous refresh; judge the final result. If exhausted, inspect exact path/size/hash trust, never trust whole directories or disable fapolicyd. |
 | A `podman healthcheck run` unit for Keycloak shows failed right after boot | Keycloak starts slower than its first health checks. Wait a minute and look again: a unit that clears itself is expected. One that stays failed, or a Keycloak container that is not healthy, is a real failure. |
 | `/ready` works but login is still 503 after boot | Wait for Keycloak/discovery and browser tests too. `/ready` alone is not whole-application acceptance. |
 | Standby logs `Connection timed out` to the primary after a quarantine rehearsal, while SSH to the primary works | The Proxmox VM firewall is probably still enabled: its quarantine profile drops everything but SSH. Read the VM's `firewall/options`; the rehearsal's own restore step sets `enable=0` and reboots. Never work around it inside the guest. |
-| Standby gets `Connection refused` from the primary, or the primary's `ss -ltn` shows 5432-5434 only on `127.0.0.1` | The LAN publication of the replication ports is gone, typically because the installer was run again after replication was set up. Do not rerun anything; STOP and record the database `.kube` files' `PublishPort` lines. Restoring publication is an operator decision. |
+| Standby gets `Connection refused` from the primary, or the primary's `ss -ltn` shows 5432-5435 only on `127.0.0.1` | The LAN publication of the replication ports is gone, typically because the installer was run again after replication was set up. Do not rerun anything; STOP and record the database `.kube` files' `PublishPort` lines. Restoring publication is an operator decision. |
 | After a standby reboot, receive LSN is lower than replay LSN (for example `0/3000000` and `0/3000060`) on an idle database | Expected: the walreceiver restarts at the start of the WAL segment, and receive catches up with the next WAL. Nothing is left to replay; `app_dr.py status` shows 0 bytes and a note. Older revisions printed a negative lag and refused promotion: use a revision with the fix instead of working around it. |
 | Replication is absent immediately after reconnect | Check receiver logs and bounded reconnect progress. A prior TCP attempt can still be timing out. Require streaming and zero lag before the next gate; do not restart or reseed blindly. |
 | Rebuild fails at any point | STOP. Record the failed task name and exact error. Inspect both roles, slot, volumes and streaming before deciding what remains. Never repeat the destructive command. |
@@ -28,7 +28,7 @@ firewalld or SSH/TLS verification to continue.
 
 This applies ONLY to a failure in `rebuild-standby`'s last steps (installing
 `app_dr.py` on the rebuilt standby, for example because `sudo -n` stopped
-working) after base backup and recovery startup. First independently verify all three databases
+working) after base backup and recovery startup. First independently verify all four databases
 `.108` writable, `.102` read-only, `todo_rebuilt_standby`,
 `notes_rebuilt_standby` and `keycloak_rebuilt_standby` streaming, and
 quarantine intact.

@@ -22,6 +22,42 @@ Platform work:
   that still name todo or notes; shrink it, never grow it.
 - Until a phase changes it, the section below describes what runs today.
 
+Working routine (for whoever continues the platform work):
+- Where it stands: the phase log at the end of docs/PLATFORM-PLAN.md, newest
+  last; PROJECT.md#acceptance for the last accepted revision. Phase 5-2 is
+  accepted; 5-3 (Todo and Notes in examples/<app>/) is done in code; next is
+  5-4, the third app (plan, phase 5).
+- Before every push: ruff check ., pyright, and
+  PYTHONPATH=deploy/installer:deploy/dr:tests python3 -m unittest discover -s tests
+  (about 850 tests; the name guard counts tracked files only, so git add
+  first). A backend's own tests: python -m unittest discover -s
+  examples/<app>/backend/unit_tests. CI (.github/workflows/clean-install.yml)
+  must be green before the next step; it runs the whole stack in rootless
+  Podman with real Keycloak and the browser tests.
+- Each step gets a phase-log entry: what changed and why, and "code done;
+  the lab step runs in the phase's acceptance run".
+- One full lab run per phase, at its end (plan, section 7). The operator runs
+  python3 deploy/scripts/lab/acceptance.py --run <date>-run-<N> run and
+  hands over EVIDENCE.md. Record it as docs/history/ACCEPTANCE-<short sha>.md
+  (the newest one there is the pattern), update PROJECT.md#acceptance (the
+  verdict and a line under "How it got there") and mark the steps "done:
+  accepted in run ..." in the phase log. A failed run: find the cause, fix,
+  record why the run stopped, and run again.
+- After each phase, an understandability check by a fresh agent with no
+  history (plan, section 3): it reads the phase's code and docs and answers
+  GREEN, YELLOW or RED with numbered findings. Record the verdict and each
+  finding with what was done about it in the phase log, then fix them.
+- Phase 5-4: the third app (for example examples/guestbook, with database
+  and login) is written by an agent with no history, from the docs alone,
+  without reading git history, docs/history or the phase log; it lists what
+  it had to ask or guess. That list is recorded in the phase log and fixed
+  in docs or platform code. Adding the app to platform.yaml also adds its
+  database to the DR group (a new replicationPort and firewall port), so the
+  lab tooling (deploy/scripts/lab, e2e/create_markers.py, docs/ACCEPTANCE*.md)
+  must carry a row of its own through failover, backup and PITR, and CI's
+  full-stack job must exercise it. Then phase 5's acceptance run and its
+  understandability check.
+
 Current architecture and workflow:
 - docs/ARCHITECTURE.md describes the current design; docs/LEARNING-GUIDE.md
   teaches it. Use docs/ACCEPTANCE.md for

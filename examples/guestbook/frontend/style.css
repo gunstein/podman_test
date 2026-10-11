@@ -1,0 +1,21 @@
+:root { color-scheme: light; font: 17px/1.6 system-ui, sans-serif; color: #24352e; background: #f6f4ed; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 760px; margin: 3rem auto; padding: 0 1.5rem 3rem; }
+header { border-bottom: 1px solid #bdc8bf; padding-bottom: 2rem; margin-bottom: 2rem; }
+h1 { font: 3.6rem/1.1 Georgia, serif; margin: .4rem 0 1rem; }
+h2 { font: 1.8rem Georgia, serif; }
+.eyebrow { text-transform: uppercase; letter-spacing: .15em; font-size: .75rem; }
+button { border: 1px solid #355b48; border-radius: .35rem; padding: .65rem 1rem; background: #355b48; color: white; cursor: pointer; font: inherit; }
+button:disabled { opacity: .6; cursor: wait; }
+button:focus-visible, textarea:focus-visible { outline: 3px solid #b77326; outline-offset: 3px; }
+label { display: block; font-weight: 600; }
+textarea { width: 100%; margin: .5rem 0; padding: .8rem; border: 1px solid #859b8a; border-radius: .35rem; font: inherit; resize: vertical; }
+.entries-heading { display: flex; justify-content: space-between; align-items: center; margin-top: 2rem; gap: 1rem; }
+ul { list-style: none; padding: 0; }
+li { padding: 1.3rem; margin: 1rem 0; background: white; border: 1px solid #d4ddd5; border-radius: .5rem; }
+li p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 1rem; }
+time { display: block; font-size: .8rem; margin-bottom: .75rem; }
+li button, #refresh, #logout { background: transparent; color: #355b48; }
+#error { border-left: 4px solid #ac3329; padding: .8rem; background: #ffe8e4; color: #752219; }
+[hidden] { display: none !important; }

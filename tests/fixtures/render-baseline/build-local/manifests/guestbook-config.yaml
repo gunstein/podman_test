@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "guestbook-postgres-config"
+data:
+  POSTGRES_DB: "guestbook"
+  POSTGRES_USER: "guestbook"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "guestbook-backend-config"
+data:
+  DATABASE_HOST: "guestbook-postgres"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "guestbook"
+  LOG_LEVEL: "debug"
+  OIDC_ISSUER: "https://auth.test:8443/auth/realms/todo"
+  OIDC_JWKS_URL: "http://keycloak:8080/auth/realms/todo/protocol/openid-connect/certs"
+  OIDC_AUDIENCE: "guestbook-api"
+  # The frontend's /config/login.json (keycloak.frontend_login): its pod mounts this key alone.
+  FRONTEND_LOGIN: "{\"clientId\": \"guestbook-frontend\", \"discovery\": \"/auth/realms/todo/.well-known/openid-configuration\", \"realm\": \"todo\"}"

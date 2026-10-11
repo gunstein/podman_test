@@ -1,0 +1,120 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "guestbook-app"
+  labels:
+    app.kubernetes.io/name: "guestbook"
+    app.kubernetes.io/component: application
+  annotations:
+    io.podman.annotations.pids-limit/guestbook-migrate: "128"
+    io.podman.annotations.pids-limit/guestbook-backend: "128"
+    io.podman.annotations.pids-limit/guestbook-frontend: "128"
+spec:
+  restartPolicy: Never
+  initContainers:
+    - name: "guestbook-migrate"
+      image: "localhost/guestbook-backend:m12"
+      imagePullPolicy: Never
+      args: [python, -m, backend.migrate, --connect-timeout, "120", up]
+      envFrom:
+        - configMapRef:
+            name: "guestbook-backend-config"
+            optional: false
+      env:
+        - name: DATABASE_USER
+          value: "guestbook_migrator"
+        - name: DATABASE_PASSWORD_FILE
+          value: "/run/secrets/guestbook-migrator/database-password"
+      volumeMounts:
+        - name: migrator-secret
+          mountPath: "/run/secrets/guestbook-migrator"
+          readOnly: true
+      resources:
+        limits:
+          memory: "256Mi"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+  containers:
+    - name: "guestbook-backend"
+      image: "localhost/guestbook-backend:m12"
+      imagePullPolicy: Never
+      ports:
+        - name: backend-http
+          containerPort: 8000
+      envFrom:
+        - configMapRef:
+            name: "guestbook-backend-config"
+            optional: false
+      env:
+        - name: DATABASE_USER
+          value: "guestbook_app"
+        - name: DATABASE_PASSWORD_FILE
+          value: "/run/secrets/guestbook-backend/database-password"
+      volumeMounts:
+        - name: backend-secret
+          mountPath: "/run/secrets/guestbook-backend"
+          readOnly: true
+      livenessProbe:
+        exec:
+          command:
+            - python
+            - -c
+            - >-
+              import socket;
+              socket.create_connection(("127.0.0.1", 8000), 1).close()
+        initialDelaySeconds: 2
+        periodSeconds: 10
+        timeoutSeconds: 2
+        failureThreshold: 3
+      resources:
+        limits:
+          memory: "256Mi"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+
+    - name: "guestbook-frontend"
+      image: "localhost/guestbook-frontend:m12"
+      imagePullPolicy: Never
+      ports:
+        - name: frontend-http
+          containerPort: 8080
+      volumeMounts:
+        - name: frontend-login
+          mountPath: /usr/share/nginx/html/config
+          readOnly: true
+      resources:
+        limits:
+          memory: "128Mi"
+      securityContext:
+        runAsUser: 101
+        runAsGroup: 101
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+  volumes:
+    - name: frontend-login
+      configMap:
+        name: "guestbook-backend-config"
+        optional: false
+        defaultMode: 0444
+        items:
+          - key: FRONTEND_LOGIN
+            path: login.json
+    - name: backend-secret
+      secret:
+        secretName: "guestbook-kube-backend-secret"
+        optional: false
+        defaultMode: 0444
+    - name: migrator-secret
+      secret:
+        secretName: "guestbook-kube-migrator-secret"
+        optional: false
+        defaultMode: 0444

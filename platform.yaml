@@ -28,3 +28,6 @@ apps:
     replicationPort: 5433
   - path: examples/help
     hostname: help.test
+  - path: examples/guestbook
+    hostname: guestbook.test
+    replicationPort: 5435

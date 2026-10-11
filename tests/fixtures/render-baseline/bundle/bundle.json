@@ -4,6 +4,9 @@
   "manifests": {
     "directory": "generated/target/manifests",
     "files": [
+      "guestbook-app.yaml",
+      "guestbook-config.yaml",
+      "guestbook-postgres.yaml",
       "help-app.yaml",
       "help-config.yaml",
       "keycloak-config.yaml",
@@ -21,6 +24,8 @@
   "quadlets": {
     "directory": "generated/target/quadlet",
     "files": [
+      "guestbook-app.kube",
+      "guestbook-postgres.kube",
       "help-app.kube",
       "keycloak-postgres.kube",
       "keycloak.kube",
@@ -40,6 +45,7 @@
   "replicated_quadlets": {
     "directory": "generated/target/quadlet/replicated",
     "files": [
+      "guestbook-postgres.kube",
       "keycloak-postgres.kube",
       "notes-postgres.kube",
       "todo-postgres.kube"
@@ -223,6 +229,74 @@
             "status": 200
           }
         ]
+      },
+      {
+        "name": "guestbook",
+        "hostname": "guestbook.test",
+        "login_client": "guestbook-frontend",
+        "login_audience": "guestbook-api",
+        "has_database": true,
+        "replication_port": 5435,
+        "images": [
+          {
+            "name": "backend",
+            "context": "examples/guestbook/backend",
+            "containerfile": "Containerfile"
+          },
+          {
+            "name": "frontend",
+            "context": "examples/guestbook/frontend",
+            "containerfile": "Containerfile"
+          }
+        ],
+        "endpoints": [
+          {
+            "name": "frontend",
+            "port": 8080
+          },
+          {
+            "name": "backend",
+            "port": 8000
+          }
+        ],
+        "routes": [
+          {
+            "path": "/api/",
+            "to": "backend",
+            "exact": false
+          },
+          {
+            "path": "/health",
+            "to": "backend",
+            "exact": true
+          },
+          {
+            "path": "/ready",
+            "to": "backend",
+            "exact": true
+          },
+          {
+            "path": "/",
+            "to": "frontend",
+            "exact": false
+          }
+        ],
+        "ready": "/ready",
+        "pod_template": "examples/guestbook/pod.yaml.j2",
+        "containers": [
+          "guestbook-backend",
+          "guestbook-frontend"
+        ],
+        "checks": [
+          {
+            "path": "/health",
+            "status": 200
+          },
+          {
+            "path": "/api/entries",
+            "status": 401
+          }
+        ]
       }
     ]
   },
@@ -231,6 +305,7 @@
     "TARGET_IDENTITY_HOSTNAME": "auth.test",
     "TARGET_TODO_HOSTNAME": "todo.test",
     "TARGET_NOTES_HOSTNAME": "notes.test",
-    "TARGET_HELP_HOSTNAME": "help.test"
+    "TARGET_HELP_HOSTNAME": "help.test",
+    "TARGET_GUESTBOOK_HOSTNAME": "guestbook.test"
   }
 }

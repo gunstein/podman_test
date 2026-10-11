@@ -1,0 +1,33 @@
+name: guestbook
+database: true
+login:
+  client: guestbook-frontend
+  audience: guestbook-api
+images:
+  backend:
+    context: backend
+  frontend:
+    context: frontend
+endpoints:
+  frontend:
+    port: 8080
+  backend:
+    port: 8000
+routes:
+  - path: /api/
+    to: backend
+  - path: /health
+    exact: true
+    to: backend
+  - path: /ready
+    exact: true
+    to: backend
+  - path: /
+    to: frontend
+ready: /ready
+checks:
+  - path: /health
+    status: 200
+  # The platform's checks are anonymous GETs. Reading entries needs login.
+  - path: /api/entries
+    status: 401

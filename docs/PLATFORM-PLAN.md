@@ -453,6 +453,31 @@ From the 4h understandability check, phase 5 must also:
 - give the third app its own client ID, read by its frontend from its
   config rather than written in its JS, and check token audience and
   runtime CRUD; the shared `todo` realm is today's limit until phase 6.
+Phase 5 starts with **5-1, the identity contract**, from an assessment of
+replacing Keycloak with Duende IdentityServer (YELLOW: the apps' token
+validation is plain OIDC, but the platform's Keycloak paths are spread over
+some fifteen files and no page says what a provider must deliver). Small,
+and before the third app, so its author finds the contract written down:
+- `docs/IDENTITY.md`: what an identity provider must deliver (issuer and
+  discovery, JWKS, `aud` per app, the claims a backend requires, client
+  registration with redirect and origin, readiness, the `/auth/` route,
+  its storage in the DR group), what is plain OIDC and what is Keycloak
+  administration, and where the Keycloak-specific code is. No provider
+  layer and no plugin system: a later switch changes those places.
+- One place in Python (`keycloak.py`) for the issuer, the discovery path
+  and the internal JWKS URL, used by the app ConfigMap, DR, backup and the
+  lab instead of `/auth/realms/todo` written out; the failover login check
+  takes `authorization_endpoint` from discovery instead of building it.
+- `keycloakClient` becomes a neutral `login: {client: ...}` in app.yaml,
+  and the token audience a backend checks comes from one function beside
+  the client ID (with Keycloak's audience mapper they are equal today; with
+  Duende the audience is an API resource's name).
+- A backend requires `OIDC_AUDIENCE` like the issuer, instead of falling
+  back to `todo-frontend`.
+Kept for an actual switch: the provider's own app and image, its client
+registration, its signing keys across a failover (for Duende, the data
+protection keys that encrypt them must replicate too), moving users (no
+password hashes assumed portable), and a new frontend adapter.
 
 **Phase 5b: An interrupted install, run again.** In CI, in real rootless
 Podman, an install is stopped by a real failure at a few points (an image
@@ -469,7 +494,8 @@ after the start.
 
 **Phase 6: Keycloak semantics and multi-realm.** *Behaviour.*
 Section 5.7: owned fields, idempotent setup, clients from defaults, every
-`realms/todo` gone, DR verification per realm. Todo and Notes share a realm;
+`realms/todo` gone (5-1 gathers them in one place first), DR verification
+per realm. Todo and Notes share a realm;
 a test installation adds an app in its own realm.
 
 **Phase 7: Lifecycle of apps.**

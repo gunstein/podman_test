@@ -346,6 +346,14 @@ Each phase: one purpose, all tests green, a working offline install, and the
 understandability check (section 3) recorded. Phases marked *behaviour*
 change what is installed and end with a full acceptance run.
 
+A full acceptance run takes hours, so it runs once at the end of a phase,
+not after each of its steps (5-1, 5-2, ...). Between runs CI carries the
+steps: the full-stack job against real Keycloak and PostgreSQL, the browser
+test and the unit tests. A step's phase log names what only the lab can show
+(Quadlet, the offline bundle, DR, backup, PITR, reboot), and the phase's run
+checks those. An extra run in the middle of a phase is for a change to
+fencing, promotion, backup, PITR or standby rebuild that CI cannot reach.
+
 **Phase 0: Baseline.**
 Fixtures of today's rendered YAML, units and `bundle.json` (build mode and
 offline bundle). Make `tests/test_dr_boundary.py` recursive (today it uses

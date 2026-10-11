@@ -23,4 +23,4 @@ KEYCLOAK_ADMIN_PASSWORD="$(ssh -o BatchMode=yes "$ssh_target" \
   "podman secret inspect --showsecret --format '{{.SecretData}}' keycloak-admin-password")"
 E2E_PASSWORD="$(cat "$state/e2e-password")"
 export KEYCLOAK_ADMIN_PASSWORD E2E_PASSWORD
-todo-backend/.venv/bin/python e2e/provision_user.py
+e2e/.venv/bin/python e2e/provision_user.py

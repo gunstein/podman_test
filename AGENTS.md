@@ -78,7 +78,7 @@ Constraints:
 - Offline delivery: rendered YAML and OCI images in the offline bundle;
   separate operations package contains tools and docs, not image archives.
 - Authentication: one shared Keycloak. The example apps use it behind their
-  auth.js (todo-frontend/, notes-frontend/) and provider adapter. Other IdPs
+  auth.js (examples/todo/frontend/, examples/notes/frontend/) and provider adapter. Other IdPs
   require implementation and integration testing.
 - Keep Bash scripts small and simple.
 - Do not add Kubernetes orchestration, Docker Engine, Docker Compose,

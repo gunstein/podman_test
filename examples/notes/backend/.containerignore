@@ -1,0 +1,8 @@
+# The image holds the app and its migrations, not its tests.
+requirements-test.txt
+tests
+unit_tests
+role_tests
+**/.venv
+**/__pycache__
+**/*.py[cod]

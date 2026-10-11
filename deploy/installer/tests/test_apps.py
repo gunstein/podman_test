@@ -96,13 +96,13 @@ class AppRegistryTests(unittest.TestCase):
     def test_images_come_from_the_app(self):
         from app_installer.images import image_list, shared_images
         app = App(name="notes", hostname="notes.test", login_client="notes-frontend", login_audience="notes-api",
-                  images=(AppImage(name="backend", context=".", containerfile="notes-backend/Containerfile"),
+                  images=(AppImage(name="backend", context=".", containerfile="backend/Containerfile"),
                           AppImage(name="site", context="../help")))
         images = image_list(app)
         self.assertEqual([image.reference for image in images], [
             "localhost/notes-backend:m12", "localhost/notes-site:m12"])
         self.assertEqual([(image.context, image.containerfile) for image in images],
-                         [(".", "notes-backend/Containerfile"), ("../help", "Containerfile")])
+                         [(".", "backend/Containerfile"), ("../help", "Containerfile")])
         with self.assertRaisesRegex(ValueError, "The app notes declares no image 'frontend'"):
             app.image("frontend")
         # PostgreSQL runs every database, so it is shared, not one per app; and

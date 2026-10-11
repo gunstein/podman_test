@@ -186,10 +186,10 @@ def delete_todo(todo_id: int, _user: Annotated[dict, Depends(require_user)]):
     return Response(status_code=204)
 
 
-# Local development without containers: serve todo-frontend from here too.
+# Local development without containers: serve frontend/ from here too.
 # The image sets SERVE_FRONTEND=false; there the frontend container serves it.
 if os.getenv("SERVE_FRONTEND", "true").lower() == "true":
-    frontend = Path(__file__).resolve().parent.parent / "todo-frontend"
+    frontend = Path(__file__).resolve().parent.parent / "frontend"
 
     @app.get("/config/login.json", include_in_schema=False)
     def frontend_login():

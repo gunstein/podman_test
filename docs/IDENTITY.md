@@ -41,7 +41,7 @@ refuse it).
 
 ## 2. The token contract of a backend
 
-Each backend (`todo-backend/main.py`, `notes-backend/main.py`,
+Each backend (`examples/todo/backend/main.py`, `examples/notes/backend/main.py`,
 `validate_access_token`) checks every write request's bearer token itself;
 nginx only routes. It requires:
 
@@ -92,12 +92,12 @@ One login, file by file, for Todo (Notes is the same):
 3. `examples/todo/pod.yaml.j2`: the backend reads the ConfigMap as
    environment (`envFrom`); the frontend mounts only `FRONTEND_LOGIN` as
    `/config/login.json` (its `volumeMounts` and the `frontend-login` volume);
-   `todo-frontend/nginx.conf` serves `/config/` as a file or 404.
-4. `todo-frontend/keycloak-adapter.js` reads `login.json` and discovery and
+   `examples/todo/frontend/nginx.conf` serves `/config/` as a file or 404.
+4. `examples/todo/frontend/keycloak-adapter.js` reads `login.json` and discovery and
    starts keycloak.js (`check-sso`, PKCE); `vendor/keycloak.js` (the SDK)
    sends the browser to Keycloak and exchanges the code for the tokens.
-5. `todo-frontend/app.js` sends `getAccessToken()` as `Authorization:
-   Bearer`; `todo-backend/main.py` `validate_access_token` checks it, and
+5. `examples/todo/frontend/app.js` sends `getAccessToken()` as `Authorization:
+   Bearer`; `examples/todo/backend/main.py` `validate_access_token` checks it, and
    `require_user` on each write endpoint is what enforces it.
 6. At install, `install.finish` → `install.configure_identity` →
    `keycloak.configure` makes or corrects the client (section 4).
@@ -222,7 +222,7 @@ outside it. Then, in this order, with a test at each step:
 
 ## 8. Tests that guard login
 
-- `todo-backend/unit_tests/test_auth.py`, `notes-backend/unit_tests/test_notes_auth.py`:
+- `examples/todo/backend/unit_tests/test_auth.py`, `examples/notes/backend/unit_tests/test_notes_auth.py`:
   the token checks without a database (wrong issuer, audience, expiry,
   signature, algorithm, a missing claim, another app's token, an ID token,
   no configured audience).

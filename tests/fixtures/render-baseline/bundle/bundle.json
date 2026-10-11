@@ -59,13 +59,13 @@
         "images": [
           {
             "name": "backend",
-            "context": ".",
-            "containerfile": "todo-backend/Containerfile"
+            "context": "examples/todo/backend",
+            "containerfile": "Containerfile"
           },
           {
             "name": "frontend",
-            "context": ".",
-            "containerfile": "todo-frontend/Containerfile"
+            "context": "examples/todo/frontend",
+            "containerfile": "Containerfile"
           }
         ],
         "endpoints": [
@@ -127,13 +127,13 @@
         "images": [
           {
             "name": "backend",
-            "context": ".",
-            "containerfile": "notes-backend/Containerfile"
+            "context": "examples/notes/backend",
+            "containerfile": "Containerfile"
           },
           {
             "name": "frontend",
-            "context": ".",
-            "containerfile": "notes-frontend/Containerfile"
+            "context": "examples/notes/frontend",
+            "containerfile": "Containerfile"
           }
         ],
         "endpoints": [

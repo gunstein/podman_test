@@ -1252,3 +1252,17 @@ migrates, makes them again, and runs the role tests as the runtime role
      with login inherits the `todo` realm and a client ID written in its
      JS: all phase 5, now written into its scope.
 
+
+**Phase 5-3, code done; the lab step runs in phase 5's acceptance run.**
+Todo and Notes move into their own directories: `examples/<app>/backend`
+and `examples/<app>/frontend` beside the app's `app.yaml` and `pod.yaml.j2`,
+each image built from its own directory (`context: backend`, the
+Containerfile in it), as Help's already was. A backend's own
+`.containerignore` keeps its tests out of the image. Nothing else changes:
+the render baseline differs only in `bundle.json`'s image contexts, and the
+backend is still the package `backend` (`/app/backend` in the image,
+`PYTHONPATH=examples/<app>` on the host). Notes' role test is in
+`role_tests/`, like Todo's. The browser tests' requirements and virtual
+environment, the platform's and not an app's, are `e2e/requirements.txt` and
+`e2e/.venv` (the lab's step `03-4a` makes it there). CI, Dependabot and the
+docs name the new paths.

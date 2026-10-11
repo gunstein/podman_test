@@ -431,9 +431,9 @@ when trust is retired using `certutil -D -d sql:/path/to/nssdb -n NAME`.
 See [Chromium's certificate documentation](https://chromium.googlesource.com/chromium/src/+/master/docs/linux/cert_management.md).
 
 On the client, use the selected source revision and an environment with
-`todo-backend/requirements-e2e.txt` and Chromium installed, for example
-`python3 -m venv todo-backend/.venv` followed by
-`todo-backend/.venv/bin/python -m pip install -r todo-backend/requirements-e2e.txt`. Provision `testuser` with
+`e2e/requirements.txt` and Chromium installed, for example
+`python3 -m venv e2e/.venv` followed by
+`e2e/.venv/bin/python -m pip install -r e2e/requirements.txt`. Provision `testuser` with
 its complete profile through the trusted Keycloak admin UI (email, first and last
 name, no required actions, non-temporary password of at least 12 characters,
 the realm's password policy), or use the existing
@@ -452,11 +452,11 @@ Run all three browser flows from the client, entering the test password locally:
   echo
   export E2E_PASSWORD E2E_USERNAME=testuser
   E2E_BASE_URL=https://todo.test:8443 E2E_IGNORE_HTTPS_ERRORS=false \
-    todo-backend/.venv/bin/python -m pytest e2e/test_todo_flow.py --browser chromium -q
+    e2e/.venv/bin/python -m pytest e2e/test_todo_flow.py --browser chromium -q
   E2E_NOTES_URL=https://notes.test:8443 E2E_IGNORE_HTTPS_ERRORS=false \
-    todo-backend/.venv/bin/python -m pytest e2e/test_notes_flow.py --browser chromium -q
+    e2e/.venv/bin/python -m pytest e2e/test_notes_flow.py --browser chromium -q
   E2E_MULTI_APP=1 E2E_CA_FILE=/tmp/platform-public-root.crt E2E_IGNORE_HTTPS_ERRORS=false \
-    todo-backend/.venv/bin/python -m pytest e2e/test_multi_app.py -q
+    e2e/.venv/bin/python -m pytest e2e/test_multi_app.py -q
 )
 ```
 

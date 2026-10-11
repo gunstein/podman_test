@@ -38,7 +38,7 @@ class StatementTests(unittest.TestCase):
     def test_each_migration_grants_its_tables_to_the_runtime_role(self):
         root = Path(__file__).resolve().parents[3]
         for app, table in (('todo', 'todos'), ('notes', 'notes')):
-            up = next((root / f'{app}-backend/migrations').glob('001_*.up.sql')).read_text()
+            up = next((root / f'examples/{app}/backend/migrations').glob('001_*.up.sql')).read_text()
             self.assertIn(f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {table} TO {app}_app;', up)
 
 

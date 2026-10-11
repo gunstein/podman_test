@@ -238,22 +238,22 @@ Never commit passwords, private keys, local inventories or generated bundles.
 
 ## Tests
 
-Database-free migration startup retry tests live in `todo-backend/unit_tests/`
-and `notes-backend/unit_tests/`.
+Database-free migration startup retry tests live in `examples/todo/backend/unit_tests/`
+and `examples/notes/backend/unit_tests/`.
 Backend integration tests use an isolated database whose name must end in
 `_test`:
 
 ```bash
 podman exec todo-postgres createdb -U todo -O todo todo_test
-python3 -m venv todo-backend/.venv
-todo-backend/.venv/bin/python -m pip install -r todo-backend/requirements-test.txt
+python3 -m venv examples/todo/.venv
+examples/todo/.venv/bin/python -m pip install -r examples/todo/backend/requirements-test.txt
 TODO_DB_PASSWORD=$(podman secret inspect --showsecret --format '{{.SecretData}}' todo-db-password)
 export TEST_DATABASE_URL="host=127.0.0.1 port=5432 dbname=todo_test user=todo password=$TODO_DB_PASSWORD"
-todo-backend/.venv/bin/python -m pytest todo-backend/tests
+PYTHONPATH=examples/todo examples/todo/.venv/bin/python -m pytest examples/todo/backend/tests
 unset TEST_DATABASE_URL TODO_DB_PASSWORD
 ```
 
-Browser tests use `todo-backend/requirements-e2e.txt` and Playwright. The helper
+Browser tests use `e2e/requirements.txt` and Playwright. The helper
 creates or updates `testuser` without storing either password:
 
 ```bash

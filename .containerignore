@@ -9,7 +9,4 @@ dist
 *.tar.gz
 *.key
 *.pem
-todo-backend/tests
-todo-backend/requirements-test.txt
-todo-backend/requirements-e2e.txt
 e2e

@@ -151,7 +151,7 @@ class KubeRuntimeTests(unittest.TestCase):
         self.assertNotIn("127.0.0.1:8000", config)
         self.assertNotIn("https://todo_frontend", config)
         self.assertNotIn("platform-nginx-data", read(RUNTIME / "todo-app.yaml"))
-        self.assertNotIn("ssl_certificate", read(ROOT / "todo-frontend/nginx.conf"))
+        self.assertNotIn("ssl_certificate", read(ROOT / "examples/todo/frontend/nginx.conf"))
         self.assertIn("DATABASE_HOST: \"todo-postgres\"", read(RUNTIME / "todo-config.yaml"))
 
     def test_quadlet_conditionals_render_real_lan_and_loopback_profiles(self):

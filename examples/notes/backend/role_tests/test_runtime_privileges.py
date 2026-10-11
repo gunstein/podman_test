@@ -1,4 +1,4 @@
-"""Run in the real notes-backend container with NOTES_ROLE_TEST=1."""
+"""Run in CI with NOTES_ROLE_TEST=1, connected as the real notes_app role."""
 import importlib
 import os
 import unittest

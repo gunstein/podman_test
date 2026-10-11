@@ -186,7 +186,7 @@ mode (`pyrightconfig.json`, Jinja2 and PyYAML installed); both run the same
 way locally, from the repository root:
 
 ```bash
-ruff check todo-backend notes-backend e2e deploy/scripts deploy/installer deploy/dr tests
+ruff check examples e2e deploy/scripts deploy/installer deploy/dr tests
 pyright
 ```
 

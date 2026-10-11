@@ -128,7 +128,7 @@ Host provisioning establishes database roles and grants with separate
 bootstrap, migrator, application, Keycloak and replication identities.
 The app pod's init container applies schema migrations before serving traffic.
 Ordinary app recovery does not repeat administrative role bootstrap.
-Read `todo-backend/`, `deploy/installer/app_installer/workloads.py` and
+Read `examples/todo/backend/`, `deploy/installer/app_installer/workloads.py` and
 `deploy/dr/app_dr_host/promoted.py`.
 
 ## 6. Browser, nginx, TLS and identity
@@ -145,7 +145,7 @@ curl --fail https://auth.test:8443/auth/realms/todo/.well-known/openid-configura
 ```
 
 These HTTPS commands require client name resolution and CA trust.
-Read `todo-frontend/nginx.conf` for static asset serving, the nginx ConfigMap in
+Read `examples/todo/frontend/nginx.conf` for static asset serving, the nginx ConfigMap in
 `deploy/manifests/shared-proxy.yaml.j2` for reverse-proxy routing,
 [TLS](TLS.md) and the frontend adapter chain:
 

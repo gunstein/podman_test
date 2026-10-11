@@ -8,7 +8,7 @@ from unittest import mock
 import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-migrate = importlib.import_module("notes-backend.migrate")
+migrate = importlib.import_module(Path(__file__).resolve().parents[1].name + ".migrate")
 
 
 class MigrationRetryTests(unittest.TestCase):

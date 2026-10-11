@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 with patch.dict(os.environ, {'SERVE_FRONTEND': 'false'}):
-    main = importlib.import_module('notes-backend.main')
+    main = importlib.import_module(Path(__file__).resolve().parents[1].name + '.main')
 
 
 class NotesAPITests(unittest.TestCase):

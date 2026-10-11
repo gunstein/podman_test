@@ -105,10 +105,10 @@ class BuildTests(unittest.TestCase):
         self.assertEqual([build[-5:] for build in builds], [
             ['--file', '/project/shop-backend/Containerfile', '--tag', 'localhost/shop-backend:m12', '/project'],
             ['--file', '/project/../help/Containerfile', '--tag', 'localhost/shop-site:m12', '/project/../help']])
-        # Today's apps build exactly as before: the repository is the context of every Containerfile.
+        # An example app builds from its own directory: each image's directory is its context.
         todo = platform_file.checkout().apps[0]
         self.assertEqual([(image.context, image.containerfile) for image in images.image_list(todo)],
-                         [('.', 'todo-backend/Containerfile'), ('.', 'todo-frontend/Containerfile')])
+                         [('examples/todo/backend', 'Containerfile'), ('examples/todo/frontend', 'Containerfile')])
 
 
 

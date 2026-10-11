@@ -7,13 +7,14 @@
 version: 2
 updates:
   - package-ecosystem: pip
-    directories: ["/todo-backend", "/notes-backend"]
+    directories: ["/examples/todo/backend", "/examples/notes/backend", "/e2e"]
     target-branch: feature/podman-kube
     schedule: {interval: weekly}
     groups:
       python: {patterns: ["*"]}
   - package-ecosystem: docker
-    directories: ["/todo-backend", "/notes-backend", "/todo-frontend", "/notes-frontend", "/proxy", "/keycloak"]
+    directories: ["/examples/todo/backend", "/examples/notes/backend", "/examples/todo/frontend", "/examples/notes/frontend",
+                  "/examples/help", "/proxy", "/keycloak"]
     target-branch: feature/podman-kube
     schedule: {interval: weekly}
   - package-ecosystem: github-actions

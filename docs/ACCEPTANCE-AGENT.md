@@ -223,7 +223,7 @@ Not approved: anything else destructive, any source change, commit or push,
 and any change on the client outside the run folder (do not stop, start or
 reconfigure services or processes there; report a blocker instead), except
 what C9's own steps write there: dist/, Podman images and build storage,
-temporary build directories, todo-backend/.venv and the Playwright cache.
+temporary build directories, e2e/.venv and the Playwright cache.
 
 Run every C9 step with `$A step NAME`, the name its last line gives after
 NEXT, and read all its output before the next call. Never type a step's
@@ -757,12 +757,12 @@ $A --step 03-4 check services 192.168.0.102 app
 
 Client name resolution and CA trust for `.102`: C9.4 (the operator runs it
 when `CLIENT_SUDO: no`). Then generate the testuser password (C6), and set up
-the browser environment and the test user. `todo-backend/.venv` is ignored by
+the browser environment and the test user. `e2e/.venv` is ignored by
 Git; `git status --porcelain` must stay empty. `provision-user.sh` forwards
 port 8080 through one SSH tunnel and closes exactly that tunnel:
 
 ```bash
-product 03-4a-browser-env sh -c 'python3 -m venv todo-backend/.venv && todo-backend/.venv/bin/python -m pip install -r todo-backend/requirements-e2e.txt && todo-backend/.venv/bin/python -m playwright install chromium'
+product 03-4a-browser-env sh -c 'python3 -m venv e2e/.venv && e2e/.venv/bin/python -m pip install -r e2e/requirements.txt && e2e/.venv/bin/python -m playwright install chromium'
 product 03-4b-provision-user deploy/scripts/lab/provision-user.sh gunstein@192.168.0.102
 $A --step 03-5 check ca 192.168.0.102
 $A --step 03-6 check headers

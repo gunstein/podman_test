@@ -1,14 +1,14 @@
 # The app developer's file: what the Todo app is (docs/PLATFORM-PLAN.md,
 # section 5.1). It never names other apps or installation choices; those are
-# in the operator's platform.yaml. The source is still in todo-backend/ and
-# todo-frontend/ at the repository root; phase 5 moves it here.
+# in the operator's platform.yaml. Its source is beside it: backend/ (FastAPI
+# and its migrations) and frontend/ (static files and the login adapter).
 
 name: todo
 # Its own PostgreSQL database, replicated for DR (platform.yaml gives the
 # replicationPort). Without database: true the platform makes none.
 database: true
 # Its login at the shared Keycloak (docs/IDENTITY.md): the OAuth client its
-# frontend logs in with (todo-frontend/keycloak-adapter.js), and the audience
+# frontend logs in with (frontend/keycloak-adapter.js), and the audience
 # its backend accepts in an access token. They differ, so an ID token, which
 # names the client, is refused by the API. Without login the app has none;
 # Keycloak runs only when some app has login.
@@ -16,15 +16,13 @@ login:
   client: todo-frontend
   audience: todo-api
 # The images it builds (section 5.2), each localhost/todo-<name>. context is
-# the build context, relative to this directory; containerfile is relative to
-# the context. Both Containerfiles copy from the repository root today.
+# the build context, relative to this directory, with its Containerfile in it
+# (containerfile: names another file in the context).
 images:
   backend:
-    context: ../..
-    containerfile: todo-backend/Containerfile
+    context: backend
   frontend:
-    context: ../..
-    containerfile: todo-frontend/Containerfile
+    context: frontend
 # The ports in its pod that nginx sends requests to (section 5.3).
 endpoints:
   frontend:

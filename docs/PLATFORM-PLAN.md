@@ -1437,3 +1437,30 @@ The review found the model, app-local duplication and DR safety boundaries
 understandable. Markdown step interpretation and resume rules need more
 care than the main install flow. Fixes 1 and 4 are in this delivery; 2 and
 3 remain for the next CI-gated delivery before lab acceptance.
+
+**Phase 5-4h, code done; the lab step runs in the phase's acceptance run.**
+Step 5-4g passed CI #411 on `14c2c36`. This completes the remaining fixes
+from its YELLOW understandability review:
+
+2. `acceptance.unmet` now parses each result line with `json.loads` and
+   compares the expected top-level fields, values and types in one object.
+   Extra fields, arbitrary field order and JSON whitespace are accepted;
+   the guide's trailing `, ...` subset notation is supported in expectations
+   only. Invalid JSON and matching values nested under other fields cannot
+   satisfy a check. Regression tests reproduce the reported false passes
+   and false rejection, check explicit subsets and prevent combining fields
+   from separate result lines or treating numeric zero as boolean false.
+   The guide now states the exact contract. Step order, refusal handling,
+   exit-status checks and resume rules are unchanged.
+3. `ADDING-AN-APP.md` now maps each manual lab extension to its concrete
+   file and function, distinguishes derived database/port lists from
+   app-specific evidence, and states when recovery coverage is complete.
+   A guide-command test creates and checks recorded markers through the
+   fake host, then compares the databases actually queried with the real
+   checkout's database apps. Adding an app without a marker check now fails
+   this test. No new runtime registry or abstraction is introduced.
+
+All four findings now have corrections; the review's verdict remains
+YELLOW as reported. Phase 5 still needs its unchanged-revision lab run and
+recorded evidence before acceptance. No render-baseline or name-guard
+allowlist change was required.

@@ -146,6 +146,28 @@ Add each new database's port to the peer-only replication firewall rules.
 Adding a database changes the complete DR group: extend the lab's markers,
 failover, backup/restore, PITR and standby rebuild/re-seed proofs together.
 
+The lab derives its database group and replication ports from `platform.yaml`.
+Its application data and browser checks are explicit. For a new database
+app, make these changes together:
+
+| File | What to extend |
+|---|---|
+| `deploy/scripts/lab/acceptance.py` | Add the app origin and browser environment in `check_browser` and `do_markers`; record its marker ID in `do_markers`, query its table in `check_markers`, and add a rolled-back insert in `check_write_probe`. |
+| `e2e/create_markers.py` | Create a persistent row through the app's UI, read its ID with the appropriate authentication and include it in the output parsed by `do_markers`. |
+| `e2e/test_multi_app.py` | Exercise login, write/read/delete, frontend-config isolation and rejected tokens for the new app, before and after failover. |
+| `docs/ACCEPTANCE.md` and `docs/ACCEPTANCE-AGENT.md` | Extend service/database tables, later-row snapshot-restore checks, before/after PITR rows, separate restore/live SQL assertions and restore-container cleanup. Add the port's open, blocked and post-rebuild checks; review the firewall ranges for any gaps between allocated ports. |
+| `tests/test_acceptance_tool.py` | Extend marker creation/readback and write-probe fixtures. `test_marker_checks_cover_the_real_platform_database_apps` compares the databases actually queried for markers with the checkout's database apps, so an omitted app fails. |
+| `tests/test_acceptance_guide.py` and `tests/test_acceptance_step.py` | Cover the new guide commands, PITR assertions and step names/order; preserve refusal and confirmation gates. |
+| `e2e/test_create_markers.py` and `.github/workflows/clean-install.yml` | Cover the new marker read contract and run the app's unit/role tests; full-stack CI runs the multi-app flow and marker helper. |
+
+Coverage is complete only when the app's own row is checked after failover,
+nightly backup/restore, rebuild, re-seed and final reboots, and its separate
+PITR proof checks both restored and live data. Existing `check_markers`
+calls cover these stages once its app query is added. The marker-coverage
+test detects an omitted database; real browser CI proves marker creation,
+and the full lab run proves recovery on the target hosts. The tests do not
+replace that run.
+
 From the repository root, with build dependencies installed:
 
 ```bash

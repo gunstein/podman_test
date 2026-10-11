@@ -1306,8 +1306,18 @@ def unmet(expectation, lines):
     kind, text, count = expectation
     printed = [line.strip() for line in lines if line.strip()]
     if kind == 'json':
-        pairs = re.findall(r'"\w+": (?:true|false|[0-9]+|"[^"]*")', text)
-        met = any(line.startswith('{"changed"') and all(pair in line for pair in pairs) for line in printed)
+        # The guide may spell a subset as {"changed": true, ...}; output must be real JSON.
+        expected = json.loads(re.sub(r',\s*\.\.\.\s*}$', '}', text))
+        met = False
+        for line in printed:
+            try:
+                actual = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(actual, dict) and all(key in actual and type(actual[key]) is type(value)
+                                                and actual[key] == value for key, value in expected.items()):
+                met = True
+                break
     elif kind == 'nothing':
         met = not printed
     elif kind == 'count':

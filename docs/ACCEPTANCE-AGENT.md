@@ -673,7 +673,9 @@ What `step` checks for you:
   ACCEPTANCE.md): its log `logs/NAME.log` holds the start time, the exact
   command (`# command: ...`), the full output and the exit status. It must end
   with `exit=0`, or `exit=1` for a name ending in `-refused`, and print what
-  the comment gives after `→`, up to `;`: a JSON line with those fields,
+  the comment gives after `→`, up to `;`: a valid JSON object line with those
+  top-level fields and values (field order and spacing do not matter; extra
+  fields are allowed, also when the expectation explicitly ends in `, ...`),
   `nothing`, `3× "text"` (exactly three output lines contain it),
   `only "text"` (every output line is it), `"text"` (some line contains it),
   or a word (a whole line). Several are separated by commas.

@@ -419,6 +419,29 @@ class ExpectationTests(unittest.TestCase):
                 self.assertEqual(self.state(comment, *good), "passed")
                 self.assertTrue(self.state(comment, *bad).startswith("did not print"), comment)
 
+    def test_json_requires_a_complete_object_with_the_expected_top_level_fields(self):
+        for output in ('{"changed": true, "details": {"changed": false}}',
+                       '{"changed": false',
+                       '{"details": {"changed": false}}',
+                       '[{"changed": false}]',
+                       '{"changed": 0}'):
+            with self.subTest(output=output):
+                self.assertEqual(self.state('{"changed": false}', output),
+                                 'did not print {"changed": false}')
+
+    def test_json_field_order_spacing_and_extra_fields_do_not_matter(self):
+        self.assertEqual(self.state('{"changed": false}',
+                                    'ordinary log output', '{"details": {}, "changed":false}'), 'passed')
+
+    def test_explicit_json_subset_requires_all_fields_in_the_same_object(self):
+        expected = '{"changed": true, "promoted_now": true, ...}'
+        self.assertEqual(self.state(expected, '{"promoted_now":true,"extra":1,"changed":true}'), 'passed')
+        for output in (['{"changed": true}', '{"promoted_now": true}'],
+                       ['{"changed": true, "details": {"promoted_now": true}}'],
+                       ['{"changed": true, "promoted_now": false}']):
+            with self.subTest(output=output):
+                self.assertEqual(self.state(expected, *output), f'did not print {expected}')
+
     def test_only_needs_one_line_and_ssh_warnings_and_headers_do_not_count(self):
         self.assertEqual(self.state('only "0"'), 'did not print only "0"')
         self.assertEqual(self.state("nothing"), "passed")

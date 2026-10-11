@@ -782,6 +782,20 @@ class EvidenceTests(ToolTest):
 class GuideCommandTests(ToolTest):
     """The commands A4 needs so the agent guide becomes a command list."""
 
+    def test_marker_checks_cover_the_real_platform_database_apps(self):
+        created = [("create_markers.py", (0, "MARKER 'acceptance run-1 phase3': todo id=3 note id=4 guestbook id=5\n"))]
+        self.assertEqual(self.tool("--step", "03-8", "do", "markers", "phase3", rules=created)[0], 0)
+        present = [("FROM todos", (0, "3|acceptance run-1 phase3\n")),
+                   ("FROM notes", (0, "4|acceptance run-1 phase3\n")),
+                   ("FROM entries", (0, "5|acceptance run-1 phase3\n"))]
+        code, fake = self.tool("--step", "03-9", "check", "markers", "192.168.0.102", rules=present)
+        self.assertEqual(code, 0)
+        checked = {call.split("podman exec ", 1)[1].split()[0]
+                   for call in fake.calls if "podman exec " in call}
+        self.assertEqual(checked, {app.database.container
+                                   for app in acceptance.platform_file.checkout().database_apps},
+                         "Extend the lab markers when adding a database app; see docs/ADDING-AN-APP.md")
+
     def test_fence_checks_every_field(self):
         good = '{"ha": "not managed", "net0": "virtio=AA,firewall=1,link_down=1", "onboot": "0", "status": "stopped"}'
         self.assertEqual(self.tool("--step", "06-2", "do", "fence", "107", rules=[("fence 107", (0, good))])[0], 0)

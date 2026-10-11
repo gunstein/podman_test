@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 SCRIPT = Path(__file__).parents[1] / "deploy/dr/scripts" / "app_backup.py"
 # On a host the script finds both packages in lib next to it; here they come
 # from the checkout, as PYTHONPATH=deploy/installer:deploy/dr would give them.
@@ -17,7 +19,6 @@ assert SPEC and SPEC.loader
 app_backup = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(app_backup)
 
-from app_installer import platform_file  # noqa: E402
 
 from tests.fake_commands import route_commands  # noqa: E402
 
@@ -29,13 +30,13 @@ def completed(stdout="", stderr="", returncode=0):
 def backup(test, runner, **kwargs):
     """A DatabaseBackup whose commands go to runner for the rest of test."""
     route_commands(test, runner)
-    return app_backup.DatabaseBackup(**{'database': platform_file.checkout().apps[0].database, **kwargs})
+    return app_backup.DatabaseBackup(**{'database': fixture_platform().apps[0].database, **kwargs})
 
 
 
 def setUpModule():
     # app_backup.py takes the platform this host recorded at install; here, the registry's.
-    patcher = mock.patch.object(app_backup.target_render, 'installed_platform', return_value=platform_file.checkout())
+    patcher = mock.patch.object(app_backup.target_render, 'installed_platform', return_value=fixture_platform())
     patcher.start()
     unittest.addModuleCleanup(patcher.stop)
 
@@ -142,7 +143,7 @@ class DatabaseBackupTests(unittest.TestCase):
         self.tool(runner).create_restore_point("after_old_failure")
 
     def test_restore_rejects_existing_disposable_state_without_replace(self):
-        restore_container = platform_file.checkout().apps[0].names.resource("postgres-restore")
+        restore_container = fixture_platform().apps[0].names.resource("postgres-restore")
         runner = FakeRunner(containers={restore_container})
         with self.assertRaisesRegex(app_backup.BackupError, "--replace"):
             self.tool(runner).restore(
@@ -258,7 +259,7 @@ class PruneTests(unittest.TestCase):
             self.assertIsNone(runner.cleaned)
 
     def test_nightly_backs_up_then_prunes_each_database_and_skips_a_standby(self):
-        databases = list(platform_file.checkout().replicated_databases)
+        databases = list(fixture_platform().replicated_databases)
         runner = BackupVolume(WEEK, WEEK[-1])
         route_commands(self, runner)
         tools = [app_backup.DatabaseBackup(database=database, clock=lambda: NOW) for database in databases]
@@ -277,7 +278,7 @@ class PruneTests(unittest.TestCase):
     def test_nightly_without_archiving_backs_up_nothing(self):
         runner = BackupVolume(WEEK, WEEK[-1], archive_status="off||||0|0")
         route_commands(self, runner)
-        tools = [app_backup.DatabaseBackup(database=database) for database in platform_file.checkout().replicated_databases]
+        tools = [app_backup.DatabaseBackup(database=database) for database in fixture_platform().replicated_databases]
         with self.assertRaisesRegex(app_backup.BackupError, "todo: archive_mode is not on"):
             app_backup.nightly(tools, 7)
         self.assertFalse([command for command in runner.commands if "pg_basebackup" in command])
@@ -412,7 +413,7 @@ class RestoreEdgeTests(unittest.TestCase):
         # Exit 1 is a fatal error in psql itself: report it at once, not after 60 seconds.
         class Starting(FakeRunner):
             def __init__(self, first_code):
-                super().__init__(containers={platform_file.checkout().apps[0].names.resource("postgres-restore")})
+                super().__init__(containers={fixture_platform().apps[0].names.resource("postgres-restore")})
                 self.first_code, self.polls = first_code, 0
 
             def __call__(self, arguments, timeout=None):
@@ -540,7 +541,7 @@ class TargetTimeTests(unittest.TestCase):
 
 class ApplicationBackupTests(unittest.TestCase):
     def test_each_backup_and_restore_stays_within_its_app(self):
-        for app in platform_file.checkout().replicated_databases:
+        for app in fixture_platform().replicated_databases:
             runner = FakeRunner()
             tool = backup(self, runner, database=app)
             tool.create_backup()
@@ -550,7 +551,7 @@ class ApplicationBackupTests(unittest.TestCase):
             basebackup = next(command for command in commands if 'pg_basebackup' in command)
             self.assertEqual(basebackup[:3], ['podman', 'exec', app.container])
             self.assertIn('--username=' + app.name, basebackup)
-            for other in platform_file.checkout().replicated_databases:
+            for other in fixture_platform().replicated_databases:
                 if other == app:
                     continue
                 self.assertFalse(any(other.container in argument
@@ -561,7 +562,7 @@ class ApplicationBackupTests(unittest.TestCase):
             self.assertTrue(any('recovery_target_action=pause' in command for command in commands))
 
     def test_cleanup_cannot_target_the_other_apps_restore(self):
-        for app in platform_file.checkout().replicated_databases:
+        for app in fixture_platform().replicated_databases:
             runner = FakeRunner(containers={app.names.resource('postgres-restore')},
                                 volumes={app.volume('restore-data')})
             tool = backup(self, runner, database=app)
@@ -589,7 +590,7 @@ class FakeHost:
     """One promoted host running every registered database, for the configure command."""
 
     def __init__(self, configured=(), directories_ready=(), mounts=None, source=None, active=True, previous=None):
-        self.databases = {d.container: d for d in platform_file.checkout().replicated_databases}
+        self.databases = {d.container: d for d in fixture_platform().replicated_databases}
         self.configured = set(configured)
         # Containers that already archive, with an older archive command.
         self.previous = previous or {}
@@ -653,7 +654,7 @@ class FakeHost:
 
 
 class ConfigureArchiveTests(unittest.TestCase):
-    DATABASES = platform_file.checkout().replicated_databases
+    DATABASES = fixture_platform().replicated_databases
 
     def configure(self, host, promoted=True, access_changed=False, recorded=None):
         tools = [backup(self, host, database=app, **fake_time(),
@@ -671,7 +672,7 @@ class ConfigureArchiveTests(unittest.TestCase):
                                   side_effect=lambda path, *a, **k: self.waits.append((path, k.get('hostname')))), \
                 mock.patch.object(app_backup.checks, 'status',
                                   side_effect=lambda path, hostname: (self.waits.append((path, hostname)), 200)[1]):
-            return app_backup.configure(platform_file.checkout(), tools, Path('/journal.json'))
+            return app_backup.configure(fixture_platform(), tools, Path('/journal.json'))
 
     def archive(self, archive, wal_name, content, env=None):
         """Run ARCHIVE_COMMAND with /bin/sh as PostgreSQL does, with the archive at archive; return its exit code."""
@@ -756,7 +757,7 @@ class ConfigureArchiveTests(unittest.TestCase):
         first_write = min([self.hba[0][0], host.index(lambda c: app_backup.BACKUP_DIRECTORIES_SCRIPT in c)])
         self.assertLess(last_gate, first_write)
         stops = host.matching(lambda c: c[:3] == ["systemctl", "--user", "stop"])
-        self.assertEqual([c[3] for c in stops], platform_file.checkout().services(databases=False))
+        self.assertEqual([c[3] for c in stops], fixture_platform().services(databases=False))
         restarts = host.matching(lambda c: c[:3] == ["systemctl", "--user", "restart"])
         self.assertEqual([c[3] for c in restarts], [d.service for d in self.DATABASES])
         start = host.index(lambda c: c == ["systemctl", "--user", "start", "keycloak.service", "todo-app.service", "notes-app.service",
@@ -765,8 +766,8 @@ class ConfigureArchiveTests(unittest.TestCase):
                         host.index(lambda c: c[:3] == ["systemctl", "--user", "restart"]))
         self.assertLess(max(host.commands.index(c) for c in restarts), start)
         self.assertLess(start, host.index(lambda c: any('pg_create_restore_point' in part for part in c)))
-        self.assertEqual(self.waits[:len(platform_file.checkout().apps)],
-                         [(app.ready, app.hostname) for app in platform_file.checkout().apps])
+        self.assertEqual(self.waits[:len(fixture_platform().apps)],
+                         [(app.ready, app.hostname) for app in fixture_platform().apps])
 
     def test_readiness_uses_the_hostnames_this_host_serves(self):
         host = FakeHost()
@@ -821,7 +822,7 @@ class ConfigureArchiveTests(unittest.TestCase):
         self.assertEqual(result['restarted'], [last.name])
         self.assertEqual(list(result['verified']), [last.name])
         self.assertEqual(len(host.matching(lambda c: c[:3] == ["systemctl", "--user", "stop"])),
-                         len(platform_file.checkout().services(databases=False)))
+                         len(fixture_platform().services(databases=False)))
 
     def test_a_failed_gate_on_the_last_database_stops_before_any_write(self):
         host = FakeHost(mounts={self.DATABASES[-1].name: []})

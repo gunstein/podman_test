@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import yaml
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
 from tests.runtime_fixture import ROOT, RUNTIME
 
 sys.path.insert(0, str(ROOT / "deploy/installer/tests"))
@@ -96,15 +97,14 @@ class PVCStorageTests(unittest.TestCase):
         from types import SimpleNamespace
 
         from app_dr_host import replication
-        from app_installer import platform_file
         canonical = next(d for d in yaml.safe_load_all((RUNTIME / "todo-postgres.yaml").read_text())
                          if d["metadata"]["name"] == "todo-postgres-data")
         target = SimpleNamespace(manifests={"todo-postgres.yaml": (RUNTIME / "todo-postgres.yaml").read_bytes()})
-        self.assertEqual(yaml.safe_load(replication.data_claim(platform_file.checkout().apps[0].database, target)), canonical)
+        self.assertEqual(yaml.safe_load(replication.data_claim(fixture_platform().apps[0].database, target)), canonical)
 
     def test_uninstall_preserves_database_and_tls_data_by_default_and_never_removes_backup(self):
-        from app_installer import platform_file, settings, uninstall
         from app_installer import secrets as kube_secrets
+        from app_installer import settings, uninstall
         for remove_data in (False, True):
             with tempfile.TemporaryDirectory() as directory, \
                     patch.object(settings, "SYSTEMD_USER_DIR", Path(directory) / "units"), \
@@ -112,7 +112,7 @@ class PVCStorageTests(unittest.TestCase):
                     patch("app_installer.uninstall.exists",
                           side_effect=lambda kind, name: not name.endswith("-replicator-password")), \
                     patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
-                uninstall.uninstall(platform_file.checkout(), remove_data=remove_data, quadlet_dir=directory)
+                uninstall.uninstall(fixture_platform(), remove_data=remove_data, quadlet_dir=directory)
                 commands = [call.args[0] for call in run.call_args_list]
                 volumes = [argv[-1] for argv in commands if argv[:3] == ["podman", "volume", "rm"]]
                 # platform-nginx-data holds the demo CA and is documented as persistent
@@ -122,10 +122,10 @@ class PVCStorageTests(unittest.TestCase):
                 self.assertEqual(set(volumes),
                                  ({"todo-postgres-data", "notes-postgres-data", "keycloak-postgres-data",
                                    "platform-nginx-data", "todo-caddy-data"} if remove_data else set())
-                                 | set(kube_secrets.kube_volume_names(platform_file.checkout())) | {"shared-nginx-config"}
+                                 | set(kube_secrets.kube_volume_names(fixture_platform())) | {"shared-nginx-config"}
                                  # Each app's ConfigMap, which Todo's and Notes' frontends mount (login.json).
                                  | {"todo-backend-config", "notes-backend-config", "help-backend-config"})
                 for backup in ("todo-postgres-backup", "notes-postgres-backup", "keycloak-postgres-backup"):
                     self.assertNotIn(backup, volumes)
                 secrets = [argv[-1] for argv in commands if argv[:3] == ["podman", "secret", "rm"]]
-                self.assertEqual(set(secrets), set(uninstall.secret_names(platform_file.checkout())) if remove_data else set())
+                self.assertEqual(set(secrets), set(uninstall.secret_names(fixture_platform())) if remove_data else set())

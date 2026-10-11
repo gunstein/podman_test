@@ -22,7 +22,9 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from app_installer import apps, platform_file, secrets, target_render, tls_secrets
+from app_installer import apps, secrets, target_render, tls_secrets
+
+from tests.platform_fixture import fixture_platform  # noqa: E402
 
 
 def image_id(reference):
@@ -109,7 +111,7 @@ class FakeHost:
     def __init__(self, *, password='fixture-password\n', images_present=True,
                  unit_directory=None, source=None, platform=None):
         # The platform this host was installed with: recorded in its home (target_render.record_platform).
-        self.platform = platform_file.checkout() if platform is None else platform
+        self.platform = fixture_platform() if platform is None else platform
         self.secrets = {name: password for name in secrets.installed_names(self.platform)}
         self.volumes = set()
         self.volumes_in_use = set()
@@ -142,7 +144,7 @@ class FakeHost:
                           # nginx's demo CA and leaf (tls_secrets): smaller keys only to keep the tests fast.
                           mock.patch('app_installer.tls_secrets.KEY_BITS', 2048),
                           mock.patch('app_installer.tls_secrets.ENTRYPOINT', ENTRYPOINT),
-                          # Each app's ready path and checks (checks.py) through nginx: every one answers 200.
+                          # Each app's ready path and checks (checks.py) through nginx: each answers its declared status.
                           mock.patch('app_installer.checks.status', side_effect=self._status)]
         for patcher in self._patchers:
             patcher.start()
@@ -150,7 +152,12 @@ class FakeHost:
 
     def _status(self, path, hostname):
         self.requests.append((hostname, path))
-        return 200
+        for app in self.platform.apps:
+            if app.hostname == hostname:
+                for check in app.checks:
+                    if check.path == path:
+                        return check.status
+        return 200  # readiness paths
 
     def __exit__(self, *error):
         for patcher in self._patchers:

@@ -6,11 +6,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[2] / 'installer')]
 from app_dr_host import replication_tls  # noqa: E402
-from app_installer import apps, commands, platform_file  # noqa: E402
+from app_installer import apps, commands  # noqa: E402
 
-APP = platform_file.checkout().apps[0].database
+APP = fixture_platform().apps[0].database
 
 
 class CertificateTests(unittest.TestCase):

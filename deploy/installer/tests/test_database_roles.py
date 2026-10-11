@@ -4,8 +4,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import database_roles, platform_file  # noqa: E402
+from app_installer import database_roles  # noqa: E402
 
 
 class StatementTests(unittest.TestCase):
@@ -44,7 +46,7 @@ class StatementTests(unittest.TestCase):
 
 class SetupTests(unittest.TestCase):
     def test_the_sql_goes_to_the_databases_own_psql_on_stdin_with_the_passwords_hidden(self):
-        app = platform_file.checkout().app('todo')
+        app = fixture_platform().app('todo')
         with patch.object(database_roles.secrets, 'read', side_effect=lambda name: name + '-value'), \
                 patch.object(database_roles, 'run') as run:
             database_roles.setup(app)

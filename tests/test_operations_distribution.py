@@ -52,7 +52,11 @@ def verify_package(test, archive, prefix):
     test.assertIn("requires its own full unchanged-revision VM acceptance", results)
     # Filled in for one host, the package's files are what the build would render for it,
     # and the packaged installer does it outside the checkout, with no Jinja2 import.
-    from tests.runtime_fixture import RUNTIME
+    from app_installer import bundle, platform_file, render
+    platform, environment = platform_file.load(ROOT / 'platform.yaml')
+    expected = {**render.files(ROOT, platform, render.hostnames(platform), platform.identity_hostname,
+                                environment.public_port, environment.log_level),
+                **bundle.quadlets(ROOT, platform, environment.public_port, '192.0.2.10')}
     with tempfile.TemporaryDirectory() as directory:
         package_root = Path(directory)
         for name, contents in files.items():
@@ -77,10 +81,7 @@ for name, content in {**target.manifests, **target.quadlets}.items():
             env={**os.environ, "PYTHONPATH": str(package_root / "deploy/installer")})
         test.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         filled = {path.name: path.read_bytes() for path in (package_root / "filled").iterdir()}
-        for name in ("todo-app.yaml", "keycloak.yaml", "todo-postgres.yaml", "todo-config.yaml",
-                     "shared-proxy.yaml", "todo-app.kube", "notes-app.kube", "keycloak.kube",
-                     "todo-postgres.kube", "notes-postgres.kube", "shared-proxy.kube"):
-            test.assertEqual(filled[name], (RUNTIME / name).read_bytes(), name)
+        test.assertEqual(filled, expected)
     return files
 
 
@@ -130,10 +131,10 @@ class OperationsDistributionTests(unittest.TestCase):
             with tarfile.open(archive) as package:
                 package.extractall(directory, filter="data")
             sys.path.insert(0, str(ROOT / "deploy/installer"))
-            from app_installer import target_render
+            from app_installer import platform_file, target_render
             target = target_render.load(Path(directory) / "platform-operations",
                                         {target_render.PUBLISH_ADDRESS: "192.0.2.10"}, environment={}, recorded={})
-            self.assertEqual(target.hostnames, {"todo": "todo.test", "notes": "notes.test", "help": "help.test"})
+            self.assertEqual(target.hostnames, {app.name: app.hostname for app in platform_file.checkout().apps})
             self.assertIn(b"192.0.2.10:5432:5432", target.replicated["todo-postgres.kube"])
             for retired in (
                 "deploy/scripts/manual_dr_commands.py",

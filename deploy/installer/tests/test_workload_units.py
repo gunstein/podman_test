@@ -2,6 +2,7 @@
 
 One template per kind of workload; each unit's files and Requires= come
 from its Workload, so this test checks that the model and the units agree.
+from tests.platform_fixture import fixture_platform  # noqa: E402
 """
 import shutil
 import sys
@@ -10,8 +11,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import fixture_platform
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import apps, bundle, platform_file, quadlet, render, workloads  # noqa: E402
+from app_installer import apps, bundle, quadlet, render, workloads  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -32,7 +35,7 @@ class WorkloadUnitTests(unittest.TestCase):
         return unit_lines(bundle.quadlets(ROOT, platform, 8443, '127.0.0.1')[workload.unit].decode())
 
     def test_every_unit_needs_only_workloads_that_start_before_it(self):
-        for platform in (platform_file.checkout(), platform_file.checkout().select(['todo'])):
+        for platform in (fixture_platform(), fixture_platform().select(['todo'])):
             order = [workload.service for workload in platform.workloads()]
             for index, workload in enumerate(platform.workloads()):
                 with self.subTest(unit=workload.unit, apps=[app.name for app in platform.apps]):
@@ -43,19 +46,19 @@ class WorkloadUnitTests(unittest.TestCase):
                     self.assertEqual(lines.get('Requires', []), lines.get('After', []))
 
     def test_every_unit_runs_its_own_kube_yaml_and_configmap(self):
-        for workload in platform_file.checkout().workloads():
+        for workload in fixture_platform().workloads():
             with self.subTest(unit=workload.unit):
-                lines = self.rendered(workload, platform_file.checkout())
+                lines = self.rendered(workload, fixture_platform())
                 self.assertEqual(lines['Yaml'], [workload.yaml])
                 self.assertEqual(lines.get('ConfigMap', []), [workload.config] if workload.config else [])
 
     def test_every_unit_template_serves_a_kind_of_workload(self):
         templates = {path.name.removesuffix('.j2') for path in (ROOT / 'deploy/quadlet').glob('*.kube.j2')}
-        self.assertEqual(templates, {workload.template for workload in platform_file.checkout().workloads()})
+        self.assertEqual(templates, {workload.template for workload in fixture_platform().workloads()})
         self.assertEqual(templates, {'app.kube', 'postgres.kube', 'keycloak.kube', 'shared-proxy.kube'})
 
     def test_requires_come_from_the_model_and_name_only_earlier_workloads(self):
-        platform = platform_file.checkout()
+        platform = fixture_platform()
         started = []
         for workload in platform.workloads():
             with self.subTest(unit=workload.unit):
@@ -80,7 +83,7 @@ class WorkloadUnitTests(unittest.TestCase):
         with patch.object(apps, 'app_workload', late), \
                 self.assertRaisesRegex(ValueError, 'todo-app requires shared-proxy.service, which does not start '
                                                    'before it'):
-            apps.Platform(apps=platform_file.checkout().apps, identity_hostname='auth.test')
+            apps.Platform(apps=fixture_platform().apps, identity_hostname='auth.test')
 
     def test_a_missing_unit_template_is_named_before_anything_is_written(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -88,7 +91,7 @@ class WorkloadUnitTests(unittest.TestCase):
             (Path(directory) / 'deploy/quadlet/postgres.kube.j2').unlink()
             with self.assertRaisesRegex(ValueError, 'todo-postgres needs the unit template '
                                                     'deploy/quadlet/postgres.kube.j2'):
-                render.require_supported(directory, platform_file.checkout())
+                render.require_supported(directory, fixture_platform())
 
 
 if __name__ == '__main__':

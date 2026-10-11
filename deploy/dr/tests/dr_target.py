@@ -11,6 +11,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from tests.platform_fixture import PLATFORM_FILE
+
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -20,7 +22,12 @@ def bundle():
     from app_installer import bundle as builder
     directory = Path(tempfile.mkdtemp())
     atexit.register(shutil.rmtree, directory, True)
-    builder.build(ROOT, 'prod', directory)
+    with tempfile.TemporaryDirectory() as project:
+        root = Path(project)
+        for part in ('examples', 'deploy'):
+            (root / part).symlink_to(ROOT / part, target_is_directory=True)
+        (root / 'platform.yaml').write_text(PLATFORM_FILE.read_text().replace('../../examples/', 'examples/'))
+        builder.build(root, 'prod', directory)
     return directory
 
 

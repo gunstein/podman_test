@@ -15,6 +15,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import offline_bundle  # noqa: E402
 from app_installer import (  # noqa: E402
@@ -22,7 +24,6 @@ from app_installer import (  # noqa: E402
     install,
     keycloak,
     kube_play,
-    platform_file,
     secrets,
     settings,
     uninstall,
@@ -30,7 +31,7 @@ from app_installer import (  # noqa: E402
 from fake_host import FakeHost, RenderingHost  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-TODO = platform_file.checkout().select(['todo'])
+TODO = fixture_platform().select(['todo'])
 
 ALL_STARTS = ['todo-postgres', 'notes-postgres', 'keycloak-postgres', 'keycloak',
               'todo-app', 'notes-app', 'help-app', 'shared-proxy']
@@ -125,18 +126,18 @@ class ServerOrderTests(unittest.TestCase):
                 return list(host.calls), installed
 
     def test_every_app_starts_in_order_with_its_waits_and_role_setup(self):
-        for applications, expected, starts in ((platform_file.checkout(), ALL_SERVER_EVENTS, ALL_STARTS),
+        for applications, expected, starts in ((fixture_platform(), ALL_SERVER_EVENTS, ALL_STARTS),
                                                (TODO, TODO_SERVER_EVENTS, TODO_STARTS)):
             with self.subTest([app.name for app in applications.apps]):
                 calls, (manifests, units) = self.install(applications)
                 self.assertEqual(events(calls), expected)
                 self.assertEqual(units, {name + '.kube' for name in starts})
-                self.assertEqual(manifests, ALL_MANIFESTS if applications == platform_file.checkout() else TODO_MANIFESTS)
+                self.assertEqual(manifests, ALL_MANIFESTS if applications == fixture_platform() else TODO_MANIFESTS)
                 shown = [argv[3] for argv in calls if argv[:3] == ['systemctl', '--user', 'show']]
                 self.assertEqual(sorted(shown), sorted(name + '.service' for name in starts))
 
     def test_a_change_to_everything_stops_every_workload_once_then_starts_in_order(self):
-        calls, _installed = self.install(platform_file.checkout(), change_everything=True)
+        calls, _installed = self.install(fixture_platform(), change_everything=True)
         stops = [argv[3] for argv in calls if argv[:3] == ['systemctl', '--user', 'stop']]
         self.assertEqual(sorted(stops), sorted(name + '.service' for name in ALL_STARTS))
         last_stop = max(index for index, argv in enumerate(calls) if argv[:3] == ['systemctl', '--user', 'stop'])
@@ -145,7 +146,7 @@ class ServerOrderTests(unittest.TestCase):
         self.assertEqual(events(calls), ALL_SERVER_EVENTS)
 
     def test_an_offline_install_needs_exactly_these_files(self):
-        manifests, units = install.offline_files(platform_file.checkout())
+        manifests, units = install.offline_files(fixture_platform())
         self.assertEqual(manifests, ALL_MANIFESTS)
         self.assertEqual(units, {name + '.kube' for name in ALL_STARTS})
         manifests, units = install.offline_files(TODO)
@@ -155,7 +156,7 @@ class ServerOrderTests(unittest.TestCase):
 
 class DevelopmentOrderTests(unittest.TestCase):
     def test_every_app_plays_in_order_with_its_waits_and_role_setup(self):
-        for applications, expected in ((platform_file.checkout(), ALL_DEV_EVENTS), (TODO, TODO_DEV_EVENTS)):
+        for applications, expected in ((fixture_platform(), ALL_DEV_EVENTS), (TODO, TODO_DEV_EVENTS)):
             with self.subTest([app.name for app in applications.apps]), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 for part in ('platform.yaml', 'examples', 'deploy/quadlet'):
@@ -167,7 +168,7 @@ class DevelopmentOrderTests(unittest.TestCase):
                 self.assertEqual(events(host.calls), expected)
 
     def test_tear_down_goes_in_reverse_from_the_record_and_without_it(self):
-        for applications, expected in ((platform_file.checkout(), ALL_TEARDOWN), (TODO, TODO_TEARDOWN)):
+        for applications, expected in ((fixture_platform(), ALL_TEARDOWN), (TODO, TODO_TEARDOWN)):
             with self.subTest([app.name for app in applications.apps]), tempfile.TemporaryDirectory() as temp:
                 directory, state = Path(temp) / 'rendered', Path(temp) / 'dev.json'
                 directory.mkdir()
@@ -196,12 +197,12 @@ class DevelopmentOrderTests(unittest.TestCase):
 
 class StopOrderTests(unittest.TestCase):
     def test_uninstall_removes_the_pods_in_reverse_start_order(self):
-        pods = tuple(workload.pod for workload in reversed(platform_file.checkout().workloads()))
+        pods = tuple(workload.pod for workload in reversed(fixture_platform().workloads()))
         self.assertEqual(pods, ('shared-proxy', 'help-app', 'notes-app', 'todo-app', 'keycloak',
                                           'keycloak-postgres', 'notes-postgres', 'todo-postgres'))
 
     def test_uninstall_stops_every_current_and_old_service_at_once(self):
-        self.assertEqual(set(uninstall.services(platform_file.checkout())), {
+        self.assertEqual(set(uninstall.services(fixture_platform())), {
             'todo-app', 'todo-frontend', 'todo-backend', 'todo-db-grants', 'todo-migrate', 'todo-db-setup',
             'todo-postgres', 'notes-app', 'notes-frontend', 'notes-backend', 'notes-db-grants',
             'notes-migrate', 'notes-db-setup', 'notes-postgres', 'keycloak', 'keycloak-postgres',
@@ -212,13 +213,13 @@ class StopOrderTests(unittest.TestCase):
             'todo-keycloak', 'todo-network', 'todo-postgres-data-volume'})
 
     def test_services_name_the_serving_tier_before_the_databases(self):
-        services = platform_file.checkout().services()
+        services = fixture_platform().services()
         self.assertEqual(set(services), SERVING | DATABASES)
         self.assertEqual(services[0], 'shared-proxy.service')
         self.assertEqual(set(services[:5]), SERVING)
         self.assertEqual(set(services[5:]), DATABASES)
-        self.assertEqual(set(platform_file.checkout().services(databases=False)), SERVING)
-        self.assertEqual(platform_file.checkout().services(databases=False)[0], 'shared-proxy.service')
+        self.assertEqual(set(fixture_platform().services(databases=False)), SERVING)
+        self.assertEqual(fixture_platform().services(databases=False)[0], 'shared-proxy.service')
         self.assertEqual(set(TODO.services()), {'shared-proxy.service', 'todo-app.service', 'keycloak.service',
                                                     'todo-postgres.service', 'keycloak-postgres.service'})
 
@@ -230,7 +231,7 @@ class StopOrderTests(unittest.TestCase):
         test.install_units()
         host = BackupHost()
         with host, patch.object(backup.socket, 'gethostname', return_value='this-host'):
-            backup.restore(platform_file.checkout(), 'this-host', test.quadlet)
+            backup.restore(fixture_platform(), 'this-host', test.quadlet)
         stops = [argv[3:] for argv in host.calls if argv[:3] == ['systemctl', '--user', 'stop']]
         self.assertEqual(len(stops), 1)
         self.assertEqual(set(stops[0]), SERVING | DATABASES)

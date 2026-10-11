@@ -8,13 +8,14 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from tests.platform_fixture import PLATFORM_FILE, fixture_platform  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "deploy/dr"))
-from app_installer import platform_file  # noqa: E402
 from app_ops import cli, inventory, recovery, standby, steps  # noqa: E402
 from app_ops.transport import Host  # noqa: E402
 
-NAMES = [database.name for database in platform_file.checkout().replicated_databases]
+NAMES = [database.name for database in fixture_platform().replicated_databases]
 # The public hostnames each host recorded (app_dr_host target-values).
 RECORDED = {"todo-primary": {"TARGET_IDENTITY_HOSTNAME": "auth.test", "TARGET_TODO_HOSTNAME": "shop.example.org",
                              "TARGET_NOTES_HOSTNAME": "notes.test"},
@@ -39,7 +40,9 @@ def setUpModule():
     (PROJECT / "generated/kube-runtime").symlink_to(RUNTIME)
     # bundle.json and generated/target, as build-operations-package.sh adds them.
     from app_installer import bundle
-    bundle.build(ROOT, "prod", PROJECT)
+    (PROJECT / "examples").symlink_to(ROOT / "examples")
+    (PROJECT / "platform.yaml").write_text(PLATFORM_FILE.read_text().replace('../../examples/', 'examples/'))
+    bundle.build(PROJECT, "prod", PROJECT)
 
 
 def tearDownModule():
@@ -181,7 +184,7 @@ class InitialTopologyTests(unittest.TestCase):
 
     def test_the_firewall_rule_must_apply_now_and_after_a_reload(self):
         # Checked in the zone of the primary's interface, running and permanent.
-        standby.require_firewall(platform_file.checkout().replicated_databases,
+        standby.require_firewall(fixture_platform().replicated_databases,
                                  *self.hosts(World(zone="internal", rule_zone="internal"))[1:])
         for world, message in ((World(rule_in=("permanent",)), "running configuration"),
                                (World(rule_in=("running",)), "permanent configuration"),

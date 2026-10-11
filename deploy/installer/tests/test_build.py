@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import PLATFORM_FILE, fixture_platform  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_installer import install, platform_file  # noqa: E402
 from fake_host import RenderingHost  # noqa: E402
@@ -20,7 +22,7 @@ class BuildInstallTests(unittest.TestCase):
                 root = Path(temp)
                 for part in ('deploy/quadlet', 'examples'):
                     shutil.copytree(ROOT / part, root / part)
-                shutil.copy(ROOT / 'platform.yaml', root)
+                (root / 'platform.yaml').write_text(PLATFORM_FILE.read_text().replace('../../examples/', 'examples/'))
                 directory = root / 'quadlet'
                 runtime = directory / 'platform-kube-runtime'
                 with RenderingHost(images_present=False, unit_directory=runtime) as host, \
@@ -31,7 +33,7 @@ class BuildInstallTests(unittest.TestCase):
                 calls = host.calls
                 # Rendered before the first image build (RenderingHost records it as no command).
                 self.assertEqual(host.rendered, [(platform_file.load(root / 'platform.yaml', profile)[1],
-                                                  root / 'generated' / output, platform_file.checkout())])
+                                                  root / 'generated' / output, fixture_platform())])
                 self.assertEqual(sum(a[:2] == ['podman', 'build'] for a in calls), 7)
                 self.assertEqual(sum(a[:2] == ['podman', 'pull'] for a in calls), 1)
                 self.assertEqual(recorded, {'TARGET_IDENTITY_HOSTNAME': 'auth.test', 'TARGET_TODO_HOSTNAME': 'todo.test',
@@ -43,9 +45,9 @@ class BuildInstallTests(unittest.TestCase):
             root = Path(temp)
             for part in ('deploy/quadlet', 'examples'):
                 shutil.copytree(ROOT / part, root / part)
-            shutil.copy(ROOT / 'platform.yaml', root)
+            (root / 'platform.yaml').write_text(PLATFORM_FILE.read_text().replace('../../examples/', 'examples/'))
             directory = root / 'quadlet'
-            notes = platform_file.checkout().select(['notes'])
+            notes = fixture_platform().select(['notes'])
             with RenderingHost(unit_directory=directory / 'platform-kube-runtime', platform=notes) as host, \
                     patch('app_installer.keycloak.configure'):
                 install.install(root, mode='server', quadlet_dir=directory, platform=notes)
@@ -57,7 +59,7 @@ class BuildInstallTests(unittest.TestCase):
             for part in ('deploy/quadlet', 'examples'):
                 shutil.copytree(ROOT / part, root / part)
             (root / 'platform.yaml').write_text(
-                (ROOT / 'platform.yaml').read_text().replace('publicPort: 8443', 'publicPort: 9443'))
+                PLATFORM_FILE.read_text().replace('../../examples/', 'examples/').replace('publicPort: 8443', 'publicPort: 9443'))
             directory = root / 'quadlet'
             with RenderingHost(unit_directory=directory / 'platform-kube-runtime') as host, \
                     patch('app_installer.keycloak.configure'):
@@ -76,7 +78,7 @@ class BuildInstallTests(unittest.TestCase):
             root = Path(temp)
             for part in ('deploy/quadlet', 'examples'):
                 shutil.copytree(ROOT / part, root / part)
-            shutil.copy(ROOT / 'platform.yaml', root)
+            (root / 'platform.yaml').write_text(PLATFORM_FILE.read_text().replace('../../examples/', 'examples/'))
             directory = root / 'quadlet'
             with RenderingHost(unit_directory=directory / 'platform-kube-runtime') as host, \
                     patch('app_installer.keycloak.configure'):

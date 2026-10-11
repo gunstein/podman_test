@@ -10,15 +10,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import PLATFORM_FILE, fixture_platform  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import offline_bundle  # noqa: E402
 from app_installer import (  # noqa: E402
     apps,
+    checks,
     cli,
     install,
     keycloak,
     kube_play,
-    platform_file,
     secrets,
     settings,
     target_render,
@@ -33,15 +35,23 @@ def copy_project(root):
     """The parts of the repository a build-mode install reads, copied into root."""
     for part in ('examples', 'deploy/quadlet'):
         shutil.copytree(ROOT / part, root / part)
-    shutil.copy(ROOT / 'platform.yaml', root)
+    (root / 'platform.yaml').write_text(PLATFORM_FILE.read_text().replace('../../examples/', 'examples/'))
     return root
 
 
 class InstallTests(unittest.TestCase):
+    def test_an_anonymous_check_can_expect_401(self):
+        platform = fixture_platform().select(['notes'])
+        app = dataclasses.replace(platform.apps[0], checks=(apps.Check('/api/notes', 401),))
+        platform = dataclasses.replace(platform, apps=(app,))
+        with FakeHost(platform=platform) as host:
+            checks.verify(platform, {'notes': app.hostname})
+        self.assertIn((app.hostname, '/api/notes'), host.requests)
+
     def exercise_install(self, mode, repeat=False, source_override=None, applications=None):
         """Install in server mode from a real offline bundle, or in dev mode by building; return the calls."""
-        applications = (platform_file.checkout().apps[0],) if applications is None else applications
-        platform = platform_file.checkout().select([app.name for app in applications])
+        applications = (fixture_platform().apps[0],) if applications is None else applications
+        platform = fixture_platform().select([app.name for app in applications])
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             directory = root / 'quadlet'
@@ -85,9 +95,9 @@ class InstallTests(unittest.TestCase):
             return calls, bootstrap
 
     def test_every_pod_server_and_repeat(self):
-        calls, bootstrap = self.exercise_install('server', applications=platform_file.checkout().apps, repeat=True)
+        calls, bootstrap = self.exercise_install('server', applications=fixture_platform().apps, repeat=True)
         # The repeated install makes each app's roles again, once, from the role passwords' secrets.
-        for app in platform_file.checkout().database_apps:
+        for app in fixture_platform().database_apps:
             setup = [calls[i] for i in bootstrap if app.database.container in calls[i]]
             self.assertEqual(len(setup), 1)
             for role in ('migrator', 'app'):
@@ -97,7 +107,7 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(calls.count(['systemctl', '--user', 'start', service + '.service']), 1)
 
     def test_every_pod_dev_order(self):
-        calls, bootstrap = self.exercise_install('dev', applications=platform_file.checkout().apps)
+        calls, bootstrap = self.exercise_install('dev', applications=fixture_platform().apps)
         plays = [(i, a) for i, a in enumerate(calls)
                  if a[:3] == ['podman', 'kube', 'play'] and '--help' not in a]
         self.assertEqual([Path(a[-1]).stem for _, a in plays], [
@@ -119,7 +129,7 @@ class InstallTests(unittest.TestCase):
         self.exercise_install('server', repeat=True)
 
     def test_server_repeat_only_restarts_the_apps_whose_manifests_changed(self):
-        applications = platform_file.checkout().apps
+        applications = fixture_platform().apps
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             directory = root / 'quadlet'
@@ -129,12 +139,12 @@ class InstallTests(unittest.TestCase):
                     patch.object(keycloak, 'configure'), \
                     patch.object(settings, 'DEV_STATE_FILE', root / 'app-installer-dev.json'):
                 install.install(ROOT, mode='server', deployment_mode='offline',
-                                bundle_directory=root, quadlet_dir=directory, platform=platform_file.checkout().select([a.name for a in applications]))
-                changed = root / 'generated/target/manifests' / platform_file.checkout().apps[0].manifest
+                                bundle_directory=root, quadlet_dir=directory, platform=fixture_platform().select([a.name for a in applications]))
+                changed = root / 'generated/target/manifests' / fixture_platform().apps[0].manifest
                 changed.write_text(changed.read_text() + '# changed\n')
                 host.calls.clear()
                 install.install(ROOT, mode='server', deployment_mode='offline',
-                                bundle_directory=root, quadlet_dir=directory, platform=platform_file.checkout().select([a.name for a in applications]))
+                                bundle_directory=root, quadlet_dir=directory, platform=fixture_platform().select([a.name for a in applications]))
             stopped = {a[3] for a in host.ran('systemctl', '--user', 'stop')}
             self.assertEqual(stopped, {'todo-app.service'})
 
@@ -183,7 +193,7 @@ class InstallTests(unittest.TestCase):
 
     def test_a_platform_that_leaves_out_an_installed_workload_is_refused(self):
         # The host recorded todo, notes and help; removing a workload is not built (plan, 5.8 and phase 7).
-        checkout = platform_file.checkout()
+        checkout = fixture_platform()
         without_login = [dataclasses.replace(app, login_client='', login_audience='') for app in checkout.apps]
         for platform, left_out in (
                 (checkout.select(['todo']), 'help-app.service, notes-app.service, notes-postgres.service'),
@@ -208,7 +218,7 @@ class InstallTests(unittest.TestCase):
         # takes the host over with the same secrets and volumes.
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            offline_bundle.build(root, platform_file.checkout().apps)
+            offline_bundle.build(root, fixture_platform().apps)
             directory = root / 'quadlet'
             with FakeHost(unit_directory=directory / 'platform-kube-runtime') as host, \
                     patch.object(keycloak, 'configure'):
@@ -296,16 +306,16 @@ class InstallTests(unittest.TestCase):
             with patch.object(kube_play, 'exists', side_effect=exists), \
                     patch.object(kube_play, 'run', side_effect=run) as command, \
                     patch.object(kube_play.database_roles, 'setup') as roles:
-                self.assertTrue(kube_play.up(directory, platform_file.checkout().select(['todo']), state))
+                self.assertTrue(kube_play.up(directory, fixture_platform().select(['todo']), state))
                 self.assertEqual(roles.call_count, 1)
                 command.reset_mock()
                 roles.reset_mock()
-                self.assertFalse(kube_play.up(directory, platform_file.checkout().select(['todo']), state))
+                self.assertFalse(kube_play.up(directory, fixture_platform().select(['todo']), state))
                 roles.assert_not_called()
                 self.assertTrue(all(call.args[:3] == ('podman', 'pod', 'inspect')
                                     for call in command.call_args_list))
                 (directory / 'todo-config.yaml').write_text('changed: true')
-                self.assertTrue(kube_play.up(directory, platform_file.checkout().select(['todo']), state))
+                self.assertTrue(kube_play.up(directory, fixture_platform().select(['todo']), state))
                 downs = [call.kwargs['input'] for call in command.call_args_list
                          if '--down' in call.args]
                 self.assertEqual(downs, ['fixture: ' + name for name in (
@@ -319,7 +329,7 @@ class InstallTests(unittest.TestCase):
             for name in ('shared-proxy', 'todo-app', 'todo-postgres'):
                 (root / (name + '.yaml')).touch()
             state = root / '.state.json'
-            self.assertTrue(kube_play.down(root, platform_file.checkout(), state_file=state))
+            self.assertTrue(kube_play.down(root, fixture_platform(), state_file=state))
             self.assertEqual([c.args for c in run.call_args_list], [
                 ('podman', 'kube', 'play', '--down', root / (name + '.yaml'))
                 for name in ('shared-proxy', 'todo-app', 'todo-postgres')])
@@ -333,7 +343,7 @@ class InstallTests(unittest.TestCase):
             root = Path(temp)
             state = root / '.state.json'
             state.write_text(json.dumps({'fingerprint': 'x', 'teardown': ['kind: Pod # notes-app']}))
-            self.assertTrue(kube_play.down(root / 'rendered-again', platform_file.checkout(), state_file=state))
+            self.assertTrue(kube_play.down(root / 'rendered-again', fixture_platform(), state_file=state))
             run.assert_called_once_with('podman', 'kube', 'play', '--down', '-',
                                         input='kind: Pod # notes-app')
             self.assertFalse(state.exists())
@@ -342,7 +352,7 @@ class InstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run, \
                 patch.object(secrets, 'remove_kube_volumes'):
             root = Path(temp)
-            self.assertFalse(kube_play.down(root, platform_file.checkout(), state_file=root / '.state.json'))
+            self.assertFalse(kube_play.down(root, fixture_platform(), state_file=root / '.state.json'))
             run.assert_not_called()
 
     def test_down_finds_the_default_state_file_up_actually_wrote(self):
@@ -360,13 +370,13 @@ class InstallTests(unittest.TestCase):
             for name in ('todo-postgres', 'todo-config', 'todo-app', 'keycloak-postgres', 'keycloak-config',
                         'keycloak', 'shared-proxy'):
                 (directory / (name + '.yaml')).write_text('fixture: ' + name)
-            self.assertTrue(kube_play.up(directory, platform_file.checkout().select(['todo'])))
+            self.assertTrue(kube_play.up(directory, fixture_platform().select(['todo'])))
             self.assertTrue(settings.DEV_STATE_FILE.is_file())
 
             with patch('app_installer.kube_play.run') as run, patch.object(secrets, 'remove_kube_volumes'):
                 # A different directory argument: down must still find the
                 # pods through the recorded state file, not through this one.
-                self.assertTrue(kube_play.down(Path(temp) / 'unrelated', platform_file.checkout()))
+                self.assertTrue(kube_play.down(Path(temp) / 'unrelated', fixture_platform()))
                 run.assert_called()
             self.assertFalse(settings.DEV_STATE_FILE.is_file())
 
@@ -377,7 +387,7 @@ class InstallTests(unittest.TestCase):
         with patch('app_installer.secrets.exists', return_value=False), \
                 patch('sys.stdin.isatty', return_value=False), \
                 patch('app_installer.secrets.run') as run:
-            secrets.provision(platform_file.checkout())
+            secrets.provision(fixture_platform())
         names = {call.args[3] for call in run.call_args_list}
         self.assertEqual(names, {
             'todo-db-password', 'todo-migrator-password', 'todo-app-password',
@@ -392,7 +402,7 @@ class InstallTests(unittest.TestCase):
                   'keycloak-db-password', 'keycloak-admin-password'}
         with patch('app_installer.secrets.exists', side_effect=lambda _, name: name not in missing), \
                 patch('app_installer.secrets.run') as run:
-            secrets.provision(platform_file.checkout())
+            secrets.provision(fixture_platform())
             self.assertEqual(run.call_count, len(missing))
             for call in run.call_args_list:
                 self.assertRegex(call.kwargs['input'], r'^[a-zA-Z0-9]{32}$')
@@ -550,7 +560,7 @@ class UninstallTests(unittest.TestCase):
         with patch('app_installer.install.exists', return_value=True), \
                 patch('app_installer.uninstall.run') as run:
             with self.assertRaisesRegex(RuntimeError, 'single-host deployment'):
-                uninstall.uninstall(platform_file.checkout())
+                uninstall.uninstall(fixture_platform())
             run.assert_not_called()
 
     def test_data_and_secret_removal_requires_explicit_flag(self):
@@ -563,10 +573,10 @@ class UninstallTests(unittest.TestCase):
                     patch.object(settings, 'DEV_STATE_FILE', Path(temp) / '_unused' / 'dev.json'):
                 directory = Path(temp)
                 (directory / 'platform-kube-runtime').mkdir()
-                for name in uninstall.quadlet_files(platform_file.checkout()):
+                for name in uninstall.quadlet_files(fixture_platform()):
                     (directory / name).touch()
                 with contextlib.redirect_stderr(io.StringIO()):
-                    self.assertTrue(uninstall.uninstall(platform_file.checkout(), remove_data, directory))
+                    self.assertTrue(uninstall.uninstall(fixture_platform(), remove_data, directory))
                 self.assertFalse(list(directory.iterdir()))
                 calls = [c.args[0] for c in run.call_args_list]
                 self.assertEqual(['podman', 'volume', 'rm', 'todo-postgres-data'] in calls, remove_data)
@@ -578,7 +588,7 @@ class UninstallTests(unittest.TestCase):
                 self.assertEqual(['podman', 'volume', 'rm', 'platform-nginx-data'] in calls, remove_data)
                 self.assertEqual(['podman', 'volume', 'rm', 'todo-caddy-data'] in calls, remove_data)
                 # The Kube secrets' volumes are copies of secrets: they always go.
-                for name in (platform_file.checkout().apps[1].kube_secret('backend'), apps.KEYCLOAK_DATABASE.kube_secret,
+                for name in (fixture_platform().apps[1].kube_secret('backend'), apps.KEYCLOAK_DATABASE.kube_secret,
                              apps.PROXY_KUBE_TLS_SECRET):
                     self.assertIn(['podman', 'volume', 'rm', name], calls)
 
@@ -590,7 +600,7 @@ class UninstallTests(unittest.TestCase):
                 patch('app_installer.uninstall.exists', return_value=False), \
                 patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run, \
                 patch.object(settings, 'DEV_STATE_FILE', Path(temp) / 'dev.json'):
-            self.assertTrue(uninstall.uninstall(platform_file.checkout(), quadlet_dir=Path(temp)))
+            self.assertTrue(uninstall.uninstall(fixture_platform(), quadlet_dir=Path(temp)))
         self.assertEqual(list(self.units.iterdir()), [])
         calls = [c.args[0] for c in run.call_args_list]
         self.assertIn(['systemctl', '--user', 'disable', '--now', 'platform-backup.timer'], calls)
@@ -608,7 +618,7 @@ class UninstallTests(unittest.TestCase):
                 patch('subprocess.run', side_effect=command), \
                 patch.object(settings, 'DEV_STATE_FILE', Path(temp) / '_unused' / 'dev.json'):
             directory = Path(temp)
-            self.assertFalse(uninstall.uninstall(platform_file.checkout(), quadlet_dir=directory))
+            self.assertFalse(uninstall.uninstall(fixture_platform(), quadlet_dir=directory))
 
     def test_uninstall_removes_only_registered_pods_before_the_shared_network(self):
         with tempfile.TemporaryDirectory() as temp, \
@@ -623,7 +633,7 @@ class UninstallTests(unittest.TestCase):
             state.write_text('{}')
             unrelated = Path(temp) / 'unrelated.json'
             unrelated.write_text('{}')
-            uninstall.uninstall(platform_file.checkout(), quadlet_dir=directory)
+            uninstall.uninstall(fixture_platform(), quadlet_dir=directory)
             commands = [call.args[0] for call in run.call_args_list]
             removals = [command for command in commands if command[:3] == ['podman', 'pod', 'rm']]
             self.assertEqual([command[-1] for command in removals],
@@ -643,7 +653,7 @@ class UninstallTests(unittest.TestCase):
                 patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run, \
                 patch.object(settings, 'DEV_STATE_FILE', directory / 'dev.json'), \
                 contextlib.redirect_stderr(said):
-            uninstall.uninstall(platform_file.checkout(), quadlet_dir=directory, **options)
+            uninstall.uninstall(fixture_platform(), quadlet_dir=directory, **options)
         return [call.args[0] for call in run.call_args_list], said.getvalue()
 
     def test_uninstall_removes_the_old_per_container_install_and_says_so(self):
@@ -685,7 +695,7 @@ class UninstallTests(unittest.TestCase):
                     self.assertEqual(['podman', 'volume', 'rm', name] in commands, removed)
         with patch('app_installer.uninstall.run') as run, patch('app_installer.install.run') as checks:
             with self.assertRaisesRegex(ValueError, 'needs remove_data'):
-                uninstall.uninstall(platform_file.checkout(), remove_backups=True)
+                uninstall.uninstall(fixture_platform(), remove_backups=True)
             run.assert_not_called()
             checks.assert_not_called()
 
@@ -693,7 +703,7 @@ class UninstallTests(unittest.TestCase):
         with patch('app_installer.install.exists', return_value=True), \
                 patch('app_installer.uninstall.run') as run:
             with self.assertRaisesRegex(RuntimeError, 'single-host deployment'):
-                uninstall.uninstall(platform_file.checkout(), remove_data=True, remove_backups=True)
+                uninstall.uninstall(fixture_platform(), remove_data=True, remove_backups=True)
             run.assert_not_called()
 
     def test_the_cli_wants_remove_data_with_remove_backups(self):
@@ -711,7 +721,7 @@ class UninstallTests(unittest.TestCase):
             target = directory / 'app-network.network'
             target.touch()
             with self.assertRaises(RuntimeError):
-                uninstall.uninstall(platform_file.checkout(), quadlet_dir=directory)
+                uninstall.uninstall(fixture_platform(), quadlet_dir=directory)
             self.assertTrue(target.exists())
 
 
@@ -725,7 +735,7 @@ class FailureBoundaryTests(unittest.TestCase):
                                  side_effect=lambda p, marker=marker: str(p).endswith(marker)), \
                     patch('app_installer.uninstall.run') as run:
                 with self.assertRaisesRegex(RuntimeError, 'single-host deployment'):
-                    uninstall.uninstall(platform_file.checkout())
+                    uninstall.uninstall(fixture_platform())
                 run.assert_not_called()
 
     def test_install_refuses_a_replicated_host_before_any_command(self):
@@ -735,7 +745,7 @@ class FailureBoundaryTests(unittest.TestCase):
                    '/opt/platform/bin/app_backup.py', '/opt/platform/bin/todo_dr.py', '/opt/platform/bin/todo_backup.py')
         cases = [(marker, lambda kind, name: False) for marker in markers]
         cases += [(None, lambda kind, name, d=d: name == d.secret('replicator'))
-                  for d in platform_file.checkout().replicated_databases]
+                  for d in fixture_platform().replicated_databases]
         for marker, secret in cases:
             with self.subTest(marker=marker), patch('app_installer.install.exists', side_effect=secret), \
                     patch.object(Path, 'exists', autospec=True,
@@ -743,17 +753,17 @@ class FailureBoundaryTests(unittest.TestCase):
                     patch('app_installer.install.run') as run, \
                     patch('app_installer.install.secrets.provision') as provision:
                 with self.assertRaisesRegex(RuntimeError, 'install only supports a single-host deployment'):
-                    install.install(ROOT, platform=platform_file.checkout())
+                    install.install(ROOT, platform=fixture_platform())
                 run.assert_not_called()
                 provision.assert_not_called()
 
     def test_install_goes_ahead_on_a_single_host(self):
         with patch('app_installer.install.exists', return_value=False), \
                 patch.object(Path, 'exists', autospec=True, return_value=False):
-            install.require_single_host('install', platform_file.checkout())
+            install.require_single_host('install', fixture_platform())
 
     def test_legacy_quadlets_refused_before_writes(self):
-        for name in install.legacy_units(platform_file.checkout()):
+        for name in install.legacy_units(fixture_platform()):
             with tempfile.TemporaryDirectory() as temp:
                 directory = Path(temp)
                 (directory / (name + '.container')).touch()

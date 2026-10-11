@@ -6,8 +6,10 @@ from pathlib import Path
 
 import yaml
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import manifests, platform_file, pod_contract, render  # noqa: E402
+from app_installer import manifests, pod_contract, render  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -19,7 +21,7 @@ def secret_volume(pod):
 
 class PodContractTests(unittest.TestCase):
     def setUp(self):
-        self.app = platform_file.checkout().app('todo')
+        self.app = fixture_platform().app('todo')
         self.pod = yaml.safe_load(manifests.render_app(ROOT, self.app))
 
     def refused(self, message, pod):
@@ -32,7 +34,7 @@ class PodContractTests(unittest.TestCase):
         return pod
 
     def test_the_example_apps_pods_keep_the_rules(self):
-        for app in platform_file.checkout().apps:
+        for app in fixture_platform().apps:
             with self.subTest(app=app.name):
                 self.assertEqual(pod_contract.check(app, manifests.render_app(ROOT, app))['metadata']['name'],
                                  app.pod)
@@ -79,7 +81,7 @@ class PodContractTests(unittest.TestCase):
 
     def test_the_pod_that_is_checked_is_the_pod_that_is_written(self):
         # Loading and rendering call pod_contract.rendered on the same app; the file holds what was checked.
-        platform = platform_file.checkout()
+        platform = fixture_platform()
         files = render.files(ROOT, platform, render.hostnames(platform), 'auth.test', 8443, 'info')
         for app in platform.apps:
             with self.subTest(app=app.name):

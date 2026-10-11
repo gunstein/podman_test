@@ -4,6 +4,7 @@ import pathlib
 import sys
 import unittest
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
 from tests.runtime_fixture import RUNTIME
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -157,8 +158,7 @@ class ProxyConfigurationTests(unittest.TestCase):
         config = (RUNTIME / "todo-config.yaml").read_text(encoding="utf-8")
         proxy_config = (RUNTIME / "shared-proxy.yaml").read_text(encoding="utf-8")
 
-        from app_installer import platform_file
-        self.assertEqual(platform_file.checkout().identity_hostname, 'auth.test')
+        self.assertEqual(fixture_platform().identity_hostname, 'auth.test')
         # The promoted host publishes the port the bundle was built for (platform.yaml's publicPort).
         self.assertIn("'--service-port', str(steps.public_port(project_root))", read("deploy/dr/app_ops/recovery.py"))
         self.assertIn(

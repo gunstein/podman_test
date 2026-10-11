@@ -3,6 +3,7 @@ import unittest
 
 import yaml
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
 from tests.runtime_fixture import RUNTIME
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -39,9 +40,9 @@ class KubeNameContractTests(unittest.TestCase):
 
 class SharedResourceNameTests(unittest.TestCase):
     def test_the_shared_resources_keep_their_names(self):
-        from app_installer import apps, platform_file
+        from app_installer import apps
         # nginx's unit reads no app's ConfigMap file: its own are in shared-proxy.yaml.
-        self.assertEqual([w.config for w in platform_file.checkout().workloads() if w.pod == 'shared-proxy'], [''])
+        self.assertEqual([w.config for w in fixture_platform().workloads() if w.pod == 'shared-proxy'], [''])
         self.assertEqual(apps.PROXY_IMAGE, 'localhost/platform-proxy:m12')
         self.assertEqual(apps.PROXY_ARCHIVE, 'platform-proxy-m12.tar')
         self.assertEqual(apps.NGINX_TLS_VOLUME, 'platform-nginx-data')

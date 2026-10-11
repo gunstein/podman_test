@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "deploy/dr"))
 from app_ops import cli, inventory, quarantine, transport  # noqa: E402
@@ -217,9 +219,8 @@ class TransportTimeoutTests(unittest.TestCase):
         self.assertEqual(seen, [transport.COMMAND_TIMEOUT, 5])
 
     def test_data_copy_steps_get_a_longer_backstop_than_other_steps(self):
-        from app_installer import platform_file
         from app_ops import steps
-        self.assertGreater(steps.copy_step_timeout(platform_file.checkout().replicated_databases), steps.STEP_TIMEOUT)
+        self.assertGreater(steps.copy_step_timeout(fixture_platform().replicated_databases), steps.STEP_TIMEOUT)
         self.assertGreater(steps.STEP_TIMEOUT, transport.COMMAND_TIMEOUT)
 
     def test_a_platform_without_a_database_has_no_dr(self):

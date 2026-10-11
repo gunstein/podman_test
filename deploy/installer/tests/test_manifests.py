@@ -14,11 +14,14 @@ from unittest.mock import patch
 import jinja2
 import yaml
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_installer import apps, manifests, platform_file, render, stack  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-PLATFORM, LOCAL = platform_file.load(ROOT / "platform.yaml", "local")
+PLATFORM = fixture_platform()
+LOCAL = platform_file.Environment(public_port=8443, log_level='debug')
 
 
 def _database(name="widget"):
@@ -230,7 +233,7 @@ class RenderErrorTests(unittest.TestCase):
 
     def test_render_replaces_the_whole_output_directory(self):
         with tempfile.TemporaryDirectory() as directory:
-            todo, notes = platform_file.checkout().apps[:2]
+            todo, notes = fixture_platform().apps[:2]
             output = Path(directory) / "output"
             render.render(ROOT, LOCAL, output, PLATFORM)
             self.assertTrue((output / notes.manifest).is_file())

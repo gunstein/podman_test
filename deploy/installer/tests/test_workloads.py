@@ -8,12 +8,13 @@ from functools import partial
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_installer import (  # noqa: E402
     apps,
     bundle,
     images,
-    platform_file,
     quadlet,
     stack,
     workloads,
@@ -26,14 +27,14 @@ ROOT = Path(__file__).resolve().parents[3]
 class WorkloadsTests(unittest.TestCase):
     def test_each_workload_is_idempotent_and_preserves_storage(self):
         for function, names, obsolete in (
-            (partial(workloads.install_postgres, database=platform_file.checkout().apps[0].database), ['todo-postgres'],
+            (partial(workloads.install_postgres, database=fixture_platform().apps[0].database), ['todo-postgres'],
              ['todo-postgres-data', 'todo-postgres-backup']),
-            (partial(workloads.install_application, app=platform_file.checkout().apps[0]), ['todo-app'], []),
-            (partial(workloads.install_postgres, database=platform_file.checkout().apps[1].database), ['notes-postgres'],
+            (partial(workloads.install_application, app=fixture_platform().apps[0]), ['todo-app'], []),
+            (partial(workloads.install_postgres, database=fixture_platform().apps[1].database), ['notes-postgres'],
              ['notes-postgres-data', 'notes-postgres-backup']),
-            (partial(workloads.install_application, app=platform_file.checkout().apps[1]), ['notes-app'], []),
+            (partial(workloads.install_application, app=fixture_platform().apps[1]), ['notes-app'], []),
             (workloads.install_keycloak, ['keycloak'], []),
-            (partial(workloads.install_shared_proxy, platform=platform_file.checkout()), ['shared-proxy'],
+            (partial(workloads.install_shared_proxy, platform=fixture_platform()), ['shared-proxy'],
              ['platform-nginx-data']),
         ):
             with self.subTest(function=str(function)), tempfile.TemporaryDirectory() as temp:
@@ -74,7 +75,7 @@ class WorkloadsTests(unittest.TestCase):
                                  - {('podman', 'kube', 'play', '--help')},
                                  {('systemctl', '--user', 'daemon-reload')})
                 # Build mode writes the very unit an offline bundle carries.
-                units = bundle.quadlets(ROOT, platform_file.checkout(), 8443, '127.0.0.1')
+                units = bundle.quadlets(ROOT, fixture_platform(), 8443, '127.0.0.1')
                 for name in names:
                     self.assertEqual((runtime / f'{name}.kube').read_bytes(), units[f'{name}.kube'])
                 self.assertEqual(list(directory.glob('*.volume')), [directory / 'unrelated.volume'])
@@ -93,7 +94,7 @@ class WorkloadsTests(unittest.TestCase):
             for name in ('postgres.yaml', 'config.yaml', 'app.yaml', 'keycloak.yaml'):
                 (runtime / name).write_text('old\n')
             with FakeHost():
-                workloads.install_postgres(ROOT, directory, runtime, rendered, database=platform_file.checkout().apps[0].database)
+                workloads.install_postgres(ROOT, directory, runtime, rendered, database=fixture_platform().apps[0].database)
             self.assertEqual(sorted(path.name for path in runtime.iterdir()),
                              ['keycloak.yaml', 'todo-config.yaml', 'todo-postgres.kube', 'todo-postgres.yaml'])
             self.assertIn('Yaml=todo-postgres.yaml', (runtime / 'todo-postgres.kube').read_text())
@@ -103,7 +104,7 @@ class WorkloadsTests(unittest.TestCase):
         from app_installer import target_render
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
-            offline_bundle.build(base / 'bundle', platform_file.checkout().apps)
+            offline_bundle.build(base / 'bundle', fixture_platform().apps)
             target = target_render.load(base / 'bundle', {target_render.PUBLISH_ADDRESS: '192.0.2.10'},
                                         environment={}, recorded={})
             runtime = base / 'quadlet/platform-kube-runtime'
@@ -139,23 +140,23 @@ class WorkloadsTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'wildcard address'):
                     workloads.install_shared_proxy(ROOT, '/tmp/q', '/tmp/q/platform-kube-runtime',
                                                    '/tmp/rendered', publish_address=wildcard,
-                                                   platform=platform_file.checkout())
+                                                   platform=fixture_platform())
                 run.assert_not_called()
         with patch('subprocess.run') as run:
             with self.assertRaises(ValueError):
                 workloads.install_shared_proxy(ROOT, '/tmp/q', '/tmp/q/platform-kube-runtime',
                                                '/tmp/rendered', publish_address='not-an-address',
-                                               platform=platform_file.checkout())
+                                               platform=fixture_platform())
             run.assert_not_called()
 
     def test_a_database_without_a_lan_address_publishes_only_on_loopback(self):
-        database = platform_file.checkout().apps[0].database
+        database = fixture_platform().apps[0].database
         rendered = quadlet.render(ROOT, 'postgres.kube', workloads.postgres_variables(database)).decode()
         self.assertEqual(rendered.count('PublishPort='), 1)
         self.assertIn('PublishPort=127.0.0.1:5432:5432\n', rendered)
 
     def test_databases_publish_distinct_ports_from_platform_yaml(self):
-        for app in platform_file.checkout().database_apps:
+        for app in fixture_platform().database_apps:
             rendered = quadlet.render(ROOT, 'postgres.kube',
                                       workloads.postgres_variables(app.database, '192.0.2.50')).decode()
             self.assertIn(f'PublishPort=127.0.0.1:{app.replication_port}:5432\n', rendered)
@@ -172,7 +173,7 @@ class WorkloadsTests(unittest.TestCase):
                                        ('build', True, True), ('offline', False, False)]:
             with self.subTest(mode=mode, present=present, refresh=refresh), \
                     FakeHost(images_present=present) as host, tempfile.TemporaryDirectory() as bundle:
-                platform = platform_file.checkout()
+                platform = fixture_platform()
                 write_images(bundle, platform)
                 calls = host.calls
                 changed = {**images.prepare(ROOT, mode, bundle, refresh, app=platform.apps[0]),

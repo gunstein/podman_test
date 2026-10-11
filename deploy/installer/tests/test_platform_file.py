@@ -7,6 +7,8 @@ from pathlib import Path
 
 import yaml
 
+from tests.platform_fixture import PLATFORM_FILE, fixture_platform  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_installer import apps, platform_file  # noqa: E402
 
@@ -53,8 +55,8 @@ class PlatformFileTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, message):
             platform_file.load(self.write(**files))
 
-    def test_the_repository_describes_todo_notes_and_help(self):
-        platform, local = platform_file.load(ROOT / 'platform.yaml', 'local')
+    def test_the_fixture_describes_todo_notes_and_help(self):
+        platform, local = platform_file.load(PLATFORM_FILE, 'local')
         self.assertEqual([app.name for app in platform.apps], ['todo', 'notes', 'help'])
         self.assertEqual([(app.hostname, app.login_client, app.login_audience, app.replication_port, app.ready,
                            [(check.path, check.status) for check in app.checks]) for app in platform.apps],
@@ -66,8 +68,8 @@ class PlatformFileTests(unittest.TestCase):
                           ('help.test', '', '', 0, '/', [('/', 200)])])
         self.assertEqual(platform.identity_hostname, 'auth.test')
         self.assertEqual(local, platform_file.Environment(public_port=8443, log_level='debug'))
-        self.assertEqual(platform_file.load(ROOT / 'platform.yaml', 'prod')[1].log_level, 'info')
-        self.assertEqual(platform_file.checkout(), platform)
+        self.assertEqual(platform_file.load(PLATFORM_FILE, 'prod')[1].log_level, 'info')
+        self.assertEqual([app.name for app in fixture_platform().apps], [app.name for app in platform.apps])
 
     def test_an_app_comes_from_its_directory_relative_to_platform_yaml(self):
         platform, prod = platform_file.load(self.write())
@@ -168,7 +170,7 @@ class PlatformFileTests(unittest.TestCase):
         app = platform.apps[0]
         self.assertEqual([route.location for route in app.routes], ['/api/', '= /ready', '/'])
         self.assertEqual(apps.Platform.from_json(platform.to_json()), platform)
-        todo = platform_file.checkout().apps[0]
+        todo = fixture_platform().apps[0]
         self.assertEqual([(route.location, route.to) for route in todo.routes],
                          [('/api/', 'backend'), ('= /health', 'backend'), ('= /ready', 'backend'), ('/', 'frontend')])
 
@@ -290,7 +292,7 @@ class PlatformFileTests(unittest.TestCase):
         # The loader renders each pod template once, checks it (pod_contract.rendered) and keeps its containers.
         path = self.write()
         self.assertEqual(platform_file.load(path)[0].apps[0].containers, ('shop-backend', 'shop-frontend'))
-        self.assertEqual([app.containers for app in platform_file.checkout().apps],
+        self.assertEqual([app.containers for app in fixture_platform().apps],
                          [('todo-backend', 'todo-frontend'), ('notes-backend', 'notes-frontend'), ('help-site',)])
         for template, message in (('kind: Pod\n', r'apps/shop/pod.yaml.j2: .*it runs no containers'),
                                   ('kind: Pod\nspec: {containers: [1]}\n', r'pod.yaml.j2: spec.containers\[0\] must be a mapping'),

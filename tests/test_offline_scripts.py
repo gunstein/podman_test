@@ -149,4 +149,6 @@ class BuildBundleTests(unittest.TestCase):
                 env={"PATH": os.environ["PATH"], "PYTHONPATH": str(bundle / "deploy/installer")},
                 capture_output=True, text=True, check=False)
             self.assertEqual(loaded.returncode, 0, loaded.stderr)
-            self.assertEqual(loaded.stdout.split(), ["auth.test", "12", "8"])
+            self.assertEqual(loaded.stdout.split(), [metadata['defaults']['TARGET_IDENTITY_HOSTNAME'],
+                                                     str(len(metadata['manifests']['files'])),
+                                                     str(len(metadata['quadlets']['files']))])

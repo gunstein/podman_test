@@ -15,6 +15,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 TESTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TESTS.parent))
 import offline_bundle  # noqa: E402
@@ -47,7 +49,7 @@ class BundleContentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.bundle = Path(tempfile.mkdtemp())
-        cls.metadata = offline_bundle.build(cls.bundle, platform_file.checkout().apps)
+        cls.metadata = offline_bundle.build(cls.bundle, fixture_platform().apps)
 
     @classmethod
     def tearDownClass(cls):
@@ -57,14 +59,14 @@ class BundleContentTests(unittest.TestCase):
         data = json.loads((self.bundle / 'bundle.json').read_text())
         self.assertEqual(data, self.metadata)
         self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 14))
-        self.assertEqual(data['platform'], platform_file.checkout().to_json())
+        self.assertEqual(data['platform'], fixture_platform().to_json())
         self.assertEqual(data['defaults'], {IDENTITY_HOSTNAME: 'auth.test', TODO_HOSTNAME: 'todo.test',
                                             NOTES_HOSTNAME: 'notes.test', HELP_HOSTNAME: 'help.test'})
-        manifests, units = install.offline_files(platform_file.checkout())
+        manifests, units = install.offline_files(fixture_platform())
         self.assertEqual(set(data['manifests']['files']), manifests)
         self.assertEqual(set(data['quadlets']['files']), units)
         self.assertEqual(data['local_only_quadlets']['files'], ['shared-proxy.kube'])
-        self.assertEqual(set(data['replicated_quadlets']['files']), {d.unit for d in platform_file.checkout().replicated_databases})
+        self.assertEqual(set(data['replicated_quadlets']['files']), {d.unit for d in fixture_platform().replicated_databases})
         for key in ('manifests', 'quadlets', 'local_only_quadlets', 'replicated_quadlets'):
             for name in data[key]['files']:
                 self.assertTrue((self.bundle / data[key]['directory'] / name).is_file(), name)
@@ -92,7 +94,7 @@ class BundleContentTests(unittest.TestCase):
         self.assertNotIn('auth.test', everything)
 
     def test_the_target_files_are_the_normal_render_with_the_values_in_place(self):
-        platform, prod = platform_file.load(ROOT / 'platform.yaml', 'prod')
+        platform, prod = fixture_platform(), platform_file.Environment(8443, 'info')
         identity = platform.identity_hostname
         manifests = self.bundle / 'generated/target/manifests'
         normal = render.files(ROOT, platform, render.hostnames(platform), identity, prod.public_port, prod.log_level)
@@ -101,18 +103,18 @@ class BundleContentTests(unittest.TestCase):
                           .replace('${TARGET_NOTES_HOSTNAME}', 'notes.test')
                           .replace('${TARGET_HELP_HOSTNAME}', 'help.test').encode() for name in normal}, normal)
         units = self.bundle / 'generated/target/quadlet'
-        for database in platform_file.checkout().replicated_databases:
+        for database in fixture_platform().replicated_databases:
             self.assertEqual((units / database.unit).read_bytes(),
                              quadlet.render(ROOT, 'postgres.kube', workloads.postgres_variables(database)))
-        for database in platform_file.checkout().replicated_databases:
+        for database in fixture_platform().replicated_databases:
             replicated = (units / 'replicated' / database.unit).read_text().replace('${TARGET_PUBLISH_ADDRESS}', ADDRESS)
             self.assertEqual(replicated.encode(), quadlet.render(
                 ROOT, 'postgres.kube', workloads.postgres_variables(database, ADDRESS)))
         published = (units / 'shared-proxy.kube').read_text().replace('${TARGET_PUBLISH_ADDRESS}', ADDRESS)
         self.assertEqual(published.encode(), quadlet.render(
-            ROOT, 'shared-proxy.kube', workloads.proxy_variables(ADDRESS, prod.public_port, platform_file.checkout())))
+            ROOT, 'shared-proxy.kube', workloads.proxy_variables(ADDRESS, prod.public_port, fixture_platform())))
         self.assertEqual((units / 'local-only/shared-proxy.kube').read_bytes(), quadlet.render(
-            ROOT, 'shared-proxy.kube', workloads.proxy_variables('127.0.0.1', prod.public_port, platform_file.checkout())))
+            ROOT, 'shared-proxy.kube', workloads.proxy_variables('127.0.0.1', prod.public_port, fixture_platform())))
         for path in units.glob('*.kube'):
             text = path.read_text()
             self.assertEqual(re.findall(r'^Network=(.*)$', text, re.M), ['app-network.network'], path.name)
@@ -126,7 +128,7 @@ class OfflineInstallTests(unittest.TestCase):
         self.addCleanup(subprocess.run, ['rm', '-rf', str(self.root)])
         self.bundle, self.quadlet = self.root / 'bundle', self.root / 'quadlet'
         self.runtime = self.quadlet / 'platform-kube-runtime'
-        offline_bundle.build(self.bundle, platform_file.checkout().apps)
+        offline_bundle.build(self.bundle, fixture_platform().apps)
 
     def install(self, host, hostname=HOSTNAME, address=ADDRESS, notes=None):
         with patch.object(keycloak, 'configure', return_value=False) as configure:
@@ -270,7 +272,7 @@ class OfflineInstallTests(unittest.TestCase):
                                 quadlet_dir=self.quadlet)
             with self.assertRaisesRegex(ValueError, 'built for todo, notes'):
                 install.install(self.bundle, deployment_mode='offline', bundle_directory=self.bundle,
-                                quadlet_dir=self.quadlet, platform=platform_file.checkout().select(['todo']))
+                                quadlet_dir=self.quadlet, platform=fixture_platform().select(['todo']))
             with self.assertRaisesRegex(ValueError, 'built for HTTPS port 8443, not 9443'):
                 install.install(self.bundle, deployment_mode='offline', bundle_directory=self.bundle,
                                 quadlet_dir=self.quadlet, service_port=9443)
@@ -315,7 +317,7 @@ class WithoutJinjaTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             bundle, quadlet = root / 'bundle', root / 'quadlet'
-            offline_bundle.build(bundle, platform_file.checkout().apps)
+            offline_bundle.build(bundle, fixture_platform().apps)
             result = subprocess.run(
                 [sys.executable, '-c', WITHOUT_JINJA2_AND_PYYAML, str(TESTS.parent), str(TESTS), str(bundle),
                  str(quadlet)],
@@ -329,7 +331,7 @@ class WithoutJinjaTests(unittest.TestCase):
             self.assertEqual(outcome['loaded'], [])
             self.assertEqual(outcome['started'][-1], 'shared-proxy.service')
             runtime = quadlet / 'platform-kube-runtime'
-            manifests, units = install.offline_files(platform_file.checkout())
+            manifests, units = install.offline_files(fixture_platform())
             self.assertEqual({path.name for path in runtime.iterdir()}, manifests | units)
             self.assertIn('server_name shop.example.org;', (runtime / 'shared-proxy.yaml').read_text())
             self.assertIn('server_name notes.example.org;', (runtime / 'shared-proxy.yaml').read_text())

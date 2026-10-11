@@ -5,10 +5,10 @@ import unittest
 import unittest.mock
 
 from tests import test_app_ops_commands as commands
+from tests.platform_fixture import fixture_platform  # noqa: E402
 from tests.test_app_ops_commands import World, spec
 
 sys.path.insert(0, "deploy/dr")
-from app_installer import platform_file  # noqa: E402
 from app_ops import cli, failover  # noqa: E402
 from app_ops.transport import Host  # noqa: E402
 
@@ -135,7 +135,7 @@ class FailoverTests(unittest.TestCase):
         self.assertEqual([step[1] for step in world.steps() if step[0] == "https"],
                          ["shop.example.org", "notes.example.org", "help.example.org"])
         wait_ready = next(command for _host, command in world.commands if command[:2] == ["bash", "-s"])
-        pods, containers = platform_file.checkout().ready("app")
+        pods, containers = fixture_platform().ready("app")
         self.assertEqual(wait_ready[-6:], ["app", " ".join(pods), " ".join(containers),
                                            "shop.example.org/ready", "notes.example.org/ready", "help.example.org/"])
         self.assertEqual(report["users"]["hostnames"],

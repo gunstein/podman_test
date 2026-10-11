@@ -15,11 +15,12 @@ from app_installer.apps import (  # noqa: E402
     AppImage,
     Platform,
 )
-from app_installer.platform_file import checkout  # noqa: E402
 from app_installer.stack import Database  # noqa: E402
 
-APPS = checkout().apps
-REPLICATED_DATABASES = checkout().replicated_databases
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
+APPS = fixture_platform().apps
+REPLICATED_DATABASES = fixture_platform().replicated_databases
 
 
 class AppRegistryTests(unittest.TestCase):
@@ -27,8 +28,8 @@ class AppRegistryTests(unittest.TestCase):
         self.assertTrue(APPS)
         # An app without login has no client, one without a database no
         # replication port; the others must not share theirs.
-        for field, apps in (('name', APPS), ('hostname', APPS), ('login_client', checkout().login_apps), ('login_audience', checkout().login_apps),
-                            ('replication_port', checkout().database_apps)):
+        for field, apps in (('name', APPS), ('hostname', APPS), ('login_client', fixture_platform().login_apps), ('login_audience', fixture_platform().login_apps),
+                            ('replication_port', fixture_platform().database_apps)):
             values = [getattr(app, field) for app in apps]
             self.assertEqual(len(values), len(set(values)), field)
         for app in APPS:
@@ -81,7 +82,7 @@ class AppRegistryTests(unittest.TestCase):
         # a hostname or an OAuth client on them.
         for database in REPLICATED_DATABASES:
             self.assertIs(type(database), Database)
-        self.assertEqual(REPLICATED_DATABASES[:-1], tuple(app.database for app in checkout().database_apps))
+        self.assertEqual(REPLICATED_DATABASES[:-1], tuple(app.database for app in fixture_platform().database_apps))
 
     def test_replication_apps_details_match_the_acceptance_table(self):
         from app_installer import cli
@@ -132,13 +133,13 @@ class AppRegistryTests(unittest.TestCase):
 class PlatformTests(unittest.TestCase):
     def test_ready_names_what_each_role_runs(self):
         databases = ["todo-postgres", "notes-postgres", "keycloak-postgres"]
-        self.assertEqual(checkout().ready("standby"), (databases, databases))
-        pods, containers = checkout().ready("app")
+        self.assertEqual(fixture_platform().ready("standby"), (databases, databases))
+        pods, containers = fixture_platform().ready("app")
         self.assertEqual(pods, [*databases, "keycloak", "todo-app", "notes-app", "help-app", "shared-proxy"])
         self.assertEqual(containers, [*databases, "keycloak", "todo-backend", "todo-frontend",
                                       "notes-backend", "notes-frontend", "help-site", "nginx"])
         with self.assertRaisesRegex(ValueError, "role must be app or standby"):
-            checkout().ready("primary")
+            fixture_platform().ready("primary")
 
     def shop(self):
         return Platform(apps=(App(name="shop", hostname="shop.example.org", login_client="shop-frontend", login_audience="shop-api"),),
@@ -154,23 +155,23 @@ class PlatformTests(unittest.TestCase):
             Platform.from_json(data)
 
     def test_two_platforms_in_one_process_share_nothing(self):
-        today, shop = checkout(), self.shop()
+        today, shop = fixture_platform(), self.shop()
         self.assertEqual([app.name for app in today.apps], ["todo", "notes", "help"])
         self.assertEqual([d.name for d in shop.replicated_databases], ["shop", "keycloak"])
         self.assertEqual([d.name for d in today.replicated_databases], ["todo", "notes", "keycloak"])
         self.assertEqual(shop.services(databases=False), ["shared-proxy.service", "shop-app.service",
                                                           "keycloak.service"])
         self.assertIn("todo-app.service", today.services())
-        self.assertEqual(checkout(), today)
+        self.assertEqual(fixture_platform(), today)
 
     def test_the_json_form_gives_the_same_platform_back(self):
-        for platform in (checkout(), self.shop(), dataclasses.replace(checkout(), identity_hostname="auth.example.org").select(["notes"])):
+        for platform in (fixture_platform(), self.shop(), dataclasses.replace(fixture_platform(), identity_hostname="auth.example.org").select(["notes"])):
             with self.subTest(apps=[app.name for app in platform.apps]):
                 data = json.loads(json.dumps(platform.to_json()))
                 self.assertEqual(Platform.from_json(data), platform)
 
     def test_json_that_is_not_a_platform_is_refused(self):
-        good = checkout().to_json()
+        good = fixture_platform().to_json()
         for data in ([], {}, {**good, "extra": 1}, {**good, "apps": "todo"},
                      {**good, "apps": [{**good["apps"][0], "replication_port": "5432"}]},
                      {**good, "apps": [{**good["apps"][0], "unknown": True}]},
@@ -180,12 +181,12 @@ class PlatformTests(unittest.TestCase):
                 Platform.from_json(data)
 
     def test_select_keeps_the_order_and_refuses_unknown_apps(self):
-        self.assertEqual(checkout().select([]), checkout())
-        self.assertEqual([app.name for app in checkout().select(["notes", "todo"]).apps], ["todo", "notes"])
+        self.assertEqual(fixture_platform().select([]), fixture_platform())
+        self.assertEqual([app.name for app in fixture_platform().select(["notes", "todo"]).apps], ["todo", "notes"])
         with self.assertRaisesRegex(ValueError, "Unknown apps: shop"):
-            checkout().select(["shop"])
+            fixture_platform().select(["shop"])
         with self.assertRaisesRegex(ValueError, "No app named 'shop'"):
-            checkout().app("shop")
+            fixture_platform().app("shop")
 
     def test_postgres_and_keycloak_run_only_when_an_app_needs_them(self):
         from app_installer import install, secrets, workloads

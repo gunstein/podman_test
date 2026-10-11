@@ -9,15 +9,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 PREFLIGHT = (ROOT / "deploy/offline/preflight.sh").read_text()
 sys.path.insert(0, str(ROOT / "deploy/installer"))
 
-from app_installer import platform_file  # noqa: E402
 
 PORT_CHECK = PREFLIGHT.split("python3 - <<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
 # What preflight.sh gives the port check for today's platform (apps.Platform.host_ports).
-PLATFORM_PORTS = ",".join(str(port) for ports in platform_file.checkout().host_ports().values() for port in ports)
+PLATFORM_PORTS = ",".join(str(port) for ports in fixture_platform().host_ports().values() for port in ports)
 
 
 class PreflightHostPortTests(unittest.TestCase):
@@ -71,9 +72,9 @@ class PreflightHostPortTests(unittest.TestCase):
         self.assertIn("platform host-ports --bundle-dir", PREFLIGHT)
         self.assertNotRegex(PREFLIGHT, r"(?<![a-z])(todo|notes)(?![a-z])")
         checked = self.check_ports(set())
-        for database in platform_file.checkout().replicated_databases:
+        for database in fixture_platform().replicated_databases:
             self.assertIn(database.replication_port, checked)
-        self.assertEqual(platform_file.checkout().host_ports(), {
+        self.assertEqual(fixture_platform().host_ports(), {
             "todo-postgres": (5432,), "notes-postgres": (5433,), "keycloak-postgres": (5434,), "nginx": (8080, 8443)})
 
     def test_allowing_one_port_does_not_allow_another(self):

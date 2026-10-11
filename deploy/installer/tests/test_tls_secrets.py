@@ -4,6 +4,7 @@ FakeHost keeps the secrets and runs each throwaway proxy container
 (tls_secrets.proxy) as a local shell, with every --secret written as a file
 where the container would see it (fake_host.proxy_container). Certificates
 from an organisation's CA come from deploy/scripts/app_ca.py, run on this
+from tests.platform_fixture import fixture_platform  # noqa: E402
 host from its own directory.
 """
 import base64
@@ -15,8 +16,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import fixture_platform
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import apps, cli, platform_file, settings, tls_secrets  # noqa: E402
+from app_installer import apps, cli, settings, tls_secrets  # noqa: E402
 from fake_host import REAL_RUN, FakeHost  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -381,7 +384,7 @@ class InstallTests(SecretTest):
     def test_uninstall_with_its_data_removes_every_tls_secret(self):
         from app_installer import uninstall
         for name in tls_secrets.secret_names():
-            self.assertIn(name, uninstall.secret_names(platform_file.checkout()))
+            self.assertIn(name, uninstall.secret_names(fixture_platform()))
 
 
 if __name__ == '__main__':

@@ -139,21 +139,24 @@ PYTHONPATH=deploy/installer python3 -c 'from app_installer import platform_file;
 | `shared-proxy` / `shared-proxy.service` | `nginx` (TLS, routing by hostname) | Serving host |
 | `todo-app` / `todo-app.service` | `todo-migrate` init, `todo-backend`, `todo-frontend` | Serving host |
 | `notes-app` / `notes-app.service` | `notes-migrate` init, `notes-backend`, `notes-frontend` | Serving host |
+| `guestbook-app` / `guestbook-app.service` | `guestbook-migrate` init, `guestbook-backend`, `guestbook-frontend` | Serving host |
 | `help-app` / `help-app.service` | `help-site` (static pages) | Serving host |
 | `keycloak` / `keycloak.service` | `keycloak` | Serving host |
 | `todo-postgres` / `todo-postgres.service` | `todo-postgres` | Both hosts |
 | `notes-postgres` / `notes-postgres.service` | `notes-postgres` | Both hosts |
+| `guestbook-postgres` / `guestbook-postgres.service` | `guestbook-postgres` | Both hosts |
 | `keycloak-postgres` / `keycloak-postgres.service` | `keycloak-postgres` | Both hosts |
 
 | Database | Container | psql user | Host replication port | Standby slot | Rebuilt slot | Marker table |
 |---|---|---|---|---|---|---|
 | todo | `todo-postgres` | `todo` | 5432 | `todo_standby` | `todo_rebuilt_standby` | `todos (title, completed)` |
 | notes | `notes-postgres` | `notes` | 5433 | `notes_standby` | `notes_rebuilt_standby` | `notes (title, body)` |
+| guestbook | `guestbook-postgres` | `guestbook` | 5435 | `guestbook_standby` | `guestbook_rebuilt_standby` | `entries (message)` |
 | keycloak | `keycloak-postgres` | `keycloak` | 5434 | `keycloak_standby` | `keycloak_rebuilt_standby` | none; verify via login |
 
-All three databases are one DR group: bootstrap, promotion, backup, rebuild and
+All four databases are one DR group: bootstrap, promotion, backup, rebuild and
 status always act on the complete group, never on one database alone. A
-serving host runs all eight services; a rebuilt standby runs only the three
+serving host runs all ten services; a rebuilt standby runs only the four
 PostgreSQL services. Clients use `https://todo.test:8443` and
 `https://notes.test:8443`, and log in at Keycloak's `https://auth.test:8443`;
 the three names map to the serving host and are covered by one SAN
@@ -343,9 +346,11 @@ systemctl --user is-active \
   todo-app.service \
   notes-app.service \
   help-app.service \
+  guestbook-app.service \
   keycloak.service \
   todo-postgres.service \
   notes-postgres.service \
+  guestbook-postgres.service \
   keycloak-postgres.service
 systemctl --user --failed --no-pager
 podman image inspect localhost/platform-proxy:m12 \

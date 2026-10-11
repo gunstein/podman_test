@@ -1266,3 +1266,16 @@ backend is still the package `backend` (`/app/backend` in the image,
 environment, the platform's and not an app's, are `e2e/requirements.txt` and
 `e2e/.venv` (the lab's step `03-4a` makes it there). CI, Dependabot and the
 docs name the new paths.
+
+**Phase 5-4a, code done; the lab step runs in the phase's acceptance run.**
+The third app exposed tests that used the checkout's changing app set as
+fixed test data. Platform behaviour tests now use `tests/fixtures/platform.yaml`
+(Todo, Notes and Help), through one `fixture_platform()` helper; build and
+DR test bundles use that same fixture. FakeHost answers each declared check's
+status, including an anonymous 401. The render baseline, real package/script
+smoke tests and acceptance-document checks continue to use the checkout's
+platform; package assertions derive the file set instead of pinning counts.
+The acceptance service/database table is updated now because those checks
+must pass before the later documentation step. No runtime platform code or
+render baseline changed. A certificate test also tolerates OpenSSL's two
+spacing styles for a subject CN, without weakening the subject check.

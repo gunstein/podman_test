@@ -1,0 +1,17 @@
+# Fixed app set for platform behaviour tests; paths are relative to this file.
+identityHostname: auth.test
+publicPort: 8443
+logLevel: info
+environments:
+  local:
+    logLevel: debug
+  prod: {}
+apps:
+  - path: ../../examples/todo
+    hostname: todo.test
+    replicationPort: 5432
+  - path: ../../examples/notes
+    hostname: notes.test
+    replicationPort: 5433
+  - path: ../../examples/help
+    hostname: help.test

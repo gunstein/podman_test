@@ -9,6 +9,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 SCRIPT = Path(__file__).parents[1] / "deploy/dr/scripts" / "app_dr.py"
 # On a host the script finds both packages in lib next to it; here they come
 # from the checkout, as PYTHONPATH=deploy/installer:deploy/dr would give them.
@@ -18,7 +20,6 @@ assert SPEC and SPEC.loader
 app_dr = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(app_dr)
 
-from app_installer import platform_file  # noqa: E402
 from app_installer.commands import CommandError  # noqa: E402
 
 from tests.fake_commands import route_commands  # noqa: E402
@@ -36,7 +37,7 @@ def container(arguments):
 
 def setUpModule():
     # app_dr.py takes the platform this host recorded at install; here, the registry's.
-    patcher = mock.patch.object(app_dr.target_render, 'installed_platform', return_value=platform_file.checkout())
+    patcher = mock.patch.object(app_dr.target_render, 'installed_platform', return_value=fixture_platform())
     patcher.start()
     unittest.addModuleCleanup(patcher.stop)
 
@@ -64,7 +65,7 @@ class FakeRunner:
 class StandbyGroupTests(unittest.TestCase):
     def setUp(self):
         # A group of one database; StandbyGroup asks the platform only for its group.
-        self.platform = SimpleNamespace(replicated_databases=(platform_file.checkout().apps[0].database,))
+        self.platform = SimpleNamespace(replicated_databases=(fixture_platform().apps[0].database,))
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.journal = Path(self.temporary.name) / 'promotion.json'
@@ -204,7 +205,7 @@ class GroupPromotionTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.journal = Path(self.temporary.name) / 'promotion.json'
-        self.apps = (platform_file.checkout().apps[0].database, platform_file.checkout().apps[1].database)
+        self.apps = (fixture_platform().apps[0].database, fixture_platform().apps[1].database)
         self.platform = SimpleNamespace(replicated_databases=self.apps)
         self.hostname = mock.patch.object(socket, 'gethostname', return_value='standby')
         self.hostname.start()
@@ -381,7 +382,7 @@ class CheckTests(unittest.TestCase):
 
     def check(self, disk=DISK, ca_days=3000, **databases):
         CheckHost(self, ca_days, **{name: databases.get(name, {}) for name in ("todo", "notes", "keycloak")})
-        return app_dr.check(platform_file.checkout().replicated_databases, disk=disk)
+        return app_dr.check(fixture_platform().replicated_databases, disk=disk)
 
     def test_a_healthy_primary_and_a_healthy_standby_pass(self):
         lines, problems = self.check()
@@ -511,7 +512,7 @@ class CheckTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             bundle = ReadinessTests.bundle(Path(directory))
             config = Path(directory) / "platform-dr.json"
-            app_dr.write_config(config, platform_file.checkout(), "todo-primary", "192.0.2.10", "todo-standby", 30, "a" * 40, str(bundle))
+            app_dr.write_config(config, fixture_platform(), "todo-primary", "192.0.2.10", "todo-standby", 30, "a" * 40, str(bundle))
             with mock.patch.object(app_dr.shutil, "disk_usage", return_value=self.DISK), \
                     mock.patch.object(app_dr, "secret_exists", return_value=True), \
                     mock.patch("sys.stdout") as stdout:
@@ -544,7 +545,7 @@ class RenewTlsTests(unittest.TestCase):
 
     def test_due_certificates_are_renewed_and_the_others_kept(self):
         self.renewed = ["notes"]
-        lines, problems = app_dr.renew_tls(platform_file.checkout().replicated_databases)
+        lines, problems = app_dr.renew_tls(fixture_platform().replicated_databases)
         self.assertEqual(problems, [])
         self.assertEqual(lines, ["todo: replication certificate kept, valid 824 more days",
                                  "notes: new replication certificate, valid 824 more days",
@@ -552,7 +553,7 @@ class RenewTlsTests(unittest.TestCase):
 
     def test_a_standby_renews_nothing(self):
         self.roles = dict.fromkeys(self.roles, "t")
-        lines, problems = app_dr.renew_tls(platform_file.checkout().replicated_databases)
+        lines, problems = app_dr.renew_tls(fixture_platform().replicated_databases)
         self.assertEqual(problems, [])
         self.assertEqual(lines, [f"{name}: standby, nothing to renew" for name in ("todo", "notes", "keycloak")])
         app_dr.replication_tls.renew.assert_not_called()
@@ -591,13 +592,13 @@ class ReadinessTests(unittest.TestCase):
 
     def readiness(self, bundle, revision=REVISION, missing=()):
         config = app_dr.Config("todo-primary", "192.0.2.10", "todo-standby", 30, (), revision, str(bundle))
-        return app_dr.readiness(config, platform_file.checkout(), exists=lambda name: name not in missing)
+        return app_dr.readiness(config, fixture_platform(), exists=lambda name: name not in missing)
 
     def test_a_host_with_the_bundle_and_every_secret_is_ready(self):
         with tempfile.TemporaryDirectory() as directory:
             lines, problems = self.readiness(self.bundle(Path(directory)))
         self.assertEqual(problems, [])
-        names = app_dr.transfer.transfer_names(platform_file.checkout())
+        names = app_dr.transfer.transfer_names(fixture_platform())
         self.assertIn("replication-ca-key", names)
         self.assertEqual(lines, [f"Ready to take over: offline bundle aaaaaaaaaaaa with 2 image archives, "
                                  f"all {len(names)} DR secrets"])
@@ -619,7 +620,7 @@ class ReadinessTests(unittest.TestCase):
             _lines, problems = self.readiness(Path(directory) / "missing")
             self.assertIn("no complete offline bundle at", problems[0])
             config = app_dr.Config("todo-primary", "192.0.2.10", "todo-standby", 30)
-            _lines, problems = app_dr.readiness(config, platform_file.checkout(), exists=lambda name: True)
+            _lines, problems = app_dr.readiness(config, fixture_platform(), exists=lambda name: True)
             self.assertEqual(problems, ["the DR settings name no offline bundle: run app-ops install-dr-tool again"])
 
     def test_a_checkout_without_a_revision_checks_everything_else(self):
@@ -642,10 +643,10 @@ class ConfigureTests(unittest.TestCase):
             self.assertEqual(config.stat().st_mode & 0o777, 0o600)
             self.assertEqual(config.parent.stat().st_mode & 0o777, 0o700)
             loaded = app_dr.load_config(config)
-            self.assertEqual(loaded.applications, tuple(d.name for d in platform_file.checkout().replicated_databases))
+            self.assertEqual(loaded.applications, tuple(d.name for d in fixture_platform().replicated_databases))
             self.assertEqual((loaded.primary_name, loaded.primary_address, loaded.standby_name,
                               loaded.rpo_target_seconds), ("todo-primary", "192.0.2.10", "todo-standby", 30))
-            app_dr.StandbyGroup(loaded, platform_file.checkout())
+            app_dr.StandbyGroup(loaded, fixture_platform())
 
     def test_repeat_is_unchanged_and_existing_ansible_written_config_is_byte_identical(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -655,10 +656,10 @@ class ConfigureTests(unittest.TestCase):
                               '"primary_address": "192.0.2.10", "standby_name": "todo-standby", '
                               '"rpo_target_seconds": 30}')
             config.chmod(0o600)
-            self.assertFalse(app_dr.write_config(config, platform_file.checkout(), "todo-primary", "192.0.2.10", "todo-standby", 30))
-            self.assertTrue(app_dr.write_config(config, platform_file.checkout(), "todo-primary", "192.0.2.10", "todo-standby", 60))
+            self.assertFalse(app_dr.write_config(config, fixture_platform(), "todo-primary", "192.0.2.10", "todo-standby", 30))
+            self.assertTrue(app_dr.write_config(config, fixture_platform(), "todo-primary", "192.0.2.10", "todo-standby", 60))
             self.assertEqual(app_dr.load_config(config).rpo_target_seconds, 60)
-            self.assertTrue(app_dr.write_config(config, platform_file.checkout(), "todo-primary", "192.0.2.10", "todo-standby", 60,
+            self.assertTrue(app_dr.write_config(config, fixture_platform(), "todo-primary", "192.0.2.10", "todo-standby", 60,
                                                 "a" * 40, "/home/u/platform-offline-m12"))
             loaded = app_dr.load_config(config)
             self.assertEqual((loaded.revision, loaded.bundle), ("a" * 40, "/home/u/platform-offline-m12"))
@@ -669,7 +670,7 @@ class ConfigureTests(unittest.TestCase):
             for arguments in (("primary.example", "todo-standby", 30), ("192.0.2.10", "", 30),
                               ("192.0.2.10", "todo-standby", 0)):
                 with self.subTest(arguments=arguments), self.assertRaises(app_dr.DrError):
-                    app_dr.write_config(config, platform_file.checkout(), "todo-primary", *arguments)
+                    app_dr.write_config(config, fixture_platform(), "todo-primary", *arguments)
             self.assertFalse(config.exists())
             with mock.patch("sys.stderr"):
                 self.assertEqual(self.configure(config, '--rpo-target-seconds', '-5'), 1)

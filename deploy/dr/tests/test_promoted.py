@@ -9,10 +9,12 @@ from contextlib import ExitStack, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[2] / 'installer')]
 import dr_target  # noqa: E402
 from app_dr_host import cli, promoted, transfer  # noqa: E402
-from app_installer import platform_file, target_render  # noqa: E402
+from app_installer import target_render  # noqa: E402
 
 CERTIFICATE = '-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----'
 ISSUER = 'https://auth.test:8443/auth/realms/todo'
@@ -135,7 +137,7 @@ class PromotedDeployTests(unittest.TestCase):
                                       'help-app.service', 'shared-proxy.service'])
             # Keycloak first, then each app ready and its checks, through its own hostname.
             self.assertLess(self.index(host, ('request', promoted.keycloak.DISCOVERY, None)), self.index(host, ('clients',)))
-            for app in platform_file.checkout().apps:
+            for app in fixture_platform().apps:
                 self.assertLess(self.index(host, ('systemctl', 'start', 'shared-proxy.service')),
                                 self.index(host, ('get', app.ready, app.hostname)))
                 self.assertLess(self.index(host, ('clients',)), self.index(host, ('get', app.ready, app.hostname)))
@@ -148,7 +150,7 @@ class PromotedDeployTests(unittest.TestCase):
                 host = PromotedHost(**changes)
                 self.assertTrue(self.deploy(host, directory))
                 stops = [s for s in host.steps if s[:3] == ('systemctl', '--user', 'stop')]
-                self.assertEqual(stops, [('systemctl', '--user', 'stop', *platform_file.checkout().services(databases=False))])
+                self.assertEqual(stops, [('systemctl', '--user', 'stop', *fixture_platform().services(databases=False))])
                 self.assertLess(host.steps.index(stops[0]),
                                 min(i for i, s in enumerate(host.steps) if s[:2] == ('systemctl', 'start')))
 
@@ -158,8 +160,8 @@ class PromotedDeployTests(unittest.TestCase):
             'address': (PromotedHost(address='192.0.2.99'), {}, '192.0.2.11 is not'),
             'port': (PromotedHost(), {'service_port': 443}, 'service port 443'),
             'promotion': (PromotedHost(promoted=False), {}, 'promotion record'),
-            'secret': (PromotedHost(missing_secrets=[transfer.replicated_names(platform_file.checkout())[-1]]), {},
-                       transfer.replicated_names(platform_file.checkout())[-1]),
+            'secret': (PromotedHost(missing_secrets=[transfer.replicated_names(fixture_platform())[-1]]), {},
+                       transfer.replicated_names(fixture_platform())[-1]),
         }
         for name, (host, overrides, message) in cases.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as directory:
@@ -182,7 +184,7 @@ class PromotedDeployTests(unittest.TestCase):
             host = PromotedHost()
             self.deploy(host, directory)
             installs = [s[1:] for s in host.steps if s[0] == 'install']
-            self.assertEqual(installs, [('application', app.name) for app in platform_file.checkout().apps]
+            self.assertEqual(installs, [('application', app.name) for app in fixture_platform().apps]
                              + [('keycloak', None), ('shared-proxy', None)])
 
     def test_nginx_gets_its_tls_secrets_for_the_recorded_hostnames_before_it_is_installed(self):
@@ -202,7 +204,7 @@ class PromotedDeployTests(unittest.TestCase):
     def test_a_failed_check_or_foreign_issuer_stops_the_deployment(self):
         with tempfile.TemporaryDirectory() as directory:
             # notes: Help's only check is its ready path, which fails as not ready instead.
-            app = platform_file.checkout().apps[1]
+            app = fixture_platform().apps[1]
             host = PromotedHost(statuses={(app.hostname, app.checks[-1].path): 500})
             with self.assertRaisesRegex(RuntimeError, f'{app.name}: GET {app.checks[-1].path} on {app.hostname} '
                                                       'answered 500, not 200'):
@@ -227,8 +229,8 @@ class PromotedDeployTests(unittest.TestCase):
                                           'TARGET_NOTES_HOSTNAME': 'notes.example.org'}))
             host = PromotedHost(issuers=['https://auth.example.org:8443/auth/realms/todo'])
             self.deploy(host, directory)
-            self.assertIn(('get', platform_file.checkout().apps[0].checks[-1].path, 'shop.example.org'), host.steps)
-            self.assertIn(('get', platform_file.checkout().apps[1].checks[-1].path, 'notes.example.org'), host.steps)
+            self.assertIn(('get', fixture_platform().apps[0].checks[-1].path, 'shop.example.org'), host.steps)
+            self.assertIn(('get', fixture_platform().apps[1].checks[-1].path, 'notes.example.org'), host.steps)
             self.assertEqual([hostname for _client, hostname, _audience in host.clients], ['shop.example.org', 'notes.example.org'])
 
     def test_a_port_other_than_the_bundles_refuses_before_anything_changes(self):

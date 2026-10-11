@@ -115,7 +115,7 @@ class CaTests(unittest.TestCase):
                 '-out', request)
         _names, certificate = self.sign(request)
         text = openssl('x509', '-in', certificate, '-noout', '-text').stdout
-        self.assertIn('Subject: CN = todo.example.test', text)
+        self.assertRegex(text, r'Subject: CN\s*=\s*todo\.example\.test')
         self.assertNotIn('Some Bank', text)
         self.assertIn('CA:FALSE', text)
         self.assertNotIn('Certificate Sign', text)

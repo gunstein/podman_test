@@ -12,6 +12,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import fixture_platform
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "deploy/scripts/lab"))
 import acceptance  # noqa: E402
@@ -44,7 +46,7 @@ def valid_bash(script, what):
 UNITS = [('systemctl --user show "$unit" --property=Requires', (0, "".join(
     f"== {w.service}\nRequires={' '.join(w.requires)} app-network-network.service\n"
     f"After={' '.join(w.requires)} basic.target\n"
-    for w in acceptance.PLATFORM.workloads())))]
+    for w in fixture_platform().workloads())))]
 
 
 class Fake:
@@ -84,6 +86,14 @@ class Fake:
 
 class ToolTest(unittest.TestCase):
     def setUp(self):
+        platform = fixture_platform()
+        model = patch.multiple(acceptance, PLATFORM=platform,
+                               HOSTNAMES=(platform.identity_hostname, *(app.hostname for app in platform.apps)),
+                               DATABASES=tuple(database.name for database in platform.replicated_databases),
+                               REPLICATION_PORTS=sorted(database.replication_port
+                                                        for database in platform.replicated_databases))
+        model.start()
+        self.addCleanup(model.stop)
         self.runs = Path(tempfile.mkdtemp())
         self.addCleanup(subprocess.run, ["rm", "-rf", str(self.runs)])
         secret = self.runs / "xdg/todo-acceptance"

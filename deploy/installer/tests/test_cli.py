@@ -7,14 +7,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_fixture import PLATFORM_FILE, fixture_platform  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import platform_file, target_render  # noqa: E402
+from app_installer import target_render  # noqa: E402
 from app_installer.cli import main  # noqa: E402
 
 
 def setUpModule():
     # The host commands take the platform the host recorded at install; here, this checkout's platform.yaml.
-    patcher = patch('app_installer.target_render.installed_platform', return_value=platform_file.checkout())
+    patcher = patch('app_installer.target_render.installed_platform', return_value=fixture_platform())
     patcher.start()
     unittest.addModuleCleanup(patcher.stop)
 
@@ -44,14 +46,14 @@ class CLITests(unittest.TestCase):
                     self.assertRaises(SystemExit):
                 main([command])
         with contextlib.redirect_stdout(io.StringIO()) as output:
-            self.assertEqual(main(['replication-apps']), 0)
+            self.assertEqual(main(['replication-apps', '--project-root', str(PLATFORM_FILE.parent)]), 0)
         self.assertEqual(json.loads(output.getvalue()), ['todo', 'notes', 'keycloak'])
 
 
 def run(argv):
     """main(argv): its exit code, stdout and stderr."""
     with contextlib.redirect_stdout(io.StringIO()) as output, contextlib.redirect_stderr(io.StringIO()) as error:
-        code = main(argv)
+        code = main([*argv, '--project-root', str(PLATFORM_FILE.parent)] if argv[0] == 'platform' else argv)
     return code, output.getvalue(), error.getvalue()
 
 
@@ -67,7 +69,7 @@ class UninstallCLITests(unittest.TestCase):
                 code, output, error = run(['uninstall', *options])
             self.assertEqual((code, output), (0, '{"changed": true}\n'))
             self.assertIn(said, error)
-            self.assertEqual(remove.call_args.args[0], platform_file.checkout())
+            self.assertEqual(remove.call_args.args[0], fixture_platform())
             self.assertEqual(remove.call_args.args[1], '--remove-data' in options)
             self.assertEqual(remove.call_args.args[3], '--remove-backups' in options)
 
@@ -152,7 +154,7 @@ class PlatformPartTests(unittest.TestCase):
     def test_parts_from_a_bundle(self):
         import offline_bundle
         with tempfile.TemporaryDirectory() as bundle:
-            offline_bundle.build(bundle, platform_file.checkout().apps[1:2])
+            offline_bundle.build(bundle, fixture_platform().apps[1:2])
             self.assertEqual(run(['platform', 'hostnames', '--bundle-dir', bundle])[1], 'auth.test notes.test\n')
             self.assertEqual(run(['platform', 'host-ports', '--bundle-dir', bundle])[1],
                              'notes-postgres 5433\nkeycloak-postgres 5434\nnginx 8080 8443\n')

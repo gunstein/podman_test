@@ -7,9 +7,11 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import offline_bundle  # noqa: E402
-from app_installer import platform_file, target_render  # noqa: E402
+from app_installer import target_render  # noqa: E402
 from app_installer.target_render import (  # noqa: E402
     IDENTITY_HOSTNAME,
     PUBLISH_ADDRESS,
@@ -44,10 +46,10 @@ class SubstituteTests(unittest.TestCase):
 
 class ResolveTests(unittest.TestCase):
     def test_keycloak_and_every_app_have_their_own_hostname_value(self):
-        self.assertEqual(target_render.hostname_targets(platform_file.checkout()), [IDENTITY_HOSTNAME, TODO, NOTES, HELP])
-        self.assertEqual([target_render.hostname_target(app) for app in platform_file.checkout().apps],
+        self.assertEqual(target_render.hostname_targets(fixture_platform()), [IDENTITY_HOSTNAME, TODO, NOTES, HELP])
+        self.assertEqual([target_render.hostname_target(app) for app in fixture_platform().apps],
                          [TODO, NOTES, HELP])
-        self.assertEqual(target_render.hostnames(VALUES, platform_file.checkout()),
+        self.assertEqual(target_render.hostnames(VALUES, fixture_platform()),
                          {'todo': 'todo.example.org', 'notes': 'notes.example.org', 'help': 'help.example.org'})
         self.assertEqual(target_render.identity_hostname(VALUES), 'shop.example.org')
 
@@ -117,7 +119,7 @@ class MetadataTests(unittest.TestCase):
     def setUp(self):
         self.bundle = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__('shutil').rmtree(self.bundle))
-        offline_bundle.build(self.bundle, platform_file.checkout().apps)
+        offline_bundle.build(self.bundle, fixture_platform().apps)
         self.metadata = json.loads((self.bundle / 'bundle.json').read_text())
 
     def write(self, **changes):
@@ -172,7 +174,7 @@ class MetadataTests(unittest.TestCase):
 
 class PlatformRecordTests(unittest.TestCase):
     def test_the_record_is_read_back_only_in_this_installers_format(self):
-        platform = platform_file.checkout()
+        platform = fixture_platform()
         with tempfile.TemporaryDirectory() as home:
             path = Path(home) / 'platform.json'
             with unittest.mock.patch.object(target_render, 'platform_record_path', return_value=path):

@@ -5,9 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.platform_fixture import fixture_platform  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import fake_host  # noqa: E402
-from app_installer import apps, images, platform_file  # noqa: E402
+from app_installer import apps, images  # noqa: E402
 from fake_host import FakeHost, write_images  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -26,33 +28,33 @@ class ImageErrorTests(unittest.TestCase):
     def test_a_proxy_image_without_the_nginx_label_is_refused_in_both_modes(self):
         for mode in ('build', 'offline'):
             with self.subTest(mode), WrongLabelHost(), tempfile.TemporaryDirectory() as bundle:
-                write_images(bundle, platform_file.checkout())
+                write_images(bundle, fixture_platform())
                 with self.assertRaisesRegex(RuntimeError, 'does not identify nginx.*refresh_images=true'):
-                    images.prepare_shared(ROOT, mode, bundle, False, platform_file.checkout())
+                    images.prepare_shared(ROOT, mode, bundle, False, fixture_platform())
 
     def test_offline_refuses_a_refresh_or_a_missing_bundle_before_any_command(self):
         for bundle, refresh in (('/bundle', True), ('', False)):
             with self.subTest(bundle=bundle, refresh=refresh), FakeHost() as host:
                 with self.assertRaisesRegex(ValueError, 'requires bundle_directory and forbids refresh_images'):
-                    images.prepare(ROOT, 'offline', bundle, refresh, app=platform_file.checkout().apps[0])
+                    images.prepare(ROOT, 'offline', bundle, refresh, app=fixture_platform().apps[0])
                 self.assertEqual(host.calls, [])
         with FakeHost() as host, self.assertRaisesRegex(ValueError, 'build or offline'):
-            images.prepare(ROOT, 'online', app=platform_file.checkout().apps[0])
+            images.prepare(ROOT, 'online', app=fixture_platform().apps[0])
         self.assertEqual(host.calls, [])
 
     def test_a_bundle_without_an_image_archive_names_it_and_loads_nothing(self):
         with tempfile.TemporaryDirectory() as bundle, FakeHost(images_present=False) as host:
-            write_images(bundle, platform_file.checkout(), archives=False)
+            write_images(bundle, fixture_platform(), archives=False)
             with self.assertRaisesRegex(FileNotFoundError, 'no image archive images/todo-backend-m12.tar'):
-                images.prepare(ROOT, 'offline', bundle, app=platform_file.checkout().apps[0])
+                images.prepare(ROOT, 'offline', bundle, app=fixture_platform().apps[0])
             self.assertFalse(host.ran('podman', 'load'))
 
     def test_an_older_image_under_the_same_tag_is_replaced_by_the_bundles(self):
         # The fix ships under the same tag: the host's image has another ID, so the bundle's is loaded.
-        app = platform_file.checkout().apps[0]
+        app = fixture_platform().apps[0]
         reference = app.image('backend')
         with tempfile.TemporaryDirectory() as bundle, FakeHost() as host:
-            write_images(bundle, platform_file.checkout())
+            write_images(bundle, fixture_platform())
             host.image_ids[reference] = 'sha256:an-older-build'
             changed = images.prepare(ROOT, 'offline', bundle, app=app)
             self.assertEqual(changed, {'backend': True, 'frontend': False})
@@ -60,20 +62,20 @@ class ImageErrorTests(unittest.TestCase):
             self.assertEqual(images.image_id(reference), fake_host.image_id(reference))
 
     def test_a_loaded_image_with_another_id_than_the_bundle_says_stops_the_install(self):
-        app = platform_file.checkout().apps[0]
+        app = fixture_platform().apps[0]
         with tempfile.TemporaryDirectory() as bundle, FakeHost(images_present=False):
-            write_images(bundle, platform_file.checkout())
+            write_images(bundle, fixture_platform())
             fake_host.write_archive(Path(bundle) / 'images' / app.image_archive('backend'), app.image('backend'),
                                     'sha256:something-else')
             with self.assertRaisesRegex(RuntimeError, r'has the ID sha256:something-else, not .* build the bundle again'):
                 images.prepare(ROOT, 'offline', bundle, app=app)
 
     def test_a_bundle_without_image_ids_or_an_image_in_them_is_refused(self):
-        app = platform_file.checkout().apps[0]
+        app = fixture_platform().apps[0]
         with tempfile.TemporaryDirectory() as bundle, FakeHost() as host:
             with self.assertRaisesRegex(FileNotFoundError, 'has no images/image-ids.json'):
                 images.prepare(ROOT, 'offline', bundle, app=app)
-            write_images(bundle, platform_file.checkout().select(['notes']))
+            write_images(bundle, fixture_platform().select(['notes']))
             with self.assertRaisesRegex(ValueError, f'image-ids.json has no ID for {app.image("backend")}'):
                 images.prepare(ROOT, 'offline', bundle, app=app)
             self.assertEqual(host.ran('podman', 'load'), [])
@@ -81,8 +83,8 @@ class ImageErrorTests(unittest.TestCase):
     def test_a_present_image_is_kept_offline_without_its_archive(self):
         # An image already on the host with the bundle's ID is not loaded again, so its archive is not needed.
         with tempfile.TemporaryDirectory() as bundle, FakeHost() as host:
-            write_images(bundle, platform_file.checkout(), archives=False)
-            self.assertEqual(set(images.prepare(ROOT, 'offline', bundle, app=platform_file.checkout().apps[0]).values()), {False})
+            write_images(bundle, fixture_platform(), archives=False)
+            self.assertEqual(set(images.prepare(ROOT, 'offline', bundle, app=fixture_platform().apps[0]).values()), {False})
             self.assertFalse(host.ran('podman', 'load'))
 
 
@@ -106,7 +108,7 @@ class BuildTests(unittest.TestCase):
             ['--file', '/project/shop-backend/Containerfile', '--tag', 'localhost/shop-backend:m12', '/project'],
             ['--file', '/project/../help/Containerfile', '--tag', 'localhost/shop-site:m12', '/project/../help']])
         # An example app builds from its own directory: each image's directory is its context.
-        todo = platform_file.checkout().apps[0]
+        todo = fixture_platform().apps[0]
         self.assertEqual([(image.context, image.containerfile) for image in images.image_list(todo)],
                          [('examples/todo/backend', 'Containerfile'), ('examples/todo/frontend', 'Containerfile')])
 
@@ -120,7 +122,7 @@ class GroupTests(unittest.TestCase):
             image.reference: image for image in images.shared_images(platform)}
 
     def test_a_standby_loads_every_missing_image_from_the_bundle_and_never_builds_or_pulls(self):
-        platform = platform_file.checkout()
+        platform = fixture_platform()
         with tempfile.TemporaryDirectory() as bundle, FakeHost(images_present=False) as host:
             write_images(bundle, platform)
             self.assertTrue(images.prepare_offline_group(bundle, platform))
@@ -136,12 +138,12 @@ class GroupTests(unittest.TestCase):
 
     def test_images_that_are_present_are_not_loaded_again(self):
         with tempfile.TemporaryDirectory() as bundle, FakeHost() as host:
-            write_images(bundle, platform_file.checkout(), archives=False)
-            self.assertFalse(images.prepare_offline_group(bundle, platform_file.checkout()))
+            write_images(bundle, fixture_platform(), archives=False)
+            self.assertFalse(images.prepare_offline_group(bundle, fixture_platform()))
             self.assertEqual(host.ran('podman', 'load'), [])
 
     def test_a_bundle_build_makes_and_saves_each_distinct_image_once(self):
-        platform = platform_file.checkout()
+        platform = fixture_platform()
         # PostgreSQL serves three databases and nginx every app; each is still made and saved once.
         with tempfile.TemporaryDirectory() as destination, FakeHost(images_present=False) as host:
             images.build_and_export(ROOT, destination, platform)

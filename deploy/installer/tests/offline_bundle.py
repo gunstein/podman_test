@@ -1,5 +1,8 @@
 """A real offline bundle's target files, rendered from this repository, for the installer tests."""
+import tempfile
 from pathlib import Path
+
+from tests.platform_fixture import PLATFORM_FILE
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -14,6 +17,11 @@ def build(directory, applications):
     """
     from app_installer import apps, bundle
     from fake_host import write_images
-    data = bundle.build(ROOT, 'prod', directory, [app.name for app in applications])
+    with tempfile.TemporaryDirectory() as project:
+        root = Path(project)
+        for part in ('examples', 'deploy'):
+            (root / part).symlink_to(ROOT / part, target_is_directory=True)
+        (root / 'platform.yaml').write_text(PLATFORM_FILE.read_text().replace('../../examples/', 'examples/'))
+        data = bundle.build(root, 'prod', directory, [app.name for app in applications])
     write_images(directory, apps.Platform.from_json(data['platform']))
     return data

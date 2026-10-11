@@ -1,6 +1,6 @@
 {
   "format": "platform-offline-bundle",
-  "format_version": 12,
+  "format_version": 13,
   "manifests": {
     "directory": "generated/target/manifests",
     "files": [

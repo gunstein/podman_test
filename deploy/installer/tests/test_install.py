@@ -23,7 +23,7 @@ from app_installer import (  # noqa: E402
     target_render,
     uninstall,
 )
-from fake_host import FakeHost, RenderingHost  # noqa: E402
+from fake_host import FakeHost, RenderingHost, write_images  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -199,6 +199,7 @@ class InstallTests(unittest.TestCase):
             from app_installer import bundle
             data = bundle.build(project, 'prod', root / 'bundle')
             platform = apps.Platform.from_json(data['platform'])
+            write_images(root / 'bundle', platform)
             self.assertEqual([(w.pod, w.requires) for w in platform.workloads()],
                              [('help-app', ()), ('shared-proxy', ('help-app.service',))])
             directory = root / 'quadlet'

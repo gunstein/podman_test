@@ -23,6 +23,10 @@ class Image:
     containerfile: str = "Containerfile"
 
 
+# Each image's ID as the bundle build left it, beside the archives: an offline
+# install loads an image whose ID on the host is another (same tag, other build).
+IMAGE_IDS = "image-ids.json"
+
 # nginx's image, which every platform runs (and a standby loads for nginx's TLS, prepare_proxy).
 PROXY = Image("proxy", apps.PROXY_IMAGE, apps.PROXY_ARCHIVE, ".", "proxy/Containerfile")
 
@@ -49,30 +53,64 @@ def shared_images(platform: apps.Platform) -> tuple[Image, ...]:
               if platform.has_identity else []))
 
 
+def image_id(reference):
+    """The ID of the image reference names on this host, or None if there is none."""
+    result = run("podman", "image", "inspect", "--format", "{{.Id}}", reference, allowed=(0, 125))
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def bundle_image_ids(bundle_directory):
+    """{reference: image ID} of every image the bundle carries (IMAGE_IDS, written by build_and_export)."""
+    path = Path(bundle_directory) / "images" / IMAGE_IDS
+    if not path.is_file():
+        raise FileNotFoundError(f"The bundle {bundle_directory} has no images/{IMAGE_IDS}; "
+                                "use the complete verified bundle.")
+    data = json.loads(path.read_text())
+    if not (isinstance(data, dict) and all(isinstance(key, str) and isinstance(value, str) and value
+                                           for key, value in data.items())):
+        raise ValueError(f"images/{IMAGE_IDS} must map each image reference to its ID")
+    return data
+
+
+def _load(bundle_directory, image, expected):
+    """Load image's archive from the bundle; raise unless the loaded image has the bundle's ID."""
+    archive = Path(bundle_directory) / "images" / image.archive
+    if not archive.is_file():
+        raise FileNotFoundError(f"The bundle {bundle_directory} has no image archive images/"
+                                f"{image.archive}; use the complete verified bundle.")
+    run("podman", "load", "--input", archive, timeout=settings.IMAGE_TIMEOUT)
+    loaded = image_id(image.reference)
+    if loaded != expected:
+        raise RuntimeError(f"After loading images/{image.archive}, {image.reference} has the ID {loaded}, "
+                           f"not {expected} as images/{IMAGE_IDS} says: build the bundle again.")
+
+
 def _prepare(project_root, deployment_mode, bundle_directory, refresh_images, specifications):
     """Make each image present locally; return {component: True if it was built, pulled or loaded}.
 
-    build mode builds from each Containerfile (PostgreSQL is pulled);
-    offline mode only loads archives from the verified bundle and never
-    reaches the network. An existing image is kept unless refresh_images.
+    build mode builds from each Containerfile (PostgreSQL is pulled), and
+    keeps an existing image unless refresh_images. offline mode only loads
+    archives from the verified bundle and never reaches the network; it
+    loads an image unless the host's already has the bundle's ID, so a new
+    bundle under the same tag replaces the old image.
     """
     if deployment_mode not in ("build", "offline"):
         raise ValueError("deployment_mode must be build or offline")
     if deployment_mode == "offline" and (not bundle_directory or refresh_images):
         raise ValueError("Offline deployment requires bundle_directory and forbids refresh_images.")
     root = Path(project_root)
+    identities = bundle_image_ids(bundle_directory) if deployment_mode == "offline" else {}
     changed = {}
     for image in specifications:
-        present = exists("image", image.reference)
         changed[image.component] = False
-        if not present or refresh_images:
-            if deployment_mode == "offline":
-                archive = Path(bundle_directory) / "images" / image.archive
-                if not archive.is_file():
-                    raise FileNotFoundError(f"The bundle {bundle_directory} has no image archive images/"
-                                            f"{image.archive}; use the complete verified bundle.")
-                run("podman", "load", "--input", archive, timeout=settings.IMAGE_TIMEOUT)
-            elif image.context is None:
+        if deployment_mode == "offline":
+            if image.reference not in identities:
+                raise ValueError(f"images/{IMAGE_IDS} has no ID for {image.reference}: build the bundle again.")
+            if image_id(image.reference) != identities[image.reference]:
+                _load(bundle_directory, image, identities[image.reference])
+                changed[image.component] = True
+        elif not exists("image", image.reference) or refresh_images:
+            if image.context is None:
                 run("podman", "pull", image.reference, timeout=settings.IMAGE_TIMEOUT)
             else:
                 context = root / image.context
@@ -123,6 +161,8 @@ def build_and_export(project_root, destination, platform):
     for image in specifications.values():
         run('podman', 'save', '--format', 'oci-archive', '--output',
             destination / image.archive, image.reference, timeout=settings.IMAGE_TIMEOUT)
+    identities = {reference: image_id(reference) for reference in sorted(specifications)}
+    (destination / IMAGE_IDS).write_text(json.dumps(identities, indent=2) + '\n')
 
 
 if __name__ == '__main__':

@@ -102,7 +102,7 @@ has its own pod template (`App.pod_template`), checked once rendered
 (`pod_contract.py`). A build reads it from `platform.yaml` and each app's
 `examples/<app>/app.yaml` (`platform_file.load`, which also gives the
 environment's port and log level); there is no list of apps in the code.
-`bundle.json` (format version 12) carries it, and a host records it in
+`bundle.json` (format version 13) carries it, and a host records it in
 `~/.config/platform/platform.json` with the same format version. The richer tree below grows with phases
 4 and 5 (images, routes, checks, database and login as app fields).
 
@@ -125,12 +125,12 @@ Writing more to JSON is not enough: the readers must stop reconstructing.
   argument. No YAML loading at import time, no module-level app lists, no
   default arguments that bind an app list. Two different platforms in one
   Python process must not share state (tested).
-- **Versions**: `bundle.json` keeps `format_version` (12 since phase 4f-3); the
-  installer and the DR tools refuse any other. Not yet built: `bundle.json`
-  recording the image IDs of every image it carries, and the installer
-  comparing installed image IDs with them. Today an image that is present
-  under the same reference is kept, so a new bundle needs a new image tag
-  (`settings.IMAGE_TAG`).
+- **Versions**: `bundle.json` keeps `format_version` (13 since phase 4i); the
+  installer and the DR tools refuse any other. Since phase 4i the bundle
+  records the ID of every image it carries (`images/image-ids.json`), and an
+  offline install or a DR host loads an image whose ID on the host is
+  another, so a new bundle under the same tag (`settings.IMAGE_TAG`) runs
+  its own images.
 
 ## 5. Contracts
 
@@ -414,6 +414,15 @@ in small deliveries, each driven by what Help needs:
      naming the app, instead of leaving it running unmanaged.
   Not in 4h: `backend.setup_roles` (phase 5), and `pod_contract`, which
   stays a bounded contract check, widened only when an app needs it.
+- 4i the image a bundle carries is the image that runs. Every image has
+  the fixed tag `settings.IMAGE_TAG`, and an offline install kept an image
+  already on the host under that reference: a new bundle with a fix under
+  the same tag installed "successfully" and ran the old code. The bundle
+  build records each image's ID (`images/image-ids.json`, under
+  `SHA256SUMS`); an offline install, and a DR host loading from a bundle,
+  loads an image whose ID on the host is another, and stops if the loaded
+  image's ID is not the bundle's. This is not migration: the branch is
+  version zero, and this is what its first fix needs.
 
 **Phase 5: Database and login through the same model.**
 Database and login are app fields since phase 4c-1; here come the setup task and
@@ -426,6 +435,10 @@ installed and checked **without a change to platform code**, with a row of
 its own carried through failover, backup and PITR in the lab. Todo and Notes
 share assumptions (the backend's `setup_roles`, the ConfigMap template, the
 `todo` realm); a third app is what shows whether phase 5 removed them.
+The third app is written by someone without this branch's history (a fresh
+agent or a person) from the documentation alone, not by the agent that built
+the platform: otherwise it tests the contract, not whether it can be
+understood. What they had to ask or guess is recorded and fixed.
 From the 4h understandability check, phase 5 must also:
 - make the platform create each app's roles and base rights from the model,
   so no app copies Todo's `setup_roles.py` with its role and secret names;
@@ -439,6 +452,13 @@ From the 4h understandability check, phase 5 must also:
   config rather than written in its JS, and check token audience and
   runtime CRUD; the shared `todo` realm is today's limit until phase 6.
 
+**Phase 5b: An interrupted install, run again.** In CI, in real rootless
+Podman, an install is stopped by a real failure at a few points (an image
+archive missing, a database that does not become healthy, Keycloak not
+answering) and then run again unchanged: data, credentials and the host
+record are kept, and each message names the next step. No fault-injection
+hooks in the code. After phase 5, since it changes role setup.
+
 **Phase 6: Keycloak semantics and multi-realm.** *Behaviour.*
 Section 5.7: owned fields, idempotent setup, clients from defaults, every
 `realms/todo` gone, DR verification per realm. Todo and Notes share a realm;
@@ -451,6 +471,18 @@ an explicit purge (5.8); the DR group rule (5.6).
 **Phase 8: Help under a path.**
 Help also served at `/help/` on Todo and Notes, chosen in `platform.yaml`;
 `strip` rewrite; the route tests in 5.3.
+
+**Before phase 9: two investigations**, each a short written answer first
+and work only for a gap it finds:
+- Recovery on a new host when both are gone: whether the bundle, the
+  backup, the secrets kept off-host and the operations package are enough
+  to restore onto a host that was never a standby, then log in and read
+  and write the restored data. The lab's PITR runs on existing hosts.
+- A bounded security review, after phase 5's changes to secrets and roles:
+  each secret from its source to the container, logs and backups; file
+  modes; TLS verification; the ports actually published. The guide for a
+  new app says that `pod_contract` checks supported templates and is not a
+  sandbox for unknown apps.
 
 **Phase 9: Documentation and acceptance.** *Behaviour.*
 "Add an app" guide with a skeleton for each app shape; ARCHITECTURE,

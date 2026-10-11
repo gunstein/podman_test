@@ -18,7 +18,7 @@ from app_installer import (  # noqa: E402
     stack,
     workloads,
 )
-from fake_host import FakeHost  # noqa: E402
+from fake_host import FakeHost, write_images  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -172,10 +172,8 @@ class WorkloadsTests(unittest.TestCase):
                                        ('build', True, True), ('offline', False, False)]:
             with self.subTest(mode=mode, present=present, refresh=refresh), \
                     FakeHost(images_present=present) as host, tempfile.TemporaryDirectory() as bundle:
-                (Path(bundle) / 'images').mkdir()
                 platform = platform_file.checkout()
-                for image in images.image_list(platform.apps[0]) + images.shared_images(platform):
-                    (Path(bundle) / 'images' / image.archive).touch()
+                write_images(bundle, platform)
                 calls = host.calls
                 changed = {**images.prepare(ROOT, mode, bundle, refresh, app=platform.apps[0]),
                            **images.prepare_shared(ROOT, mode, bundle, refresh, platform)}

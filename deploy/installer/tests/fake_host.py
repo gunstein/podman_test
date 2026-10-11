@@ -15,6 +15,7 @@ its public hostnames (target_render.record_path) is host.record, in a
 temporary home. A test that needs one more answer subclasses FakeHost and
 overrides answer().
 """
+import json
 import shutil
 import subprocess
 import tempfile
@@ -22,6 +23,28 @@ from pathlib import Path
 from unittest import mock
 
 from app_installer import apps, platform_file, secrets, target_render, tls_secrets
+
+
+def image_id(reference):
+    """The ID an image built from this checkout has on a fake host, and in a test bundle's images/image-ids.json."""
+    return 'sha256:' + reference.replace('/', '-').replace(':', '-')
+
+
+def write_archive(path, reference, identity=None):
+    """A test bundle's image archive: what the fake `podman load` reads, the image it holds and its ID."""
+    path.write_text(json.dumps({'reference': reference, 'id': identity or image_id(reference)}))
+
+
+def write_images(bundle_directory, platform, archives=True):
+    """A test bundle's images/: each image's archive (unless archives is False) and image-ids.json."""
+    from app_installer import images
+    every = [*(image for app in platform.apps for image in images.image_list(app)), *images.shared_images(platform)]
+    folder = Path(bundle_directory) / 'images'
+    folder.mkdir(exist_ok=True)
+    for image in every if archives else ():
+        write_archive(folder / image.archive, image.reference)
+    (folder / images.IMAGE_IDS).write_text(json.dumps({image.reference: image_id(image.reference) for image in every}))
+
 
 # What `podman image inspect` shows for the proxy image the installer checks.
 PROXY_LABELS = '[{"Labels":{"io.todo.proxy":"nginx","io.todo.proxy.tls":"local provided"}}]'
@@ -76,7 +99,9 @@ class FakeHost:
 
     password: the value of each raw password secret the installer creates.
     images_present: False starts with no image, so builds, pulls and loads
-    happen; an image then exists once it is built or pulled.
+    happen; an image then exists once it is built, pulled or loaded. Each
+    image has image_id(reference) as its ID unless image_ids says another
+    (an older build under the same tag); a load sets the archive's.
     unit_directory: where `systemctl --user show` says each service's unit
     file is; source overrides it with one fixed path.
     """
@@ -92,6 +117,7 @@ class FakeHost:
         self.volume_files = {}
         self.keys_made = 0
         self.images = None if images_present else set()
+        self.image_ids = {}
         self.unit_directory = unit_directory
         self.source = source
         self.calls = []
@@ -185,8 +211,19 @@ class FakeHost:
             return 0, 'true \n'  # checks.running: every container runs, without a health check
         if argv[:3] == ['podman', 'image', 'exists']:
             return int(self.images is not None and argv[3] not in self.images), ''
+        if argv[:5] == ['podman', 'image', 'inspect', '--format', '{{.Id}}']:
+            reference = argv[5]
+            if self.images is not None and reference not in self.images:
+                return 125, ''
+            return 0, self.image_ids.get(reference, image_id(reference)) + '\n'
         if argv[:3] == ['podman', 'image', 'inspect']:
             return 0, PROXY_LABELS
+        if argv[:3] == ['podman', 'load', '--input']:
+            archive = json.loads(Path(argv[3]).read_text())
+            if self.images is not None:
+                self.images.add(archive['reference'])
+            self.image_ids[archive['reference']] = archive['id']
+            return 0, ''
         if argv[:2] == ['podman', 'build'] and self.images is not None:
             self.images.add(argv[argv.index('--tag') + 1])
         if argv[:2] == ['podman', 'pull'] and self.images is not None:

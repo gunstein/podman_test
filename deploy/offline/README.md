@@ -55,6 +55,7 @@ The connected build machine renders everything with Jinja2 before packaging
 | `generated/target/quadlet/` | Every `.kube` unit and `app-network.network`; the proxy unit also publishes HTTPS on `${TARGET_PUBLISH_ADDRESS}` |
 | `generated/target/quadlet/local-only/` | The proxy unit for a host that publishes only on 127.0.0.1 |
 | `generated/target/quadlet/replicated/` | The database units of a DR primary, which also publish replication on `${TARGET_PUBLISH_ADDRESS}` |
+| `images/` | Each image as an OCI archive, and `image-ids.json` with each image's ID: an install loads an image whose ID on the host is another (a new build under the same tag) and stops if the loaded image's ID is not the bundle's |
 | `bundle.json` | Format and version (`platform-offline-bundle`, `target_render.BUNDLE_FORMAT_VERSION`), where each of the above is, the apps, the HTTPS port and the default target values |
 
 The build checks that putting the default hostnames into the target manifests

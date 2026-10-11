@@ -267,6 +267,19 @@ READY = 'Ready to take over:'
 BACKUP = 'platform-backup'
 
 
+def unit_dependencies(text):
+    """{service: {'Requires': names, 'After': names}} from "== SERVICE" lines and systemctl show's KEY=VALUE lines."""
+    loaded, service = {}, None
+    for line in text.splitlines():
+        if line.startswith('== '):
+            service = line[3:].strip()
+            loaded[service] = {}
+        elif service and '=' in line:
+            key, _, value = line.partition('=')
+            loaded[service][key] = tuple(value.split())
+    return loaded
+
+
 def check_services(step, host, mode):
     """All services up (wait-ready.sh), no failed user units, and a valid nginx configuration.
 
@@ -293,6 +306,16 @@ def check_services(step, host, mode):
     if mode == 'app':
         nginx = step.ssh(host, 'podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf')
         step.expect(nginx.returncode == 0, 'nginx configuration is valid')
+        # The units as systemd loaded them, not as rendered: each needs and follows what the model says.
+        needing = [workload for workload in PLATFORM.workloads() if workload.requires]
+        shown = step.ssh(host, 'for unit in ' + ' '.join(w.service for w in needing) + '; do echo "== $unit"; '
+                         'systemctl --user show "$unit" --property=Requires --property=After; done')
+        loaded = unit_dependencies(shown.stdout)
+        missing = [f'{w.service} {key}={service}' for w in needing for key in ('Requires', 'After')
+                   for service in w.requires if service not in loaded.get(w.service, {}).get(key, ())]
+        step.expect(shown.returncode == 0 and not missing,
+                    'every unit requires and starts after what the model says'
+                    + (f': missing {", ".join(missing)}' if missing else ''))
     else:
         serving = PLATFORM.services(databases=False)
         states = step.ssh(host, 'systemctl --user is-active ' + ' '.join(serving)).stdout.split()

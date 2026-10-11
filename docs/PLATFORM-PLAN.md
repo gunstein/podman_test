@@ -382,11 +382,25 @@ in small deliveries, each driven by what Help needs:
   apps together and a lab run. `rewrite` and the header policy (5.3) wait
   for the first app that serves another app's help path: Help on its own
   hostname needs neither.
+- 4g closing the gaps an outside review of the acceptance found (after run
+  2026-10-10-run-53), kept small: a CI job installs Help **alone** in real
+  rootless Podman, checks that no PostgreSQL or Keycloak runs, restarts it
+  and checks again; and the lab's `check services` compares each serving
+  unit's `Requires=` and `After=` on the host, as systemd loaded them, with
+  the model. No large combination matrix: the operational acceptance stays
+  as it is.
 
 **Phase 5: Database and login through the same model.**
 Database and login are app fields since phase 4c-1; here come the setup task and
 migration grants (5.5); pod template
 validation (5.9). Todo and Notes move to `examples/`.
+Accepted only with a **third reference app with a database and login** that
+is neither Todo nor Notes (for example `examples/guestbook`): its own
+source in its directory, its own endpoints and ready path, built, bundled,
+installed and checked **without a change to platform code**, with a row of
+its own carried through failover, backup and PITR in the lab. Todo and Notes
+share assumptions (the backend's `setup_roles`, the ConfigMap template, the
+`todo` realm); a third app is what shows whether phase 5 removed them.
 
 **Phase 6: Keycloak semantics and multi-realm.** *Behaviour.*
 Section 5.7: owned fields, idempotent setup, clients from defaults, every
@@ -863,3 +877,22 @@ start order (`requires`) comes with the generated units in 4d.
   header policy (5.3), which come with the first app that serves another
   app's help path.
 
+
+**Phase 4g, code done; the lab step runs in the next acceptance run.**
+After run 2026-10-10-run-53 an outside review asked whether the acceptance
+covers what it should. For running and recovering today's installation it
+does; for the platform's generality it does not yet. Three gaps, kept
+small:
+- A CI job (`help-alone`) runs a platform of Help alone in real rootless
+  Podman: it starts it, checks that no PostgreSQL or Keycloak container and
+  no database or Keycloak secret exists and that Help answers through
+  nginx, takes it down and starts it again, and checks the same.
+- The lab's `check services ... app` also compares each serving unit's
+  `Requires=` and `After=`, as systemd loaded them on the host, with the
+  model's `requires` (`acceptance.unit_dependencies`), so a reboot proves
+  the generated dependencies and not only the installer's start loop.
+- A third reference app with a database and login, neither Todo nor Notes,
+  is phase 5's acceptance criterion (see phase 5).
+Failure cases of the new contracts (a ready path that never answers, a
+check with the wrong status, a dependency on a later workload, a missing
+template) stay in the fast tests, not in new VM steps.

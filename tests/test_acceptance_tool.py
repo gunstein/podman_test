@@ -39,6 +39,13 @@ def valid_bash(script, what):
     if result.returncode:
         raise AssertionError(f"{what} is not valid bash: {result.stderr.strip()}\n{script}")
 
+# systemctl show of every unit that requires another, as systemd loads this
+# checkout's units (check services, app): what the model says, and more.
+UNITS = [('systemctl --user show "$unit" --property=Requires', (0, "".join(
+    f"== {w.service}\nRequires={' '.join(w.requires)} app-network-network.service\n"
+    f"After={' '.join(w.requires)} basic.target\n"
+    for w in acceptance.PLATFORM.workloads() if w.requires)))]
+
 
 class Fake:
     """Answers each command by its first matching (text in the command line) rule.
@@ -54,7 +61,7 @@ class Fake:
     """
 
     def __init__(self, rules):
-        self.rules, self.calls = list(rules) + GIT, []
+        self.rules, self.calls = list(rules) + GIT + UNITS, []
 
     def __call__(self, argv, input=None, **kwargs):
         if argv[0] == "ssh":
@@ -170,6 +177,18 @@ class CheckTests(ToolTest):
         rules[2] = ("is-active", (0, "active\n" + "inactive\n" * 4))
         self.assertEqual(self.tool("--step", "10-2", "check", "services", "192.168.0.102", "standby",
                                    rules=rules)[0], 1)
+
+    def test_each_unit_must_require_and_follow_what_the_model_says(self):
+        ready = ("wait-ready", (0, "READY: x\n"))
+        self.assertEqual(self.tool("--step", "03-4", "check", "services", "192.168.0.102", "app",
+                                   rules=[ready])[0], 0)
+        loose = ("systemctl --user show", (0, "== shared-proxy.service\nRequires=todo-app.service\nAfter=\n"))
+        self.assertEqual(self.tool("--step", "03-14", "check", "services", "192.168.0.102", "app",
+                                   rules=[ready, loose])[0], 1)
+        log = (self.run_directory / "logs/03-14-check-services.log").read_text()
+        self.assertIn("FAIL: every unit requires and starts after what the model says: missing", log)
+        self.assertIn("shared-proxy.service Requires=notes-app.service", log)
+        self.assertNotIn("shared-proxy.service Requires=todo-app.service,", log)
 
     def test_a_failed_podman_health_check_run_is_listed_not_failed(self):
         """Run 19: one health-check run failed while a container started; the check failed on it."""

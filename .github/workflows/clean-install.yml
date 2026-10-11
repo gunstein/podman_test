@@ -234,6 +234,79 @@ jobs:
           podman volume ls --format '{{.Name}}' | grep -Fx todo-postgres-data
 
 
+  help-alone:
+    # A platform of the static Help app alone (docs/PLATFORM-PLAN.md, phase
+    # 4g): no app has a database or login, so neither PostgreSQL nor
+    # Keycloak may run, before and after a restart.
+    name: Help alone in rootless Podman
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: A platform.yaml with Help alone, and its hostnames
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install "PyYAML==6.0.3" jinja2
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          cat > platform.yaml <<'YAML'
+          identityHostname: auth.test
+          publicPort: 8443
+          logLevel: info
+          environments:
+            local: {}
+            prod: {}
+          apps:
+            - path: examples/help
+              hostname: help.test
+          YAML
+          echo "127.0.0.1 $(PYTHONPATH=deploy/installer python -m app_installer platform hostnames --environment local)" |
+            sudo tee -a /etc/hosts
+
+      - name: Start, check, restart and check again
+        shell: bash
+        run: |
+          set -euo pipefail
+          only_help() {
+            podman container exists help-site
+            podman container exists nginx
+            if podman ps --all --format '{{.Names}}' | grep -E 'postgres|keycloak'; then
+              echo "PostgreSQL or Keycloak runs, though no app has a database or login" >&2
+              exit 1
+            fi
+            if podman secret ls --format '{{.Name}}' | grep -E 'postgres|keycloak|password'; then
+              echo "a database or Keycloak secret was made, though nothing needs one" >&2
+              exit 1
+            fi
+            curl --silent --show-error --fail -H 'Host: help.test' http://127.0.0.1:8080/ | grep -F '<h1>Help</h1>'
+          }
+          deploy/scripts/dev/dev-up.sh
+          only_help
+          deploy/scripts/dev/dev-down.sh
+          test -z "$(podman pod ps --quiet)"
+          deploy/scripts/dev/dev-up.sh
+          only_help
+
+      - name: Show pods and logs on failure
+        if: failure()
+        run: |
+          podman pod ps
+          podman ps --all
+          for container in $(podman ps --all --format '{{.Names}}'); do
+            echo "::group::$container"
+            podman logs --tail 80 "$container" || true
+            echo "::endgroup::"
+          done
+
+      - name: Stop with dev-down.sh
+        if: always()
+        run: deploy/scripts/dev/dev-down.sh
+
   keycloak-pfx-spike:
     # BACKLOG X1 step 2, before any installer work: Keycloak signs a realm's
     # tokens with a key from a password-protected PFX that podman kube play

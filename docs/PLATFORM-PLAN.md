@@ -1364,3 +1364,44 @@ and deletion gates are unchanged. No render baseline update was needed.
 Phase 5 still awaits the operator's unchanged-revision acceptance evidence
 and its final fresh-agent understandability check. Record the evidence and
 verdict as AGENTS.md describes before marking these deliveries accepted.
+
+**Phase 5-4f, code done; the lab step runs in the phase's acceptance run.**
+Step 5-4e passed CI #409 on `c995371`. The independent review of
+`e918141..c995371` returned **YELLOW**: test isolation, real-token browser
+checks and Guestbook's lab path were sound, with no weakened DR safety
+boundaries found. This is a pre-lab code review, not phase 5's final
+understandability check or acceptance evidence. Findings and disposition:
+
+1. Unneeded runtime UPDATE privilege (medium): removed both files of
+   migration 002, added in 5-4c only to satisfy a CRUD role test. This is
+   pre-release work with no deployed database to upgrade. Migration 001
+   remains unchanged and grants only SELECT, INSERT and DELETE, which the
+   API uses. The real PostgreSQL role test now requires those operations
+   to succeed and UPDATE to raise `InsufficientPrivilege`, alongside DDL
+   and migration-table access. The Guestbook README states that boundary.
+   This supersedes 5-4c's choice to grant UPDATE for the test contract.
+2. Tautological fixture assertion and package file sets derived from
+   `render.files()` (optional): left unchanged in this focused correction.
+   The independent render baseline still pins the actual checkout's file
+   names and bytes, including Guestbook; package tests check delivery.
+3. FakeHost status lookup uses the app's default hostname rather than
+   the target hostname map (optional): deferred. It limits future tests
+   combining a hostname override with a non-200 check; the current fixture
+   does not exercise that combination. Production checks are unaffected.
+4. Avoiding replication-port collisions with 8080 and public HTTPS is
+   guidance, while the loader enforces only the reserved 5434 (optional):
+   recorded as a documentation clarification to follow up. No new platform
+   validation is introduced by this correction.
+5. DR safety unit tests use the fixed three-database fixture (information):
+   retained. The real four-database group's promotion, rebuild and re-seed
+   still require the operator's phase acceptance run.
+6. Lab firewall rules use the range 5432–5435 (information): unchanged;
+   it covers today's ports. A future non-contiguous allocation needs a
+   separate review of the intermediate ports that this range would open.
+
+The reviewer reported 853 passing platform tests, passing backend unit
+tests, Ruff and Pyright (also with psycopg), and all eight CI jobs green on
+`c995371`. The reviewer did not contact lab hosts. Offline/server-mode
+installation, four-database DR, Guestbook backup/PITR and report matching
+against the new guide step names remain to be proved on the corrected
+revision by the phase acceptance run.

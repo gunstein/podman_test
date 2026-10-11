@@ -5,7 +5,7 @@ import unittest
 
 @unittest.skipUnless(os.getenv('GUESTBOOK_ROLE_TEST') == '1', 'requires the real Guestbook runtime database')
 class RuntimePrivilegesTests(unittest.TestCase):
-    def test_runtime_role_can_crud_but_cannot_ddl_or_read_migration_state(self):
+    def test_runtime_role_can_insert_read_delete_but_cannot_update_ddl_or_read_migration_state(self):
         from backend.main import connect
         from psycopg.errors import InsufficientPrivilege
 
@@ -15,9 +15,8 @@ class RuntimePrivilegesTests(unittest.TestCase):
                     'INSERT INTO entries(message) VALUES (%s) RETURNING id',
                     ('Privilege probe',)).fetchone()
                 identifier = row['id']
-                connection.execute('UPDATE entries SET message=%s WHERE id=%s', ('Edited', identifier))
                 self.assertEqual(connection.execute('SELECT message FROM entries WHERE id=%s',
-                                                    (identifier,)).fetchone()['message'], 'Edited')
+                                                    (identifier,)).fetchone()['message'], 'Privilege probe')
                 self.assertEqual(connection.execute('DELETE FROM entries WHERE id=%s RETURNING id',
                                                     (identifier,)).fetchone()['id'], identifier)
                 self.assertEqual(connection.execute(
@@ -25,7 +24,8 @@ class RuntimePrivilegesTests(unittest.TestCase):
                 ).fetchall(), [])
             finally:
                 connection.rollback()
-        for statement in ('CREATE TABLE public.forbidden_probe(id integer)',
+        for statement in ("UPDATE entries SET message='Forbidden' WHERE false",
+                          'CREATE TABLE public.forbidden_probe(id integer)',
                           'ALTER TABLE entries ADD COLUMN forbidden integer',
                           'DROP TABLE entries',
                           'SELECT version FROM schema_migrations'):

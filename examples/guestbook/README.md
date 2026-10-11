@@ -12,8 +12,9 @@ are public. Readiness queries the migrated table as the runtime role.
 `app.yaml` requests the database and the `guestbook-frontend` client with
 `guestbook-api` as its access-token audience. The pod's init container runs
 migrations as `guestbook_migrator`; the API uses `guestbook_app`, with only
-SELECT, INSERT, UPDATE and DELETE on entries (the API exposes no update operation). The platform creates the roles and
-secrets. The frontend receives only `FRONTEND_LOGIN` from the ConfigMap.
+SELECT, INSERT and DELETE on entries. UPDATE, DDL and access to the migration
+table are denied, as checked by the role test. The platform creates the roles
+and secrets. The frontend receives only `FRONTEND_LOGIN` from the ConfigMap.
 
 ## Run from the repository root
 

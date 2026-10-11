@@ -58,7 +58,7 @@ class InstallTests(unittest.TestCase):
                 calls = host.calls
                 install.install(project, mode=mode, quadlet_dir=directory, platform=platform, **how)
                 configure.assert_called_once_with('fixture-password', [
-                    (app.keycloak_client, app.hostname) for app in platform.login_apps])
+                    (app.login_client, app.hostname, app.login_audience) for app in platform.login_apps])
                 # Each app ready, then its checks, through nginx with its hostname (checks.verify).
                 self.assertEqual(host.requests, [(app.hostname, path) for app in applications
                                                  for path in (app.ready, *(check.path for check in app.checks))])
@@ -180,7 +180,7 @@ class InstallTests(unittest.TestCase):
     def test_a_platform_that_leaves_out_an_installed_workload_is_refused(self):
         # The host recorded todo, notes and help; removing a workload is not built (plan, 5.8 and phase 7).
         checkout = platform_file.checkout()
-        without_login = [dataclasses.replace(app, keycloak_client='') for app in checkout.apps]
+        without_login = [dataclasses.replace(app, login_client='', login_audience='') for app in checkout.apps]
         for platform, left_out in (
                 (checkout.select(['todo']), 'help-app.service, notes-app.service, notes-postgres.service'),
                 # The same apps, but Todo without its database, or no app with login.
@@ -393,51 +393,99 @@ class InstallTests(unittest.TestCase):
             for call in run.call_args_list:
                 self.assertRegex(call.kwargs['input'], r'^[a-zA-Z0-9]{32}$')
 
-    def test_keycloak_uses_issuer_and_preserves_client_fields(self):
-        for unchanged in (False, True):
-            client = {'id': 'client', 'other-setting': True, 'redirectUris': [], 'webOrigins': []}
-            if unchanged:
-                client.update(redirectUris=['https://todo.test:8443/'],
-                              webOrigins=['https://todo.test:8443'])
-            with patch.object(keycloak, 'wait', side_effect=[{
-                    'issuer': 'https://auth.test:8443/auth/realms/todo'}, {}, {}]), \
-                    patch.object(keycloak, 'request', side_effect=[
-                        {'access_token': 'token'}, dict(keycloak.REALM_SECURITY), [{'id': 'client'}],
-                        client, None]) as request:
-                self.assertEqual(keycloak.configure('password', [('todo-frontend', 'todo.test')]), not unchanged)
-                if not unchanged:
-                    body = request.call_args.args[2]
-                    self.assertTrue(body['other-setting'])
-                    self.assertEqual(body['webOrigins'], ['https://todo.test:8443'])
-                    self.assertEqual(body['redirectUris'], ['https://todo.test:8443/'])
+    class AdminApi:
+        """Keycloak's admin API for keycloak.configure: the realm, clients by ID and their mappers."""
 
-    def test_keycloak_configures_each_client_origin_and_creates_missing_clients(self):
-        todo = {'id': 'todo-id', 'publicClient': True, 'attributes': {'pkce.code.challenge.method': 'S256'},
-                'redirectUris': ['https://todo.test:8443/'], 'webOrigins': ['https://todo.test:8443'],
-                'protocolMappers': [{'id': 'mapper-id', 'config': {
-                    'included.client.audience': 'todo-frontend'}}]}
-        for missing in (False, True):
-            responses = [{'access_token': 'token'}, dict(keycloak.REALM_SECURITY), [{'id': 'todo-id'}], todo]
-            # A missing client is copied from the realm import's client, looked up only then.
-            responses += [[], [{'id': 'todo-id'}], todo, None] if missing else [[{'id': 'notes-id'}], {
-                'id': 'notes-id', 'custom': True, 'redirectUris': [], 'webOrigins': []}, None]
-            with patch.object(keycloak, 'wait', side_effect=[{
-                    'issuer': 'https://auth.test:8443/auth/realms/todo'}, {}, {}, {}, {}]), \
-                    patch.object(keycloak, 'request', side_effect=responses) as request:
-                self.assertTrue(keycloak.configure('password', [
-                    ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.test')]))
-                call = request.call_args.args
-                self.assertEqual(call[1], 'POST' if missing else 'PUT')
-                self.assertEqual(call[2]['webOrigins'], ['https://notes.test:8443'])
-                self.assertEqual(call[2]['redirectUris'], ['https://notes.test:8443/'])
-                if missing:
-                    self.assertTrue(call[2]['publicClient'])
-                    self.assertEqual(call[2]['attributes']['pkce.code.challenge.method'], 'S256')
-                    mapper = call[2]['protocolMappers'][0]
-                    self.assertNotIn('id', mapper)
-                    self.assertEqual(mapper['config']['included.client.audience'], 'notes-frontend')
-                else:
-                    self.assertTrue(call[2]['custom'])
+        ISSUER = {'issuer': 'https://auth.test:8443/auth/realms/todo'}
+
+        def __init__(self, clients=(), mappers=None):
+            self.clients = {client['clientId']: dict(client) for client in clients}
+            self.mappers = {client_id: list(found) for client_id, found in (mappers or {}).items()}
+            self.calls = []
+
+        def request(self, path, method='GET', data=None, token=None, form=False, hostname=None):
+            self.calls.append((method, path, data))
+            if path == keycloak.ADMIN_TOKEN:
+                return {'access_token': 'token'}
+            if path == keycloak.ADMIN_REALM:
+                return dict(keycloak.REALM_SECURITY)
+            if path.startswith(keycloak.ADMIN_REALM + '/clients?'):
+                client_id = path.split('clientId=')[1]
+                return [{'id': client_id}] if client_id in self.clients else []
+            if path == keycloak.ADMIN_REALM + '/clients' and method == 'POST':
+                self.clients[data['clientId']] = data
+                return {}
+            client_id, _, rest = path.removeprefix(keycloak.ADMIN_REALM + '/clients/').partition('/')
+            if not rest:
+                return dict(self.clients[client_id]) if method == 'GET' else {}
+            if method == 'GET':
+                return list(self.mappers.get(client_id, []))
+            return {}
+
+        def writes(self):
+            return [(method, path.removeprefix(keycloak.ADMIN_REALM), data) for method, path, data in self.calls
+                    if method != 'GET' and path != keycloak.ADMIN_TOKEN]
+
+    def configure(self, api, clients):
+        with patch.object(keycloak, 'wait', return_value=self.AdminApi.ISSUER), \
+                patch.object(keycloak, 'request', side_effect=api.request):
+            return keycloak.configure('password', clients)
+
+    def test_a_missing_client_is_made_from_the_platforms_defaults(self):
+        api = self.AdminApi()
+        self.assertTrue(self.configure(api, [('notes-frontend', 'notes.test', 'notes-api')]))
+        [(method, path, client)] = api.writes()
+        self.assertEqual((method, path), ('POST', '/clients'))
+        self.assertEqual(client, {
+            'clientId': 'notes-frontend', 'name': 'notes-frontend', 'enabled': True, 'protocol': 'openid-connect',
+            'publicClient': True, 'standardFlowEnabled': True, 'implicitFlowEnabled': False,
+            'directAccessGrantsEnabled': False, 'serviceAccountsEnabled': False,
+            'redirectUris': ['https://notes.test:8443/'], 'webOrigins': ['https://notes.test:8443'],
+            'attributes': {'pkce.code.challenge.method': 'S256'},
+            # The API audience in access tokens only: an ID token names the client, never notes-api.
+            'protocolMappers': [{'name': 'api audience', 'protocol': 'openid-connect',
+                                 'protocolMapper': 'oidc-audience-mapper', 'consentRequired': False,
+                                 'config': {'included.custom.audience': 'notes-api',
+                                            'access.token.claim': 'true', 'id.token.claim': 'false'}}]})
+
+    def test_an_existing_client_gets_its_owned_fields_and_audience_corrected_and_keeps_the_rest(self):
+        client = {'clientId': 'todo-frontend', 'other-setting': True, 'redirectUris': [], 'webOrigins': [],
+                  'publicClient': True, 'standardFlowEnabled': True, 'directAccessGrantsEnabled': True,
+                  'attributes': {'pkce.code.challenge.method': '', 'operator': 'kept'},
+                  'protocolMappers': [{'id': 'old'}]}
+        mappers = [{'id': 'old', 'protocolMapper': 'oidc-audience-mapper',
+                    'config': {'included.client.audience': 'todo-frontend', 'access.token.claim': 'true'}},
+                   # Another audience would let a Todo token pass Notes' backend: it goes too.
+                   {'id': 'extra', 'protocolMapper': 'oidc-audience-mapper',
+                    'config': {'included.custom.audience': 'notes-api', 'access.token.claim': 'true'}},
+                   {'id': 'kept', 'protocolMapper': 'oidc-usermodel-attribute-mapper', 'config': {}}]
+        api = self.AdminApi([client], {'todo-frontend': mappers})
+        self.assertTrue(self.configure(api, [('todo-frontend', 'todo.test', 'todo-api')]))
+        writes = api.writes()
+        self.assertEqual([(method, path) for method, path, _ in writes], [
+            ('PUT', '/clients/todo-frontend'),
+            ('DELETE', '/clients/todo-frontend/protocol-mappers/models/old'),
+            ('DELETE', '/clients/todo-frontend/protocol-mappers/models/extra'),
+            ('POST', '/clients/todo-frontend/protocol-mappers/models')])
+        corrected = writes[0][2]
+        self.assertEqual({key: corrected[key] for key in ('redirectUris', 'webOrigins', 'directAccessGrantsEnabled',
+                                                          'implicitFlowEnabled', 'other-setting', 'attributes')},
+                         {'redirectUris': ['https://todo.test:8443/'], 'webOrigins': ['https://todo.test:8443'],
+                          'directAccessGrantsEnabled': False, 'implicitFlowEnabled': False, 'other-setting': True,
+                          'attributes': {'pkce.code.challenge.method': 'S256', 'operator': 'kept'}})
+        self.assertNotIn('protocolMappers', corrected)
+        self.assertEqual(writes[-1][2], keycloak.audience_mapper('todo-api'))
+
+    def test_a_client_as_the_platform_defines_it_is_left_alone(self):
+        origin = 'https://todo.test:8443'
+        client = {'clientId': 'todo-frontend', 'operator': 'kept', **keycloak.owned_client_fields(origin),
+                  'attributes': {'pkce.code.challenge.method': 'S256'}}
+        mapper = keycloak.audience_mapper('todo-api')
+        # Keycloak adds config keys of its own; only the platform's are compared.
+        mapper = {**mapper, 'id': 'm', 'config': {**mapper['config'], 'introspection.token.claim': 'true'}}
+        api = self.AdminApi([client], {'todo-frontend': [mapper]})
+        self.assertFalse(self.configure(api, [('todo-frontend', 'todo.test', 'todo-api')]))
+        self.assertEqual(api.writes(), [])
 
     def test_realm_login_protection_is_applied_once_and_kept(self):
         with patch.object(keycloak, 'request', side_effect=[{'realm': 'todo', 'bruteForceProtected': False},
@@ -450,9 +498,11 @@ class InstallTests(unittest.TestCase):
             self.assertFalse(keycloak.secure_realm('token'))
             request.assert_called_once_with('/auth/admin/realms/todo', token='token')
 
-    def test_realm_import_carries_the_same_login_protection(self):
+    def test_realm_import_carries_the_same_login_protection_and_no_client(self):
         realm = json.loads((Path(__file__).resolve().parents[3] / 'keycloak/todo-realm.json').read_text())
         self.assertEqual({key: realm.get(key) for key in keycloak.REALM_SECURITY}, keycloak.REALM_SECURITY)
+        # Every app's client comes from keycloak.configure, from the platform's defaults.
+        self.assertNotIn('clients', realm)
 
     def test_readiness_retries_connection_reset_during_proxy_startup(self):
         with patch.object(keycloak, 'request', side_effect=[ConnectionResetError(), {'status': 'ok'}]), \
@@ -464,7 +514,7 @@ class InstallTests(unittest.TestCase):
         with patch.object(keycloak, 'wait', return_value={'issuer': 'http://todo/auth/realms/todo'}), \
                 patch.object(keycloak, 'request') as request:
             with self.assertRaisesRegex(RuntimeError, 'HTTPS issuer'):
-                keycloak.configure('password', [('todo-frontend', 'todo.test')])
+                keycloak.configure('password', [('todo-frontend', 'todo.test', 'todo-api')])
             request.assert_not_called()
 
 

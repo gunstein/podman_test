@@ -229,7 +229,7 @@ class PromotedDeployTests(unittest.TestCase):
             self.deploy(host, directory)
             self.assertIn(('get', platform_file.checkout().apps[0].checks[-1].path, 'shop.example.org'), host.steps)
             self.assertIn(('get', platform_file.checkout().apps[1].checks[-1].path, 'notes.example.org'), host.steps)
-            self.assertEqual([hostname for _client, hostname in host.clients], ['shop.example.org', 'notes.example.org'])
+            self.assertEqual([hostname for _client, hostname, _audience in host.clients], ['shop.example.org', 'notes.example.org'])
 
     def test_a_port_other_than_the_bundles_refuses_before_anything_changes(self):
         with tempfile.TemporaryDirectory() as directory:

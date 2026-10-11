@@ -45,7 +45,7 @@ class IndependentAppChartsTests(unittest.TestCase):
             runtime = next(e['value'] for e in application['containers'][0]['env']
                            if e['name'] == 'DATABASE_USER')
             self.assertEqual(runtime, name + '_app')
-            self.assertEqual(backend['data']['OIDC_AUDIENCE'], name + '-frontend')
+            self.assertEqual(backend['data']['OIDC_AUDIENCE'], name + '-api')
             self.assertEqual(backend['data']['OIDC_ISSUER'], 'https://auth.test:8443/auth/realms/todo')
         self.assertFalse(all_claims[0] & all_claims[1])
 

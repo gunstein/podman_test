@@ -158,6 +158,9 @@ and username. The adapter preserves check-sso, S256 PKCE and token refresh.
 Only Keycloak is implemented; another provider requires a new adapter,
 provider configuration and browser validation, not merely an issuer change.
 Backend validation uses configured issuer, JWKS and audience independently.
+The audience is the app's API (`todo-api`), not its frontend's client ID
+(`todo-frontend`): an ID token names the client, so the API refuses it.
+[Identity](IDENTITY.md) has the whole contract.
 
 ## 7. app-ops, offline artifacts and host security
 

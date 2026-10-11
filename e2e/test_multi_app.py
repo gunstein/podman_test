@@ -42,11 +42,23 @@ class SharedIdentityBrowserTests(unittest.TestCase):
         def claims(token):
             return json.loads(base64.urlsafe_b64decode(token.split('.')[1] + '==='))
 
+        # The ID tokens Keycloak hands the frontends, from its token endpoint's answers: the API
+        # must refuse them (docs/IDENTITY.md, section 2), which only a real Keycloak can show.
+        id_tokens = []
+
+        def keep_id_token(route):
+            response = route.fetch()
+            id_token = response.json().get('id_token') if response.ok else None
+            if id_token:
+                id_tokens.append(id_token)
+            route.fulfill(response=response)
+
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(executable_path=os.getenv('E2E_CHROMIUM'))
             try:
                 context = browser.new_context(ignore_https_errors=False)
                 context.on('request', capture)
+                context.route('**/protocol/openid-connect/token', keep_id_token)
                 page = context.new_page()
                 page.goto(todo)
                 expect(page.locator('#login')).to_be_visible()
@@ -82,9 +94,21 @@ class SharedIdentityBrowserTests(unittest.TestCase):
                 # Both apps log in at Keycloak's own hostname.
                 self.assertEqual(todo_claims['iss'], identity + '/auth/realms/todo')
                 self.assertEqual(notes_claims['iss'], todo_claims['iss'])
-                for payload, audience in ((todo_claims, 'todo-frontend'), (notes_claims, 'notes-frontend')):
+                # Each access token carries its API's audience, never the frontend's client ID.
+                for payload, audience, client in ((todo_claims, 'todo-api', 'todo-frontend'),
+                                                  (notes_claims, 'notes-api', 'notes-frontend')):
                     audiences = payload['aud'] if isinstance(payload['aud'], list) else [payload['aud']]
                     self.assertIn(audience, audiences)
+                    self.assertNotIn(client, audiences)
+                    self.assertEqual(payload['azp'], client)
+                # An ID token names the frontend's client, and neither API accepts it.
+                self.assertTrue(id_tokens, 'no ID token came from the token endpoint')
+                self.assertEqual({claims(token)['aud'] for token in id_tokens} & {'todo-api', 'notes-api'}, set())
+                for id_token in id_tokens:
+                    rejected = page.evaluate('''async token => (await fetch('/api/notes', {
+                        method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token},
+                        body: JSON.stringify({title: 'An ID token'})})).status''', id_token)
+                    self.assertEqual(rejected, 401)
                 rejected = page.evaluate('''async token => (await fetch('/api/notes', {
                     method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token},
                     body: JSON.stringify({title: 'Wrong audience'})})).status''', todo_token)

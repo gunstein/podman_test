@@ -12,5 +12,5 @@ data:
 {% if app.has_login %}
   OIDC_ISSUER: {{ oidc_issuer | tojson }}
   OIDC_JWKS_URL: {{ oidc_jwks_url | tojson }}
-  OIDC_AUDIENCE: {{ app.keycloak_client | tojson }}
+  OIDC_AUDIENCE: {{ app.login_audience | tojson }}
 {% endif %}

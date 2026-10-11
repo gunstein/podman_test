@@ -20,18 +20,25 @@ class NotesAudienceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
-    def test_same_realm_tokens_require_the_notes_audience(self):
+    def test_same_realm_tokens_require_the_notes_api_audience(self):
+        # Only an access token for notes-api passes: Todo's access token (todo-api) and the
+        # Notes frontend's own ID token (aud notes-frontend, typ ID) are refused.
         issuer = 'https://todo.test:8443/auth/realms/todo'
         jwks = Mock()
         jwks.get_signing_key_from_jwt.return_value = SimpleNamespace(key=self.key.public_key())
         with patch.dict(os.environ, {'OIDC_ISSUER': issuer, 'OIDC_JWKS_URL': 'http://keycloak/certs',
-                                     'OIDC_AUDIENCE': 'notes-frontend'}), \
+                                     'OIDC_AUDIENCE': 'notes-api'}), \
                 patch.object(main, 'get_jwks_client', return_value=jwks):
-            for audience in ('notes-frontend', 'todo-frontend'):
-                claims = {'iss': issuer, 'aud': audience, 'exp': int(time.time()) + 60, 'sub': 'same-user'}
+            for audience, extra in (('notes-api', {}), ('todo-api', {}),
+                                    ('notes-frontend', {'typ': 'ID', 'azp': 'notes-frontend'})):
+                claims = {'iss': issuer, 'aud': audience, 'exp': int(time.time()) + 60, 'sub': 'same-user', **extra}
                 token = jwt.encode(claims, self.key, algorithm='RS256')
-                if audience == 'notes-frontend':
-                    self.assertEqual(main.validate_access_token(token)['sub'], 'same-user')
-                else:
-                    with self.assertRaises(jwt.InvalidAudienceError):
-                        main.validate_access_token(token)
+                with self.subTest(audience=audience):
+                    if audience == 'notes-api':
+                        self.assertEqual(main.validate_access_token(token)['sub'], 'same-user')
+                    else:
+                        with self.assertRaises(jwt.InvalidAudienceError):
+                            main.validate_access_token(token)
+            with patch.dict(os.environ, {'OIDC_AUDIENCE': ''}), \
+                    self.assertRaisesRegex(RuntimeError, 'OIDC configuration is incomplete'):
+                main.validate_access_token(token)

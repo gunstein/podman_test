@@ -26,7 +26,7 @@ def _database(name="widget"):
 
 
 def _app(name="widget"):
-    return apps.App(name=name, hostname=name + ".test", keycloak_client=name + "-frontend")
+    return apps.App(name=name, hostname=name + ".test", login_client=name + "-frontend", login_audience=name + "-api")
 
 
 def _platform(*members):
@@ -49,7 +49,7 @@ class ManifestFunctionTests(unittest.TestCase):
         self.assertEqual(doc["data"], {"POSTGRES_DB": "widget", "POSTGRES_USER": "widget"})
 
     def test_render_app_groups_migrate_backend_and_frontend(self):
-        widget = apps.App(name="widget", hostname="widget.test", keycloak_client="widget-frontend",
+        widget = apps.App(name="widget", hostname="widget.test", login_client="widget-frontend", login_audience="widget-api",
                           images=(apps.AppImage(name="backend", context="."), apps.AppImage(name="frontend", context=".")),
                           pod_template="examples/todo/pod.yaml.j2")
         docs = list(yaml.safe_load_all(manifests.render_app(ROOT, widget)))
@@ -60,7 +60,7 @@ class ManifestFunctionTests(unittest.TestCase):
 
     def test_render_app_config_carries_oidc_settings(self):
         doc = next(yaml.safe_load_all(manifests.render_app_config(ROOT, _app(), "widget.test", 8443, "debug")))
-        self.assertEqual(doc["data"]["OIDC_AUDIENCE"], "widget-frontend")
+        self.assertEqual(doc["data"]["OIDC_AUDIENCE"], "widget-api")
         self.assertEqual(doc["data"]["LOG_LEVEL"], "debug")
         self.assertEqual(doc["data"]["OIDC_ISSUER"], "https://widget.test:8443/auth/realms/todo")
 
@@ -72,7 +72,7 @@ class ManifestFunctionTests(unittest.TestCase):
         self.assertEqual(secret_names, {"keycloak-kube-postgres-secret", "keycloak-kube-admin-secret"})
 
     def test_render_shared_proxy_routes_each_path_to_its_endpoint(self):
-        site = apps.App(name="site", hostname="site.test", keycloak_client="site-frontend",
+        site = apps.App(name="site", hostname="site.test", login_client="site-frontend", login_audience="site-api",
                         endpoints=(apps.Endpoint(name="pages", port=8081), apps.Endpoint(name="api", port=9000)),
                         routes=(apps.Route(path="/docs/", to="pages"), apps.Route(path="/ping", to="api", exact=True),
                                 apps.Route(path="/", to="pages")))
@@ -91,7 +91,7 @@ class ManifestFunctionTests(unittest.TestCase):
     def test_render_shared_proxy_sends_auth_to_keycloak_only_for_an_app_with_login(self):
         routes = (apps.Route(path="/", to="site"),)
         endpoints = (apps.Endpoint(name="site", port=8080),)
-        shop = apps.App(name="shop", hostname="shop.test", keycloak_client="shop-frontend",
+        shop = apps.App(name="shop", hostname="shop.test", login_client="shop-frontend", login_audience="shop-api",
                         endpoints=endpoints, routes=routes)
         help_ = apps.App(name="help", hostname="help.test", has_database=False, replication_port=0,
                          endpoints=endpoints, routes=routes)
@@ -117,7 +117,7 @@ class ManifestFunctionTests(unittest.TestCase):
 
     def test_render_shared_proxy_resolves_the_identity_hostname(self):
         widget = _app("widget")
-        gadget = apps.App(name="gadget", hostname="gadget.test", keycloak_client="gadget-frontend", replication_port=5433)
+        gadget = apps.App(name="gadget", hostname="gadget.test", login_client="gadget-frontend", login_audience="gadget-api", replication_port=5433)
         docs = list(yaml.safe_load_all(manifests.render_shared_proxy(
             ROOT, _platform(widget, gadget), {"widget": "widget.test", "gadget": "gadget.test"}, "auth.test", 8443,
             "localhost/platform-proxy:m12")))
@@ -180,7 +180,7 @@ class TemplateSafetyTests(unittest.TestCase):
 
     def test_shared_proxy_rejects_an_unsafe_second_app_hostname_too(self):
         first, other = _app("first"), apps.App(
-            name="other", hostname="evil.test; return 200 pwned", keycloak_client="other-frontend")
+            name="other", hostname="evil.test; return 200 pwned", login_client="other-frontend", login_audience="other-api")
         with self.assertRaises(ValueError):
             manifests.render_shared_proxy(ROOT, _platform(first, other), {"first": "first.test", "other": other.hostname},
                                           "auth.test", 8443, "localhost/platform-proxy:m12")

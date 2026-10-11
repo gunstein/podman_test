@@ -7,10 +7,14 @@ name: notes
 # Its own PostgreSQL database, replicated for DR (platform.yaml gives the
 # replicationPort). Without database: true the platform makes none.
 database: true
-# The OAuth client its frontend logs in with at the shared Keycloak
-# (notes-frontend/keycloak-adapter.js). Without keycloakClient the app has no
-# login; Keycloak runs only when some app has one.
-keycloakClient: notes-frontend
+# Its login at the shared Keycloak (docs/IDENTITY.md): the OAuth client its
+# frontend logs in with (notes-frontend/keycloak-adapter.js), and the audience
+# its backend accepts in an access token. They differ, so an ID token, which
+# names the client, is refused by the API. Without login the app has none;
+# Keycloak runs only when some app has login.
+login:
+  client: notes-frontend
+  audience: notes-api
 # The images it builds (section 5.2), each localhost/notes-<name>; see
 # examples/todo/app.yaml.
 images:

@@ -1,7 +1,7 @@
 """The Todo REST API: public reading, and writing for logged-in users.
 
 GET /api/todos is public. Creating, changing and deleting need a Keycloak
-access token issued for this app (todo-frontend). The backend checks the
+access token for this app's API audience (todo-api; docs/IDENTITY.md). The backend checks the
 token itself on every request; nginx only routes. It connects to PostgreSQL
 as the todo_app role, which may only read and write rows. The schema belongs
 to todo_migrator, and migrations run separately (migrate.py).
@@ -71,12 +71,13 @@ def validate_access_token(token: str) -> dict:
     """Check the token's signature, issuer, audience and expiry; return its claims.
 
     The audience check means a token issued for another app is refused here,
-    even though every app shares the same Keycloak realm and login.
+    even though every app shares the same Keycloak realm and login, and so is
+    an ID token: it names the frontend's client, never the API audience.
     """
     issuer = os.getenv("OIDC_ISSUER")
     jwks_url = os.getenv("OIDC_JWKS_URL")
-    audience = os.getenv("OIDC_AUDIENCE", "todo-frontend")
-    if not issuer or not jwks_url:
+    audience = os.getenv("OIDC_AUDIENCE")
+    if not issuer or not jwks_url or not audience:
         raise RuntimeError("OIDC configuration is incomplete")
     signing_key = get_jwks_client(jwks_url).get_signing_key_from_jwt(token)
     return jwt.decode(

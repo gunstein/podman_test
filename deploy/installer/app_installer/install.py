@@ -186,8 +186,8 @@ def public_hostnames(platform, target):
 
 
 def clients(platform, hostnames):
-    """Each login app's Keycloak client and the hostname it is served on."""
-    return [(app.keycloak_client, hostnames[app.name]) for app in platform.login_apps]
+    """Each login app's Keycloak client, the hostname it is served on and its API audience."""
+    return [(app.login_client, hostnames[app.name], app.login_audience) for app in platform.login_apps]
 
 
 def configure_identity(platform, hostnames):

@@ -390,7 +390,7 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install -r todo-backend/requirements-test.txt "coverage==7.16.2"
 
-      - name: Test migration startup retry
+      - name: Todo tokens without a database and migration startup retry
         run: $COVERAGE -m unittest discover --start-directory todo-backend/unit_tests --verbose
 
       - name: Test Notes CRUD, audience isolation and migration retry

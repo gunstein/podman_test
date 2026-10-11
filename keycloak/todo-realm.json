@@ -11,37 +11,5 @@
   "maxDeltaTimeSeconds": 43200,
   "quickLoginCheckMilliSeconds": 1000,
   "minimumQuickLoginWaitSeconds": 60,
-  "passwordPolicy": "length(12) and notUsername and notEmail",
-  "clients": [
-    {
-      "clientId": "todo-frontend",
-      "name": "Todo frontend",
-      "enabled": true,
-      "publicClient": true,
-      "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": false,
-      "redirectUris": [
-        "https://localhost:8443/"
-      ],
-      "webOrigins": [
-        "https://localhost:8443"
-      ],
-      "attributes": {
-        "pkce.code.challenge.method": "S256"
-      },
-      "protocolMappers": [
-        {
-          "name": "todo audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "todo-frontend",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        }
-      ]
-    }
-  ]
+  "passwordPolicy": "length(12) and notUsername and notEmail"
 }

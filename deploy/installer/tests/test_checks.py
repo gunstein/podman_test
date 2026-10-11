@@ -10,7 +10,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_installer import apps, checks  # noqa: E402
 
-SHOP = apps.App(name='shop', hostname='shop.test', keycloak_client='shop-frontend', ready='/ready',
+SHOP = apps.App(name='shop', hostname='shop.test', login_client='shop-frontend', login_audience='shop-api', ready='/ready',
                 checks=(apps.Check(path='/health', status=200), apps.Check(path='/api/items', status=200)))
 HELP = apps.App(name='help', hostname='help.test', has_database=False, replication_port=0, containers=('help-site',))
 

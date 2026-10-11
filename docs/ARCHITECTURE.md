@@ -107,7 +107,7 @@ one `.kube` unit and generated user service:
 in start order (each database, Keycloak's database, Keycloak, the apps,
 nginx), with each pod's Kube YAML and ConfigMap files. An app has a database
 only when its `app.yaml` says `database: true`, and Keycloak with its
-database runs only when some app names a `keycloakClient` (login); `Platform.services()`
+database runs only when some app has `login` (a client and an API audience); `Platform.services()`
 returns the services in stop order, the reverse, and `Platform.serving_workloads()`
 the serving tier without the databases. The installer, development mode,
 uninstall and the DR tools (the promoted host's start, a rebuilt standby's
@@ -262,9 +262,11 @@ returning a stale token. Tokens are not deliberately persisted by Todo code.
 Backend validation is independent of the frontend adapter: it validates JWT
 signature, issuer and audience using configured JWKS. In production/acceptance,
 both profiles use `https://auth.test:8443/auth/realms/todo`. The realm remains
-`todo`; clients `todo-frontend` and `notes-frontend` have separate audiences,
-redirect URIs and web origins. The installer creates the additional public
-client in existing realms and changes redirect/origin settings only if needed.
+`todo`; clients `todo-frontend` and `notes-frontend` have their own redirect
+URIs and web origins, and their access tokens carry each app's API audience
+(`todo-api`, `notes-api`), which an ID token never does. The installer makes
+each client from the platform's defaults and corrects the fields the platform
+owns on an existing one ([identity](IDENTITY.md)).
 Keycloak has its own hostname (`auth.test` by default), nginx's default
 server, which serves only `/auth/`. Each app discovers that canonical identity
 origin through its own `/auth/`, so both apps use the same login cookie. A Todo token cannot authorize Notes writes, or vice versa.

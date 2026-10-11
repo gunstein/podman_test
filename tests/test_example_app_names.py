@@ -51,7 +51,6 @@ KNOWN = {
     "deploy/manifests/keycloak.yaml.j2",
     "deploy/offline/install.sh",
     "deploy/scripts/app_ca.py",
-    "deploy/scripts/dev/check_failover_login_page.py",
     "deploy/scripts/dev/run-e2e.sh",
     "deploy/scripts/dev/smoke-proxy.sh",
     "deploy/scripts/dev/spike_keycloak_pfx.py",

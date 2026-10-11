@@ -102,7 +102,7 @@ has its own pod template (`App.pod_template`), checked once rendered
 (`pod_contract.py`). A build reads it from `platform.yaml` and each app's
 `examples/<app>/app.yaml` (`platform_file.load`, which also gives the
 environment's port and log level); there is no list of apps in the code.
-`bundle.json` (format version 13) carries it, and a host records it in
+`bundle.json` (format version 14) carries it, and a host records it in
 `~/.config/platform/platform.json` with the same format version. The richer tree below grows with phases
 4 and 5 (images, routes, checks, database and login as app fields).
 
@@ -125,7 +125,7 @@ Writing more to JSON is not enough: the readers must stop reconstructing.
   argument. No YAML loading at import time, no module-level app lists, no
   default arguments that bind an app list. Two different platforms in one
   Python process must not share state (tested).
-- **Versions**: `bundle.json` keeps `format_version` (13 since phase 4i); the
+- **Versions**: `bundle.json` keeps `format_version` (14 since phase 5-1b); the
   installer and the DR tools refuse any other. Since phase 4i the bundle
   records the ID of every image it carries (`images/image-ids.json`), and an
   offline install or a DR host loads an image whose ID on the host is
@@ -139,12 +139,13 @@ tested.
 
 ### 5.1 Configuration files
 
-Implemented so far (phases 3 to 4f-1): `platform.yaml` with
+Implemented so far (phases 3 to 5-1b): `platform.yaml` with
 `identityHostname`, `publicPort`, `logLevel`, the `local` and `prod`
 environments and each app's `path`, `hostname` and, exactly when the app
 has a database, `replicationPort`; `app.yaml` with `name`, `database`
-(true or false, default false), `keycloakClient` (optional: without it
-the app has no login), `images` (each built image's `context` and
+(true or false, default false), `login` (optional: its `client` and its
+API `audience`, two different words; without it the app has no login),
+`images` (each built image's `context` and
 `containerfile`, section 5.2), `endpoints` (each one's `port`), `routes`
 (`path`, `to`, `exact`, section 5.3), `ready` and `checks` (`path`,
 `status`, section 5.4); beside `app.yaml`, the app's own pod template
@@ -271,6 +272,13 @@ privilege stays per table, and the app no longer ships role code.
   Todo client goes away.
 - DR verifies every realm's issuer and each client after promotion and only
   corrects owned fields; it never recreates a realm or touches users.
+- Built in 5-1b: every client is made from the platform's defaults (no
+  client is copied, and the realm import holds none), and an existing
+  client's owned fields are corrected on every install and promotion:
+  public, the code flow only, PKCE S256, its redirect URI and web origin,
+  and exactly one audience mapper with the app's API audience in access
+  tokens only. Still for phase 6: one realm per choice, no realm import
+  file, DR verification per realm.
 
 ### 5.8 Adding, changing and removing apps
 
@@ -1123,6 +1131,28 @@ them, and failover's login check takes the authorization endpoint from
 discovery. `/auth/realms/todo` is now written out only in the frontends'
 adapters (5-1c). Four platform files leave the example-name guard. Render
 baseline: `OIDC_JWKS_URL` quoted like the other values.
+
+**Phase 5-1b, code done; the lab step runs in the next acceptance run.**
+Client and audience apart. `app.yaml`'s `keycloakClient` became
+`login: {client, audience}` (`App.login_client`, `App.login_audience`),
+and `OIDC_AUDIENCE` is the audience (`todo-api`, `notes-api`), not the
+client: Keycloak's ID token names the client, so an ID token no longer
+passes a backend. The loader and `apps.Platform` refuse an audience equal
+to its own client or to any app's client, and two apps sharing either.
+Keycloak's clients come from the platform's defaults (`keycloak.new_client`;
+`apps.TEMPLATE_CLIENT` and the realm import's client are gone), and an
+existing client gets its owned fields corrected (public, code flow only,
+PKCE S256, redirect URI, web origin) and exactly one audience mapper, the
+app's API audience in access tokens only; any other audience mapper is
+removed, since it could let one app's token pass another's backend. Each
+backend requires `OIDC_AUDIENCE`; its token tests run without a database
+(`unit_tests`) and refuse an ID token, another app's token and a missing
+claim; the browser test takes the real ID tokens from Keycloak's token
+endpoint and sends them to the API, which must answer 401. Bundle format
+version 14. Render baseline: `login_client` and `login_audience` in
+`bundle.json` in place of `keycloak_client`, `OIDC_AUDIENCE` the API
+audience, and the format version. One more file leaves the example-name
+guard.
 - Understandability check of phase 4h (fresh agent, at 2cf33d3):
   **YELLOW**. Install's steps read in order, and `Plan` and `Prepared` are
   of a reasonable size with a clear job; the host record and the guard

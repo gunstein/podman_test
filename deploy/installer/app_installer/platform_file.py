@@ -189,17 +189,30 @@ def _checks(data, path, routes):
     return tuple(checks)
 
 
+def _login(login, path):
+    """(client, audience) from app.yaml's login: two different words."""
+    login = _fields(login, f'{path}: login', ('client', 'audience'))
+    client = _text(login['client'], f'{path}: login.client', WORD)
+    audience = _text(login['audience'], f'{path}: login.audience', WORD)
+    if audience == client:
+        raise ValueError(f'{path}: login.audience must differ from login.client: an ID token names the '
+                         'client, and must not pass as an access token (docs/IDENTITY.md)')
+    return client, audience
+
+
 def _app(directory, hostname, replication_port, root, where):
     """The App in directory/app.yaml, served on hostname.
 
     database: true in app.yaml gives the app its own PostgreSQL, and then
     platform.yaml must give it a replicationPort (replication_port, None if
-    absent; where names that entry); keycloakClient gives it login. The
-    directory holds the app's pod template too (POD_TEMPLATE).
+    absent; where names that entry); login gives it login: the OAuth client
+    its frontend logs in with, and the audience its backend accepts, which
+    must differ (docs/IDENTITY.md). The directory holds the app's pod
+    template too (POD_TEMPLATE).
     """
     path = directory / APP_FILE
     data = _fields(_yaml(path), path, ('name', 'images', 'endpoints', 'routes'),
-                   ('database', 'keycloakClient', 'ready', 'checks'))
+                   ('database', 'login', 'ready', 'checks'))
     database = data.get('database', False)
     if type(database) is not bool:
         raise ValueError(f'{path}: database: must be true or false, not {database!r}')
@@ -212,6 +225,7 @@ def _app(directory, hostname, replication_port, root, where):
         # install.setup_roles runs the backend's backend.setup_roles until phase 5.
         raise ValueError(f'{path}: images: an app with database: true declares a backend image, whose '
                          'backend.setup_roles creates its database roles')
+    client, audience = _login(data['login'], path) if 'login' in data else ('', '')
     endpoints = _endpoints(data['endpoints'], path)
     routes = _routes(data['routes'], path, endpoints)
     ready = _routed(data['ready'], f'{path}: ready', routes) if 'ready' in data else ''
@@ -220,8 +234,7 @@ def _app(directory, hostname, replication_port, root, where):
     if not pod_template.is_file():
         raise ValueError(f'{path}: the app needs its pod template {pod_template} (docs/PLATFORM-PLAN.md, section 5.9)')
     app = apps.App(name=_text(data['name'], f'{path}: name', NAME), hostname=hostname,
-                    keycloak_client=_text(data['keycloakClient'], f'{path}: keycloakClient', WORD)
-                    if 'keycloakClient' in data else '',
+                    login_client=client, login_audience=audience,
                     has_database=database, replication_port=replication_port or 0,
                     images=images, endpoints=endpoints,
                     routes=routes,
@@ -267,15 +280,17 @@ def load(path, environment='prod'):
 
 
 def _require_distinct(path, entries, app_list):
-    """No two apps share a name, client, hostname or replication port; Keycloak's database port is taken.
+    """No two apps share a name, client, audience, hostname or replication port, no audience is
+    another app's client, and Keycloak's database port is taken.
 
-    Clients count only for apps with login, ports only for apps with a
+    Clients and audiences count only for apps with login, ports only for apps with a
     database. The message names the YAML field and the apps (by their
     app.yaml), so the fix needs no Python. apps.Platform checks the same,
     for JSON.
     """
     sources = [f'{entry["path"]}/{APP_FILE}' for entry in entries]
-    for field, attribute, needed in (('name', 'name', None), ('keycloakClient', 'keycloak_client', 'has_login'),
+    for field, attribute, needed in (('name', 'name', None), ('login.client', 'login_client', 'has_login'),
+                                     ('login.audience', 'login_audience', 'has_login'),
                                      ('hostname', 'hostname', None),
                                      ('replicationPort', 'replication_port', 'has_database')):
         seen = {}
@@ -286,6 +301,11 @@ def _require_distinct(path, entries, app_list):
             if value in seen:
                 raise ValueError(f'{path}: the apps {seen[value]} and {source} share {field} {value!r}')
             seen[value] = source
+    clients = {app.login_client: source for source, app in zip(sources, app_list) if app.has_login}
+    for source, app in zip(sources, app_list):
+        if app.has_login and app.login_audience in clients:
+            raise ValueError(f'{path}: the login.audience {app.login_audience!r} of {source} is the login.client '
+                             f'of {clients[app.login_audience]}: an ID token for that client would pass')
     keycloak = apps.KEYCLOAK_DATABASE.replication_port
     for source, app in zip(sources, app_list):
         if app.has_database and app.replication_port == keycloak:

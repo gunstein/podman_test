@@ -56,7 +56,7 @@ class BundleContentTests(unittest.TestCase):
     def test_metadata_names_every_rendered_file(self):
         data = json.loads((self.bundle / 'bundle.json').read_text())
         self.assertEqual(data, self.metadata)
-        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 13))
+        self.assertEqual((data['format'], data['format_version']), ('platform-offline-bundle', 14))
         self.assertEqual(data['platform'], platform_file.checkout().to_json())
         self.assertEqual(data['defaults'], {IDENTITY_HOSTNAME: 'auth.test', TODO_HOSTNAME: 'todo.test',
                                             NOTES_HOSTNAME: 'notes.test', HELP_HOSTNAME: 'help.test'})
@@ -160,7 +160,7 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertIn(f'KC_HOSTNAME: "https://{HOSTNAME}:8443/auth"', files['keycloak.yaml'])
         self.assertIn(f'PublishPort={ADDRESS}:8443:8443', files['shared-proxy.kube'])
         configure.assert_called_once_with('fixture-password', [
-            ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.test')])
+            ('todo-frontend', 'todo.test', 'todo-api'), ('notes-frontend', 'notes.test', 'notes-api')])
         # Every other dollar expression is installed exactly as the bundle has it.
         bundle_manifests = self.bundle / 'generated/target/manifests'
         for name in ('todo-app.yaml', 'notes-app.yaml', 'todo-postgres.yaml', 'keycloak.yaml'):
@@ -227,7 +227,7 @@ class OfflineInstallTests(unittest.TestCase):
                                    'notes-app.service', 'keycloak.service', 'shared-proxy.service'})
         self.assertIn('server_name www.example.org;', self.installed()['shared-proxy.yaml'])
         configure.assert_called_once_with('fixture-password', [
-            ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.test')])
+            ('todo-frontend', 'todo.test', 'todo-api'), ('notes-frontend', 'notes.test', 'notes-api')])
 
     def test_each_app_gets_its_own_public_hostname(self):
         with FakeHost(unit_directory=self.runtime) as host:
@@ -236,7 +236,7 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertIn('server_name notes.example.org;', files['shared-proxy.yaml'])
         self.assertIn('APP_TLS_HOSTNAMES: "todo.test notes.example.org help.test"', files['shared-proxy.yaml'])
         configure.assert_called_once_with('fixture-password', [
-            ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.example.org')])
+            ('todo-frontend', 'todo.test', 'todo-api'), ('notes-frontend', 'notes.example.org', 'notes-api')])
 
     def test_the_host_records_its_hostnames_and_a_later_install_keeps_them(self):
         with FakeHost(unit_directory=self.runtime) as host, patch.dict('os.environ', {}, clear=False) as environment:
@@ -253,7 +253,7 @@ class OfflineInstallTests(unittest.TestCase):
             self.assertFalse(changed)
             self.assertIn(f'server_name {HOSTNAME};', self.installed()['shared-proxy.yaml'])
             configure.assert_called_once_with('fixture-password', [
-                ('todo-frontend', 'todo.test'), ('notes-frontend', 'notes.example.org')])
+                ('todo-frontend', 'todo.test', 'todo-api'), ('notes-frontend', 'notes.example.org', 'notes-api')])
             # The record never holds the address: it is the host's own, given each time.
             self.assertNotIn('TARGET_PUBLISH_ADDRESS', host.record.read_text())
 

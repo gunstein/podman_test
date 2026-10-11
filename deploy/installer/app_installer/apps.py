@@ -69,7 +69,10 @@ class App:
     replicating on replication_port (0 without a database). An App is not a
     database: code that works on the replicated database group asks
     Platform.replicated_databases. has_login: its users log in at the shared
-    Keycloak with the OAuth client keycloak_client ("" without login).
+    Keycloak with the OAuth client login_client, and its backend accepts
+    access tokens for the audience login_audience (both "" without login;
+    docs/IDENTITY.md). The two differ: an ID token names the client, so an
+    audience equal to a client would let an ID token pass as an access token.
     pod_template is its own pod template (POD_TEMPLATE in its directory),
     relative to the project root; manifests.render_app renders it and
     pod_contract checks the result. containers are the long-running
@@ -86,7 +89,8 @@ class App:
 
     name: str
     hostname: str
-    keycloak_client: str = ""
+    login_client: str = ""
+    login_audience: str = ""
     has_database: bool = True
     replication_port: int = 5432
     images: tuple = ()
@@ -104,8 +108,8 @@ class App:
 
     @property
     def has_login(self) -> bool:
-        """Its users log in at the shared Keycloak (its app.yaml names a keycloakClient)."""
-        return self.keycloak_client != ""
+        """Its users log in at the shared Keycloak (its app.yaml has login: client and audience)."""
+        return self.login_client != ""
 
     @property
     def database(self) -> stack.Database:
@@ -152,9 +156,6 @@ class App:
         return self.names.image_archive(component)
 
 
-# The Keycloak client the realm import brings (keycloak/todo-realm.json): the
-# template every other app's client is copied from (keycloak.configure).
-TEMPLATE_CLIENT = "todo-frontend"
 NETWORK = "app-network"
 # Keycloak itself is the identity server, not a per-app/per-database resource,
 # so its image does not follow the "<name>-<component>" naming.
@@ -268,11 +269,20 @@ class Platform:
         # identity names Keycloak in --target-hostname and TARGET_IDENTITY_HOSTNAME (target_render.name_target).
         if any(app.name == "identity" for app in self.apps):
             raise ValueError("The app name identity is reserved for Keycloak's hostname")
-        for field, among in (("name", self.apps), ("hostname", self.apps),
-                             ("keycloak_client", self.login_apps), ("replication_port", self.database_apps)):
+        for field, among in (("name", self.apps), ("hostname", self.apps), ("login_client", self.login_apps),
+                             ("login_audience", self.login_apps), ("replication_port", self.database_apps)):
             values = [getattr(app, field) for app in among]
             if len(values) != len(set(values)):
                 raise ValueError(f"Two apps share a {field}: {values}")
+        for app in self.apps:
+            if bool(app.login_client) != bool(app.login_audience):
+                raise ValueError(f"{app.name}: login needs both a client and an audience")
+        # An ID token names its client in aud: an audience equal to any client would accept it.
+        clients = {app.login_client for app in self.login_apps}
+        for app in self.login_apps:
+            if app.login_audience in clients:
+                raise ValueError(f"{app.name}: the audience {app.login_audience} is a client ID; "
+                                 "an ID token for that client would pass as an access token")
         if KEYCLOAK_DATABASE.replication_port in (app.replication_port for app in self.database_apps):
             raise ValueError(f"Port {KEYCLOAK_DATABASE.replication_port} is Keycloak's database's")
         # workloads() is the start order: each workload may require only those before it.
@@ -393,7 +403,8 @@ class Platform:
     def to_json(self):
         """This platform as plain data, for bundle.json and a host's record."""
         return {"identity_hostname": self.identity_hostname,
-                "apps": [{"name": app.name, "hostname": app.hostname, "keycloak_client": app.keycloak_client,
+                "apps": [{"name": app.name, "hostname": app.hostname, "login_client": app.login_client,
+                          "login_audience": app.login_audience,
                           "has_database": app.has_database, "replication_port": app.replication_port,
                           "images": [{"name": image.name, "context": image.context,
                                       "containerfile": image.containerfile} for image in app.images],
@@ -408,7 +419,7 @@ class Platform:
     @classmethod
     def from_json(cls, data):
         """The platform to_json wrote; anything else is a ValueError that says what is wrong."""
-        fields = {"name": str, "hostname": str, "keycloak_client": str, "has_database": bool,
+        fields = {"name": str, "hostname": str, "login_client": str, "login_audience": str, "has_database": bool,
                   "replication_port": int,
                   "images": list, "endpoints": list, "routes": list, "ready": str, "checks": list,
                   "pod_template": str, "containers": list}

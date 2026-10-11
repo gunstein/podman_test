@@ -18,7 +18,7 @@ def main():
     failover.login_page(host, platform, {app.name: app.hostname for app in platform.apps}, platform.identity_hostname,
                         port)
     # A redirect Keycloak does not know must be refused, or the check proves nothing.
-    query = failover.urlencode({"client_id": "todo-frontend", "redirect_uri": "https://evil.test/",
+    query = failover.urlencode({"client_id": platform.login_apps[0].login_client, "redirect_uri": "https://evil.test/",
                                 "response_type": "code", "scope": "openid",
                                 "code_challenge": failover.PKCE_CHALLENGE, "code_challenge_method": "S256"})
     try:

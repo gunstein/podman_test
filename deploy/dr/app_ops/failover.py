@@ -110,15 +110,15 @@ def login_page(host, platform, hostnames, identity, port):
     authorize = authorization_path(host, identity, port) if platform.login_apps else ''
     for app in platform.login_apps:
         origin = f'https://{hostnames[app.name]}:{port}'
-        query = urlencode({'client_id': app.keycloak_client, 'redirect_uri': origin + '/', 'response_type': 'code',
+        query = urlencode({'client_id': app.login_client, 'redirect_uri': origin + '/', 'response_type': 'code',
                            'scope': 'openid', 'code_challenge': PKCE_CHALLENGE, 'code_challenge_method': 'S256'})
         try:
             page = https(host, identity, authorize + '?' + query, port=port)
         except RuntimeError as error:
             raise RuntimeError(f'{app.name}: Keycloak refused the login request of client '
-                               f'{app.keycloak_client} with redirect {origin}/: {error}') from error
+                               f'{app.login_client} with redirect {origin}/: {error}') from error
         if 'id="username"' not in page:
-            raise RuntimeError(f'{app.name}: Keycloak did not show its login form for {app.keycloak_client}')
+            raise RuntimeError(f'{app.name}: Keycloak did not show its login form for {app.login_client}')
         sources = connect_sources(https(host, hostnames[app.name], '/', '--head', port=port))
         if identity_origin not in sources:
             raise RuntimeError(f'{app.name}: Content-Security-Policy connect-src {" ".join(sources) or "(none)"} '

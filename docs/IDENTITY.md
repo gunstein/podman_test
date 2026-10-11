@@ -11,8 +11,21 @@ here.
 
 Today's limits are stated as limits, with the phase that changes them
 ([plan](PLATFORM-PLAN.md), section 7): all apps share one realm, `todo`
-(phase 6), and each app's client ID is also the audience its backend checks
-(phase 5-1b).
+(phase 6), and each frontend names its client ID in its own JavaScript
+(phase 5-1c).
+
+An app asks for login in its `app.yaml`:
+
+```yaml
+login:
+  client: todo-frontend   # the OAuth client its frontend logs in with
+  audience: todo-api      # the audience its backend accepts in an access token
+```
+
+The two must differ, and no app's audience may be another app's client: an
+ID token names its client in `aud`, so an audience equal to a client would
+let an ID token pass as an access token (the loader and `apps.Platform`
+refuse it).
 
 ## 1. What a login provider must deliver
 
@@ -21,8 +34,8 @@ Today's limits are stated as limits, with the phase that changes them
 | An issuer: one HTTPS URL that every token names in `iss` | `https://<identity hostname>:<port>/auth/realms/todo` (`keycloak.issuer`) | Yes |
 | A discovery document at `<issuer>/.well-known/openid-configuration` | `keycloak.DISCOVERY`, relative to an origin | Yes |
 | Signing keys (JWKS) the backends can fetch inside the app network | `keycloak.JWKS_URL`, `http://keycloak:8080/...` | Yes; the address is the platform's choice |
-| Access tokens: JWT signed RS256 with `iss`, `aud`, `exp` and `sub` | Keycloak's access tokens; `aud` from an audience mapper on each client | Yes, but how `aud` is filled is the provider's configuration |
-| One public client per app: authorization code with PKCE (S256), the app's origin as redirect URI and web origin | Created and corrected by `keycloak.configure` | The flow is OIDC; creating the client is Keycloak administration |
+| Access tokens: JWT signed RS256 with `iss`, `aud` (the app's API audience), `exp` and `sub` | Keycloak's access tokens; the API audience from one audience mapper per client, in access tokens only | Yes, but how `aud` is filled is the provider's configuration |
+| One public client per app: authorization code with PKCE (S256) only, the app's origin as redirect URI and web origin | Made from the platform's defaults and corrected by `keycloak.configure` | The flow is OIDC; creating the client is Keycloak administration |
 | The login pages under `/auth/` on every app's hostname and its own | nginx sends `/auth/` to Keycloak (`deploy/manifests/shared-proxy.yaml.j2`); Keycloak serves under `/auth` (`KC_HTTP_RELATIVE_PATH`) | The path is the platform's choice |
 | Readiness: when the provider can serve | Its discovery document answers (`keycloak.wait(keycloak.DISCOVERY, ...)`) | Yes |
 | Its state in the DR group, so a failover keeps users and keys | Keycloak's own PostgreSQL, `keycloak-postgres`, in `Platform.replicated_databases` | No: each provider stores its state its own way |
@@ -42,10 +55,13 @@ The three values come from the app's ConfigMap
 (`deploy/manifests/app-config.yaml.j2`), which the platform renders from
 `keycloak.issuer`, `keycloak.JWKS_URL` and the app's login client.
 
-Limit until phase 5-1b: the audience is the client ID (`todo-frontend`),
-and Keycloak's ID token for that client names the same `aud`, so the check
-does not tell an access token from an ID token. 5-1b gives each app an API
-audience of its own (`todo-api`), which an ID token never carries.
+`OIDC_AUDIENCE` is the app's `login.audience` (`todo-api`), never its
+client ID: Keycloak's ID token for the frontend names the client
+(`todo-frontend`) in `aud`, so the backend refuses it. A backend without
+`OIDC_AUDIENCE` accepts nothing. The tests: each backend's
+`unit_tests` (no database), and the browser test `e2e/test_multi_app.py`,
+which takes the real ID tokens from Keycloak's token endpoint and sends
+them to the API.
 
 Access model: reading is public; any user with a valid token for the app may
 create, change and delete. No row records who wrote it, so the apps' data
@@ -78,10 +94,15 @@ Keycloak's own, which another provider replaces with its own mechanism:
 - `deploy/installer/app_installer/keycloak.py`: the admin token from the
   `master` realm with `admin-cli`, the realm's admin API
   (`ADMIN_TOKEN`, `ADMIN_REALM`), the login protection (`REALM_SECURITY`,
-  `secure_realm`), and the clients (`configure`, copying a missing client
-  from `apps.TEMPLATE_CLIENT`);
+  `secure_realm`), and the clients (`configure`): a missing client is made
+  from the platform's defaults (`new_client`); an existing one gets the
+  fields the platform owns corrected (`owned_client_fields`, PKCE S256:
+  public, code flow only, the app's redirect URI and web origin) and keeps
+  every other field, and its audience mappers are made exactly one, the
+  app's API audience in access tokens only (`audience_mapper`), because
+  another audience could let one app's token pass another app's backend;
 - `keycloak/Containerfile` and `keycloak/todo-realm.json`: the image and the
-  realm import, with the template client and its audience mapper;
+  realm import, which holds the realm's settings and no client;
 - `deploy/manifests/keycloak.yaml.j2` and `deploy/quadlet/keycloak.kube.j2`:
   the pod (`KC_*` settings, health check) and its unit;
 - `apps.py`: `KEYCLOAK_IMAGE`, `KEYCLOAK_DATABASE`, `KEYCLOAK_WORKLOAD`,
@@ -128,9 +149,10 @@ Decide first: the provider runs in the platform (like Keycloak today) or
 outside it. Then, in this order, with a test at each step:
 
 1. The client and token contract: one public client per app (code flow,
-   PKCE S256, exact redirect and origin), each app's API audience, the
-   claims in section 2. With Duende IdentityServer, `aud` comes from an API
-   resource; API scopes alone give no `aud`.
+   PKCE S256, exact redirect and origin), each app's API audience
+   (`login.audience`), the claims in section 2. With Duende IdentityServer,
+   `aud` comes from an API resource named like the audience; API scopes
+   alone give no `aud`.
 2. One app against a test instance: a new adapter behind `auth.js`, the
    issuer, JWKS and audience in its ConfigMap; a real access token accepted,
    an ID token and another app's token refused.
@@ -150,13 +172,18 @@ outside it. Then, in this order, with a test at each step:
 
 ## 8. Tests that guard login
 
-- `todo-backend/tests/test_auth.py`, `notes-backend/unit_tests/test_notes_auth.py`:
-  the token checks (wrong issuer, audience, expiry, signature).
+- `todo-backend/unit_tests/test_auth.py`, `notes-backend/unit_tests/test_notes_auth.py`:
+  the token checks without a database (wrong issuer, audience, expiry,
+  signature, algorithm, a missing claim, another app's token, an ID token,
+  no configured audience).
 - `e2e/test_auth_adapter.py`: the adapter contract against a fake SDK.
 - `e2e/test_todo_flow.py`, `e2e/test_notes_flow.py`, `e2e/test_multi_app.py`:
-  real browser login, SSO between the apps, a Todo token refused by Notes.
+  real browser login, SSO between the apps, each access token's API
+  audience, a Todo token refused by Notes and the real ID tokens refused.
 - `deploy/installer/tests/test_install.py`, `test_keycloak_http.py`:
-  client creation and correction, the admin API calls.
+  a client made from the defaults, an existing one corrected (owned fields,
+  PKCE, audience mappers) keeping the rest, one already right left alone,
+  and the admin API calls.
 - `tests/test_app_ops_failover.py`, `deploy/dr/tests/test_promoted.py`:
   failover's login check and the promoted host's issuer.
 - The lab: `check browser` before and after a failover.

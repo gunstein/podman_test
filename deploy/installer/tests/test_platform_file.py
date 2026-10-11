@@ -16,7 +16,7 @@ PLATFORM = {
     'environments': {'local': {'logLevel': 'debug'}, 'prod': {}},
     'apps': [{'path': 'apps/shop', 'hostname': 'shop.example.org', 'replicationPort': 5440}],
 }
-SHOP = {'name': 'shop', 'database': True, 'keycloakClient': 'shop-frontend',
+SHOP = {'name': 'shop', 'database': True, 'login': {'client': 'shop-frontend', 'audience': 'shop-api'},
         'images': {'backend': {'context': '.'}, 'frontend': {'context': '.'}},
         'endpoints': {'site': {'port': 8080}, 'api': {'port': 8000}},
         'routes': [{'path': '/api/', 'to': 'api'}, {'path': '/ready', 'to': 'api', 'exact': True},
@@ -56,12 +56,14 @@ class PlatformFileTests(unittest.TestCase):
     def test_the_repository_describes_todo_notes_and_help(self):
         platform, local = platform_file.load(ROOT / 'platform.yaml', 'local')
         self.assertEqual([app.name for app in platform.apps], ['todo', 'notes', 'help'])
-        self.assertEqual([(app.hostname, app.keycloak_client, app.replication_port, app.ready,
+        self.assertEqual([(app.hostname, app.login_client, app.login_audience, app.replication_port, app.ready,
                            [(check.path, check.status) for check in app.checks]) for app in platform.apps],
-                         [('todo.test', 'todo-frontend', 5432, '/ready', [('/health', 200), ('/api/todos', 200)]),
-                          ('notes.test', 'notes-frontend', 5433, '/ready', [('/health', 200), ('/api/notes', 200)]),
+                         [('todo.test', 'todo-frontend', 'todo-api', 5432, '/ready',
+                           [('/health', 200), ('/api/todos', 200)]),
+                          ('notes.test', 'notes-frontend', 'notes-api', 5433, '/ready',
+                           [('/health', 200), ('/api/notes', 200)]),
                           # Help is static: no login and no database.
-                          ('help.test', '', 0, '/', [('/', 200)])])
+                          ('help.test', '', '', 0, '/', [('/', 200)])])
         self.assertEqual(platform.identity_hostname, 'auth.test')
         self.assertEqual(local, platform_file.Environment(public_port=8443, log_level='debug'))
         self.assertEqual(platform_file.load(ROOT / 'platform.yaml', 'prod')[1].log_level, 'info')
@@ -70,7 +72,8 @@ class PlatformFileTests(unittest.TestCase):
     def test_an_app_comes_from_its_directory_relative_to_platform_yaml(self):
         platform, prod = platform_file.load(self.write())
         self.assertEqual(platform, apps.Platform(apps=(apps.App(
-            name='shop', hostname='shop.example.org', keycloak_client='shop-frontend', replication_port=5440,
+            name='shop', hostname='shop.example.org', login_client='shop-frontend', login_audience='shop-api',
+            replication_port=5440,
             images=(apps.AppImage(name='backend', context='apps/shop'),
                     apps.AppImage(name='frontend', context='apps/shop')),
             endpoints=(apps.Endpoint(name='site', port=8080), apps.Endpoint(name='api', port=8000)),
@@ -120,13 +123,22 @@ class PlatformFileTests(unittest.TestCase):
                 self.refused(message, platform=platform)
         for app, message in (({**SHOP, 'name': 'my-shop'}, r'app.yaml: name: must be a word matching'),
                              ({**SHOP, 'name': 'identity'}, r'platform.yaml: The app name identity is reserved'),
-                             ({**SHOP, 'apiCollection': '/api'}, r'apiCollection')):
+                             ({**SHOP, 'apiCollection': '/api'}, r'apiCollection'),
+                             # login names both the client and the audience, two different words.
+                             ({**SHOP, 'keycloakClient': 'shop-frontend'}, r'unknown field keycloakClient'),
+                             ({**SHOP, 'login': 'shop-frontend'}, r'app.yaml: login: must be a mapping'),
+                             ({**SHOP, 'login': {'client': 'shop-frontend'}}, r'login: missing audience'),
+                             ({**SHOP, 'login': {**SHOP['login'], 'scope': 'x'}}, r'login: unknown field scope'),
+                             ({**SHOP, 'login': {'client': 'Shop', 'audience': 'shop-api'}},
+                              r'login.client: must be a word'),
+                             ({**SHOP, 'login': {'client': 'shop-frontend', 'audience': 'shop-frontend'}},
+                              r'login.audience must differ from login.client: an ID token')):
             with self.subTest(message=message):
                 self.refused(message, app=app)
 
     def test_two_apps_may_not_share_a_name_client_hostname_or_port(self):
         second = {'path': 'apps/other', 'hostname': 'other.example.org', 'replicationPort': 5441}
-        other = {**SHOP, 'name': 'other', 'keycloakClient': 'other-frontend'}
+        other = {**SHOP, 'name': 'other', 'login': {'client': 'other-frontend', 'audience': 'other-api'}}
         for change, field in (({'hostname': 'shop.example.org'}, 'hostname'), ({'replicationPort': 5440}, 'replicationPort')):
             with self.subTest(field=field):
                 path = self.write(platform={**PLATFORM, 'apps': [PLATFORM['apps'][0], {**second, **change}]})
@@ -135,13 +147,20 @@ class PlatformFileTests(unittest.TestCase):
                 (path.parent / 'apps/other/pod.yaml.j2').write_text(POD)
                 with self.assertRaisesRegex(ValueError, rf'the apps apps/shop/app.yaml and apps/other/app.yaml share {field}'):
                     platform_file.load(path)
-        for change, field in (({'name': 'shop'}, 'name'), ({'keycloakClient': 'shop-frontend'}, 'keycloakClient')):
-            with self.subTest(field=field):
+        for change, message in (({'name': 'shop'}, 'share name'),
+                                ({'login': {'client': 'shop-frontend', 'audience': 'other-api'}}, 'share login.client'),
+                                ({'login': {'client': 'other-frontend', 'audience': 'shop-api'}},
+                                 'share login.audience'),
+                                # Its audience is the shop's client, whose ID tokens name it.
+                                ({'login': {'client': 'other-frontend', 'audience': 'shop-frontend'}},
+                                 r"the login.audience 'shop-frontend' of apps/other/app.yaml is the login.client "
+                                 r"of apps/shop/app.yaml")):
+            with self.subTest(message=message):
                 path = self.write(platform={**PLATFORM, 'apps': [PLATFORM['apps'][0], second]})
                 (path.parent / 'apps/other').mkdir()
                 (path.parent / 'apps/other/app.yaml').write_text(yaml.safe_dump({**other, **change}))
                 (path.parent / 'apps/other/pod.yaml.j2').write_text(POD)
-                with self.assertRaisesRegex(ValueError, rf'share {field}'):
+                with self.assertRaisesRegex(ValueError, message):
                     platform_file.load(path)
 
     def test_routes_go_to_the_apps_own_endpoints(self):
@@ -207,12 +226,12 @@ class PlatformFileTests(unittest.TestCase):
                 self.refused(message, app=app)
 
     def test_an_app_has_a_database_and_login_only_when_its_app_yaml_says_so(self):
-        static = {key: value for key, value in SHOP.items() if key not in ('database', 'keycloakClient')}
+        static = {key: value for key, value in SHOP.items() if key not in ('database', 'login')}
         no_port = {**PLATFORM, 'apps': [{'path': 'apps/shop', 'hostname': 'shop.example.org'}]}
         platform, _ = platform_file.load(self.write(platform=no_port, app=static))
         app = platform.apps[0]
-        self.assertEqual((app.has_database, app.has_login, app.replication_port, app.keycloak_client),
-                         (False, False, 0, ''))
+        self.assertEqual((app.has_database, app.has_login, app.replication_port, app.login_client,
+                          app.login_audience), (False, False, 0, '', ''))
         self.assertEqual(apps.Platform.from_json(platform.to_json()), platform)
         self.refused(r"apps\[0\]: replicationPort is only for an app with a database, and .*apps/shop/app.yaml "
                      "has none", app=static)
@@ -220,14 +239,14 @@ class PlatformFileTests(unittest.TestCase):
                      platform=no_port)
         self.refused(r'app.yaml: database: must be true or false', app={**SHOP, 'database': 'yes'})
         # A login without a database, and the other way round.
-        login_only = {**static, 'keycloakClient': 'shop-frontend'}
+        login_only = {**static, 'login': SHOP['login']}
         app = platform_file.load(self.write(platform=no_port, app=login_only))[0].apps[0]
         self.assertEqual((app.has_database, app.has_login), (False, True))
         app = platform_file.load(self.write(app={**static, 'database': True}))[0].apps[0]
         self.assertEqual((app.has_database, app.has_login, app.replication_port), (True, False, 5440))
 
     def test_apps_without_a_database_or_login_share_no_port_or_client(self):
-        static = {key: value for key, value in SHOP.items() if key not in ('database', 'keycloakClient')}
+        static = {key: value for key, value in SHOP.items() if key not in ('database', 'login')}
         path = self.write(platform={**PLATFORM, 'apps': [PLATFORM['apps'][0],
                                                          {'path': 'apps/other', 'hostname': 'other.example.org'},
                                                          {'path': 'apps/third', 'hostname': 'third.example.org'}]})

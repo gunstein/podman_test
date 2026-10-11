@@ -27,15 +27,16 @@ class AppRegistryTests(unittest.TestCase):
         self.assertTrue(APPS)
         # An app without login has no client, one without a database no
         # replication port; the others must not share theirs.
-        for field, apps in (('name', APPS), ('hostname', APPS), ('keycloak_client', checkout().login_apps),
+        for field, apps in (('name', APPS), ('hostname', APPS), ('login_client', checkout().login_apps), ('login_audience', checkout().login_apps),
                             ('replication_port', checkout().database_apps)):
             values = [getattr(app, field) for app in apps]
             self.assertEqual(len(values), len(set(values)), field)
         for app in APPS:
             self.assertRegex(app.name, r'^[a-z][a-z0-9-]*$')
             self.assertRegex(app.hostname, r'^[a-z0-9.-]+$')
-            if app.keycloak_client:
-                self.assertTrue(re.fullmatch(r'[a-z0-9-]+', app.keycloak_client))
+            for value in (app.login_client, app.login_audience):
+                if value:
+                    self.assertTrue(re.fullmatch(r'[a-z0-9-]+', value))
             with self.assertRaises(dataclasses.FrozenInstanceError):
                 app.name = 'changed'
 
@@ -56,7 +57,7 @@ class AppRegistryTests(unittest.TestCase):
 
     def test_app_owns_every_derived_name(self):
         for name in ("todo", "notes", "third"):
-            app = App(name=name, hostname=name + ".test", keycloak_client=name + "-frontend",
+            app = App(name=name, hostname=name + ".test", login_client=name + "-frontend", login_audience=name + "-api",
                       images=(AppImage(name="backend", context="."),))
             self.assertEqual(app.database.container, name + "-postgres")
             self.assertEqual(app.unit, name + "-app.kube")
@@ -94,7 +95,7 @@ class AppRegistryTests(unittest.TestCase):
 
     def test_images_come_from_the_app(self):
         from app_installer.images import image_list, shared_images
-        app = App(name="notes", hostname="notes.test", keycloak_client="notes-frontend",
+        app = App(name="notes", hostname="notes.test", login_client="notes-frontend", login_audience="notes-api",
                   images=(AppImage(name="backend", context=".", containerfile="notes-backend/Containerfile"),
                           AppImage(name="site", context="../help")))
         images = image_list(app)
@@ -116,7 +117,7 @@ class AppRegistryTests(unittest.TestCase):
         from app_installer.secrets import application_secret_mapping, postgres_secret_mapping
         mappings = []
         for name in ("todo", "notes"):
-            app = App(name=name, hostname=name + ".test", keycloak_client=name + "-frontend")
+            app = App(name=name, hostname=name + ".test", login_client=name + "-frontend", login_audience=name + "-api")
             mapping = {**postgres_secret_mapping(app.database), **application_secret_mapping(app)}
             self.assertEqual(mapping, {
                 name + "-kube-postgres-secret": {"database-password": name + "-db-password"},
@@ -140,11 +141,11 @@ class PlatformTests(unittest.TestCase):
             checkout().ready("primary")
 
     def shop(self):
-        return Platform(apps=(App(name="shop", hostname="shop.example.org", keycloak_client="shop-frontend"),),
+        return Platform(apps=(App(name="shop", hostname="shop.example.org", login_client="shop-frontend", login_audience="shop-api"),),
                         identity_hostname="login.example.org")
 
     def test_identity_is_reserved_for_keycloak(self):
-        app = App(name="identity", hostname="identity-app.test", keycloak_client="identity-frontend")
+        app = App(name="identity", hostname="identity-app.test", login_client="identity-frontend", login_audience="identity-api")
         with self.assertRaisesRegex(ValueError, "identity is reserved"):
             Platform(apps=(app,), identity_hostname="auth.test")
         data = self.shop().to_json()
@@ -230,6 +231,6 @@ class PlatformTests(unittest.TestCase):
 
     def test_keycloaks_replication_port_is_not_an_apps(self):
         with self.assertRaisesRegex(ValueError, "Keycloak's database"):
-            Platform(apps=(App(name="shop", hostname="shop.test", keycloak_client="shop-frontend",
+            Platform(apps=(App(name="shop", hostname="shop.test", login_client="shop-frontend", login_audience="shop-api",
                                replication_port=KEYCLOAK_DATABASE.replication_port),),
                      identity_hostname="auth.test")

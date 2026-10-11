@@ -1169,6 +1169,11 @@ the real stack and that the ConfigMap's other keys (its database settings)
 answer 404. `/auth/realms/todo` and the client IDs are now written only in
 `keycloak.py` and the app.yaml files. Render baseline: the ConfigMap's
 `FRONTEND_LOGIN` and the frontend's mount in each app's pod.
+Lab run 2026-10-11-run-55 stopped at `03-1u5-nothing-left`: kube play makes a
+named volume of a ConfigMap a pod mounts, and uninstall removed only nginx's
+(`shared-nginx-config`), so `todo-backend-config` and `notes-backend-config`
+were left. `uninstall.config_volumes(platform)` now names each app's
+ConfigMap volume too (absent ones are skipped).
 - Understandability check of phase 4h (fresh agent, at 2cf33d3):
   **YELLOW**. Install's steps read in order, and `Plan` and `Prepared` are
   of a reasonable size with a clear job; the host record and the guard

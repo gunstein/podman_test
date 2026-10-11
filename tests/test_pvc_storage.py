@@ -122,7 +122,9 @@ class PVCStorageTests(unittest.TestCase):
                 self.assertEqual(set(volumes),
                                  ({"todo-postgres-data", "notes-postgres-data", "keycloak-postgres-data",
                                    "platform-nginx-data", "todo-caddy-data"} if remove_data else set())
-                                 | set(kube_secrets.kube_volume_names(platform_file.checkout())) | {"shared-nginx-config"})
+                                 | set(kube_secrets.kube_volume_names(platform_file.checkout())) | {"shared-nginx-config"}
+                                 # Each app's ConfigMap, which Todo's and Notes' frontends mount (login.json).
+                                 | {"todo-backend-config", "notes-backend-config", "help-backend-config"})
                 for backup in ("todo-postgres-backup", "notes-postgres-backup", "keycloak-postgres-backup"):
                     self.assertNotIn(backup, volumes)
                 secrets = [argv[-1] for argv in commands if argv[:3] == ["podman", "secret", "rm"]]

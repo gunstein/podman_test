@@ -20,6 +20,13 @@ OLD_IMAGE = 'localhost/todo-keycloak:m12'
 CONFIG_VOLUMES = ('shared-nginx-config',)
 
 
+def config_volumes(platform):
+    """Each ConfigMap volume a pod of platform may have: nginx's, and each app's own ConfigMap,
+    which an app's pod template may mount (Todo's and Notes' frontends read their login.json
+    from it). One that was never made is simply not there."""
+    return (*CONFIG_VOLUMES, *(app.names.resource('backend-config') for app in platform.apps))
+
+
 def backup_volumes(platform):
     """Every database's backup volume: what remove_backups deletes."""
     return tuple(database.volume('backup') for database in platform.replicated_databases)
@@ -109,7 +116,7 @@ def uninstall(platform, remove_data=False, quadlet_dir=None, remove_backups=Fals
         run('podman', 'rm', '--force', '--ignore', name)
     changed = remove('network', apps.NETWORK) or changed
     changed = remove('network', OLD_NETWORK) or changed
-    for name in CONFIG_VOLUMES:
+    for name in config_volumes(platform):
         changed = remove('volume', name) or changed
     # The Kube secrets' volumes are copies of secrets, not data: they go now,
     # and the next install's kube play makes them again from the secrets.

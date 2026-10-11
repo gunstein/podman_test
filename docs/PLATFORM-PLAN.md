@@ -757,7 +757,7 @@ start order (`requires`) comes with the generated units in 4d.
   is added after an installation (no backward compatibility so far, as
   decided).
 
-**Phase 4d, code done; acceptance run with the next phase that changes a host.**
+**Phase 4d, done: accepted in run 2026-10-10-run-53 on `a81cdca`** ([record](history/ACCEPTANCE-a81cdca.md)).
 - One unit template per kind of workload: `app.kube.j2` and
   `postgres.kube.j2` replace the five copies (`todo-app`, `notes-app`,
   `todo-postgres`, `notes-postgres`, `keycloak-postgres`); `keycloak.kube.j2`
@@ -800,7 +800,7 @@ start order (`requires`) comes with the generated units in 4d.
   Noted: per-app unit settings (such as a longer start timeout for one
   app) would be a small explicit field when an app needs one.
 
-**Phase 4f-1, code done; acceptance run with phase 4f-3.**
+**Phase 4f-1, done: accepted in run 2026-10-10-run-53 on `a81cdca`** ([record](history/ACCEPTANCE-a81cdca.md)).
 - Each app brings its own pod template, `pod.yaml.j2` beside its
   `app.yaml` (`App.pod_template`); `deploy/manifests/app.yaml.j2` is gone,
   and Todo and Notes each have a copy (some duplication is fine; Help's
@@ -816,7 +816,7 @@ start order (`requires`) comes with the generated units in 4d.
   carries `pod_template` (format version 11), the only change in the render
   baseline.
 
-**Phase 4f-2, code done; acceptance run with phase 4f-3.**
+**Phase 4f-2, done: accepted in run 2026-10-10-run-53 on `a81cdca`** ([record](history/ACCEPTANCE-a81cdca.md)).
 - `examples/help` is the static example app: one unprivileged nginx serving
   plain HTML (`html/`), its own `Containerfile` and `pod.yaml.j2`, one
   endpoint and the route `/`, `ready: /` and a check of `/`. No database,
@@ -835,7 +835,7 @@ start order (`requires`) comes with the generated units in 4d.
   Notes, its image in CI and the bundle, `rewrite` and the header policy,
   and a lab run.
 
-**Phase 4f-3, code done; acceptance run pending.**
+**Phase 4f-3, done: accepted in run 2026-10-10-run-53 on `a81cdca`** ([record](history/ACCEPTANCE-a81cdca.md)).
 - This checkout's `platform.yaml` runs Help beside Todo and Notes, on
   `help.test`: eight pods on a single host. The DR group stays todo, notes
   and keycloak, since Help has no database; a database-only standby runs

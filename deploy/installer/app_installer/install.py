@@ -387,9 +387,9 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     settings.NGINX_TLS_STORAGE is "secret"), and write the Quadlet units.
     In server mode, only services whose definition, image or TLS secret
     changed are restarted, then everything is
-    started in dependency order. Roles are set up once the database is
-    healthy, and again after the app starts, so the tables its migrations
-    created get their grants. Finally Keycloak is configured and every unit
+    started in dependency order. The platform sets up database roles once
+    the database is healthy, before the app starts. The app's init container
+    runs its migrations, which own the table grants. Finally Keycloak is configured and every unit
     is checked to run from the expected Kube file, and the nightly backup timer
     is turned on. mode='dev' renders with platform.yaml's local environment and runs the YAML
     with podman kube play directly, without systemd.

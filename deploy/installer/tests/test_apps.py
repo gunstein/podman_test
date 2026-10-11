@@ -154,6 +154,26 @@ class PlatformTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "identity is reserved"):
             Platform.from_json(data)
 
+    def test_keycloak_is_reserved_for_the_platform_identity_service(self):
+        platform = self.shop()
+        app = dataclasses.replace(platform.apps[0], name="keycloak")
+        with self.assertRaisesRegex(ValueError, "keycloak is reserved"):
+            dataclasses.replace(platform, apps=(app,))
+        data = platform.to_json()
+        data["apps"][0]["name"] = "keycloak"
+        with self.assertRaisesRegex(ValueError, "keycloak is reserved"):
+            Platform.from_json(data)
+
+    def test_an_app_cannot_share_the_identity_hostname(self):
+        platform = self.shop()
+        app = dataclasses.replace(platform.apps[0], hostname=platform.identity_hostname)
+        with self.assertRaisesRegex(ValueError, "identity hostname.*cannot also be an app"):
+            dataclasses.replace(platform, apps=(app,))
+        data = platform.to_json()
+        data["apps"][0]["hostname"] = platform.identity_hostname
+        with self.assertRaisesRegex(ValueError, "identity hostname.*cannot also be an app"):
+            Platform.from_json(data)
+
     def test_two_platforms_in_one_process_share_nothing(self):
         today, shop = fixture_platform(), self.shop()
         self.assertEqual([app.name for app in today.apps], ["todo", "notes", "help"])

@@ -269,6 +269,10 @@ class Platform:
         # identity names Keycloak in --target-hostname and TARGET_IDENTITY_HOSTNAME (target_render.name_target).
         if any(app.name == "identity" for app in self.apps):
             raise ValueError("The app name identity is reserved for Keycloak's hostname")
+        if any(app.name == "keycloak" for app in self.apps):
+            raise ValueError("The app name keycloak is reserved for the platform's identity service")
+        if any(app.hostname == self.identity_hostname for app in self.apps):
+            raise ValueError(f"The identity hostname {self.identity_hostname} cannot also be an app's hostname")
         for field, among in (("name", self.apps), ("hostname", self.apps), ("login_client", self.login_apps),
                              ("login_audience", self.login_apps), ("replication_port", self.database_apps)):
             values = [getattr(app, field) for app in among]
@@ -447,4 +451,3 @@ class Platform:
             values["containers"] = tuple(entry["containers"])
             apps.append(App(**values))
         return cls(apps=tuple(apps), identity_hostname=data["identity_hostname"])
-

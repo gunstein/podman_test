@@ -47,7 +47,10 @@ checks:
 ```
 
 Choose a unique `name` (a lower-case letter followed by lower-case letters
-or digits, at most 30 characters). `name`, `images`, `endpoints` and
+or digits, at most 30 characters). `identity` and `keycloak` are reserved
+for the platform's identity service. App hostnames must be unique and must
+not equal `identityHostname`. The model checks these rules for source
+configuration and offline bundles alike. `name`, `images`, `endpoints` and
 `routes` are required. `database` defaults to false; omit `login` for an app
 without login. `ready` and `checks` are optional. Without `ready`, the
 platform waits for the pod's regular containers to run and, where declared,

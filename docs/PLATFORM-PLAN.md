@@ -1405,3 +1405,35 @@ tests, Ruff and Pyright (also with psycopg), and all eight CI jobs green on
 installation, four-database DR, Guestbook backup/PITR and report matching
 against the new guide step names remain to be proved on the corrected
 revision by the phase acceptance run.
+
+**Phase 5-4g, code done; the lab step runs in the phase's acceptance run.**
+Step 5-4f passed CI #410 on `3c86acd`. The fresh-agent understandability
+review returned **YELLOW**: the reviewer could take over installation and
+add an app without learning an internal framework, but found two validation
+bugs and gaps in the lab map and install docstring. The review used code
+reading and in-memory reproductions, with no full tests or lab run. It did
+not read Git history or historical acceptance records; an initial heading
+search incidentally showed phase-log headings, not their descriptions.
+Findings and disposition:
+
+1. Keycloak name and hostname collisions: `Platform` now reserves
+   `keycloak` as well as `identity`, and refuses an app hostname equal to
+   `identityHostname`. Two negative tests exercise construction and bundle
+   JSON loading, so both paths reject the collisions before rendering.
+   `ADDING-AN-APP.md` documents these constraints. Valid rendered output
+   is unchanged; no baseline update is needed.
+2. Lab JSON expectations used substring matching, accepting nested fields
+   or incomplete JSON and rejecting reordered fields: confirmed in the
+   code; the next delivery will parse JSON and compare top-level fields,
+   keeping the guide's explicit subset notation and adding regressions.
+3. App guidance lacks a concrete lab-extension map: the next delivery will
+   name the files and checks and guard marker coverage against the actual
+   platform's database apps, without a plugin or registration mechanism.
+4. Install's entry-point docstring described a retired second role setup:
+   corrected. The platform creates roles before app start; app migrations
+   grant table rights. Installation behaviour is unchanged.
+
+The review found the model, app-local duplication and DR safety boundaries
+understandable. Markdown step interpretation and resume rules need more
+care than the main install flow. Fixes 1 and 4 are in this delivery; 2 and
+3 remain for the next CI-gated delivery before lab acceptance.

@@ -1,2 +1,3 @@
--r requirements-test.txt
+# The browser tests and the lab's marker and test-user scripts (platform tools, not an app's).
+pytest==9.1.1
 pytest-playwright==0.9.0

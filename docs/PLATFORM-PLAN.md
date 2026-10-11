@@ -1287,3 +1287,17 @@ The CI role helper documents its already-quoted, platform-generated SQL and
 uses a targeted argument/overload type ignore on `execute`: psycopg requires `LiteralString`
 for both `execute` and `sql.SQL`. Pyright also passes with psycopg installed;
 SQL construction and execution are unchanged.
+
+**Phase 5-4c, code done; the lab step runs in the phase's acceptance run.**
+Step 5-4b passed CI #403 on `5ade26d`. The backend job now runs Guestbook's
+18 unit tests and its real PostgreSQL role test: runtime CRUD succeeds;
+CREATE, ALTER, DROP and reading `schema_migrations` fail. A second app-local
+migration grants UPDATE for that contract without rewriting the first
+migration; the API still exposes read, create and delete only. CI makes the
+roles again after migration to check that grants survive repeated setup.
+The real-browser multi-app test logs into Guestbook through shared SSO,
+writes, reloads, reads and deletes a message. It verifies the app's API
+audience, isolated frontend config, and rejection of anonymous requests,
+Guestbook's real Keycloak ID token and Todo's access token for both reads
+and writes. The same test runs in the lab before and after failover.
+No platform runtime code or render baseline changed.

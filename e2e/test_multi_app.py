@@ -1,4 +1,4 @@
-"""Opt-in real browser acceptance against an installed seven-pod stack.
+"""Opt-in real browser acceptance against an installed ten-pod stack.
 
 Set E2E_MULTI_APP=1, E2E_PASSWORD, E2E_CA_FILE and optionally E2E_CHROMIUM.
 The browser's trust store must already trust the same CA. TLS errors are fatal.
@@ -16,22 +16,23 @@ from urllib.parse import urlsplit
 
 @unittest.skipUnless(os.getenv('E2E_MULTI_APP') == '1', 'requires the real multi-app stack')
 class SharedIdentityBrowserTests(unittest.TestCase):
-    def test_shared_sso_independent_audiences_and_notes_crud(self):
+    def test_shared_sso_independent_audiences_and_app_crud(self):
         from playwright.sync_api import expect, sync_playwright
 
         identity = os.getenv('E2E_IDENTITY_URL', 'https://auth.test:8443')
         todo = os.getenv('E2E_TODO_URL', 'https://todo.test:8443')
         notes = os.getenv('E2E_NOTES_URL', 'https://notes.test:8443')
+        guestbook = os.getenv('E2E_GUESTBOOK_URL', 'https://guestbook.test:8443')
         username = os.getenv('E2E_USERNAME', 'testuser')
         password = os.environ['E2E_PASSWORD']
         tls = ssl.create_default_context(cafile=os.environ['E2E_CA_FILE'])
         certificates = []
-        for origin in (identity, todo, notes):
+        for origin in (identity, todo, notes, guestbook):
             url = urlsplit(origin)
             with socket.create_connection((url.hostname, url.port or 443), timeout=10) as connection:
                 with tls.wrap_socket(connection, server_hostname=url.hostname) as secure:
                     certificates.append(hashlib.sha256(secure.getpeercert(binary_form=True)).digest())
-        self.assertEqual(len(set(certificates)), 1, 'Keycloak and both apps must serve the same SAN certificate')
+        self.assertEqual(len(set(certificates)), 1, 'Keycloak and all three apps must serve the same SAN certificate')
         tokens = {}
 
         def capture(request):
@@ -130,6 +131,51 @@ class SharedIdentityBrowserTests(unittest.TestCase):
                 self.assertEqual(rejected, 401)
                 note.get_by_role('button', name='Delete', exact=True).click()
                 expect(note).to_have_count(0)
+
+                # Guestbook requires login for reads too; SSO must obtain its own access token.
+                with page.expect_response(token_answer) as answer:
+                    page.goto(guestbook)
+                guestbook_id_token = answer.value.json()['id_token']
+                expect(page.locator('#session')).to_have_text('Signed in as ' + username)
+                self.assertEqual(login_settings(page), {'clientId': 'guestbook-frontend', 'realm': 'todo',
+                                                        'others': [404, 404, 404]})
+                page.locator('#message').fill(marker)
+                page.locator('#submit').click()
+                entry = page.locator('#entries li').filter(has_text=marker)
+                expect(entry).to_have_count(1)
+                page.reload()
+                expect(page.locator('#session')).to_have_text('Signed in as ' + username)
+                expect(entry.locator('p')).to_have_text(marker)
+                guestbook_token = tokens[urlsplit(guestbook).hostname]
+                guestbook_claims = claims(guestbook_token)
+                self.assertEqual(guestbook_claims['sub'], todo_claims['sub'])
+                self.assertEqual(guestbook_claims['iss'], todo_claims['iss'])
+                audiences = guestbook_claims['aud']
+                audiences = audiences if isinstance(audiences, list) else [audiences]
+                self.assertIn('guestbook-api', audiences)
+                self.assertNotIn('guestbook-frontend', audiences)
+                self.assertEqual(guestbook_claims['azp'], 'guestbook-frontend')
+                id_audiences = claims(guestbook_id_token)['aud']
+                id_audiences = id_audiences if isinstance(id_audiences, list) else [id_audiences]
+                self.assertIn('guestbook-frontend', id_audiences)
+                self.assertNotIn('guestbook-api', id_audiences)
+                for token in ('', guestbook_id_token, todo_token):
+                    # Both reading and writing reject anonymous requests, the app's real ID token,
+                    # and a valid access token issued to Todo. Neither token is fabricated here.
+                    statuses = page.evaluate('''async token => {
+                        const headers = {'Content-Type': 'application/json'};
+                        if (token) headers.Authorization = 'Bearer ' + token;
+                        const read = await fetch('/api/entries', {headers});
+                        const write = await fetch('/api/entries', {method: 'POST', headers,
+                            body: JSON.stringify({message: 'Rejected token probe'})});
+                        return [read.status, write.status];
+                    }''', token)
+                    self.assertEqual(statuses, [401, 401])
+                entry.get_by_role('button', name='Delete entry').click()
+                expect(entry).to_have_count(0)
+                page.reload()
+                expect(page.locator('#session')).to_have_text('Signed in as ' + username)
+                expect(entry).to_have_count(0)
 
                 page.goto(todo)
                 expect(page.locator('#user-status')).to_have_text('Logged in as ' + username)

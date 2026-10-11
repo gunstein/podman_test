@@ -142,7 +142,7 @@ jobs:
 
 
   full-stack:
-    # The seven pods from source with dev-up.sh on the runner's rootless Podman,
+    # The ten pods from source with dev-up.sh on the runner's rootless Podman,
     # then the lab's browser tests: a real Keycloak login and a write and read in
     # each app through nginx, with TLS errors fatal. Run 10's CSP error would
     # have failed here.
@@ -352,7 +352,7 @@ jobs:
     env:
       # Line and branch coverage of the backends' own code, from the runs below
       # (information, not a gate; the platform's own report is in the tests job).
-      COVERAGE: python -m coverage run --parallel-mode --branch --source=examples/todo/backend,examples/notes/backend
+      COVERAGE: python -m coverage run --parallel-mode --branch --source=examples/todo/backend,examples/notes/backend,examples/guestbook/backend
     services:
       postgres:
         image: postgres:${{ needs.postgres-version.outputs.version }}
@@ -382,6 +382,20 @@ jobs:
           --health-timeout 5s
           --health-retries 20
 
+      guestbook-postgres:
+        image: postgres:${{ needs.postgres-version.outputs.version }}
+        env:
+          POSTGRES_DB: guestbook_test
+          POSTGRES_USER: guestbook
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+        ports:
+          - 5435:5432
+        options: >-
+          --health-cmd "pg_isready -U guestbook -d guestbook_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -398,6 +412,9 @@ jobs:
 
       - name: Test Notes CRUD, audience isolation and migration retry
         run: $COVERAGE -m unittest discover --start-directory examples/notes/backend/unit_tests --verbose
+
+      - name: Test Guestbook API, audience isolation and migration retry
+        run: $COVERAGE -m unittest discover --start-directory examples/guestbook/backend/unit_tests --verbose
 
       # The platform makes the roles (app_installer.database_roles), the migrations grant the
       # table rights; making the roles again after the migrations must keep those grants.
@@ -451,6 +468,27 @@ jobs:
           "${roles[@]}"
           export DATABASE_USER=notes_app DATABASE_PASSWORD_FILE="$secrets_directory/notes-app-password"
           NOTES_ROLE_TEST=1 PYTHONPATH=examples/notes $COVERAGE -m unittest discover --start-directory examples/notes/backend/role_tests --verbose
+
+      - name: Exercise Guestbook bootstrap, migrations and runtime privileges
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_directory=$(mktemp -d)
+          trap 'rm -rf "$secrets_directory"' EXIT
+          printf '%s' 'ci-only-not-a-secret' > "$secrets_directory/guestbook-db-password"
+          printf '%s' 'ci-guestbook-migrator-not-a-secret' > "$secrets_directory/guestbook-migrator-password"
+          printf '%s' 'ci-guestbook-app-not-a-secret' > "$secrets_directory/guestbook-app-password"
+          export DATABASE_HOST=127.0.0.1 DATABASE_PORT=5435 DATABASE_NAME=guestbook_test
+          export DATABASE_SECRETS_DIRECTORY="$secrets_directory"
+          roles=(env PYTHONPATH=deploy/installer python deploy/scripts/dev/apply_database_roles.py
+                 --app guestbook --database guestbook_test --port 5435)
+          "${roles[@]}"
+          export DATABASE_URL='host=127.0.0.1 port=5435 dbname=guestbook_test user=guestbook_migrator password=ci-guestbook-migrator-not-a-secret'
+          PYTHONPATH=examples/guestbook $COVERAGE -m backend.migrate up
+          unset DATABASE_URL
+          "${roles[@]}"
+          export DATABASE_USER=guestbook_app DATABASE_PASSWORD_FILE="$secrets_directory/guestbook-app-password"
+          GUESTBOOK_ROLE_TEST=1 PYTHONPATH=examples/guestbook $COVERAGE -m unittest discover --start-directory examples/guestbook/backend/role_tests --verbose
 
       - name: Backend coverage report (information, not a gate)
         if: ${{ !cancelled() }}

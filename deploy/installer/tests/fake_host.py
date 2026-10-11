@@ -182,7 +182,7 @@ class FakeHost:
             if words[0] == 'cat':
                 return (0, text) if text is not None else (1, '')
         if argv[:4] == ['podman', 'container', 'inspect', '--format']:
-            return 0, 'true\n'  # checks.running: every container runs
+            return 0, 'true \n'  # checks.running: every container runs, without a health check
         if argv[:3] == ['podman', 'image', 'exists']:
             return int(self.images is not None and argv[3] not in self.images), ''
         if argv[:3] == ['podman', 'image', 'inspect']:

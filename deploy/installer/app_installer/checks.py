@@ -39,10 +39,14 @@ def status(path, hostname):
         return None
 
 
+# Running and, if it has a health check, healthy: the same test as wait-ready.sh's.
+STATE = '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{end}}'
+
+
 def running(container):
-    """True if Podman runs container (podman container inspect; a missing one is not running)."""
-    result = command('podman', 'container', 'inspect', '--format', '{{.State.Running}}', container, allowed=(0, 125))
-    return result.returncode == 0 and result.stdout.strip() == 'true'
+    """True if Podman runs container and, if it has a health check, it is healthy (a missing one is not)."""
+    result = command('podman', 'container', 'inspect', '--format', STATE, container, allowed=(0, 125))
+    return result.returncode == 0 and result.stdout.strip() in ('true', 'true healthy')
 
 
 def wait_ready(app, hostname, attempts=30, delay=1):
@@ -53,7 +57,7 @@ def wait_ready(app, hostname, attempts=30, delay=1):
         if attempt + 1 < attempts:
             time.sleep(delay)
     waited = f'{app.ready} on {hostname} did not answer 200' if app.ready else \
-        f'its containers {", ".join(app.containers)} were not all running'
+        f'its containers {", ".join(app.containers)} were not all running and healthy'
     raise RuntimeError(f'{app.name}: {waited} after {attempts} attempts')
 
 

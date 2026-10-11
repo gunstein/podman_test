@@ -76,7 +76,8 @@ class App:
     containers that pod runs, as the loader read them from the rendered
     template, so a host that never renders still knows what to wait for.
     ready is the HTTP path that answers 200 once the app can serve ("" for
-    none: nothing waits for it beyond its started unit), checks the requests (Check) that must
+    none: then its containers are waited for, running and healthy where they
+    have a health check; checks.wait_ready), checks the requests (Check) that must
     answer as declared after an install and a DR promotion (checks.py).
     Build an App with keyword arguments only (tests/test_apps.py checks it):
     the string fields are easy to mix up, and the hosts' Python 3.9 has no

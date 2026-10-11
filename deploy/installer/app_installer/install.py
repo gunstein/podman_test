@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from . import (
     apps,
@@ -35,12 +34,12 @@ class Plan:
     """
 
     platform: apps.Platform
-    environment: Any
+    environment: platform_file.Environment | None
     port: int
     root: Path
     directory: Path
     runtime: Path
-    target: Any
+    target: target_render.TargetFiles | None
     mode: str
     deployment_mode: str
     bundle_directory: str
@@ -50,14 +49,15 @@ class Plan:
 
 @dataclass(frozen=True)
 class Prepared:
-    """What prepare made ready: the rendered Kube YAML's directory (None offline), each app's
-    and the shared images' changes, each app's public hostname and Keycloak's, and whether
-    nginx's TLS secret changed."""
+    """What prepare made ready: the directory of the rendered Kube YAML (None offline), each
+    app's ({app: {image: changed}}) and the shared images' ({image: changed}) changes, each
+    app's public hostname ({app: hostname}) and Keycloak's, and whether nginx's TLS secret
+    changed."""
 
-    rendered: Any
-    image_changes: dict
-    shared_images: dict
-    hostnames: dict
+    rendered_directory: Path | None
+    image_changes: dict[str, dict[str, bool]]
+    shared_images: dict[str, bool]
+    hostnames: dict[str, str]
     identity: str
     tls_changed: bool
 
@@ -213,8 +213,10 @@ def require_installed_apps(platform):
     names = {app.name for app in platform.apps}
     left_out = [app.name for app in target_render.installed_platform().apps if app.name not in names]
     if left_out:
-        raise ValueError(f'This host has installed {", ".join(left_out)}, which this platform leaves out; '
-                         'removing an app is not supported yet. Add it back to platform.yaml.')
+        raise ValueError(f'This host may hold {", ".join(left_out)} (its record names every app an install '
+                         'began, also one that stopped half way), which this platform leaves out; removing an '
+                         'app is not supported yet. Add it back to platform.yaml, or for an offline install, '
+                         'build and deliver a bundle that includes it.')
 
 
 def check(project_root, mode, deployment_mode, bundle_directory, refresh_images, publish_address,
@@ -286,7 +288,7 @@ def prepare(plan):
     # nginx's TLS files as Podman secrets, before nginx starts (tls_secrets);
     # with the TLS volume, the shared-proxy pod's init container makes them.
     tls_changed = tls_store.secret_storage() and tls_secrets.provision(tls_secrets.ordered(hostnames, identity))
-    return Prepared(rendered=rendered, image_changes=image_changes, shared_images=shared_images,
+    return Prepared(rendered_directory=rendered, image_changes=image_changes, shared_images=shared_images,
                     hostnames=hostnames, identity=identity, tls_changed=bool(tls_changed))
 
 
@@ -298,7 +300,7 @@ def write_definitions(plan, prepared):
     """
     platform, runtime, target = plan.platform, plan.runtime, plan.target
     image_changes, shared_images = prepared.image_changes, prepared.shared_images
-    arguments = (plan.root, plan.directory, runtime, prepared.rendered)
+    arguments = (plan.root, plan.directory, runtime, prepared.rendered_directory)
     changed = False
     # postgres is the one image shared by every database (images.shared_images), so a
     # postgres image change restarts every postgres service; backend/frontend images are
@@ -423,7 +425,7 @@ def install(project_root, mode='server', deployment_mode='build', bundle_directo
     if mode == 'dev':
         from .kube_play import up
         secrets.create_kube(secrets.kube_mappings(plan.platform))
-        changed = up(prepared.rendered, plan.platform, settings.DEV_STATE_FILE,
+        changed = up(prepared.rendered_directory, plan.platform, settings.DEV_STATE_FILE,
                      prepared.images_changed or prepared.tls_changed)
         configured = configure_identity(plan.platform, prepared.hostnames)
         checks.verify(plan.platform, prepared.hostnames)

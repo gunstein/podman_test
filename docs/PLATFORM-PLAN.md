@@ -216,7 +216,8 @@ production and DR:
    `promoted.require_application()` expecting a list from `/api/...`.
 
 Phase 4c-2 built readiness as an HTTP path (`ready`, optional: an app
-without one is ready when its containers run) and checks as GET requests
+without one is ready when its containers run, and are healthy where they
+have a health check, as `wait-ready.sh` asks since phase 4h) and checks as GET requests
 with a status (`checks`, optional), both on the app's own hostname through
 nginx and each matched by one of its routes. Container health checks stay
 in the pod templates (5.9); setup tasks come with phase 5.
@@ -396,7 +397,7 @@ in small deliveries, each driven by what Help needs:
   behaviour; the render baseline stays as it is but for the host record's
   version:
   1. One clear sequence for an app: read its YAML, render its pod template
-     once, check it (`pod_contract`), then build the model. Today
+     in one function, check it (`pod_contract`), then build the model. Today
      `platform_file._containers` renders the template while loading and
      `render.files` renders and checks it again; afterwards the rendered pod
      is made and read in one place.
@@ -425,6 +426,18 @@ installed and checked **without a change to platform code**, with a row of
 its own carried through failover, backup and PITR in the lab. Todo and Notes
 share assumptions (the backend's `setup_roles`, the ConfigMap template, the
 `todo` realm); a third app is what shows whether phase 5 removed them.
+From the 4h understandability check, phase 5 must also:
+- make the platform create each app's roles and base rights from the model,
+  so no app copies Todo's `setup_roles.py` with its role and secret names;
+  until then the setup contract (a `backend` image running
+  `python -m backend.setup_roles`) is written down beside the loader's rule;
+- move table grants into the app's migrations and drop the revoke-then-grant
+  that runs again after the app starts, so a migration's own grants stay;
+  test a new table and a repeated install with the runtime role, which
+  must be refused DDL;
+- give the third app its own client ID, read by its frontend from its
+  config rather than written in its JS, and check token audience and
+  runtime CRUD; the shared `todo` realm is today's limit until phase 6.
 
 **Phase 6: Keycloak semantics and multi-realm.** *Behaviour.*
 Section 5.7: owned fields, idempotent setup, clients from defaults, every
@@ -959,8 +972,10 @@ refusals.
    an app's pod template, reads it as YAML and checks it, and returns the
    content and the pod. The loader takes `App.containers` from it and
    `render.files` writes its content; nothing else renders a pod
-   template. So a broken pod template is refused already when
-   `platform.yaml` is loaded, with the same message as before.
+   template. It runs twice per app, at load and at render, on the same
+   input (tested: what is written is what was checked); the second run
+   also holds the pod to `App.containers`. A broken pod template is refused
+   already when `platform.yaml` is loaded.
 2. `install.check` returns a `Plan` (what to install, where and how) and
    `install.prepare` a `Prepared` (what it rendered, the image changes,
    hostnames, whether nginx's TLS secret changed); `write_definitions` and
@@ -977,4 +992,29 @@ refusals.
    record holds, naming it, before anything changes
    (`install.require_installed_apps`).
 The render baseline is unchanged: the record is not rendered output.
+- Understandability check of phase 4h (fresh agent, at 2cf33d3):
+  **YELLOW**. Install's steps read in order, and `Plan` and `Prepared` are
+  of a reasonable size with a clear job; the host record and the guard
+  against leaving out an app follow 5.8's interim contract. Its findings
+  and what was done:
+  1. The pod template is rendered in one function but twice, at load and
+     at render, so "once" overstated it: the wording is corrected and a
+     test shows the file written is the pod checked. Keeping the loader's
+     bytes for rendering would mean a second result from `load` for every
+     caller and a platform from a bundle or a test that never loaded; one
+     cheap, deterministic render more is the simpler price.
+  2. `Plan` and `Prepared` used `Any` and bare `dict`: now concrete types,
+     and `Prepared.rendered` is `rendered_directory`, as it holds a path.
+  3. "Add it back to platform.yaml" does not help an offline host: the
+     message now also says to build and deliver a bundle that includes
+     the app, and that the record holds every app an install began.
+  4. `checks.wait_ready` asked only whether a container runs, where
+     `wait-ready.sh` also asks that it is healthy if it has a health check:
+     both now ask Podman the same question (`checks.STATE`, tested against
+     the script), and `App`'s docstring says what is waited for.
+  5. to 7. A third app with a database would still copy Todo's
+     `setup_roles`, its role and secret names; the revoke-then-grant after
+     the app starts can remove a migration's own grants; and a third app
+     with login inherits the `todo` realm and a client ID written in its
+     JS: all phase 5, now written into its scope.
 

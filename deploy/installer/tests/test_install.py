@@ -150,7 +150,7 @@ class InstallTests(unittest.TestCase):
             plan = install.Plan(platform=platform, environment=None, port=8443, root=ROOT, directory=Path(temp),
                                 runtime=Path(temp), target=None, mode='server', deployment_mode='build',
                                 bundle_directory='', refresh_images=False, publish_address='127.0.0.1')
-            prepared = install.Prepared(rendered=None, image_changes={'wiki': {'backend': False, 'frontend': False}},
+            prepared = install.Prepared(rendered_directory=None, image_changes={'wiki': {'backend': False, 'frontend': False}},
                                         shared_images={'proxy': False}, hostnames={}, identity='auth.test',
                                         tls_changed=False)
             install.write_definitions(plan, prepared)
@@ -180,7 +180,7 @@ class InstallTests(unittest.TestCase):
         # The host recorded todo, notes and help; removing an app is not built (plan, section 5.8).
         with tempfile.TemporaryDirectory() as temp, \
                 FakeHost(unit_directory=Path(temp) / 'quadlet/platform-kube-runtime') as host:
-            with self.assertRaisesRegex(ValueError, 'This host has installed notes, help, which this platform leaves out'):
+            with self.assertRaisesRegex(ValueError, 'This host may hold notes, help .* which this platform leaves out.* build and deliver a bundle'):
                 install.install(ROOT, quadlet_dir=Path(temp) / 'quadlet', platform=platform_file.checkout().select(['todo']))
             self.assertEqual(host.platform_record.read_bytes(), target_render.platform_record(platform_file.checkout()))
             # Only read-only checks ran (require_single_host asks whether DR secrets exist).

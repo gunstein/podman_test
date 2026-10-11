@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_installer import manifests, platform_file, pod_contract  # noqa: E402
+from app_installer import manifests, platform_file, pod_contract, render  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -71,6 +71,16 @@ class PodContractTests(unittest.TestCase):
         # An emptyDir holds no data of its own, so a pod may mount one.
         pod = self.changed(lambda pod: pod['spec']['volumes'].append({'name': 'tmp', 'emptyDir': {}}))
         pod_contract.check(self.app, yaml.safe_dump(pod).encode())
+
+    def test_the_pod_that_is_checked_is_the_pod_that_is_written(self):
+        # Loading and rendering call pod_contract.rendered on the same app; the file holds what was checked.
+        platform = platform_file.checkout()
+        files = render.files(ROOT, platform, render.hostnames(platform), 'auth.test', 8443, 'info')
+        for app in platform.apps:
+            with self.subTest(app=app.name):
+                content, pod = pod_contract.rendered(ROOT, app)
+                self.assertEqual(files[app.manifest], content)
+                self.assertEqual(tuple(container['name'] for container in pod['spec']['containers']), app.containers)
 
     def test_a_template_renders_exactly_one_pod(self):
         for content in (b'', b'kind: ConfigMap\n', yaml.safe_dump_all([self.pod, self.pod]).encode()):

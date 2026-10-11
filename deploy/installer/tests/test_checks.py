@@ -62,16 +62,20 @@ class CheckTests(unittest.TestCase):
             checks.wait_ready(SHOP, 'shop.test', attempts=3)
 
     def test_an_app_without_a_ready_path_is_waited_for_until_its_containers_run(self):
-        answers = iter(['', 'false', 'true'])
+        # Running, and healthy if it has a health check: 'true unhealthy' and 'true starting' are not ready.
+        answers = iter(['', 'false ', 'true unhealthy', 'true starting', 'true healthy'])
         with patch.object(checks, 'command', side_effect=lambda *argv, allowed: subprocess.CompletedProcess(
                 argv, 0, next(answers))) as command, \
                 patch.object(checks.time, 'sleep'):
             checks.wait_ready(HELP, 'help.test')
-        command.assert_called_with('podman', 'container', 'inspect', '--format', '{{.State.Running}}', 'help-site',
+        command.assert_called_with('podman', 'container', 'inspect', '--format', checks.STATE, 'help-site',
                                    allowed=(0, 125))
-        self.assertEqual(command.call_count, 3)
+        self.assertEqual(command.call_count, 5)
+        # wait-ready.sh asks Podman the same question.
+        script = (Path(__file__).resolve().parents[3] / 'deploy/scripts/wait-ready.sh').read_text()
+        self.assertIn(f"'{checks.STATE}'", script)
         with patch.object(checks, 'running', return_value=False), patch.object(checks.time, 'sleep'), \
-                self.assertRaisesRegex(RuntimeError, 'help: its containers help-site were not all running after 2'):
+                self.assertRaisesRegex(RuntimeError, 'help: its containers help-site were not all running and healthy after 2'):
             checks.wait_ready(HELP, 'help.test', attempts=2)
 
     def test_verify_waits_for_each_app_then_runs_its_checks_once(self):

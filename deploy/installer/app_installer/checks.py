@@ -1,7 +1,8 @@
 """Each app's readiness and checks (its app.yaml's ready and checks), asked of the local nginx.
 
 ready is an HTTP path on the app's own hostname that answers 200 once the
-app can serve; the platform waits for it after a start. checks are GET
+app can serve; the platform waits for it after a start (for an app without
+one, until its containers run). checks are GET
 requests with the status each must answer, run once the app is ready:
 after an install and after a DR promotion, when Keycloak is already set up.
 Both go through nginx on 127.0.0.1 with the app's hostname as the Host
@@ -14,6 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from . import settings
+from .commands import run as command
 
 BASE = f'http://127.0.0.1:{settings.LOCAL_HTTP_PORT}'
 
@@ -37,20 +39,22 @@ def status(path, hostname):
         return None
 
 
-def wait_ready(app, hostname, attempts=30, delay=1):
-    """Wait until app's ready path answers 200 on hostname.
+def running(container):
+    """True if Podman runs container (podman container inspect; a missing one is not running)."""
+    result = command('podman', 'container', 'inspect', '--format', '{{.State.Running}}', container, allowed=(0, 125))
+    return result.returncode == 0 and result.stdout.strip() == 'true'
 
-    An app without a ready path is not waited for here: its unit has
-    started, and wait-ready.sh checks its containers.
-    """
-    if not app.ready:
-        return
+
+def wait_ready(app, hostname, attempts=30, delay=1):
+    """Wait until app's ready path answers 200 on hostname or, without one, until its containers run."""
     for attempt in range(attempts):
-        if status(app.ready, hostname) == 200:
+        if (status(app.ready, hostname) == 200 if app.ready else all(map(running, app.containers))):
             return
         if attempt + 1 < attempts:
             time.sleep(delay)
-    raise RuntimeError(f'{app.name}: {app.ready} on {hostname} did not answer 200 after {attempts} attempts')
+    waited = f'{app.ready} on {hostname} did not answer 200' if app.ready else \
+        f'its containers {", ".join(app.containers)} were not all running'
+    raise RuntimeError(f'{app.name}: {waited} after {attempts} attempts')
 
 
 def run(app, hostname):

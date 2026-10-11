@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from . import apps, manifests
+from . import apps, manifests, pod_contract
 
 # platform.yaml at the root of a project, and app.yaml in each app's directory.
 FILE = 'platform.yaml'
@@ -226,24 +226,9 @@ def _app(directory, hostname, replication_port, root, where):
                     images=images, endpoints=endpoints,
                     routes=routes,
                     ready=ready, checks=checks, pod_template=Path(os.path.relpath(pod_template, root)).as_posix())
-    return dataclasses.replace(app, containers=_containers(app, root))
-
-
-def _containers(app, root):
-    """The long-running containers app's pod template runs, read from it rendered (pod_contract checks the rest)."""
-    import yaml
-    from jinja2 import TemplateError
-    try:
-        pod = yaml.safe_load(manifests.render_app(root, app))
-    except TemplateError as error:
-        raise ValueError(f'{app.pod_template}: cannot be rendered: {error}') from None
-    except yaml.YAMLError as error:
-        raise ValueError(f'{app.pod_template}: does not render one valid YAML document: {error}') from None
-    containers = (pod.get('spec') or {}).get('containers') if isinstance(pod, dict) else None
-    if not isinstance(containers, list) or not containers or not all(
-            isinstance(container, dict) and isinstance(container.get('name'), str) for container in containers):
-        raise ValueError(f'{app.pod_template}: must render a Pod with named spec.containers')
-    return tuple(container['name'] for container in containers)
+    # The long-running containers its pod runs, so a host that never renders knows what to wait for.
+    _, pod = pod_contract.rendered(root, app)
+    return dataclasses.replace(app, containers=tuple(container['name'] for container in pod['spec']['containers']))
 
 
 def load(path, environment='prod'):

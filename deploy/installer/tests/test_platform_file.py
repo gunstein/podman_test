@@ -22,8 +22,20 @@ SHOP = {'name': 'shop', 'database': True, 'keycloakClient': 'shop-frontend',
         'routes': [{'path': '/api/', 'to': 'api'}, {'path': '/ready', 'to': 'api', 'exact': True},
                    {'path': '/', 'to': 'site'}]}
 
-# A pod template: the loader reads its containers' names (pod_contract checks the rest of what it renders).
-POD = 'kind: Pod\nspec:\n  containers:\n    - name: {{ app.names.resource("site") }}\n'
+# A pod template that keeps pod_contract's rules for any app here: one container per declared image,
+# each opening every endpoint's port. The loader renders and checks it, and reads its containers' names.
+POD = '''kind: Pod
+metadata:
+  name: {{ app.pod }}
+spec:
+  containers:
+{% for image in app.images %}
+    - name: {{ app.names.resource(image.name) }}
+      image: {{ images[image.name] }}
+      resources: {limits: {memory: 64Mi}}
+      ports: [{% for endpoint in app.endpoints %}{containerPort: {{ endpoint.port }}}, {% endfor %}]
+{% endfor %}
+'''
 
 
 class PlatformFileTests(unittest.TestCase):
@@ -64,7 +76,7 @@ class PlatformFileTests(unittest.TestCase):
             endpoints=(apps.Endpoint(name='site', port=8080), apps.Endpoint(name='api', port=8000)),
             routes=(apps.Route(path='/api/', to='api'), apps.Route(path='/ready', to='api', exact=True),
                     apps.Route(path='/', to='site')),
-            pod_template='apps/shop/pod.yaml.j2', containers=('shop-site',)),),
+            pod_template='apps/shop/pod.yaml.j2', containers=('shop-backend', 'shop-frontend')),),
             identity_hostname='login.example.org'))
         self.assertEqual(prod, platform_file.Environment(public_port=8443, log_level='info'))
         path = self.write()
@@ -252,11 +264,15 @@ class PlatformFileTests(unittest.TestCase):
                 self.refused(message, app={**SHOP, **change})
 
     def test_the_pod_template_names_the_apps_containers(self):
+        # The loader renders each pod template once, checks it (pod_contract.rendered) and keeps its containers.
         path = self.write()
-        self.assertEqual(platform_file.load(path)[0].apps[0].containers, ('shop-site',))
+        self.assertEqual(platform_file.load(path)[0].apps[0].containers, ('shop-backend', 'shop-frontend'))
         self.assertEqual([app.containers for app in platform_file.checkout().apps],
                          [('todo-backend', 'todo-frontend'), ('notes-backend', 'notes-frontend'), ('help-site',)])
-        for template, message in (('kind: Pod\n', r'apps/shop/pod.yaml.j2: must render a Pod with named spec.containers'),
+        for template, message in (('kind: Pod\n', r'apps/shop/pod.yaml.j2: .*it runs no containers'),
+                                  ('kind: Pod\nspec: {containers: [1]}\n', r'pod.yaml.j2: each container must be a mapping'),
+                                  ('kind: [', r'apps/shop/pod.yaml.j2: does not render valid YAML'),
+                                  (POD.replace('64Mi', '0'), r'apps/shop/pod.yaml.j2: container shop-backend has no memory'),
                                   ('{{ broken', r'apps/shop/pod.yaml.j2: cannot be rendered'),
                                   ('{{ app.nothing }}', r'apps/shop/pod.yaml.j2: cannot be rendered')):
             with self.subTest(message=message):

@@ -15,14 +15,13 @@ its public hostnames (target_render.record_path) is host.record, in a
 temporary home. A test that needs one more answer subclasses FakeHost and
 overrides answer().
 """
-import json
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from unittest import mock
 
-from app_installer import apps, platform_file, secrets, tls_secrets
+from app_installer import apps, platform_file, secrets, target_render, tls_secrets
 
 # What `podman image inspect` shows for the proxy image the installer checks.
 PROXY_LABELS = '[{"Labels":{"io.todo.proxy":"nginx","io.todo.proxy.tls":"local provided"}}]'
@@ -106,7 +105,7 @@ class FakeHost:
         self.record = self.home / '.config/platform/target-values.json'
         self.platform_record = self.home / '.config/platform/platform.json'
         self.platform_record.parent.mkdir(parents=True)
-        self.platform_record.write_text(json.dumps(self.platform.to_json()))
+        self.platform_record.write_bytes(target_render.platform_record(self.platform))
         # The nightly backup timer's units (backup.install_timer) go here too.
         self.units = self.home / '.config/systemd/user'
         self._patchers = [mock.patch('app_installer.commands.subprocess.run', side_effect=self._run),
@@ -182,6 +181,8 @@ class FakeHost:
                 return int(not text), ''
             if words[0] == 'cat':
                 return (0, text) if text is not None else (1, '')
+        if argv[:4] == ['podman', 'container', 'inspect', '--format']:
+            return 0, 'true\n'  # checks.running: every container runs
         if argv[:3] == ['podman', 'image', 'exists']:
             return int(self.images is not None and argv[3] not in self.images), ''
         if argv[:3] == ['podman', 'image', 'inspect']:

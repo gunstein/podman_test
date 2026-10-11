@@ -52,9 +52,7 @@ def files(project_root, platform, hostnames, identity_hostname, port, log_level)
             result[app.database.manifest] = manifests.render_postgres(root, app.database, app.database.image)
             config = manifests.render_postgres_config(root, app.database) + b'---\n' + config
         result[app.config_manifest] = config
-        result[app.manifest] = manifests.render_app(root, app)
-        _validate(app.manifest, result[app.manifest])
-        pod_contract.check(app, result[app.manifest])
+        result[app.manifest], _ = pod_contract.rendered(root, app)
 
     if platform.has_identity:
         result['keycloak.yaml'] = manifests.render_keycloak(

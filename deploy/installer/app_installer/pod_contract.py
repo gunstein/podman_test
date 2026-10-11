@@ -8,7 +8,7 @@ asks for no host access or extra privileges. This checks trusted app
 packages against the platform's contract; it is not a sandbox and does not
 make an arbitrary template or image safe. Build host only (PyYAML).
 """
-from . import secrets
+from . import manifests, secrets
 
 # Volumes that hold no data of their own: version 1 keeps an app's data in
 # PostgreSQL only (section 5.6), so a pod may mount nothing else.
@@ -16,12 +16,30 @@ VOLUME_KINDS = ('secret', 'configMap', 'emptyDir')
 HOST_ACCESS = ('hostNetwork', 'hostPID', 'hostIPC')
 
 
+def rendered(project_root, app):
+    """(content, pod): app's pod template rendered and checked; the one way the platform reads it.
+
+    The loader reads App.containers from the pod, and render.files writes the
+    content; a template that cannot be rendered, is not YAML or breaks a rule
+    raises ValueError naming it.
+    """
+    from jinja2 import TemplateError
+    try:
+        content = manifests.render_app(project_root, app)
+    except TemplateError as error:
+        raise ValueError(f'{app.pod_template}: cannot be rendered: {error}') from None
+    return content, check(app, content)
+
+
 def check(app, content):
     """Raise ValueError naming every way content, app's rendered pod, breaks the rules; return the pod."""
     import yaml
 
-    documents = [document for document in yaml.safe_load_all(content) if document is not None]
     where = f'{app.pod_template}'
+    try:
+        documents = [document for document in yaml.safe_load_all(content) if document is not None]
+    except yaml.YAMLError as error:
+        raise ValueError(f'{where}: does not render valid YAML: {error}') from None
     if len(documents) != 1 or not isinstance(documents[0], dict) or documents[0].get('kind') != 'Pod':
         raise ValueError(f'{where}: must render exactly one Pod')
     pod = documents[0]
@@ -31,7 +49,11 @@ def check(app, content):
     if name != app.pod:
         problems.append(f'the pod is named {name!r}, not {app.pod}')
     problems += [f'it sets {key}' for key in HOST_ACCESS if spec.get(key)]
+    if not spec.get('containers'):
+        problems.append('it runs no containers (spec.containers)')
     containers = (spec.get('initContainers') or []) + (spec.get('containers') or [])
+    if not all(isinstance(container, dict) for container in containers):
+        raise ValueError(f'{where}: each container must be a mapping')
     images = {app.image(image.name) for image in app.images}
     config = app.names.resource('backend-config')
     own_secrets = set(secrets.application_secret_mapping(app)) if app.has_database else set()

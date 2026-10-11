@@ -1,5 +1,6 @@
 """checks.py: an app's ready path and checks, asked of nginx with the app's hostname."""
 import http.server
+import subprocess
 import sys
 import threading
 import unittest
@@ -11,7 +12,7 @@ from app_installer import apps, checks  # noqa: E402
 
 SHOP = apps.App(name='shop', hostname='shop.test', keycloak_client='shop-frontend', ready='/ready',
                 checks=(apps.Check(path='/health', status=200), apps.Check(path='/api/items', status=200)))
-HELP = apps.App(name='help', hostname='help.test', has_database=False, replication_port=0)
+HELP = apps.App(name='help', hostname='help.test', has_database=False, replication_port=0, containers=('help-site',))
 
 
 class Answers(http.server.BaseHTTPRequestHandler):
@@ -45,6 +46,7 @@ class CheckTests(unittest.TestCase):
             self.assertIsNone(checks.status('/ready', 'shop.test'))
 
     def test_ready_is_waited_for_and_an_app_without_one_is_not_asked(self):
+        # Without a ready path, its containers are waited for instead (see the next test).
         answers = iter([None, 503, 200])
         with patch.object(checks, 'status', side_effect=lambda path, hostname: next(answers)) as status, \
                 patch.object(checks.time, 'sleep'):
@@ -52,16 +54,31 @@ class CheckTests(unittest.TestCase):
             self.assertEqual(status.call_count, 3)
             status.assert_called_with('/ready', 'shop.example.org')
             status.reset_mock()
-            checks.wait_ready(HELP, 'help.test')
+            with patch.object(checks, 'running', return_value=True):
+                checks.wait_ready(HELP, 'help.test')
             status.assert_not_called()
         with patch.object(checks, 'status', return_value=503), patch.object(checks.time, 'sleep'), \
                 self.assertRaisesRegex(RuntimeError, 'shop: /ready on shop.test did not answer 200 after 3 attempts'):
             checks.wait_ready(SHOP, 'shop.test', attempts=3)
 
+    def test_an_app_without_a_ready_path_is_waited_for_until_its_containers_run(self):
+        answers = iter(['', 'false', 'true'])
+        with patch.object(checks, 'command', side_effect=lambda *argv, allowed: subprocess.CompletedProcess(
+                argv, 0, next(answers))) as command, \
+                patch.object(checks.time, 'sleep'):
+            checks.wait_ready(HELP, 'help.test')
+        command.assert_called_with('podman', 'container', 'inspect', '--format', '{{.State.Running}}', 'help-site',
+                                   allowed=(0, 125))
+        self.assertEqual(command.call_count, 3)
+        with patch.object(checks, 'running', return_value=False), patch.object(checks.time, 'sleep'), \
+                self.assertRaisesRegex(RuntimeError, 'help: its containers help-site were not all running after 2'):
+            checks.wait_ready(HELP, 'help.test', attempts=2)
+
     def test_verify_waits_for_each_app_then_runs_its_checks_once(self):
         asked = []
         platform = apps.Platform(apps=(SHOP, HELP), identity_hostname='auth.test')
-        with patch.object(checks, 'status', side_effect=lambda path, hostname: asked.append((hostname, path)) or 200):
+        with patch.object(checks, 'status', side_effect=lambda path, hostname: asked.append((hostname, path)) or 200), \
+                patch.object(checks, 'running', return_value=True):
             checks.verify(platform, {'shop': 'shop.example.org', 'help': 'help.test'})
         self.assertEqual(asked, [('shop.example.org', '/ready'), ('shop.example.org', '/health'),
                                  ('shop.example.org', '/api/items')])

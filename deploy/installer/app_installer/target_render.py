@@ -210,17 +210,35 @@ def record_platform(platform):
     """
     path = platform_record_path()
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    content = json.dumps(platform.to_json(), indent=2, sort_keys=True) + '\n'
-    return quadlet.write(path, content.encode(), 0o644)
+    return quadlet.write(path, platform_record(platform), 0o644)
+
+
+def platform_record(platform):
+    """The record's content: the platform as bundle.json carries it, with the same format version."""
+    data = {'format_version': BUNDLE_FORMAT_VERSION, 'platform': platform.to_json()}
+    return (json.dumps(data, indent=2, sort_keys=True) + '\n').encode()
 
 
 def installed_platform():
-    """The platform this host was installed with (record_platform); TargetError if it has none."""
+    """The platform this host was installed with (record_platform); TargetError if it has none.
+
+    A record of another format version, from another installer, is refused:
+    there is no backward compatibility, so that installer must uninstall it.
+    """
     path = platform_record_path()
     try:
-        return apps.Platform.from_json(json.loads(path.read_text()))
+        data = json.loads(path.read_text())
     except FileNotFoundError:
         raise TargetError(f'{path} does not exist: nothing was installed on this host') from None
+    except ValueError as error:
+        raise TargetError(f'{path} is not a platform: {error}') from None
+    version = data.get('format_version') if isinstance(data, dict) else None
+    if version != BUNDLE_FORMAT_VERSION:
+        raise TargetError(f'{path} was written by another installer (format version {version}; this installer '
+                          f'reads version {BUNDLE_FORMAT_VERSION}). Uninstall with the installer that installed '
+                          'this host first.')
+    try:
+        return apps.Platform.from_json(data.get('platform'))
     except ValueError as error:
         raise TargetError(f'{path} is not a platform: {error}') from None
 

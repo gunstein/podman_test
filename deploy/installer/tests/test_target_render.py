@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -166,6 +167,23 @@ class MetadataTests(unittest.TestCase):
         manifest.write_text(manifest.read_text() + '# ${TARGET_FQDN}\n')
         with self.assertRaisesRegex(TargetError, r'manifests/keycloak.yaml: no value for \$\{TARGET_FQDN\}'):
             self.load()
+
+
+
+class PlatformRecordTests(unittest.TestCase):
+    def test_the_record_is_read_back_only_in_this_installers_format(self):
+        platform = platform_file.checkout()
+        with tempfile.TemporaryDirectory() as home:
+            path = Path(home) / 'platform.json'
+            with unittest.mock.patch.object(target_render, 'platform_record_path', return_value=path):
+                target_render.record_platform(platform)
+                self.assertEqual(target_render.installed_platform(), platform)
+                # A record from an older installer: the bare platform, or another version.
+                for data in (platform.to_json(), {'format_version': 1, 'platform': platform.to_json()}):
+                    with self.subTest(data=list(data)):
+                        path.write_text(json.dumps(data))
+                        with self.assertRaisesRegex(TargetError, 'written by another installer .* Uninstall with'):
+                            target_render.installed_platform()
 
 
 if __name__ == '__main__':

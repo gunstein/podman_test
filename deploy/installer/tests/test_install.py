@@ -20,6 +20,7 @@ from app_installer import (  # noqa: E402
     platform_file,
     secrets,
     settings,
+    target_render,
     uninstall,
 )
 from fake_host import FakeHost, RenderingHost  # noqa: E402
@@ -50,7 +51,7 @@ class InstallTests(unittest.TestCase):
             else:
                 project, how, Host = copy_project(root), dict(deployment_mode='build'), RenderingHost
 
-            with Host(unit_directory=runtime, source=source_override) as host, \
+            with Host(unit_directory=runtime, source=source_override, platform=platform) as host, \
                     patch.object(keycloak, 'configure') as configure, \
                     patch.object(settings, 'DEV_STATE_FILE', root / 'app-installer-dev.json'):
                 calls = host.calls
@@ -146,8 +147,13 @@ class InstallTests(unittest.TestCase):
                              lambda *a, platform, target: installed.append('shared-proxy')), \
                 patch.object(install.quadlet, 'systemctl', lambda *a: started.append(a[1])), \
                 patch.object(install, 'run'), patch.object(install, 'setup_roles', roles.append):
-            install.write_definitions(ROOT, Path(temp), Path(temp), None, platform, '127.0.0.1', 8443, None,
-                                      {'wiki': {'backend': False, 'frontend': False}}, {'proxy': False}, False)
+            plan = install.Plan(platform=platform, environment=None, port=8443, root=ROOT, directory=Path(temp),
+                                runtime=Path(temp), target=None, mode='server', deployment_mode='build',
+                                bundle_directory='', refresh_images=False, publish_address='127.0.0.1')
+            prepared = install.Prepared(rendered=None, image_changes={'wiki': {'backend': False, 'frontend': False}},
+                                        shared_images={'proxy': False}, hostnames={}, identity='auth.test',
+                                        tls_changed=False)
+            install.write_definitions(plan, prepared)
             install.start_in_order(platform, set())
         self.assertEqual(installed, ['wiki-postgres', 'wiki-app', 'shared-proxy'])
         self.assertEqual(started, ['wiki-postgres.service', 'wiki-app.service', 'shared-proxy.service'])
@@ -162,13 +168,23 @@ class InstallTests(unittest.TestCase):
         for platform, message in (
                 (apps.Platform(apps=(help_,), identity_hostname='auth.test'), 'no container port 9000'),):
             with self.subTest(message=message), tempfile.TemporaryDirectory() as temp, \
-                    FakeHost(unit_directory=Path(temp) / 'quadlet/platform-kube-runtime') as host:
+                    FakeHost(unit_directory=Path(temp) / 'quadlet/platform-kube-runtime', platform=platform) as host:
                 with self.assertRaisesRegex(ValueError, message):
                     install.install(ROOT, quadlet_dir=Path(temp) / 'quadlet', platform=platform)
                 # Only read-only checks of Podman ran.
                 self.assertTrue(all(call in (['podman', 'kube', 'play', '--help'], ['podman', '--version'])
                                     for call in host.calls), host.calls)
-                self.assertEqual(json.loads(host.platform_record.read_text()), host.platform.to_json())
+                self.assertEqual(host.platform_record.read_bytes(), target_render.platform_record(host.platform))
+
+    def test_a_platform_that_leaves_out_an_installed_app_is_refused(self):
+        # The host recorded todo, notes and help; removing an app is not built (plan, section 5.8).
+        with tempfile.TemporaryDirectory() as temp, \
+                FakeHost(unit_directory=Path(temp) / 'quadlet/platform-kube-runtime') as host:
+            with self.assertRaisesRegex(ValueError, 'This host has installed notes, help, which this platform leaves out'):
+                install.install(ROOT, quadlet_dir=Path(temp) / 'quadlet', platform=platform_file.checkout().select(['todo']))
+            self.assertEqual(host.platform_record.read_bytes(), target_render.platform_record(platform_file.checkout()))
+            # Only read-only checks ran (require_single_host asks whether DR secrets exist).
+            self.assertTrue(all(call[1:3] in (['secret', 'exists'], ['kube', 'play']) for call in host.calls), host.calls)
 
     def test_a_static_app_alone_installs_without_postgres_or_keycloak(self):
         with tempfile.TemporaryDirectory() as temp:

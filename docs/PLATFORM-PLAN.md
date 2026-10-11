@@ -103,7 +103,7 @@ has its own pod template (`App.pod_template`), checked once rendered
 `examples/<app>/app.yaml` (`platform_file.load`, which also gives the
 environment's port and log level); there is no list of apps in the code.
 `bundle.json` (format version 12) carries it, and a host records it in
-`~/.config/platform/platform.json`. The richer tree below grows with phases
+`~/.config/platform/platform.json` with the same format version. The richer tree below grows with phases
 4 and 5 (images, routes, checks, database and login as app fields).
 
 Before phase 2, bundling, installation and DR each rebuild the installation from the
@@ -277,7 +277,9 @@ privilege stays per table, and the app no longer ships role code.
   it. If it has a database, see the DR group rule (5.6).
 - Removing an app from `platform.yaml` stops and removes its units and
   YAML, and **keeps** its database volume, secrets and Keycloak client. A
-  separate, explicit command purges them.
+  separate, explicit command purges them. Until that is built (phase 4h),
+  install refuses a `platform.yaml` that leaves out an installed app and
+  names it.
 
 ### 5.9 App pod templates
 
@@ -949,4 +951,30 @@ template) stay in the fast tests, not in new VM steps.
   and `/auth/...` on Help's hostname goes to Help, which has no login. Both
   are harmless; the ConfigMap's name changes when the app config does
   (phase 5).
+
+**Phase 4h, code done; the lab step runs in the next acceptance run.**
+Simplification before phase 5; nothing an operator sees changes but two
+refusals.
+1. One load sequence: `pod_contract.rendered(project_root, app)` renders
+   an app's pod template, reads it as YAML and checks it, and returns the
+   content and the pod. The loader takes `App.containers` from it and
+   `render.files` writes its content; nothing else renders a pod
+   template. So a broken pod template is refused already when
+   `platform.yaml` is loaded, with the same message as before.
+2. `install.check` returns a `Plan` (what to install, where and how) and
+   `install.prepare` a `Prepared` (what it rendered, the image changes,
+   hostnames, whether nginx's TLS secret changed); `write_definitions` and
+   `finish` take those two instead of 11 and 5 positional values.
+3. The host record is `{"format_version": 12, "platform": ...}`
+   (`target_render.platform_record`), with `bundle.json`'s version, since
+   it carries the same platform data. A record of another version is
+   refused with a message to uninstall with the installer that installed
+   it; no backward compatibility, so a host installed before 4h must be
+   uninstalled with that installer first.
+4. An app without `ready` is waited for until each of `App.containers`
+   runs (`checks.running`, `podman container inspect`); and
+   `install.check` refuses a platform that leaves out an app the host's
+   record holds, naming it, before anything changes
+   (`install.require_installed_apps`).
+The render baseline is unchanged: the record is not rendered output.
 

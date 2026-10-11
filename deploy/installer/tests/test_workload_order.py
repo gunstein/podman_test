@@ -111,7 +111,7 @@ class ServerOrderTests(unittest.TestCase):
             directory = root / 'quadlet'
             runtime = directory / settings.KUBE_RUNTIME
             offline_bundle.build(root, applications.apps)
-            with FakeHost(unit_directory=runtime) as host, patch.object(keycloak, 'configure'):
+            with FakeHost(unit_directory=runtime, platform=applications) as host, patch.object(keycloak, 'configure'):
                 install.install(ROOT, mode='server', deployment_mode='offline', bundle_directory=root,
                                 quadlet_dir=directory, platform=applications)
                 installed = ({path.name for path in runtime.glob('*.yaml')},
@@ -162,7 +162,7 @@ class DevelopmentOrderTests(unittest.TestCase):
                 for part in ('platform.yaml', 'examples', 'deploy/quadlet'):
                     (root / part).parent.mkdir(parents=True, exist_ok=True)
                     (root / part).symlink_to(ROOT / part)
-                with RenderingHost() as host, patch.object(keycloak, 'configure'), \
+                with RenderingHost(platform=applications) as host, patch.object(keycloak, 'configure'), \
                         patch.object(settings, 'DEV_STATE_FILE', root / 'dev.json'):
                     install.install(root, mode='dev', platform=applications)
                 self.assertEqual(events(host.calls), expected)

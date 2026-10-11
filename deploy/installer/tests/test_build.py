@@ -46,7 +46,7 @@ class BuildInstallTests(unittest.TestCase):
             shutil.copy(ROOT / 'platform.yaml', root)
             directory = root / 'quadlet'
             notes = platform_file.checkout().select(['notes'])
-            with RenderingHost(unit_directory=directory / 'platform-kube-runtime') as host, \
+            with RenderingHost(unit_directory=directory / 'platform-kube-runtime', platform=notes) as host, \
                     patch('app_installer.keycloak.configure'):
                 install.install(root, mode='server', quadlet_dir=directory, platform=notes)
             self.assertEqual([platform for _values, _output, platform in host.rendered], [notes])

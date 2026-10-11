@@ -4,7 +4,7 @@ The backend job runs it against its PostgreSQL service, where podman exec is not
 the way in, as
 
   PYTHONPATH=deploy/installer python deploy/scripts/dev/apply_database_roles.py \\
-      --app todo --database todo_test --port 5432
+      --app shop --database shop_test --port 5432
 
 logged in as the bootstrap owner (named like the app). The passwords come from
 DATABASE_SECRETS_DIRECTORY/<app>-db-password, -migrator-password and

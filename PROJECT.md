@@ -10,10 +10,10 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `502ba89` (`feature/platform`, platform
-phases 1 to 5-1) for the eight-pod, three-app, three-database
+**Current verdict: CLEAN PASS** on `aaf89f8` (`feature/platform`, platform
+phases 1 to 5-2) for the eight-pod, three-app, three-database
 topology in a full two-VM run without an agent (`acceptance.py run`,
-[record](docs/history/ACCEPTANCE-502ba89.md)),
+[record](docs/history/ACCEPTANCE-aaf89f8.md)),
 with nginx's TLS files as Podman secrets (local mode), replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 121 steps PASS
@@ -57,11 +57,18 @@ the host record's format version, and an offline install that loads an image
 whose ID on the host is not the bundle's; phase 5-1 in run 2026-10-11-run-56:
 Keycloak's addresses in one place, each app's client and API audience apart
 (an ID token is refused), Keycloak's clients from the platform's defaults,
-and each frontend's login settings from its config.
+and each frontend's login settings from its config; phase 5-2 in run
+2026-10-11-run-57: each app's database roles made by the platform, its table
+rights granted by its own migrations.
 Final topology: VM 108 primary with application and backup, VM 107
 database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
+
+- `aaf89f8` run 2026-10-11-run-57: CLEAN PASS
+  ([record](docs/history/ACCEPTANCE-aaf89f8.md)), accepting platform phase
+  5-2: 121 steps, failover 3 min 37 s, the whole run 36 min 34 s, no
+  deviations.
 
 - `502ba89` run 2026-10-11-run-56: CLEAN PASS
   ([record](docs/history/ACCEPTANCE-502ba89.md)), accepting platform phases

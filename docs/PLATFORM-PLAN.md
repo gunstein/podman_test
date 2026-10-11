@@ -1210,7 +1210,7 @@ ConfigMap volume too (absent ones are skipped).
   6. What the DR checks prove: issuer, login page, real login and API, each
      named, with the login page's limits.
 
-**Phase 5-2, code done; the lab step runs in the next acceptance run.**
+**Phase 5-2, done: accepted in run 2026-10-11-run-57 on `aaf89f8`** ([record](history/ACCEPTANCE-aaf89f8.md)).
 Database roles from the platform, table rights from the migrations (5.5).
 `app_installer.database_roles` makes `<app>_migrator` and `<app>_app` with
 their passwords, `CONNECT` for those two only, the migrator as owner of the

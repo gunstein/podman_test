@@ -42,30 +42,28 @@ class SharedIdentityBrowserTests(unittest.TestCase):
         def claims(token):
             return json.loads(base64.urlsafe_b64decode(token.split('.')[1] + '==='))
 
-        # The ID tokens Keycloak hands the frontends, from its token endpoint's answers: the API
-        # must refuse them (docs/IDENTITY.md, section 2), which only a real Keycloak can show.
+        # The ID tokens Keycloak hands the frontends, read from its token endpoint's answer as the
+        # browser receives it: the API must refuse them (docs/IDENTITY.md, section 2), which only a
+        # real Keycloak can show.
         id_tokens = []
 
-        def keep_id_token(route):
-            response = route.fetch()
-            id_token = response.json().get('id_token') if response.ok else None
-            if id_token:
-                id_tokens.append(id_token)
-            route.fulfill(response=response)
+        def token_answer(response):
+            return response.url.endswith('/protocol/openid-connect/token') and response.request.method == 'POST'
 
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(executable_path=os.getenv('E2E_CHROMIUM'))
             try:
                 context = browser.new_context(ignore_https_errors=False)
                 context.on('request', capture)
-                context.route('**/protocol/openid-connect/token', keep_id_token)
                 page = context.new_page()
                 page.goto(todo)
                 expect(page.locator('#login')).to_be_visible()
                 page.locator('#login').click()
                 page.locator('#username').fill(username)
                 page.locator('#password').fill(password)
-                page.locator('#kc-login').click()
+                with page.expect_response(token_answer) as answer:
+                    page.locator('#kc-login').click()
+                id_tokens.append(answer.value.json()['id_token'])
                 expect(page.locator('#user-status')).to_have_text('Logged in as ' + username)
                 marker = 'SSO check ' + uuid.uuid4().hex[:10]
                 page.locator('#todo-title').fill(marker)
@@ -74,7 +72,9 @@ class SharedIdentityBrowserTests(unittest.TestCase):
                 expect(item).to_have_count(1)
 
                 # This navigation must authenticate without a second password entry.
-                page.goto(notes)
+                with page.expect_response(token_answer) as answer:
+                    page.goto(notes)
+                id_tokens.append(answer.value.json()['id_token'])
                 expect(page.locator('#user-status')).to_have_text('Logged in as ' + username)
                 expect(page.locator('h1')).to_have_text('Notes')
                 page.locator('#note-title').fill(marker)
@@ -103,7 +103,10 @@ class SharedIdentityBrowserTests(unittest.TestCase):
                     self.assertEqual(payload['azp'], client)
                 # An ID token names the frontend's client, and neither API accepts it.
                 self.assertTrue(id_tokens, 'no ID token came from the token endpoint')
-                self.assertEqual({claims(token)['aud'] for token in id_tokens} & {'todo-api', 'notes-api'}, set())
+                for id_token in id_tokens:
+                    audiences = claims(id_token)['aud']
+                    audiences = audiences if isinstance(audiences, list) else [audiences]
+                    self.assertFalse({'todo-api', 'notes-api'} & set(audiences), audiences)
                 for id_token in id_tokens:
                     rejected = page.evaluate('''async token => (await fetch('/api/notes', {
                         method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token},

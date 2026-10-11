@@ -1,4 +1,5 @@
 import contextlib
+import dataclasses
 import io
 import json
 import shutil
@@ -176,15 +177,48 @@ class InstallTests(unittest.TestCase):
                                     for call in host.calls), host.calls)
                 self.assertEqual(host.platform_record.read_bytes(), target_render.platform_record(host.platform))
 
-    def test_a_platform_that_leaves_out_an_installed_app_is_refused(self):
-        # The host recorded todo, notes and help; removing an app is not built (plan, section 5.8).
-        with tempfile.TemporaryDirectory() as temp, \
-                FakeHost(unit_directory=Path(temp) / 'quadlet/platform-kube-runtime') as host:
-            with self.assertRaisesRegex(ValueError, 'This host may hold notes, help .* which this platform leaves out.* build and deliver a bundle'):
-                install.install(ROOT, quadlet_dir=Path(temp) / 'quadlet', platform=platform_file.checkout().select(['todo']))
-            self.assertEqual(host.platform_record.read_bytes(), target_render.platform_record(platform_file.checkout()))
-            # Only read-only checks ran (require_single_host asks whether DR secrets exist).
-            self.assertTrue(all(call[1:3] in (['secret', 'exists'], ['kube', 'play']) for call in host.calls), host.calls)
+    def test_a_platform_that_leaves_out_an_installed_workload_is_refused(self):
+        # The host recorded todo, notes and help; removing a workload is not built (plan, 5.8 and phase 7).
+        checkout = platform_file.checkout()
+        without_login = [dataclasses.replace(app, keycloak_client='') for app in checkout.apps]
+        for platform, left_out in (
+                (checkout.select(['todo']), 'help-app.service, notes-app.service, notes-postgres.service'),
+                # The same apps, but Todo without its database, or no app with login.
+                (dataclasses.replace(checkout, apps=(dataclasses.replace(checkout.apps[0], has_database=False,
+                                                                         replication_port=0),
+                                                     *checkout.apps[1:])), 'todo-postgres.service'),
+                (dataclasses.replace(checkout, apps=tuple(without_login)), 'keycloak.service, keycloak-postgres.service')):
+            with self.subTest(left_out=left_out), tempfile.TemporaryDirectory() as temp, \
+                    FakeHost(unit_directory=Path(temp) / 'quadlet/platform-kube-runtime') as host:
+                with self.assertRaisesRegex(ValueError, f'This host may run {left_out} .* which this platform '
+                                                        'leaves out.* build and deliver a bundle'):
+                    install.install(ROOT, quadlet_dir=Path(temp) / 'quadlet', platform=platform)
+                self.assertEqual(host.platform_record.read_bytes(), target_render.platform_record(checkout))
+                # Only read-only checks ran (require_single_host asks whether DR secrets exist).
+                self.assertTrue(all(call[1:3] in (['secret', 'exists'], ['kube', 'play']) for call in host.calls),
+                                host.calls)
+
+    def test_a_record_from_another_installer_is_left_by_removing_it_and_the_data_stays(self):
+        # A host installed before the record had this format: a plain uninstall with that installer kept
+        # its databases, secrets and record. The message names the record; once it is removed, the install
+        # takes the host over with the same secrets and volumes.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            offline_bundle.build(root, platform_file.checkout().apps)
+            directory = root / 'quadlet'
+            with FakeHost(unit_directory=directory / 'platform-kube-runtime') as host, \
+                    patch.object(keycloak, 'configure'):
+                host.platform_record.write_text(json.dumps(host.platform.to_json()))
+                kept = dict(host.secrets)
+                arguments = dict(mode='server', deployment_mode='offline', bundle_directory=root, quadlet_dir=directory)
+                with self.assertRaisesRegex(target_render.TargetError,
+                                            f'without removing data .* then remove {host.platform_record}'):
+                    install.install(ROOT, **arguments)
+                host.platform_record.unlink()
+                install.install(ROOT, **arguments)
+                self.assertEqual({name: host.secrets[name] for name in kept}, kept)
+                self.assertEqual(host.ran('podman', 'secret', 'rm') + host.ran('podman', 'volume', 'rm'), [])
+                self.assertEqual(host.platform_record.read_bytes(), target_render.platform_record(host.platform))
 
     def test_a_static_app_alone_installs_without_postgres_or_keycloak(self):
         with tempfile.TemporaryDirectory() as temp:

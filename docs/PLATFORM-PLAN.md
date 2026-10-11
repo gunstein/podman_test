@@ -278,9 +278,11 @@ privilege stays per table, and the app no longer ships role code.
   it. If it has a database, see the DR group rule (5.6).
 - Removing an app from `platform.yaml` stops and removes its units and
   YAML, and **keeps** its database volume, secrets and Keycloak client. A
-  separate, explicit command purges them. Until that is built (phase 4h),
-  install refuses a `platform.yaml` that leaves out an installed app and
-  names it.
+  separate, explicit command purges them. Until that is built (phase 7),
+  install refuses a platform that leaves out a workload the host has
+  installed, and names its service: an app, an app's database
+  (`database: false`), or Keycloak when no app has login any more (phase 4h,
+  widened from apps to workloads in 4i).
 
 ### 5.9 App pod templates
 
@@ -457,7 +459,13 @@ Podman, an install is stopped by a real failure at a few points (an image
 archive missing, a database that does not become healthy, Keycloak not
 answering) and then run again unchanged: data, credentials and the host
 record are kept, and each message names the next step. No fault-injection
-hooks in the code. After phase 5, since it changes role setup.
+hooks in the code. After phase 5, since it changes role setup. One case is
+known to fail today: `write_definitions` writes the files, and only then
+are the changed pods restarted, so an install stopped in between leaves the
+next run finding unchanged files (or images with the bundle's ID) while a
+pod still runs the old ones. The fix belongs here, with its test: the
+restarts still owed are recorded before the files change and cleared only
+after the start.
 
 **Phase 6: Keycloak semantics and multi-realm.** *Behaviour.*
 Section 5.7: owned fields, idempotent setup, clients from defaults, every
@@ -1024,6 +1032,31 @@ refusals.
    record holds, naming it, before anything changes
    (`install.require_installed_apps`).
 The render baseline is unchanged: the record is not rendered output.
+
+**Phase 4i, code done; the lab step runs in the next acceptance run.**
+From an outside review of what to examine next, with the branch taken as
+version zero (no migration from earlier states is owed):
+1. An offline install ran a host's older image under the same tag: the
+   bundle now records each image's ID (`images/image-ids.json`), an offline
+   install and a DR host load an image whose ID on the host is another, and
+   stop if the loaded image's ID is not the bundle's. Bundle format version
+   13 (render baseline: only that number). This gives what unique tags per
+   delivery would, without tags to keep apart; the lab proves the IDs
+   survive `podman save` and `podman load`, which no CI job does.
+2. A record in another format told the operator to uninstall with the old
+   installer, but a plain uninstall keeps the record, so the next install
+   was refused again: the message now gives the whole way over (a plain
+   uninstall keeps databases and secrets, then remove the record, then
+   install), tested with the data kept.
+3. The guard compared app names only, so turning an app's database off, or
+   login off for every app, left PostgreSQL or Keycloak running unmanaged:
+   it now compares the services, and names those a platform would leave.
+4. A pod template with a field of the wrong kind (`spec: wrong`, a numeric
+   container name) gave a Python traceback: `pod_contract` first checks
+   the kind of every field its rules read and names it by its path
+   (`spec.containers[0].name must be a string`). No schema framework.
+5. An install stopped between writing files and restarting pods: phase 5b,
+   with the fix it needs.
 - Understandability check of phase 4h (fresh agent, at 2cf33d3):
   **YELLOW**. Install's steps read in order, and `Plan` and `Prepared` are
   of a reasonable size with a clear job; the host record and the guard

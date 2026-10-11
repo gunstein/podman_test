@@ -202,21 +202,23 @@ def _contents(path):
     return path.read_bytes() if path.exists() else None
 
 
-def require_installed_apps(platform):
-    """Raise if platform leaves out an app this host has installed (its record), naming it.
+def require_installed_workloads(platform):
+    """Raise if platform leaves out a workload this host has installed (its record), naming its service.
 
-    Removing an app is not built (docs/PLATFORM-PLAN.md, section 5.8); an
-    install that left one out would leave it running, unmanaged.
+    Removing an app, or an app's database, or Keycloak when the last app
+    with login drops it, is not built (docs/PLATFORM-PLAN.md, section 5.8,
+    phase 7); an install that left one out would leave it running, unmanaged.
     """
     if not target_render.platform_record_path().exists():
         return
-    names = {app.name for app in platform.apps}
-    left_out = [app.name for app in target_render.installed_platform().apps if app.name not in names]
+    services = set(platform.services())
+    left_out = [service for service in target_render.installed_platform().services() if service not in services]
     if left_out:
-        raise ValueError(f'This host may hold {", ".join(left_out)} (its record names every app an install '
-                         'began, also one that stopped half way), which this platform leaves out; removing an '
-                         'app is not supported yet. Add it back to platform.yaml, or for an offline install, '
-                         'build and deliver a bundle that includes it.')
+        raise ValueError(f'This host may run {", ".join(left_out)} (its record names every workload an install '
+                         'began, also one that stopped half way), which this platform leaves out: an app, its '
+                         'database or Keycloak removed. Removing a workload is not supported yet. Put it back '
+                         'in platform.yaml or the app.yaml, or for an offline install, build and deliver a '
+                         'bundle that includes it.')
 
 
 def check(project_root, mode, deployment_mode, bundle_directory, refresh_images, publish_address,
@@ -226,8 +228,8 @@ def check(project_root, mode, deployment_mode, bundle_directory, refresh_images,
     The arguments must fit together, an offline bundle must load with its
     target values and fit this port (and platform, if one is given), the
     host must not be a DR node or carry the old per-container units, the
-    platform must keep every app the host has installed (removing one is
-    not built), and Podman must answer. platform is the one to install: the bundle's, else
+    platform must keep every workload the host has installed (removing one
+    is not built), and Podman must answer. platform is the one to install: the bundle's, else
     the one given, else platform.yaml's. environment is platform.yaml's
     (platform_file.Environment), None offline; port is the HTTPS port, the
     environment's or the bundle's. target is the bundle's files filled in,
@@ -255,7 +257,7 @@ def check(project_root, mode, deployment_mode, bundle_directory, refresh_images,
     else:
         platform, port = target.platform, target.public_port
     require_single_host('install', platform)
-    require_installed_apps(platform)
+    require_installed_workloads(platform)
     directory = Path(quadlet_dir or settings.QUADLET_DIR).resolve()
     runtime = Path(kube_runtime_dir or directory / settings.KUBE_RUNTIME).resolve()
     if mode == 'server' and runtime != directory / settings.KUBE_RUNTIME:

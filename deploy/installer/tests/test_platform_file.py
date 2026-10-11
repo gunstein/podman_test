@@ -270,7 +270,7 @@ class PlatformFileTests(unittest.TestCase):
         self.assertEqual([app.containers for app in platform_file.checkout().apps],
                          [('todo-backend', 'todo-frontend'), ('notes-backend', 'notes-frontend'), ('help-site',)])
         for template, message in (('kind: Pod\n', r'apps/shop/pod.yaml.j2: .*it runs no containers'),
-                                  ('kind: Pod\nspec: {containers: [1]}\n', r'pod.yaml.j2: each container must be a mapping'),
+                                  ('kind: Pod\nspec: {containers: [1]}\n', r'pod.yaml.j2: spec.containers\[0\] must be a mapping'),
                                   ('kind: [', r'apps/shop/pod.yaml.j2: does not render valid YAML'),
                                   (POD.replace('64Mi', '0'), r'apps/shop/pod.yaml.j2: container shop-backend has no memory'),
                                   ('{{ broken', r'apps/shop/pod.yaml.j2: cannot be rendered'),

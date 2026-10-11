@@ -14,6 +14,51 @@ from . import manifests, secrets
 # PostgreSQL only (section 5.6), so a pod may mount nothing else.
 VOLUME_KINDS = ('secret', 'configMap', 'emptyDir')
 HOST_ACCESS = ('hostNetwork', 'hostPID', 'hostIPC')
+KINDS = {dict: 'mapping', list: 'list', str: 'string'}
+
+
+def _wrong_shapes(pod):
+    """Each field the rules below read whose value is of the wrong kind, by its path in the pod."""
+    wrong = []
+
+    def kind(value, expected, path, required=False):
+        """True if value is of the expected kind (or absent and not required); else note its path."""
+        if (value is None and not required) or isinstance(value, expected):
+            return value is not None
+        wrong.append(f'{path} must be a {KINDS[expected]}')
+        return False
+
+    def mappings(value, path):
+        """The (index, item) of a list of mappings at path, noting what is not one."""
+        if not kind(value, list, path):
+            return []
+        return [(index, item) for index, item in enumerate(value) if kind(item, dict, f'{path}[{index}]', True)]
+
+    kind(pod.get('metadata'), dict, 'metadata')
+    spec = pod.get('spec')
+    if not kind(spec, dict, 'spec'):
+        return wrong
+    for field in ('initContainers', 'containers'):
+        for index, container in mappings(spec.get(field), f'spec.{field}'):
+            path = f'spec.{field}[{index}]'
+            kind(container.get('name'), str, f'{path}.name', True)
+            if kind(container.get('securityContext'), dict, f'{path}.securityContext'):
+                kind(container['securityContext'].get('capabilities'), dict, f'{path}.securityContext.capabilities')
+            if kind(container.get('resources'), dict, f'{path}.resources'):
+                kind(container['resources'].get('limits'), dict, f'{path}.resources.limits')
+            for number, source in mappings(container.get('envFrom'), f'{path}.envFrom'):
+                for reference in ('configMapRef', 'secretRef'):
+                    kind(source.get(reference), dict, f'{path}.envFrom[{number}].{reference}')
+            for number, variable in mappings(container.get('env'), f'{path}.env'):
+                if kind(variable.get('valueFrom'), dict, f'{path}.env[{number}].valueFrom'):
+                    for reference in ('configMapKeyRef', 'secretKeyRef'):
+                        kind(variable['valueFrom'].get(reference), dict,
+                             f'{path}.env[{number}].valueFrom.{reference}')
+            mappings(container.get('ports'), f'{path}.ports')
+    for index, volume in mappings(spec.get('volumes'), 'spec.volumes'):
+        for source in ('secret', 'configMap'):
+            kind(volume.get(source), dict, f'spec.volumes[{index}].{source}')
+    return wrong
 
 
 def rendered(project_root, app):
@@ -43,6 +88,9 @@ def check(app, content):
     if len(documents) != 1 or not isinstance(documents[0], dict) or documents[0].get('kind') != 'Pod':
         raise ValueError(f'{where}: must render exactly one Pod')
     pod = documents[0]
+    wrong = _wrong_shapes(pod)
+    if wrong:
+        raise ValueError(f'{where}: ' + '; '.join(wrong))
     spec = pod.get('spec') or {}
     problems = []
     name = (pod.get('metadata') or {}).get('name')
@@ -52,8 +100,6 @@ def check(app, content):
     if not spec.get('containers'):
         problems.append('it runs no containers (spec.containers)')
     containers = (spec.get('initContainers') or []) + (spec.get('containers') or [])
-    if not all(isinstance(container, dict) for container in containers):
-        raise ValueError(f'{where}: each container must be a mapping')
     images = {app.image(image.name) for image in app.images}
     config = app.names.resource('backend-config')
     own_secrets = set(secrets.application_secret_mapping(app)) if app.has_database else set()
@@ -77,7 +123,7 @@ def check(app, content):
                       for source in container.get('envFrom') or []
                       for kind, what in (('configMapRef', 'ConfigMap'), ('secretRef', 'secret')) if kind in source]
         references += [(what, (variable['valueFrom'].get(kind) or {}).get('name'))
-                       for variable in container.get('env') or [] if isinstance(variable.get('valueFrom'), dict)
+                       for variable in container.get('env') or [] if variable.get('valueFrom')
                        for kind, what in (('configMapKeyRef', 'ConfigMap'), ('secretKeyRef', 'secret'))
                        if kind in variable['valueFrom']]
         for what, reference in references:

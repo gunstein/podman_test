@@ -82,6 +82,27 @@ class PodContractTests(unittest.TestCase):
                 self.assertEqual(files[app.manifest], content)
                 self.assertEqual(tuple(container['name'] for container in pod['spec']['containers']), app.containers)
 
+    def test_a_field_of_the_wrong_kind_is_named_by_its_path_not_a_traceback(self):
+        backend = lambda pod: pod['spec']['containers'][0]  # noqa: E731
+        for message, change in (
+            (r'pod.yaml.j2: spec must be a mapping', lambda pod: pod.update(spec='wrong')),
+            (r'spec.containers\[0\].name must be a string', lambda pod: backend(pod).update(name=7)),
+            (r'spec.containers\[0\].name must be a string', lambda pod: backend(pod).pop('name')),
+            (r'spec.containers must be a list', lambda pod: pod['spec'].update(containers={'a': 1})),
+            (r'spec.containers\[0\].env must be a list', lambda pod: backend(pod).update(env='X=1')),
+            (r'spec.containers\[0\].env\[0\].valueFrom must be a mapping',
+             lambda pod: backend(pod).update(env=[{'name': 'X', 'valueFrom': 'secret'}])),
+            (r'spec.containers\[0\].resources.limits must be a mapping',
+             lambda pod: backend(pod)['resources'].update(limits='64Mi')),
+            (r'spec.containers\[0\].securityContext.capabilities must be a mapping',
+             lambda pod: backend(pod)['securityContext'].update(capabilities=['ALL'])),
+            (r'spec.containers\[0\].ports\[0\] must be a mapping', lambda pod: backend(pod).update(ports=[8000])),
+            (r'spec.volumes\[0\].secret must be a mapping', lambda pod: pod['spec']['volumes'][0].update(secret='x')),
+            (r'metadata must be a mapping', lambda pod: pod.update(metadata='todo-app')),
+        ):
+            with self.subTest(message=message):
+                self.refused(message, self.changed(change))
+
     def test_a_template_renders_exactly_one_pod(self):
         for content in (b'', b'kind: ConfigMap\n', yaml.safe_dump_all([self.pod, self.pod]).encode()):
             with self.subTest(content=content[:20]), \

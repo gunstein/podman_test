@@ -19,7 +19,13 @@ which every later command on the host (backup, uninstall, the DR tools) reads
 instead of a list in the code. That record is written before an install
 changes anything, so it says what the host may hold, not that the install
 succeeded; the hostnames it was installed with are recorded only after
-success, in `target-values.json` (below). Each App owns its derived image, secret,
+success, in `target-values.json` (below). The record carries the bundle's
+format version; a record of another version (from another installer) is
+refused. The way over keeps the data: a plain uninstall with the installer
+that installed the host (it keeps databases, secrets and the record), then
+remove `~/.config/platform/platform.json`, then install with the new one.
+Install also refuses a platform that leaves out a workload the record holds
+(an app, an app's database, or Keycloak): removing one is not built yet. Each App owns its derived image, secret,
 manifest, service and volume names. Single-host installs run eight pods; Keycloak,
 its own `keycloak-postgres` database and the proxy run once. Todo and Notes share the
 `todo` realm but have independent clients and PostgreSQL instances.

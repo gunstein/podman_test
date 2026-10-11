@@ -223,7 +223,9 @@ def installed_platform():
     """The platform this host was installed with (record_platform); TargetError if it has none.
 
     A record of another format version, from another installer, is refused:
-    there is no backward compatibility, so that installer must uninstall it.
+    there is no backward compatibility. The way over keeps the data: a plain
+    uninstall with that installer (it keeps databases, secrets and this
+    record), then this record removed, then an install with this one.
     """
     path = platform_record_path()
     try:
@@ -236,7 +238,8 @@ def installed_platform():
     if version != BUNDLE_FORMAT_VERSION:
         raise TargetError(f'{path} was written by another installer (format version {version}; this installer '
                           f'reads version {BUNDLE_FORMAT_VERSION}). Uninstall with the installer that installed '
-                          'this host first.')
+                          f'this host, without removing data (databases and secrets stay), then remove {path} '
+                          'and install with this installer.')
     try:
         return apps.Platform.from_json(data.get('platform'))
     except ValueError as error:

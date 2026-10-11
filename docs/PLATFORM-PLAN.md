@@ -389,6 +389,23 @@ in small deliveries, each driven by what Help needs:
   unit's `Requires=` and `After=` on the host, as systemd loaded them, with
   the model. No large combination matrix: the operational acceptance stays
   as it is.
+- 4h simplification before phase 5, from an outside review of the Python
+  code at 2f250a7 (YELLOW: sound foundation, some friction). No new
+  behaviour; the render baseline stays as it is but for the host record's
+  version:
+  1. One clear sequence for an app: read its YAML, render its pod template
+     once, check it (`pod_contract`), then build the model. Today
+     `platform_file._containers` renders the template while loading and
+     `render.files` renders and checks it again; afterwards the rendered pod
+     is made and read in one place.
+  2. The values install passes between its steps (platform, environment,
+     port, directories, target) in one small dataclass, instead of 7-value
+     tuples and 11-parameter functions; nothing more general.
+  3. The host's recorded platform (`platform.json`) carries its format
+     version like `bundle.json`, so a record from an older installer is
+     refused with a message that says so. Still no backward compatibility.
+  Not in 4h: `backend.setup_roles` (phase 5), and `pod_contract`, which
+  stays a bounded contract check, widened only when an app needs it.
 
 **Phase 5: Database and login through the same model.**
 Database and login are app fields since phase 4c-1; here come the setup task and

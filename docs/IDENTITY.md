@@ -11,8 +11,7 @@ here.
 
 Today's limits are stated as limits, with the phase that changes them
 ([plan](PLATFORM-PLAN.md), section 7): all apps share one realm, `todo`
-(phase 6), and each frontend names its client ID in its own JavaScript
-(phase 5-1c).
+(phase 6).
 
 An app asks for login in its `app.yaml`:
 
@@ -128,6 +127,13 @@ Each frontend imports `auth.js`, which re-exports one adapter with six
 functions: `init`, `isAuthenticated`, `login`, `logout`, `getAccessToken`
 and `getUsername`. The app uses nothing else. The Keycloak adapter:
 
+- **settings**: `init` first reads `/config/login.json`: where discovery
+  is, the realm and the app's client ID. The platform makes it from the
+  app's `login.client` (`keycloak.frontend_login`), puts it in the app's
+  ConfigMap as the one key `FRONTEND_LOGIN`, and the pod template mounts
+  that key alone into the frontend (the database settings beside it are
+  not served; the frontend's nginx answers `/config/` with a file or 404).
+  The adapter's code names no realm, client or path of its own;
 - **start** (`init`): reads the issuer from discovery through the app's own
   origin, then lets keycloak.js check, without showing a login page,
   whether the user is logged in (`check-sso`, PKCE S256, no session
@@ -140,8 +146,8 @@ and `getUsername`. The app uses nothing else. The Keycloak adapter:
 - **logout**: Keycloak ends the session and sends the browser back to the
   app's origin.
 
-Today the adapter names the realm and the client ID itself; phase 5-1c
-reads them from the app's configuration instead.
+A new app's frontend copies the adapter and the two pod-template lines
+that mount `FRONTEND_LOGIN`; its client ID is only in its `app.yaml`.
 
 ## 7. If the provider is replaced
 

@@ -1153,6 +1153,22 @@ version 14. Render baseline: `login_client` and `login_audience` in
 `bundle.json` in place of `keycloak_client`, `OIDC_AUDIENCE` the API
 audience, and the format version. One more file leaves the example-name
 guard.
+
+**Phase 5-1c, code done; the lab step runs in the next acceptance run.**
+Each frontend reads its login settings instead of naming them. The platform
+renders `keycloak.frontend_login(app.login_client)` (discovery path, realm,
+client ID) into the app's ConfigMap as the key `FRONTEND_LOGIN`; Todo's
+and Notes' pod templates mount that key alone into the frontend as
+`/config/login.json` (a ConfigMap volume with `items`, which `pod_contract`
+already allowed as the app's own), and the frontends' nginx answers
+`/config/` with a file or 404. The adapters read it and name no realm,
+client or `/auth` path; local development without containers serves the
+same file from `FRONTEND_LOGIN`. The adapter test serves a client ID found
+nowhere in the code; the browser test checks each app's `login.json` on
+the real stack and that the ConfigMap's other keys (its database settings)
+answer 404. `/auth/realms/todo` and the client IDs are now written only in
+`keycloak.py` and the app.yaml files. Render baseline: the ConfigMap's
+`FRONTEND_LOGIN` and the frontend's mount in each app's pod.
 - Understandability check of phase 4h (fresh agent, at 2cf33d3):
   **YELLOW**. Install's steps read in order, and `Plan` and `Prepared` are
   of a reasonable size with a clear job; the host record and the guard

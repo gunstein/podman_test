@@ -96,6 +96,12 @@ spec:
       ports:
         - name: frontend-http
           containerPort: 8080
+{# The adapter's login settings, /config/login.json: the one key FRONTEND_LOGIN of
+   the app's ConfigMap, never the rest (database settings stay the backend's). #}
+      volumeMounts:
+        - name: frontend-login
+          mountPath: /usr/share/nginx/html/config
+          readOnly: true
       resources:
         limits:
           memory: "128Mi"
@@ -106,6 +112,14 @@ spec:
         capabilities:
           drop: [ALL]
   volumes:
+    - name: frontend-login
+      configMap:
+        name: {{ app.names.resource("backend-config") | tojson }}
+        optional: false
+        defaultMode: 0444
+        items:
+          - key: FRONTEND_LOGIN
+            path: login.json
     - name: backend-secret
       secret:
         secretName: {{ app.names.kube_secret("backend") | tojson }}

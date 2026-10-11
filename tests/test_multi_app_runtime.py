@@ -35,8 +35,12 @@ class IndependentAppChartsTests(unittest.TestCase):
             secret = next(v['secret']['secretName'] for v in postgres['volumes'] if 'secret' in v)
             self.assertEqual(secret, name + '-kube-postgres-secret')
             application = pods[name + '-app']['spec']
-            self.assertEqual({v['secret']['secretName'] for v in application['volumes']}, {
+            self.assertEqual({v['secret']['secretName'] for v in application['volumes'] if 'secret' in v}, {
                 name + '-kube-migrator-secret', name + '-kube-backend-secret'})
+            # The frontend reads one key of its app's ConfigMap, as /config/login.json.
+            login = next(v['configMap'] for v in application['volumes'] if 'configMap' in v)
+            self.assertEqual((login['name'], login['items']), (
+                name + '-backend-config', [{'key': 'FRONTEND_LOGIN', 'path': 'login.json'}]))
             migration = application['initContainers'][0]
             user = next(e['value'] for e in migration['env'] if e['name'] == 'DATABASE_USER')
             self.assertEqual(user, name + '_migrator')

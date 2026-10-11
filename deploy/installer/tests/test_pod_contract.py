@@ -12,6 +12,11 @@ from app_installer import manifests, platform_file, pod_contract, render  # noqa
 ROOT = Path(__file__).resolve().parents[3]
 
 
+def secret_volume(pod):
+    """The pod's first volume that mounts a secret."""
+    return next(volume for volume in pod['spec']['volumes'] if 'secret' in volume)
+
+
 class PodContractTests(unittest.TestCase):
     def setUp(self):
         self.app = platform_file.checkout().app('todo')
@@ -61,7 +66,7 @@ class PodContractTests(unittest.TestCase):
              lambda pod: pod['spec']['volumes'].append({'name': 'uploads',
                                                         'persistentVolumeClaim': {'claimName': 'x'}})),
             (r'mounts secret notes-kube-backend-secret, not one of its own',
-             lambda pod: pod['spec']['volumes'][0]['secret'].update(secretName='notes-kube-backend-secret')),
+             lambda pod: secret_volume(pod)['secret'].update(secretName='notes-kube-backend-secret')),
             (r'mounts ConfigMap keycloak-config, not its own todo-backend-config',
              lambda pod: pod['spec']['volumes'].append({'name': 'other', 'configMap': {'name': 'keycloak-config'}})),
             (r'no container port 8000 for endpoint backend', lambda pod: backend(pod).pop('ports')),
@@ -97,7 +102,7 @@ class PodContractTests(unittest.TestCase):
             (r'spec.containers\[0\].securityContext.capabilities must be a mapping',
              lambda pod: backend(pod)['securityContext'].update(capabilities=['ALL'])),
             (r'spec.containers\[0\].ports\[0\] must be a mapping', lambda pod: backend(pod).update(ports=[8000])),
-            (r'spec.volumes\[0\].secret must be a mapping', lambda pod: pod['spec']['volumes'][0].update(secret='x')),
+            (r'spec.volumes\[1\].secret must be a mapping', lambda pod: pod['spec']['volumes'][1].update(secret='x')),
             (r'metadata must be a mapping', lambda pod: pod.update(metadata='todo-app')),
         ):
             with self.subTest(message=message):

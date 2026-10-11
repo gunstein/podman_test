@@ -6,6 +6,7 @@ and Helm is not used. Ownership is split the same way as for the Quadlet templat
 stack.py/apps.py own topology and naming, platform.yaml owns per-environment
 settings, and only truly static structure lives in the .j2 files themselves.
 """
+import json
 import re
 from pathlib import Path
 
@@ -80,8 +81,10 @@ def render_app_config(project_root, app, hostname, port, log_level):
     """The app's ConfigMap (app.names.resource("backend-config")): its log level, and its database's
     and OIDC settings if it has a database and login."""
     from . import keycloak  # where Keycloak's OIDC addresses are (docs/IDENTITY.md)
+    login = json.dumps(keycloak.frontend_login(app.login_client), sort_keys=True) if app.has_login else ""
     return _render(project_root, "app-config.yaml.j2", app=app, log_level=log_level,
-                   oidc_issuer=keycloak.issuer(hostname, port), oidc_jwks_url=keycloak.JWKS_URL)
+                   oidc_issuer=keycloak.issuer(hostname, port), oidc_jwks_url=keycloak.JWKS_URL,
+                   frontend_login=login)
 
 
 def render_keycloak(project_root, database, admin_secret, hostname, port, image):

@@ -191,4 +191,13 @@ def delete_note(note_id: int, _user: Annotated[dict, Depends(require_user)]):
 # The image sets SERVE_FRONTEND=false; there the frontend container serves it.
 if os.getenv("SERVE_FRONTEND", "true").lower() == "true":
     frontend = Path(__file__).resolve().parent.parent / "notes-frontend"
+
+    @app.get("/config/login.json", include_in_schema=False)
+    def frontend_login():
+        """The adapter's login settings, which the pod mounts from FRONTEND_LOGIN in a container."""
+        settings = os.getenv("FRONTEND_LOGIN")
+        if not settings:
+            raise HTTPException(status_code=404, detail="FRONTEND_LOGIN is not set")
+        return Response(settings, media_type="application/json")
+
     app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")

@@ -25,6 +25,10 @@ export default class Keycloak {
 """
 
 DISCOVERY = '{"issuer": "https://auth.adapter.test/auth/realms/todo"}'
+# The login settings the platform mounts as /config/login.json (keycloak.frontend_login). A client
+# ID found nowhere in the frontend's code shows the adapter takes it from here.
+LOGIN = ('{"discovery": "/auth/realms/todo/.well-known/openid-configuration", "realm": "todo", '
+         '"clientId": "client-from-config"}')
 
 
 def serve(page):
@@ -32,7 +36,9 @@ def serve(page):
 
     def handle(route):
         path = route.request.url.split("https://adapter.test", 1)[1].split("?")[0]
-        if path == "/vendor/keycloak.js":
+        if path == "/config/login.json":
+            route.fulfill(content_type="application/json", body=LOGIN)
+        elif path == "/vendor/keycloak.js":
             route.fulfill(content_type="text/javascript", body=FAKE_SDK)
         elif path == "/auth/realms/todo/.well-known/openid-configuration":
             # Keycloak's own hostname, discovered through the app's origin (keycloak-adapter.js).
@@ -60,7 +66,7 @@ def test_public_adapter_and_redirects(page):
     expect(page.get_by_text("Reading publicly")).to_be_visible()
     assert requests and "authorization" not in requests[0]
     assert page.evaluate("window.sdkConfig") == {
-        "url": "https://auth.adapter.test/auth", "realm": "todo", "clientId": "todo-frontend"
+        "url": "https://auth.adapter.test/auth", "realm": "todo", "clientId": "client-from-config"
     }
     assert page.evaluate("window.initOptions") == {
         "onLoad": "check-sso", "pkceMethod": "S256", "checkLoginIframe": False

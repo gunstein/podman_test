@@ -13,4 +13,6 @@ data:
   OIDC_ISSUER: {{ oidc_issuer | tojson }}
   OIDC_JWKS_URL: {{ oidc_jwks_url | tojson }}
   OIDC_AUDIENCE: {{ app.login_audience | tojson }}
+  # The frontend's /config/login.json (keycloak.frontend_login): its pod mounts this key alone.
+  FRONTEND_LOGIN: {{ frontend_login | tojson }}
 {% endif %}

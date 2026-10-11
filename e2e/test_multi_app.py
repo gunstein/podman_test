@@ -39,6 +39,16 @@ class SharedIdentityBrowserTests(unittest.TestCase):
             if authorization.startswith('Bearer '):
                 tokens[urlsplit(request.url).hostname] = authorization.removeprefix('Bearer ')
 
+        def login_settings(page):
+            # The login settings the frontend on this page reads: from its own app.yaml through the
+            # pod's ConfigMap, and only that one key; the database settings beside it are not served.
+            return page.evaluate('''async () => {
+                const settings = await (await fetch('/config/login.json')).json();
+                const others = await Promise.all(['DATABASE_HOST', 'FRONTEND_LOGIN', 'OIDC_AUDIENCE'].map(
+                    async key => (await fetch('/config/' + key)).status));
+                return {clientId: settings.clientId, realm: settings.realm, others};
+            }''')
+
         def claims(token):
             return json.loads(base64.urlsafe_b64decode(token.split('.')[1] + '==='))
 
@@ -88,6 +98,8 @@ class SharedIdentityBrowserTests(unittest.TestCase):
                 page.locator('#save').click()
                 expect(note.locator('.note-body')).to_have_text('Edited note')
 
+                self.assertEqual(login_settings(page), {'clientId': 'notes-frontend', 'realm': 'todo',
+                                                        'others': [404, 404, 404]})
                 todo_token, notes_token = (tokens[urlsplit(origin).hostname] for origin in (todo, notes))
                 todo_claims, notes_claims = claims(todo_token), claims(notes_token)
                 self.assertEqual(todo_claims['sub'], notes_claims['sub'])
@@ -121,6 +133,8 @@ class SharedIdentityBrowserTests(unittest.TestCase):
 
                 page.goto(todo)
                 expect(page.locator('#user-status')).to_have_text('Logged in as ' + username)
+                self.assertEqual(login_settings(page), {'clientId': 'todo-frontend', 'realm': 'todo',
+                                                        'others': [404, 404, 404]})
                 rejected = page.evaluate('''async token => (await fetch('/api/todos', {
                     method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token},
                     body: JSON.stringify({title: 'Wrong audience'})})).status''', notes_token)

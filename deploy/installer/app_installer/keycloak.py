@@ -31,6 +31,12 @@ ADMIN_REALM = f'/auth/admin/realms/{REALM}'
 def issuer(hostname, port):
     """The issuer every token names: Keycloak's public hostname and HTTPS port, and the realm."""
     return f'https://{hostname}:{port}{REALM_PATH}'
+
+
+def frontend_login(client_id):
+    """What an app's frontend adapter needs to log in, as its /config/login.json: where discovery is
+    (relative to the app's own origin), the realm and its client ID. Public: no secret is in it."""
+    return {'discovery': DISCOVERY, 'realm': REALM, 'clientId': client_id}
 # Login protection for the todo realm. After 5 failed logins an account is
 # locked for a minute, doubling up to 15 minutes; failures are forgotten after
 # 12 hours. Keycloak leaves both off by default. The realm import carries the

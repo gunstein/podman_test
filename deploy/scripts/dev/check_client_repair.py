@@ -2,7 +2,7 @@
 
 The full-stack job runs it after the stack is up and before the browser tests, as
 PYTHONPATH=deploy/installer python deploy/scripts/dev/check_client_repair.py.
-It breaks Todo's client in the real Keycloak where an operator could (PKCE off,
+It breaks the first login app's client in the real Keycloak where an operator could (PKCE off,
 direct password grants on, a second audience mapper that also names a client
 audience), runs the client setup the install runs (install.configure_identity),
 and checks the client again; the browser tests that follow then log in and check

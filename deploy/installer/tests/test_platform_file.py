@@ -217,13 +217,17 @@ class PlatformFileTests(unittest.TestCase):
             ({'site': {'context': '.', 'tag': 'x'}}, r'images.site: unknown field tag'),
             ({'site': {'context': '.', 'containerfile': '../Containerfile'}}, r'must be a path inside the context'),
             ({'site': {'context': '.', 'containerfile': '/etc/Containerfile'}}, r'must be a path inside the context'),
-            ({'frontend': {'context': '.'}}, r'app.yaml: images: an app with database: true declares a backend image'),
         ):
             with self.subTest(message=message):
                 app = {key: value for key, value in SHOP.items() if key != 'images'}
                 if images is not None:
                     app['images'] = images
                 self.refused(message, app=app)
+
+    def test_an_app_with_a_database_needs_no_backend_image(self):
+        # The platform makes the roles (database_roles); no image of the app's has a fixed name.
+        app = platform_file.load(self.write(app={**SHOP, 'images': {'api': {'context': '.'}}}))[0].apps[0]
+        self.assertEqual((app.has_database, [image.name for image in app.images]), (True, ['api']))
 
     def test_an_app_has_a_database_and_login_only_when_its_app_yaml_says_so(self):
         static = {key: value for key, value in SHOP.items() if key not in ('database', 'login')}

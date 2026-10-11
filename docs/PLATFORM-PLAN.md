@@ -150,10 +150,10 @@ API `audience`, two different words; without it the app has no login),
 (`path`, `to`, `exact`, section 5.3), `ready` and `checks` (`path`,
 `status`, section 5.4); beside `app.yaml`, the app's own pod template
 `pod.yaml.j2` (section 5.9). Everything else below comes with the phase that
-needs it; until then an app's setup follows today's convention: an app with
-a database declares a `backend` image whose `python -m backend.setup_roles`
-creates its roles (`install.setup_roles`), and its pod runs its own
-migrations.
+needs it. Since 5-2 the platform makes an app's database roles
+(`app_installer.database_roles`; no image of the app's has a fixed name),
+and the app's pod runs its own migrations, which grant the runtime role
+`<app>_app` its table rights.
 
 - `platform.yaml` is the operator's: hostnames, which realm each app uses,
   each database's `replicationPort`, which app serves another app's help
@@ -238,12 +238,15 @@ waits for an app that waits for identity.
 
 ### 5.5 Database roles
 
-The two `setup_roles.py` files are identical apart from names and two
-table grants. Proposal: the **platform** creates the three roles (bootstrap
-owner, migrator, runtime), their secrets, `CONNECT` and schema usage, in a
-setup task using the PostgreSQL image; the **app's migrations** grant the
-runtime role its table rights (the migrator owns the tables). Least
-privilege stays per table, and the app no longer ships role code.
+The **platform** creates the three roles (bootstrap owner `<app>`, migrator
+`<app>_migrator`, runtime `<app>_app`), their secrets, `CONNECT` and schema
+usage; the **app's migrations** grant the runtime role its table rights
+(the migrator owns the tables). Least privilege stays per table, and the app
+ships no role code. Built in 5-2: `app_installer.database_roles` runs its
+SQL through the database's own `psql` (`podman exec`, the passwords on
+stdin), once per install after the database is healthy and before the app
+starts; it never grants or revokes table rights, so a migration's grants
+are kept on every install.
 
 ### 5.6 Data and DR
 
@@ -1198,6 +1201,23 @@ ConfigMap volume too (absent ones are skipped).
      nothing and the backend enforces access itself.
   6. What the DR checks prove: issuer, login page, real login and API, each
      named, with the login page's limits.
+
+**Phase 5-2, code done; the lab step runs in the next acceptance run.**
+Database roles from the platform, table rights from the migrations (5.5).
+`app_installer.database_roles` makes `<app>_migrator` and `<app>_app` with
+their passwords, `CONNECT` for those two only, the migrator as owner of the
+schema and its objects, and `USAGE` on the schema for the runtime role; it
+runs through the database's own `psql` (`podman exec`, as backup and DR run
+SQL), the passwords on stdin, once per install after the database is healthy
+and before the app starts, in server and development mode. It grants and
+revokes no table rights: Todo's and Notes' first migrations grant
+`<app>_app` theirs, so the revoke-then-grant that ran again after the app
+started is gone, and a migration's own grants survive every install. The
+backends' `setup_roles.py` are removed, and so is the loader's rule that an
+app with a database declares a `backend` image. The CI backend job makes
+the roles with the platform's SQL (`deploy/scripts/dev/apply_database_roles.py`),
+migrates, makes them again, and runs the role tests as the runtime role
+(CRUD allowed, DDL and the migration table refused).
 - Understandability check of phase 4h (fresh agent, at 2cf33d3):
   **YELLOW**. Install's steps read in order, and `Plan` and `Prepared` are
   of a reasonable size with a clear job; the host record and the guard

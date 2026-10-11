@@ -221,10 +221,6 @@ def _app(directory, hostname, replication_port, root, where):
     if not database and replication_port is not None:
         raise ValueError(f'{where}: replicationPort is only for an app with a database, and {path} has none')
     images = _images(data['images'], path, root)
-    if database and 'backend' not in (image.name for image in images):
-        # install.setup_roles runs the backend's backend.setup_roles until phase 5.
-        raise ValueError(f'{path}: images: an app with database: true declares a backend image, whose '
-                         'backend.setup_roles creates its database roles')
     client, audience = _login(data['login'], path) if 'login' in data else ('', '')
     endpoints = _endpoints(data['endpoints'], path)
     routes = _routes(data['routes'], path, endpoints)

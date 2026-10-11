@@ -242,12 +242,12 @@ class KubeRuntimeTests(unittest.TestCase):
         calls = [call.args[0] for call in run.call_args_list]
         postgres = next(i for i, a in enumerate(calls) if a[-1] == str(RUNTIME / "todo-postgres.yaml"))
         healthy = calls.index(["podman", "wait", "--condition", "healthy", "todo-postgres"])
-        setup = [i for i, a in enumerate(calls) if a[-1] == "backend.setup_roles"]
+        setup = [i for i, a in enumerate(calls) if a[:3] == ["podman", "exec", "--interactive"] and "--quiet" in a]
         keycloak = next(i for i, a in enumerate(calls) if a[-1] == str(RUNTIME / "keycloak.yaml"))
         self.assertLess(postgres, healthy)
         self.assertLess(healthy, setup[0])
         self.assertLess(setup[0], keycloak)
-        self.assertEqual(len(setup), 4)
+        self.assertEqual(len(setup), 2)  # once per database app, never again after the apps start
         self.assertIn("app_installer install --mode dev", read(ROOT / "deploy/scripts/dev/dev-up.sh"))
 
     def test_offline_bundle_packages_only_the_rendered_target_files(self):

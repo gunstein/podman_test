@@ -217,12 +217,16 @@ Development uses the same manifest templates with development values and direct
 `podman kube play/down`. Production uses user systemd. These are different
 lifecycle owners; development cleanup must not target a production user store.
 
-Clean deployment performs database-administrative role provisioning using
-the bootstrap database identity, separately from ordinary schema migration.
+Each install makes an app's database roles using the bootstrap database
+identity, separately from ordinary schema migration: the platform's
+`database_roles.setup` runs its SQL through the database container's own
+`psql` once the database is healthy and before the app starts. It creates
+`<app>_migrator`, which owns the schema, and `<app>_app`, which may connect
+and use the schema; the app's migrations, which its init container runs as
+the migrator, grant `<app>_app` its rights on the tables they create.
 These are PostgreSQL privileges, not a privileged/rootful container mode.
-The app init container runs the idempotent
-migrator using its dedicated credential. Promoted application recovery does
-not rerun administrative role bootstrap.
+Promoted application recovery does not rerun administrative role bootstrap:
+the roles and grants are in the replicated database.
 
 ## 6. Network and data flows
 

@@ -73,24 +73,26 @@ class InstallTests(unittest.TestCase):
                     calls.clear()
                     install.install(project, mode=mode, quadlet_dir=directory, platform=platform, **how)
                     self.assertFalse(host.ran('systemctl', '--user', 'stop'))
-            bootstrap = [i for i, a in enumerate(calls) if a[-1] == 'backend.setup_roles']
-            self.assertEqual(len(bootstrap), 2 * len(platform.database_apps))
+            # database_roles.setup: once per app with a database, after its database is healthy,
+            # through the database's own psql; the SQL and its passwords never in argv.
+            bootstrap = [i for i, a in enumerate(calls) if a[:3] == ['podman', 'exec', '--interactive']
+                         and '--quiet' in a]
+            self.assertEqual(len(bootstrap), len(platform.database_apps))
             wait = next(i for i, a in enumerate(calls) if a[:2] == ['podman', 'wait'])
             self.assertLess(wait, bootstrap[0])
             for index in bootstrap:
-                self.assertIn('--cap-drop', calls[index])
-                self.assertIn('no-new-privileges', calls[index])
+                self.assertFalse([word for word in calls[index] if 'PASSWORD' in word.upper()])
             return calls, bootstrap
 
     def test_every_pod_server_and_repeat(self):
         calls, bootstrap = self.exercise_install('server', applications=platform_file.checkout().apps, repeat=True)
+        # The repeated install makes each app's roles again, once, from the role passwords' secrets.
         for app in platform_file.checkout().database_apps:
-            setup = [calls[i] for i in bootstrap if f'DATABASE_HOST={app.database.container}' in calls[i]]
-            self.assertEqual(len(setup), 2)
-            for command in setup:
-                self.assertIn(app.database.secret('db'), command)
-                self.assertIn(app.database.secret('migrator'), command)
-                self.assertIn(app.database.secret('app'), command)
+            setup = [calls[i] for i in bootstrap if app.database.container in calls[i]]
+            self.assertEqual(len(setup), 1)
+            for role in ('migrator', 'app'):
+                self.assertIn(['podman', 'secret', 'inspect', '--showsecret', '--format', '{{.SecretData}}',
+                               app.database.secret(role)], calls)
         for service in ('keycloak', 'keycloak-postgres', 'shared-proxy'):
             self.assertEqual(calls.count(['systemctl', '--user', 'start', service + '.service']), 1)
 
@@ -101,15 +103,17 @@ class InstallTests(unittest.TestCase):
         self.assertEqual([Path(a[-1]).stem for _, a in plays], [
             'todo-postgres', 'notes-postgres', 'keycloak-postgres', 'keycloak', 'todo-app', 'notes-app', 'help-app',
             'shared-proxy'])
+        # Todo's roles before Notes' database plays, Notes' before Keycloak's; none after the apps.
+        self.assertLess(bootstrap[0], plays[1][0])
         self.assertLess(bootstrap[1], plays[2][0])
-        self.assertLess(plays[-1][0], bootstrap[2])
+        self.assertLess(bootstrap[-1], plays[3][0])
 
     def test_server_install(self):
         calls, bootstrap = self.exercise_install('server')
         app = calls.index(['systemctl', '--user', 'start', 'todo-app.service'])
+        # The roles are made before the app starts, and not again after it.
+        self.assertEqual(len(bootstrap), 1)
         self.assertLess(bootstrap[0], app)
-        self.assertLess(app, bootstrap[1])
-        self.assertLess(bootstrap[1], calls.index(['systemctl', '--user', 'start', 'shared-proxy.service']))
 
     def test_server_repeat_does_not_restart_unchanged_workloads(self):
         self.exercise_install('server', repeat=True)
@@ -147,7 +151,7 @@ class InstallTests(unittest.TestCase):
                 patch.object(install.workloads, 'install_shared_proxy',
                              lambda *a, platform, target: installed.append('shared-proxy')), \
                 patch.object(install.quadlet, 'systemctl', lambda *a: started.append(a[1])), \
-                patch.object(install, 'run'), patch.object(install, 'setup_roles', roles.append):
+                patch.object(install, 'run'), patch.object(install.database_roles, 'setup', roles.append):
             plan = install.Plan(platform=platform, environment=None, port=8443, root=ROOT, directory=Path(temp),
                                 runtime=Path(temp), target=None, mode='server', deployment_mode='build',
                                 bundle_directory='', refresh_images=False, publish_address='127.0.0.1')
@@ -158,7 +162,7 @@ class InstallTests(unittest.TestCase):
             install.start_in_order(platform, set())
         self.assertEqual(installed, ['wiki-postgres', 'wiki-app', 'shared-proxy'])
         self.assertEqual(started, ['wiki-postgres.service', 'wiki-app.service', 'shared-proxy.service'])
-        self.assertEqual(roles, [wiki, wiki])
+        self.assertEqual(roles, [wiki])
 
     def test_a_pod_that_breaks_the_rules_is_refused_before_the_host_records_it(self):
         # Help's pod has no container port 9000, so this endpoint breaks the pod contract.
@@ -245,7 +249,7 @@ class InstallTests(unittest.TestCase):
             configure.assert_not_called()
             self.assertEqual(sorted(path.name for path in runtime.glob('*.kube')), ['help-app.kube', 'shared-proxy.kube'])
             self.assertEqual(host.requests, [('help.test', '/'), ('help.test', '/')])
-            self.assertFalse([call for call in host.calls if 'backend.setup_roles' in call or call[:2] == ['podman', 'wait']])
+            self.assertFalse([call for call in host.calls if '--quiet' in call or call[:2] == ['podman', 'wait']])
             # Only nginx's TLS secrets: no database password, no Keycloak admin.
             self.assertTrue(all(call[3].startswith('platform-') for call in host.ran('podman', 'secret', 'create')))
             self.assertEqual([call[3] for call in host.ran('systemctl', '--user', 'start')],
@@ -265,7 +269,7 @@ class InstallTests(unittest.TestCase):
                          ['todo-postgres', 'keycloak-postgres', 'keycloak', 'todo-app', 'shared-proxy'])
         self.assertLess(plays[0][0], bootstrap[0])
         self.assertLess(bootstrap[0], plays[1][0])
-        self.assertLess(plays[-1][0], bootstrap[1])
+        self.assertEqual(len(bootstrap), 1)
         self.assertIn('127.0.0.1:8080:8080', plays[-1][1])
         self.assertIn('127.0.0.1:8443:8443', plays[-1][1])
         self.assertFalse(any(a[0] == 'systemctl' for a in calls))
@@ -291,9 +295,9 @@ class InstallTests(unittest.TestCase):
 
             with patch.object(kube_play, 'exists', side_effect=exists), \
                     patch.object(kube_play, 'run', side_effect=run) as command, \
-                    patch.object(kube_play, 'setup_roles') as roles:
+                    patch.object(kube_play.database_roles, 'setup') as roles:
                 self.assertTrue(kube_play.up(directory, platform_file.checkout().select(['todo']), state))
-                self.assertEqual(roles.call_count, 2)
+                self.assertEqual(roles.call_count, 1)
                 command.reset_mock()
                 roles.reset_mock()
                 self.assertFalse(kube_play.up(directory, platform_file.checkout().select(['todo']), state))
@@ -306,7 +310,7 @@ class InstallTests(unittest.TestCase):
                          if '--down' in call.args]
                 self.assertEqual(downs, ['fixture: ' + name for name in (
                     'shared-proxy', 'todo-app', 'keycloak', 'keycloak-postgres', 'todo-postgres')])
-                self.assertEqual(roles.call_count, 2)
+                self.assertEqual(roles.call_count, 1)
 
     def test_down_uses_reverse_order_and_only_existing_files(self):
         with tempfile.TemporaryDirectory() as temp, patch('app_installer.kube_play.run') as run, \
@@ -348,7 +352,7 @@ class InstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, \
                 patch.object(settings, 'DEV_STATE_FILE', Path(temp) / 'app-installer-dev.json'), \
                 patch('app_installer.kube_play.exists', return_value=False), \
-                patch('app_installer.kube_play.setup_roles'), \
+                patch('app_installer.kube_play.database_roles.setup'), \
                 patch('app_installer.kube_play.run',
                       return_value=subprocess.CompletedProcess([], 0, 'Running', '')):
             directory = Path(temp) / 'rendered'

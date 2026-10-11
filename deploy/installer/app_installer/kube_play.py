@@ -6,9 +6,8 @@ import hashlib
 import json
 from pathlib import Path
 
-from . import apps, secrets, settings
+from . import apps, database_roles, secrets, settings
 from .commands import exists, run
-from .install import setup_roles
 
 
 def up(rendered_manifest_dir, platform, state_file=None, refresh=False):
@@ -49,7 +48,7 @@ def up(rendered_manifest_dir, platform, state_file=None, refresh=False):
         run('podman', 'kube', 'play', '--no-pod-prefix', '--network', apps.NETWORK,
             *arguments, *ports, directory / manifest)
 
-    # Roles are set up once an app's database is healthy, and again after every pod started.
+    # An app's database roles are made once its database is healthy, before the app starts.
     databases = {app.database.container: app for app in platform.database_apps}
     for workload in selected:
         if workload.pod == 'shared-proxy':
@@ -62,9 +61,7 @@ def up(rendered_manifest_dir, platform, state_file=None, refresh=False):
         if workload.wait_healthy:
             run('podman', 'wait', '--condition', 'healthy', workload.pod, timeout=settings.HEALTH_TIMEOUT)
         if workload.pod in databases:
-            setup_roles(databases[workload.pod])
-    for app in platform.database_apps:
-        setup_roles(app)
+            database_roles.setup(databases[workload.pod])
     teardown = [workload.yaml for workload in reversed(selected)]
     state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(json.dumps({'fingerprint': fingerprint,

@@ -35,14 +35,15 @@ TODO = platform_file.checkout().select(['todo'])
 ALL_STARTS = ['todo-postgres', 'notes-postgres', 'keycloak-postgres', 'keycloak',
               'todo-app', 'notes-app', 'help-app', 'shared-proxy']
 TODO_STARTS = ['todo-postgres', 'keycloak-postgres', 'keycloak', 'todo-app', 'shared-proxy']
-# Server mode: each start, each wait for a healthy database, each role setup, in order.
+# Server mode: each start, each wait for a healthy database, each role setup, in order. Roles are
+# made once, after the database and before the app; the app's migrations grant its table rights.
 ALL_SERVER_EVENTS = [
     ('start', 'todo-postgres'), ('wait', 'todo-postgres'), ('roles', 'todo'),
     ('start', 'notes-postgres'), ('wait', 'notes-postgres'), ('roles', 'notes'),
     ('start', 'keycloak-postgres'), ('wait', 'keycloak-postgres'),
     ('start', 'keycloak'),
-    ('start', 'todo-app'), ('roles', 'todo'),
-    ('start', 'notes-app'), ('roles', 'notes'),
+    ('start', 'todo-app'),
+    ('start', 'notes-app'),
     ('start', 'help-app'),
     ('start', 'shared-proxy'),
 ]
@@ -50,7 +51,7 @@ TODO_SERVER_EVENTS = [
     ('start', 'todo-postgres'), ('wait', 'todo-postgres'), ('roles', 'todo'),
     ('start', 'keycloak-postgres'), ('wait', 'keycloak-postgres'),
     ('start', 'keycloak'),
-    ('start', 'todo-app'), ('roles', 'todo'),
+    ('start', 'todo-app'),
     ('start', 'shared-proxy'),
 ]
 # Development mode: each play (Kube YAML, ConfigMap), wait and role setup, in order.
@@ -63,7 +64,6 @@ ALL_DEV_EVENTS = [
     ('play', 'notes-app.yaml', 'notes-config.yaml'),
     ('play', 'help-app.yaml', 'help-config.yaml'),
     ('play', 'shared-proxy.yaml', None),
-    ('roles', 'todo'), ('roles', 'notes'),
 ]
 TODO_DEV_EVENTS = [
     ('play', 'todo-postgres.yaml', 'todo-config.yaml'), ('wait', 'todo-postgres'), ('roles', 'todo'),
@@ -71,7 +71,6 @@ TODO_DEV_EVENTS = [
     ('play', 'keycloak.yaml', None),
     ('play', 'todo-app.yaml', 'todo-config.yaml'),
     ('play', 'shared-proxy.yaml', None),
-    ('roles', 'todo'),
 ]
 # Tear-down, one `podman kube play --down` after another: the reverse of the plays.
 ALL_TEARDOWN = ['shared-proxy.yaml', 'help-app.yaml', 'notes-app.yaml', 'todo-app.yaml', 'keycloak.yaml',
@@ -94,9 +93,9 @@ def events(calls):
             found.append(('start', argv[3].removesuffix('.service')))
         elif argv[:2] == ['podman', 'wait']:
             found.append(('wait', argv[-1]))
-        elif argv[-1:] == ['backend.setup_roles']:
-            host = next(word for word in argv if word.startswith('DATABASE_HOST='))
-            found.append(('roles', host.removeprefix('DATABASE_HOST=').removesuffix('-postgres')))
+        elif argv[:3] == ['podman', 'exec', '--interactive'] and argv[4:5] == ['psql'] and \
+                argv[argv.index('--dbname') + 1] != 'postgres':
+            found.append(('roles', argv[argv.index('--dbname') + 1]))  # database_roles.setup
         elif argv[:3] == ['podman', 'kube', 'play'] and '--help' not in argv and '--down' not in argv:
             config = argv[argv.index('--configmap') + 1] if '--configmap' in argv else None
             found.append(('play', Path(argv[-1]).name, config and Path(config).name))

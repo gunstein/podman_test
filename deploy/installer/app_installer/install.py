@@ -8,6 +8,7 @@ from . import (
     apps,
     backup,
     checks,
+    database_roles,
     images,
     keycloak,
     platform_file,
@@ -108,23 +109,6 @@ def require_single_host(action, platform):
             f'{action} only supports a single-host deployment. This host contains '
             'clustered replication, promotion or backup state. Preserve it and '
             'use the DR tools and runbooks instead (docs/ACCEPTANCE.md, deploy/dr).')
-
-
-def setup_roles(app):
-    """Run the app's setup_roles.py once, in a throwaway container on app-network.
-
-    It logs in as the database owner and creates the migrator and app roles
-    with only the rights they need; see the backend's setup_roles.py.
-    """
-    argv = ['podman', 'run', '--rm', '--network', apps.NETWORK]
-    roles = ['db', 'migrator', 'app']
-    for role in roles:
-        argv += ['--secret', app.database.secret(role)]
-    for value in (f'DATABASE_HOST={app.database.container}',
-                  f'DATABASE_NAME={app.name}', f'DATABASE_BOOTSTRAP_USER={app.name}'):
-        argv += ['--env', value]
-    run(*argv, '--security-opt', 'no-new-privileges', '--cap-drop', 'ALL',
-        app.image('backend'), 'python', '-m', 'backend.setup_roles')
 
 
 def offline_files(platform):
@@ -346,20 +330,21 @@ def write_definitions(plan, prepared):
 def start_in_order(platform, restart):
     """Stop the pods in restart, last-started first, then start every workload in order.
 
-    Roles are set up once an app's database is healthy, and again after the
-    app started, so the tables its migrations created get their grants.
+    An app's database roles are made once its database is healthy, before
+    the app starts (database_roles.setup); the app's migrations grant the
+    runtime role its table rights.
     """
     selected = platform.workloads()
     for workload in reversed(selected):
         if workload.pod in restart:
             quadlet.systemctl('stop', workload.service)
-    roles = {pod: app for app in platform.database_apps for pod in (app.database.container, app.pod)}
+    databases = {app.database.container: app for app in platform.database_apps}
     for workload in selected:
         quadlet.systemctl('start', workload.service)
         if workload.wait_healthy:
             run('podman', 'wait', '--condition=healthy', workload.pod, timeout=settings.HEALTH_TIMEOUT)
-        if workload.pod in roles:
-            setup_roles(roles[workload.pod])
+        if workload.pod in databases:
+            database_roles.setup(databases[workload.pod])
 
 
 def finish(plan, prepared):

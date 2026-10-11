@@ -1004,7 +1004,7 @@ start order (`requires`) comes with the generated units in 4d.
   app's help path.
 
 
-**Phase 4g, code done; the lab step runs in the next acceptance run.**
+**Phase 4g, done: accepted in run 2026-10-11-run-54 on `27e2f9a`** ([record](history/ACCEPTANCE-27e2f9a.md)).
 After run 2026-10-10-run-53 an outside review asked whether the acceptance
 covers what it should. For running and recovering today's installation it
 does; for the platform's generality it does not yet. Three gaps, kept
@@ -1054,7 +1054,7 @@ template) stay in the fast tests, not in new VM steps.
   are harmless; the ConfigMap's name changes when the app config does
   (phase 5).
 
-**Phase 4h, code done; the lab step runs in the next acceptance run.**
+**Phase 4h, done: accepted in run 2026-10-11-run-54 on `27e2f9a`** ([record](history/ACCEPTANCE-27e2f9a.md)).
 Simplification before phase 5; nothing an operator sees changes but two
 refusals.
 1. One load sequence: `pod_contract.rendered(project_root, app)` renders
@@ -1082,7 +1082,7 @@ refusals.
    (`install.require_installed_apps`).
 The render baseline is unchanged: the record is not rendered output.
 
-**Phase 4i, code done; the lab step runs in the next acceptance run.**
+**Phase 4i, done: accepted in run 2026-10-11-run-54 on `27e2f9a`** ([record](history/ACCEPTANCE-27e2f9a.md)).
 From an outside review of what to examine next, with the branch taken as
 version zero (no migration from earlier states is owed):
 1. An offline install ran a host's older image under the same tag: the

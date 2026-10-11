@@ -10,10 +10,10 @@ three PostgreSQL databases replicated as one DR group). See [Architecture](docs/
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `a81cdca` (`feature/platform`, platform
-phases 1 to 4f) for the eight-pod, three-app, three-database
+**Current verdict: CLEAN PASS** on `27e2f9a` (`feature/platform`, platform
+phases 1 to 4i) for the eight-pod, three-app, three-database
 topology in a full two-VM run without an agent (`acceptance.py run`,
-[record](docs/history/ACCEPTANCE-a81cdca.md)),
+[record](docs/history/ACCEPTANCE-27e2f9a.md)),
 with nginx's TLS files as Podman secrets (local mode), replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
 `deploy/scripts/lab/acceptance.py`. Its `report full` found all 121 steps PASS
@@ -51,11 +51,19 @@ images, endpoints and routes (nginx is rendered from them), whether it has a
 database and login, and its ready path and checks, which install and
 failover run; phases 4d and 4f in run 2026-10-10-run-53: units from one
 template per kind of workload, each app's own pod template, and the static
-Help app beside Todo and Notes.
+Help app beside Todo and Notes; phases 4g to 4i in run 2026-10-11-run-54:
+each unit's `Requires=` and `After=` checked on the host against the model,
+the host record's format version, and an offline install that loads an image
+whose ID on the host is not the bundle's.
 Final topology: VM 108 primary with application and backup, VM 107
 database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
+
+- `27e2f9a` run 2026-10-11-run-54: CLEAN PASS
+  ([record](docs/history/ACCEPTANCE-27e2f9a.md)), accepting platform phases
+  4g, 4h and 4i: 121 steps, failover 3 min 37 s, the whole run 39 min 20 s,
+  no deviations.
 
 - `a81cdca` run 2026-10-10-run-53: CLEAN PASS
   ([record](docs/history/ACCEPTANCE-a81cdca.md)), accepting platform phases

@@ -24,9 +24,9 @@ promotion is never retried; a person must look at the record first.
 import json
 import sys
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
-from app_installer import checks
+from app_installer import checks, keycloak
 
 from . import recovery, steps
 from .steps import settings, target_render
@@ -90,18 +90,30 @@ def connect_sources(headers):
     return []
 
 
+def authorization_path(host, identity, port):
+    """The path of the authorization endpoint, as Keycloak's discovery document names it (plain OIDC)."""
+    try:
+        endpoint = json.loads(https(host, identity, keycloak.DISCOVERY, port=port))['authorization_endpoint']
+    except (RuntimeError, ValueError, KeyError) as error:
+        raise RuntimeError(f'{identity}: no authorization_endpoint in {keycloak.DISCOVERY}: {error}') from error
+    return urlsplit(endpoint).path
+
+
 def login_page(host, platform, hostnames, identity, port):
     """Raise unless each login app's login can start: Keycloak accepts its redirect, and its CSP allows the token.
 
-    hostnames is {app name: hostname}, identity Keycloak's hostname, port the HTTPS port.
+    hostnames is {app name: hostname}, identity Keycloak's hostname, port the
+    HTTPS port. The authorization endpoint comes from discovery; that the
+    page shows a form with id="username" is Keycloak's login page, not OIDC.
     """
     identity_origin = f'https://{identity}:{port}'
+    authorize = authorization_path(host, identity, port) if platform.login_apps else ''
     for app in platform.login_apps:
         origin = f'https://{hostnames[app.name]}:{port}'
         query = urlencode({'client_id': app.keycloak_client, 'redirect_uri': origin + '/', 'response_type': 'code',
                            'scope': 'openid', 'code_challenge': PKCE_CHALLENGE, 'code_challenge_method': 'S256'})
         try:
-            page = https(host, identity, '/auth/realms/todo/protocol/openid-connect/auth?' + query, port=port)
+            page = https(host, identity, authorize + '?' + query, port=port)
         except RuntimeError as error:
             raise RuntimeError(f'{app.name}: Keycloak refused the login request of client '
                                f'{app.keycloak_client} with redirect {origin}/: {error}') from error

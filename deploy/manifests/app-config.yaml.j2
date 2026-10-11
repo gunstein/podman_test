@@ -10,7 +10,7 @@ data:
 {% endif %}
   LOG_LEVEL: {{ log_level | tojson }}
 {% if app.has_login %}
-  OIDC_ISSUER: {{ ("https://" + hostname + ":" + port|string + "/auth/realms/todo") | tojson }}
-  OIDC_JWKS_URL: http://keycloak:8080/auth/realms/todo/protocol/openid-connect/certs
+  OIDC_ISSUER: {{ oidc_issuer | tojson }}
+  OIDC_JWKS_URL: {{ oidc_jwks_url | tojson }}
   OIDC_AUDIENCE: {{ app.keycloak_client | tojson }}
 {% endif %}

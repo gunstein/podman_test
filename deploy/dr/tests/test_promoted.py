@@ -59,7 +59,7 @@ class PromotedHost:
 
     def request(self, path, hostname=None):
         self.steps.append(('request', path, hostname))
-        if path == promoted.DISCOVERY:
+        if path == promoted.keycloak.DISCOVERY:
             return {'issuer': self.issuers.pop(0) if len(self.issuers) > 1 else self.issuers[0]}
         return {}
 
@@ -134,7 +134,7 @@ class PromotedDeployTests(unittest.TestCase):
             self.assertEqual(starts, ['keycloak.service', 'todo-app.service', 'notes-app.service',
                                       'help-app.service', 'shared-proxy.service'])
             # Keycloak first, then each app ready and its checks, through its own hostname.
-            self.assertLess(self.index(host, ('request', promoted.DISCOVERY, None)), self.index(host, ('clients',)))
+            self.assertLess(self.index(host, ('request', promoted.keycloak.DISCOVERY, None)), self.index(host, ('clients',)))
             for app in platform_file.checkout().apps:
                 self.assertLess(self.index(host, ('systemctl', 'start', 'shared-proxy.service')),
                                 self.index(host, ('get', app.ready, app.hostname)))

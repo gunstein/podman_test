@@ -79,8 +79,9 @@ def render_app(project_root, app):
 def render_app_config(project_root, app, hostname, port, log_level):
     """The app's ConfigMap (app.names.resource("backend-config")): its log level, and its database's
     and OIDC settings if it has a database and login."""
-    return _render(project_root, "app-config.yaml.j2", app=app,
-                   hostname=hostname, port=port, log_level=log_level)
+    from . import keycloak  # where Keycloak's OIDC addresses are (docs/IDENTITY.md)
+    return _render(project_root, "app-config.yaml.j2", app=app, log_level=log_level,
+                   oidc_issuer=keycloak.issuer(hostname, port), oidc_jwks_url=keycloak.JWKS_URL)
 
 
 def render_keycloak(project_root, database, admin_secret, hostname, port, image):

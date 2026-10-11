@@ -22,8 +22,8 @@ def main():
                                 "response_type": "code", "scope": "openid",
                                 "code_challenge": failover.PKCE_CHALLENGE, "code_challenge_method": "S256"})
     try:
-        page = failover.https(host, platform.identity_hostname, "/auth/realms/todo/protocol/openid-connect/auth?" + query,
-                              port=port)
+        authorize = failover.authorization_path(host, platform.identity_hostname, port)
+        page = failover.https(host, platform.identity_hostname, authorize + "?" + query, port=port)
     except RuntimeError:
         page = ""
     if 'id="username"' in page:

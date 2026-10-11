@@ -97,7 +97,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'deploy/installer'))
-from app_installer import checks, platform_file  # noqa: E402
+from app_installer import checks, keycloak, platform_file  # noqa: E402
 
 # What the lab installs: this checkout's platform.yaml, the one the bundle is built from (02-1).
 PLATFORM, PROD = platform_file.load(ROOT / platform_file.FILE, 'prod')
@@ -382,7 +382,7 @@ def check_headers(step):
         step.expect(found.get('x-frame-options') == ['DENY'], f'{url}: X-Frame-Options DENY')
         step.expect(found.get('referrer-policy') == ['strict-origin-when-cross-origin'],
                     f'{url}: Referrer-Policy strict-origin-when-cross-origin')
-    url = IDENTITY_ORIGIN + '/auth/realms/todo'
+    url = IDENTITY_ORIGIN + keycloak.REALM_PATH
     result = step.run(['curl', '--silent', '--show-error', '--head', '--max-time', '10', url])
     step.expect(result.returncode == 0 and 'strict-transport-security' in headers(result.stdout),
                 f'{url}: Strict-Transport-Security')

@@ -474,6 +474,29 @@ and before the third app, so its author finds the contract written down:
   Duende the audience is an API resource's name).
 - A backend requires `OIDC_AUDIENCE` like the issuer, instead of falling
   back to `todo-frontend`.
+A second assessment of the same question (also YELLOW) adds:
+- The client ID and the API audience must differ (`todo-frontend` and
+  `todo-api`): today Keycloak puts the client ID in `aud`, which is also
+  the audience the backend accepts, so an ID token issued to the frontend
+  most likely passes the API's check. `login: {client, audience}` in
+  app.yaml names both; Keycloak's audience mapper gives the audience, and a
+  test shows an ID token is refused.
+- Install corrects the audience mapper and PKCE of an existing client too,
+  not only its redirect and origin: an install verifies the login contract
+  it depends on.
+- The token tests run without a database, and the adapter contract is
+  tested for both apps.
+- `docs/IDENTITY.md` also says which addresses the browser, the backend
+  and the installer and DR use, what `Platform.has_identity` means (an app
+  logs in, so the platform runs its own Keycloak; an external provider
+  cannot be expressed yet), the access model (any logged-in user may write,
+  no row ownership), and the adapter's behaviour at start, callback,
+  expired session, failed refresh and logout.
+5-1 is three deliveries: (a) the page and the addresses in one place, with
+DR, backup, the lab and the failover check using them; (b) client and
+audience apart, the mapper and PKCE corrected, `OIDC_AUDIENCE` required,
+database-free token tests with an ID-token test; (c) each frontend reads
+its client ID from its config instead of its JS.
 Kept for an actual switch: the provider's own app and image, its client
 registration, its signing keys across a failover (for Duende, the data
 protection keys that encrypt them must replicate too), moving users (no

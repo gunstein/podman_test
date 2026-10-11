@@ -18,7 +18,6 @@ from app_installer.commands import exists, run
 from . import nginx_tls, replication, transfer
 
 CA_CERTIFICATE = '/var/lib/platform-tls/ca.crt'
-DISCOVERY = '/auth/realms/todo/.well-known/openid-configuration'
 
 
 def require_identity(inventory_hostname, node_address, service_port):
@@ -55,7 +54,7 @@ def require_issuer(issuer, attempts=90, delay=2):
     seen = None
     for attempt in range(attempts):
         try:
-            seen = keycloak.request(DISCOVERY).get('issuer')
+            seen = keycloak.request(keycloak.DISCOVERY).get('issuer')
             if seen == issuer:
                 return
         except (OSError, ValueError, RuntimeError):
@@ -109,7 +108,7 @@ def deploy(*, project_root, quadlet_dir, bundle_dir, inventory_hostname, node_ad
     for workload in platform.serving_workloads():
         quadlet.systemctl('start', workload.service)
     if platform.has_identity:
-        require_issuer(f'https://{target.identity_hostname}:{service_port}/auth/realms/todo')
+        require_issuer(keycloak.issuer(target.identity_hostname, service_port))
     clients_changed = install.configure_identity(platform, hostnames)
     # Each app ready and its checks passed, through its nginx virtual host, once Keycloak is set up.
     checks.verify(platform, hostnames)

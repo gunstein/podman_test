@@ -27,11 +27,8 @@ PLATFORM = (
 EXAMPLE_APP = re.compile(r"(?<![a-z])(todo|notes)(?![a-z])", re.IGNORECASE)
 
 KNOWN = {
-    "deploy/dr/app_dr_host/promoted.py",
     "deploy/dr/app_dr_host/replication_tls.py",
-    "deploy/dr/app_ops/failover.py",
     "deploy/dr/app_ops/trust.py",
-    "deploy/dr/scripts/app_backup.py",
     "deploy/dr/systemd/platform-backup.service",
     "deploy/dr/systemd/platform-backup.timer",
     "deploy/dr/systemd/platform-dr-check.service",
@@ -51,7 +48,6 @@ KNOWN = {
     "deploy/installer/app_installer/tls_secrets.py",
     "deploy/installer/app_installer/uninstall.py",
     "deploy/installer/app_installer/workloads.py",
-    "deploy/manifests/app-config.yaml.j2",
     "deploy/manifests/keycloak.yaml.j2",
     "deploy/offline/install.sh",
     "deploy/scripts/app_ca.py",

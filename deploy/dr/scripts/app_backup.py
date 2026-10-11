@@ -588,7 +588,7 @@ def configure(platform, tools: Sequence[DatabaseBackup], journal: Path) -> dict:
         for app in platform.apps:
             checks.wait_ready(app, served.get(app.name, app.hostname))
         if platform.has_identity:
-            keycloak.wait("/auth/realms/todo/.well-known/openid-configuration", 90, 2)
+            keycloak.wait(keycloak.DISCOVERY, 90, 2)
         verified = {}
         for tool, _access, directories, changed, _needed in prepared:
             if directories or changed:

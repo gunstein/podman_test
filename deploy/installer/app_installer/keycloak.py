@@ -10,6 +10,28 @@ from urllib.request import Request, urlopen
 from . import apps, settings
 
 BASE = f'http://127.0.0.1:{settings.LOCAL_HTTP_PORT}'
+
+# Where Keycloak's OIDC addresses are: every other module asks here, so a
+# different provider changes this place (docs/IDENTITY.md). Keycloak serves
+# under /auth/ (KC_HTTP_RELATIVE_PATH), nginx routes /auth/ to it, and the
+# platform's apps share one realm, todo, until phase 6.
+REALM = 'todo'
+REALM_PATH = f'/auth/realms/{REALM}'
+# The discovery document, relative to an origin: the browser asks through
+# its app's origin, the installer, DR and backup through the local nginx.
+DISCOVERY = REALM_PATH + '/.well-known/openid-configuration'
+# The signing keys, as a backend fetches them inside app-network (not the
+# public issuer's, which the backend could not reach by its public name).
+JWKS_URL = f'http://keycloak:8080{REALM_PATH}/protocol/openid-connect/certs'
+# Keycloak's own administration, not OIDC: the admin's token from the master
+# realm, and the realm's admin API (its settings and clients).
+ADMIN_TOKEN = '/auth/realms/master/protocol/openid-connect/token'
+ADMIN_REALM = f'/auth/admin/realms/{REALM}'
+
+
+def issuer(hostname, port):
+    """The issuer every token names: Keycloak's public hostname and HTTPS port, and the realm."""
+    return f'https://{hostname}:{port}{REALM_PATH}'
 # Login protection for the todo realm. After 5 failed logins an account is
 # locked for a minute, doubling up to 15 minutes; failures are forgotten after
 # 12 hours. Keycloak leaves both off by default. The realm import carries the
@@ -77,20 +99,20 @@ def secure_realm(token):
     made before these settings, or a replicated Keycloak database, gets them
     here. Returns True if the realm had to be changed.
     """
-    realm = request('/auth/admin/realms/todo', token=token)
+    realm = request(ADMIN_REALM, token=token)
     if all(realm.get(key) == value for key, value in REALM_SECURITY.items()):
         return False
-    request('/auth/admin/realms/todo', 'PUT', dict(REALM_SECURITY), token)
+    request(ADMIN_REALM, 'PUT', dict(REALM_SECURITY), token)
     return True
 
 
 def template_client(token):
     """The client the realm import brought (apps.TEMPLATE_CLIENT), which a missing client is copied from."""
-    matches = request('/auth/admin/realms/todo/clients?' + urlencode({'clientId': apps.TEMPLATE_CLIENT}),
+    matches = request(ADMIN_REALM + '/clients?' + urlencode({'clientId': apps.TEMPLATE_CLIENT}),
                       token=token)
     if len(matches) != 1:
         raise RuntimeError(f'The realm import client {apps.TEMPLATE_CLIENT} must exist before adding clients.')
-    return request('/auth/admin/realms/todo/clients/' + matches[0]['id'], token=token)
+    return request(ADMIN_REALM + '/clients/' + matches[0]['id'], token=token)
 
 
 def configure(admin_password, clients):
@@ -104,21 +126,21 @@ def configure(admin_password, clients):
     client only gets its URLs corrected. The realm gets its login
     protection first (secure_realm). Returns True if anything changed.
     """
-    discovery = wait('/auth/realms/todo/.well-known/openid-configuration', 90, 2)
-    issuer = discovery.get('issuer', '')
-    if not re.fullmatch(r'https://[^/]+/auth/realms/todo', issuer):
-        raise RuntimeError('Expected an HTTPS issuer with the Todo realm path.')
+    discovery = wait(DISCOVERY, 90, 2)
+    found = discovery.get('issuer', '')
+    if not re.fullmatch(r'https://[^/]+' + re.escape(REALM_PATH), found):
+        raise RuntimeError(f'Expected an HTTPS issuer with the realm path {REALM_PATH}, not {found!r}.')
     identities = list(clients)  # [(client ID, the hostname its app is served on)], install.clients()
-    token = request('/auth/realms/master/protocol/openid-connect/token', 'POST', {
+    token = request(ADMIN_TOKEN, 'POST', {
         'grant_type': 'password', 'client_id': 'admin-cli', 'username': 'admin',
         'password': admin_password,
     }, form=True)['access_token']
-    parsed = urlsplit(issuer)
+    parsed = urlsplit(found)
     changed = secure_realm(token)
     for client_id, hostname in identities:
         # Each app's client: its own public hostname on the issuer's port.
         client_origin = f'https://{hostname}' + (f':{parsed.port}' if parsed.port else '')
-        matches = request('/auth/admin/realms/todo/clients?' + urlencode({'clientId': client_id}),
+        matches = request(ADMIN_REALM + '/clients?' + urlencode({'clientId': client_id}),
                           token=token)
         if len(matches) > 1:
             raise RuntimeError(f'Expected at most one Keycloak client named {client_id}.')
@@ -135,10 +157,10 @@ def configure(admin_password, clients):
                 config = mapper.get('config', {})
                 if config.get('included.client.audience') == apps.TEMPLATE_CLIENT:
                     config['included.client.audience'] = client_id
-            request('/auth/admin/realms/todo/clients', 'POST', client, token)
+            request(ADMIN_REALM + '/clients', 'POST', client, token)
             changed = True
             continue
-        path = '/auth/admin/realms/todo/clients/' + matches[0]['id']
+        path = ADMIN_REALM + '/clients/' + matches[0]['id']
         client = request(path, token=token)
         if client.get('redirectUris') == [client_origin + '/'] and client.get('webOrigins') == [client_origin]:
             continue

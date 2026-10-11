@@ -51,6 +51,9 @@ class FailoverWorld(World):
             return ("wait-ready",), "READY", 0
         if command[:2] == ["bash", "-c"] and command[3] == "https":
             hostname, address, path, options = command[4], command[6], command[7], command[8:]
+            if path.endswith("/.well-known/openid-configuration"):
+                endpoint = "https://auth.test:8443/auth/realms/todo/protocol/openid-connect/auth"
+                return ("discovery", hostname), json.dumps({"authorization_endpoint": endpoint}), 0
             if "openid-connect/auth" in path:
                 refused = self.fail == "redirect" and "notes-frontend" in path
                 return ("login-form", hostname, path), "" if refused else LOGIN_FORM, 22 if refused else 0

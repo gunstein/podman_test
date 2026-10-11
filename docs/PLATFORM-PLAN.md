@@ -1115,7 +1115,7 @@ version zero (no migration from earlier states is owed):
 5. An install stopped between writing files and restarting pods: phase 5b,
    with the fix it needs.
 
-**Phase 5-1a, code done; the lab step runs in the next acceptance run.**
+**Phase 5-1a, done: accepted in run 2026-10-11-run-56 on `502ba89`** ([record](history/ACCEPTANCE-502ba89.md)).
 The identity contract, first part. `docs/IDENTITY.md` says what a login
 provider must deliver (issuer, discovery, JWKS, the token a backend
 accepts, one client per app, the `/auth/` route, readiness, its state in the
@@ -1132,7 +1132,7 @@ discovery. `/auth/realms/todo` is now written out only in the frontends'
 adapters (5-1c). Four platform files leave the example-name guard. Render
 baseline: `OIDC_JWKS_URL` quoted like the other values.
 
-**Phase 5-1b, code done; the lab step runs in the next acceptance run.**
+**Phase 5-1b, done: accepted in run 2026-10-11-run-56 on `502ba89`** ([record](history/ACCEPTANCE-502ba89.md)).
 Client and audience apart. `app.yaml`'s `keycloakClient` became
 `login: {client, audience}` (`App.login_client`, `App.login_audience`),
 and `OIDC_AUDIENCE` is the audience (`todo-api`, `notes-api`), not the
@@ -1154,7 +1154,7 @@ version 14. Render baseline: `login_client` and `login_audience` in
 audience, and the format version. One more file leaves the example-name
 guard.
 
-**Phase 5-1c, code done; the lab step runs in the next acceptance run.**
+**Phase 5-1c, done: accepted in run 2026-10-11-run-56 on `502ba89`** ([record](history/ACCEPTANCE-502ba89.md)).
 Each frontend reads its login settings instead of naming them. The platform
 renders `keycloak.frontend_login(app.login_client)` (discovery path, realm,
 client ID) into the app's ConfigMap as the key `FRONTEND_LOGIN`; Todo's

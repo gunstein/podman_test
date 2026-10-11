@@ -1279,3 +1279,11 @@ The acceptance service/database table is updated now because those checks
 must pass before the later documentation step. No runtime platform code or
 render baseline changed. A certificate test also tolerates OpenSSL's two
 spacing styles for a subject CN, without weakening the subject check.
+
+**Phase 5-4b, code done; the lab step runs in the phase's acceptance run.**
+Step 5-4a passed CI #401 on `3487fe6`. Guestbook's backend now has the same
+`.containerignore` as Todo and Notes, excluding tests and local Python files.
+The CI role helper documents its already-quoted, platform-generated SQL and
+uses a targeted argument/overload type ignore on `execute`: psycopg requires `LiteralString`
+for both `execute` and `sql.SQL`. Pyright also passes with psycopg installed;
+SQL construction and execution are unchanged.

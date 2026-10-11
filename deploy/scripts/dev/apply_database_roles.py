@@ -35,7 +35,8 @@ def main():
                                     password('migrator'), password('app'))
     with psycopg.connect(host=arguments.host, port=arguments.port, dbname=arguments.database,
                          user=arguments.app, password=password('db'), autocommit=True) as connection:
-        connection.execute(sql)
+        # statements() quotes every identifier and value; this is generated SQL, not a literal.
+        connection.execute(sql)  # pyright: ignore[reportArgumentType, reportCallIssue]
     print(f'{arguments.app}: database roles made in {arguments.database}')
 
 

@@ -34,6 +34,8 @@ def check(app, content):
     containers = (spec.get('initContainers') or []) + (spec.get('containers') or [])
     images = {app.image(image.name) for image in app.images}
     config = app.names.resource('backend-config')
+    own_secrets = set(secrets.application_secret_mapping(app)) if app.has_database else set()
+    owned = {'ConfigMap': {config}, 'secret': own_secrets}
     ports = set()
     for container in containers:
         name = container.get('name', '')
@@ -48,12 +50,19 @@ def check(app, content):
             problems.append(f'container {name} adds capabilities')
         if not ((container.get('resources') or {}).get('limits') or {}).get('memory'):
             problems.append(f'container {name} has no memory limit (resources.limits.memory)')
-        for source in container.get('envFrom') or []:
-            reference = (source.get('configMapRef') or {}).get('name')
-            if reference is not None and reference != config:
-                problems.append(f'container {name} reads ConfigMap {reference}, not its own {config}')
+        # Every way a container reads a ConfigMap or secret: envFrom whole, or env one key.
+        references = [(what, (source.get(kind) or {}).get('name'))
+                      for source in container.get('envFrom') or []
+                      for kind, what in (('configMapRef', 'ConfigMap'), ('secretRef', 'secret')) if kind in source]
+        references += [(what, (variable['valueFrom'].get(kind) or {}).get('name'))
+                       for variable in container.get('env') or [] if isinstance(variable.get('valueFrom'), dict)
+                       for kind, what in (('configMapKeyRef', 'ConfigMap'), ('secretKeyRef', 'secret'))
+                       if kind in variable['valueFrom']]
+        for what, reference in references:
+            if reference not in owned[what]:
+                problems.append(f'container {name} reads {what} {reference}, not its own '
+                                f'({", ".join(sorted(owned[what])) or "it has none"})')
         ports.update(port.get('containerPort') for port in container.get('ports') or [])
-    own_secrets = set(secrets.application_secret_mapping(app)) if app.has_database else set()
     for volume in spec.get('volumes') or []:
         kinds = [kind for kind in volume if kind != 'name']
         if kinds not in ([kind] for kind in VOLUME_KINDS):

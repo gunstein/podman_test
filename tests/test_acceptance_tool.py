@@ -44,7 +44,7 @@ def valid_bash(script, what):
 UNITS = [('systemctl --user show "$unit" --property=Requires', (0, "".join(
     f"== {w.service}\nRequires={' '.join(w.requires)} app-network-network.service\n"
     f"After={' '.join(w.requires)} basic.target\n"
-    for w in acceptance.PLATFORM.workloads() if w.requires)))]
+    for w in acceptance.PLATFORM.workloads())))]
 
 
 class Fake:
@@ -186,9 +186,17 @@ class CheckTests(ToolTest):
         self.assertEqual(self.tool("--step", "03-14", "check", "services", "192.168.0.102", "app",
                                    rules=[ready, loose])[0], 1)
         log = (self.run_directory / "logs/03-14-check-services.log").read_text()
-        self.assertIn("FAIL: every unit requires and starts after what the model says: missing", log)
-        self.assertIn("shared-proxy.service Requires=notes-app.service", log)
-        self.assertNotIn("shared-proxy.service Requires=todo-app.service,", log)
+        self.assertIn("FAIL: every unit requires and starts after exactly what the model says", log)
+        self.assertIn("shared-proxy.service Requires=todo-app.service, not help-app.service keycloak.service "
+                      "notes-app.service todo-app.service", log)
+        # A dependency the model does not name fails too, also on a unit that needs nothing (Help).
+        extra = ("systemctl --user show", (0, UNITS[0][1][1].replace(
+            "== help-app.service\nRequires= app-network-network.service",
+            "== help-app.service\nRequires=keycloak.service app-network-network.service")))
+        self.assertEqual(self.tool("--step", "03-12e", "check", "services", "192.168.0.102", "app",
+                                   rules=[ready, extra])[0], 1)
+        log = (self.run_directory / "logs/03-12e-check-services.log").read_text()
+        self.assertIn("help-app.service Requires=keycloak.service, not (none)", log)
 
     def test_a_failed_podman_health_check_run_is_listed_not_failed(self):
         """Run 19: one health-check run failed while a container started; the check failed on it."""

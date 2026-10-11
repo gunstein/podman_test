@@ -404,6 +404,11 @@ in small deliveries, each driven by what Help needs:
   3. The host's recorded platform (`platform.json`) carries its format
      version like `bundle.json`, so a record from an older installer is
      refused with a message that says so. Still no backward compatibility.
+  4. From the 4f/4g understandability check: an app without a `ready` path
+     is waited for until its containers (`App.containers`) run, not only
+     until its unit started; and install refuses a `platform.yaml` that
+     leaves out an app the host has installed (removal is 5.8, not built),
+     naming the app, instead of leaving it running unmanaged.
   Not in 4h: `backend.setup_roles` (phase 5), and `pod_contract`, which
   stays a bounded contract check, widened only when an app needs it.
 
@@ -913,3 +918,35 @@ small:
 Failure cases of the new contracts (a ready path that never answers, a
 check with the wrong status, a dependency on a later workload, a missing
 template) stay in the fast tests, not in new VM steps.
+- Understandability check of phases 4f and 4g (fresh agent, at be896a5):
+  **YELLOW**. A static app with two containers fits without a Python
+  special case or a registration framework, contract errors come before
+  any intended host change, and database and login read as plain
+  conditions. Friction stays between loading, rendering and checking, and
+  some checks did not hold the same contract. Its findings and what was
+  done:
+  1. The lab's dependency check took only the units that require
+     something, and only looked for what was missing: fixed, it takes every
+     unit and requires exactly the model's dependencies among the
+     platform's own services (systemd's own additions may stay), so an
+     extra dependency, also on Help, fails it.
+  2. `wait-ready.sh` took any non-error answer, a 3xx too, where
+     `checks.wait_ready` asks for 200: fixed, it asks for exactly 200 and
+     names the status it got.
+  3. `pod_contract` checked secret volumes and `envFrom` ConfigMaps, but
+     not `envFrom` secrets or `env` keys from a ConfigMap or secret: fixed,
+     every such reference must be the app's own.
+  4. Loading renders a pod template that rendering renders and checks
+     again: phase 4h, item 1.
+  5. An app without `ready` gets no container check in `checks.py`: phase
+     4h, item 4.
+  6. A `platform.yaml` without an installed app replaces the host's record
+     and leaves that app running: phase 4h, item 4.
+  7. Generic tests lean on the example apps: noted; phase 5's third app
+     makes small explicit test platforms worth it where a test checks
+     generic behaviour.
+  Noted: Help gets a ConfigMap it does not read, named `help-backend-config`;
+  and `/auth/...` on Help's hostname goes to Help, which has no login. Both
+  are harmless; the ConfigMap's name changes when the app config does
+  (phase 5).
+

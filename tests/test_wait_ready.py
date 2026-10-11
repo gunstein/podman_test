@@ -24,7 +24,9 @@ FAKES = {
               'case " $ABSENT " in *" $last "*) exit 125;; esac\n'
               'case " $STARTING " in *" $last "*) echo "true starting"; exit;; esac\n'
               'case $last in *-frontend) echo "true ";; *) echo "true healthy";; esac',
-    "curl": 'echo "$*" >> "$CURL_LOG"\ncase " $* " in *"Host: $NOT_READY "*) exit 22;; esac',
+    # Prints the HTTP status, as curl --write-out '%{http_code}' does: 503 for NOT_READY, 302 for REDIRECTING.
+    "curl": 'echo "$*" >> "$CURL_LOG"\ncase " $* " in *"Host: $NOT_READY "*) echo 503; exit;; '
+            '*"Host: $REDIRECTING "*) echo 302; exit;; esac\necho 200',
     "sleep": "exit 0",
 }
 
@@ -36,7 +38,7 @@ def run(mode, **faults):
             fake.write_text("#!/bin/bash\n" + body + "\n")
             fake.chmod(0o755)
         environment = {"PATH": f"{directory}:/usr/bin:/bin", "WAIT_TIMEOUT": "0", "CURL_LOG": "/dev/null",
-                       "INACTIVE": "", "ABSENT": "", "STARTING": "", "NOT_READY": "none"}
+                       "INACTIVE": "", "ABSENT": "", "STARTING": "", "NOT_READY": "none", "REDIRECTING": "none"}
         environment.update(faults)
         arguments = ARGUMENTS.get(mode[0], mode) if len(mode) == 1 else mode
         return subprocess.run(["bash", str(SCRIPT), *arguments], capture_output=True, text=True,
@@ -54,7 +56,9 @@ class WaitReadyTests(unittest.TestCase):
         cases = (({"INACTIVE": "shared-proxy"}, "service shared-proxy"),
                  ({"ABSENT": "nginx"}, "container nginx"),
                  ({"STARTING": "todo-postgres"}, "container todo-postgres (true starting)"),
-                 ({"NOT_READY": "notes.test"}, "readiness of notes.test/ready"))
+                 ({"NOT_READY": "notes.test"}, "readiness of notes.test/ready (503)"),
+                 # A redirect is not ready: checks.wait_ready asks for exactly 200 too.
+                 ({"REDIRECTING": "todo.test"}, "readiness of todo.test/ready (302)"))
         for faults, message in cases:
             with self.subTest(message):
                 result = run(["app"], **faults)

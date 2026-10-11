@@ -7,7 +7,7 @@
 #   gives them, from the installation's platform (callers pass them, so this
 #   script keeps no list of its own).
 #   app:     the pods' services active, the containers running and healthy, and
-#            each HOSTNAME/PATH answering 200 on 127.0.0.1:8080 (each app's
+#            each HOSTNAME/PATH answering exactly 200 on 127.0.0.1:8080 (each app's
 #            public hostname and its ready path, checks.ready_urls).
 #   standby: the same for the databases; no HOSTNAME/PATH.
 # Prints what it still waits for every 10 seconds, READY when done, and exits 1
@@ -38,8 +38,10 @@ missing() {
     esac
   done
   for url in $urls; do
-    curl --silent --fail --max-time 5 -H "Host: ${url%%/*}" "http://127.0.0.1:8080/${url#*/}" >/dev/null ||
-      { echo "readiness of $url"; return; }
+    # Exactly 200, as checks.wait_ready asks: a redirect (3xx) is not ready.
+    status=$(curl --silent --max-time 5 --output /dev/null --write-out '%{http_code}' \
+      -H "Host: ${url%%/*}" "http://127.0.0.1:8080/${url#*/}")
+    [ "$status" = 200 ] || { echo "readiness of $url ($status)"; return; }
   done
 }
 

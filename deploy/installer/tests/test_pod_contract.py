@@ -45,8 +45,16 @@ class PodContractTests(unittest.TestCase):
             (r'container todo-backend adds capabilities',
              lambda pod: backend(pod)['securityContext']['capabilities'].update(add=['NET_ADMIN'])),
             (r'container todo-backend has no memory limit', lambda pod: backend(pod).pop('resources')),
-            (r'reads ConfigMap notes-backend-config, not its own todo-backend-config',
+            (r'reads ConfigMap notes-backend-config, not its own \(todo-backend-config\)',
              lambda pod: backend(pod)['envFrom'][0]['configMapRef'].update(name='notes-backend-config')),
+            (r'reads secret keycloak-kube-admin-secret, not its own \(todo-kube-backend-secret, ',
+             lambda pod: backend(pod)['envFrom'].append({'secretRef': {'name': 'keycloak-kube-admin-secret'}})),
+            (r'reads secret notes-kube-backend-secret, not its own',
+             lambda pod: backend(pod)['env'].append({'name': 'X', 'valueFrom': {'secretKeyRef': {
+                 'name': 'notes-kube-backend-secret', 'key': 'database-password'}}})),
+            (r'reads ConfigMap keycloak-config, not its own',
+             lambda pod: backend(pod)['env'].append({'name': 'Y', 'valueFrom': {'configMapKeyRef': {
+                 'name': 'keycloak-config', 'key': 'KC_DB'}}})),
             (r"volume 'data' is hostPath, not one of secret, configMap, emptyDir",
              lambda pod: pod['spec']['volumes'].append({'name': 'data', 'hostPath': {'path': '/var'}})),
             (r"volume 'uploads' is persistentVolumeClaim",

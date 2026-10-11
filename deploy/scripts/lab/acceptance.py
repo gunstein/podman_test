@@ -306,16 +306,20 @@ def check_services(step, host, mode):
     if mode == 'app':
         nginx = step.ssh(host, 'podman exec nginx nginx -t -c /etc/platform-nginx/nginx.conf')
         step.expect(nginx.returncode == 0, 'nginx configuration is valid')
-        # The units as systemd loaded them, not as rendered: each needs and follows what the model says.
-        needing = [workload for workload in PLATFORM.workloads() if workload.requires]
-        shown = step.ssh(host, 'for unit in ' + ' '.join(w.service for w in needing) + '; do echo "== $unit"; '
+        # The units as systemd loaded them, not as rendered. Among the platform's own services each
+        # requires and follows exactly what the model says; systemd's own additions (the network,
+        # basic.target) are not the platform's and may be there.
+        workloads = PLATFORM.workloads()
+        own = {w.service for w in workloads}
+        shown = step.ssh(host, 'for unit in ' + ' '.join(w.service for w in workloads) + '; do echo "== $unit"; '
                          'systemctl --user show "$unit" --property=Requires --property=After; done')
         loaded = unit_dependencies(shown.stdout)
-        missing = [f'{w.service} {key}={service}' for w in needing for key in ('Requires', 'After')
-                   for service in w.requires if service not in loaded.get(w.service, {}).get(key, ())]
-        step.expect(shown.returncode == 0 and not missing,
-                    'every unit requires and starts after what the model says'
-                    + (f': missing {", ".join(missing)}' if missing else ''))
+        wrong = [f'{w.service} {key}={" ".join(sorted(found)) or "(none)"}, not {" ".join(sorted(w.requires)) or "(none)"}'
+                 for w in workloads for key in ('Requires', 'After')
+                 for found in [set(loaded.get(w.service, {}).get(key, ())) & own] if found != set(w.requires)]
+        step.expect(shown.returncode == 0 and set(loaded) == own and not wrong,
+                    'every unit requires and starts after exactly what the model says'
+                    + (f': {"; ".join(wrong)}' if wrong else ''))
     else:
         serving = PLATFORM.services(databases=False)
         states = step.ssh(host, 'systemctl --user is-active ' + ' '.join(serving)).stdout.split()

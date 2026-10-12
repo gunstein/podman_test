@@ -321,7 +321,14 @@ why. The seven workloads already log to journald (`LogDriver=journald`), and
 The platform must also run services like Seq (a log server): a vendor's
 image, its own data on disk, its own passwords and login, and other apps
 sending to it. Adding the next service of that kind must be as easy as
-adding a web app is today. This widens the platform plan's scope
+adding a web app is today. The goal: a new service is a directory with its
+pod template and a declarative description (`app.yaml`), plus an entry in
+`platform.yaml`, and needs no change to platform code as long as it uses
+capabilities the platform knows. A new kind of capability costs one bounded
+platform change, once. Free YAML (any Kubernetes object in a template, as a
+Helm chart may hold) stays out: the installer could then not tell which
+data to replicate, back up or lose on failover, nor keep secrets out of
+YAML. This widens the platform plan's scope
 (docs/PLATFORM-PLAN.md, section 2, leaves out storage other than PostgreSQL
 and unknown service kinds) and goes against principles 2 and 3 above, so
 it starts with the owner's decision and a plan update, not with code.
@@ -333,12 +340,15 @@ it starts with the owner's decision and a plan update, not with code.
     `containerfile`); there is no prebuilt `reference` (plan 5.2). A
     one-line Containerfile (`FROM <vendor image>`) works around it.
   - **Data on disk**: `pod_contract.py` allows only `secret`, `configMap`
-    and `emptyDir` volumes, and `emptyDir` is gone at every restart; the
-    plan's only data classes are the replicated PostgreSQL group and none
-    (5.6). This is the main blocker.
-  - **Secrets**: an app gets its own secrets only with `database: true`
-    (`pod_contract.py`, `secrets.application_secret_mapping`), so a service
-    without a database cannot get an admin password.
+    and `emptyDir` volumes, and `emptyDir` is gone at every restart; a pod
+    template must render exactly one Pod, so it cannot hold a
+    `PersistentVolumeClaim` either. The plan's only data classes are the
+    replicated PostgreSQL group and none (5.6). This is the main blocker.
+  - **Secrets**: an app's only secrets are the database passwords the
+    platform generates, and only with `database: true` (`pod_contract.py`,
+    `secrets.application_secret_mapping`). A service without a database
+    cannot get an admin password, and no app can be given a file the
+    operator delivers, such as a `.pfx` or a CA certificate.
   - **Login**: `login:` makes a public OIDC client for a frontend behind
     `auth.js` (`keycloak.configure` forces `publicClient`); a service with
     its own login, or one that needs a confidential client, does not fit.
@@ -353,7 +363,9 @@ it starts with the owner's decision and a plan update, not with code.
   decided and designed in the plan first:
   1. `images.<name>.reference`: a prebuilt image, pulled when the bundle is
      built and carried in it with its ID like the others (plan 5.2).
-  2. `volumes`: named persistent volumes with a data class. A new class for
+  2. `volumes`: named persistent volumes with a data class; the platform
+     renders the `PersistentVolumeClaim` from the declaration, as it does
+     for PostgreSQL, and the template only mounts it. A new class for
      data kept on the host but not replicated, which needs the operator's
      explicit loss acceptance in `platform.yaml` (plan 5.6); whether such a
      volume is in the nightly backup is part of the decision. `pod_contract`
@@ -361,13 +373,53 @@ it starts with the owner's decision and a plan update, not with code.
      uninstall keeps it like a database volume (plan 5.8). DR must say
      what happens to it on failover (the standby starts empty) and refuse
      an unclassified volume.
-  3. `secrets`: named passwords the platform generates and mounts as files,
-     for any app, with or without a database.
+  3. `secrets`, for any app, with or without a database, each mounted
+     read-only as a file and never written in YAML, an image or the bundle:
+     - *generated*: a password the platform makes on first install and
+       keeps, as it does for database passwords today;
+     - *provided*: a file the operator delivers (a `.pfx`, a CA
+       certificate), stored as a Podman secret by an installer command; an
+       install stops and names a missing one. The DR secret synchronisation
+       (`sync-standby-secrets`) must carry both kinds to the standby. The
+       existing patterns are `tls_secrets.py` (nginx's TLS files as Podman
+       secrets) and X1 (a PFX in a Kube file secret, spike passed).
   4. `login`: a way to say the service handles its own login (no client
      made); a confidential client only if a service needs one.
   5. Addresses for other apps: the operator connects them in
      `platform.yaml` (which app's endpoint another app may use, under what
      key in its ConfigMap); `app.yaml` still names no other app.
+
+  A sketch of Seq after S1 (field names not decided), beside its
+  `pod.yaml.j2`:
+
+  ```yaml
+  # services/seq/app.yaml (the service's developer)
+  name: seq
+  images:
+    server:
+      reference: docker.io/datalust/seq:<version>
+  volumes:
+    data:
+      class: local            # kept on the host, not replicated
+  secrets:
+    admin-password: generated
+    signing-cert: provided    # e.g. a .pfx the operator delivers
+  login: own
+  endpoints:
+    ui:
+      port: 80
+  routes:
+    - path: /
+      to: ui
+
+  # platform.yaml (the operator)
+  apps:
+    - path: services/seq
+      hostname: seq.example.org
+      volumes:
+        data:
+          acceptLoss: true    # explicit: empty after a failover
+  ```
 
   Done when Seq is installed, restarted and updated from its own directory
   with its data kept, without a change to platform code, and a second

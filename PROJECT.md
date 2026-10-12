@@ -2,21 +2,22 @@
 
 ## Goal and architecture
 
-A pedagogical rootless Podman Todo and Notes demo: Jinja2 renders Kube YAML;
-user systemd manages seven .kube workloads (two apps, shared Keycloak and nginx,
-three PostgreSQL databases replicated as one DR group). See [Architecture](docs/ARCHITECTURE.md),
+A small rootless Podman web-app platform with Todo, Notes, Help and Guestbook:
+Jinja2 renders Kube YAML; user systemd manages ten .kube workloads (four apps,
+shared Keycloak and nginx, four PostgreSQL databases replicated as one DR
+group). See [Architecture](docs/ARCHITECTURE.md),
 [Learning guide](docs/LEARNING-GUIDE.md) and the one-page
 [install picture](docs/INSTALL-PICTURE.md) of the production and development paths.
 
 ## Acceptance
 
-**Current verdict: CLEAN PASS** on `aaf89f8` (`feature/platform`, platform
-phases 1 to 5-2) for the eight-pod, three-app, three-database
+**Current verdict: CLEAN PASS** on `c11ed00` (`feature/platform`, platform
+phases 1 to 5-4h) for the ten-pod, four-app, four-database
 topology in a full two-VM run without an agent (`acceptance.py run`,
-[record](docs/history/ACCEPTANCE-aaf89f8.md)),
+[record](docs/history/ACCEPTANCE-c11ed00.md)),
 with nginx's TLS files as Podman secrets (local mode), replication over TLS, Keycloak lockout and password policy, the nginx
 security headers, and the acceptance run itself done through
-`deploy/scripts/lab/acceptance.py`. Its `report full` found all 121 steps PASS
+`deploy/scripts/lab/acceptance.py`. Its `report full` found all 124 steps PASS
 on one clean revision and compared them with the agent guide: every step and
 log it names, nothing else. Every step ran through `acceptance.py step`, which
 runs the guide's line as written and only after the step before it passed,
@@ -59,11 +60,22 @@ Keycloak's addresses in one place, each app's client and API audience apart
 (an ID token is refused), Keycloak's clients from the platform's defaults,
 and each frontend's login settings from its config; phase 5-2 in run
 2026-10-11-run-57: each app's database roles made by the platform, its table
-rights granted by its own migrations.
+rights granted by its own migrations; phases 5-3 and 5-4a–h in run
+2026-10-11-run-58: app-local sources, Guestbook with its own database and
+login, isolated platform test fixtures, and its data through four-database
+failover, backup/restore, PITR, rebuild and re-seed. The pre-lab
+understandability verdict was YELLOW; its four findings were corrected
+before run 58. The final fresh-agent check of the corrected phase is pending.
 Final topology: VM 108 primary with application and backup, VM 107
 database-only standby; verify roles freshly before any operation.
 
 How it got there, newest first:
+
+- `c11ed00` run 2026-10-11-run-58: CLEAN PASS
+  ([record](docs/history/ACCEPTANCE-c11ed00.md)), accepting platform phases
+  5-3 and 5-4a–h: 124 steps and 72 product logs, failover 4 min 09 s,
+  the whole run 43 min 42 s, no deviations. Guestbook's row and port 5435
+  passed the full four-database recovery sequence.
 
 - `aaf89f8` run 2026-10-11-run-57: CLEAN PASS
   ([record](docs/history/ACCEPTANCE-aaf89f8.md)), accepting platform phase

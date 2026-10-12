@@ -1253,7 +1253,7 @@ migrates, makes them again, and runs the role tests as the runtime role
      JS: all phase 5, now written into its scope.
 
 
-**Phase 5-3, code done; the lab step runs in phase 5's acceptance run.**
+**Phase 5-3, done: accepted in run 2026-10-11-run-58 on `c11ed00`** ([record](history/ACCEPTANCE-c11ed00.md)).
 Todo and Notes move into their own directories: `examples/<app>/backend`
 and `examples/<app>/frontend` beside the app's `app.yaml` and `pod.yaml.j2`,
 each image built from its own directory (`context: backend`, the
@@ -1267,7 +1267,7 @@ environment, the platform's and not an app's, are `e2e/requirements.txt` and
 `e2e/.venv` (the lab's step `03-4a` makes it there). CI, Dependabot and the
 docs name the new paths.
 
-**Phase 5-4a, code done; the lab step runs in the phase's acceptance run.**
+**Phase 5-4a, done: accepted in run 2026-10-11-run-58 on `c11ed00`** ([record](history/ACCEPTANCE-c11ed00.md)).
 The third app exposed tests that used the checkout's changing app set as
 fixed test data. Platform behaviour tests now use `tests/fixtures/platform.yaml`
 (Todo, Notes and Help), through one `fixture_platform()` helper; build and
@@ -1280,7 +1280,7 @@ must pass before the later documentation step. No runtime platform code or
 render baseline changed. A certificate test also tolerates OpenSSL's two
 spacing styles for a subject CN, without weakening the subject check.
 
-**Phase 5-4b, code done; the lab step runs in the phase's acceptance run.**
+**Phase 5-4b, done: accepted in run 2026-10-11-run-58 on `c11ed00`** ([record](history/ACCEPTANCE-c11ed00.md)).
 Step 5-4a passed CI #401 on `3487fe6`. Guestbook's backend now has the same
 `.containerignore` as Todo and Notes, excluding tests and local Python files.
 The CI role helper documents its already-quoted, platform-generated SQL and
@@ -1288,7 +1288,7 @@ uses a targeted argument/overload type ignore on `execute`: psycopg requires `Li
 for both `execute` and `sql.SQL`. Pyright also passes with psycopg installed;
 SQL construction and execution are unchanged.
 
-**Phase 5-4c, code done; the lab step runs in the phase's acceptance run.**
+**Phase 5-4c, done: accepted in run 2026-10-11-run-58 on `c11ed00`** ([record](history/ACCEPTANCE-c11ed00.md)).
 Step 5-4b passed CI #403 on `5ade26d`. The backend job now runs Guestbook's
 18 unit tests and its real PostgreSQL role test: runtime CRUD succeeds;
 CREATE, ALTER, DROP and reading `schema_migrations` fail. A second app-local
@@ -1302,7 +1302,7 @@ Guestbook's real Keycloak ID token and Todo's access token for both reads
 and writes. The same test runs in the lab before and after failover.
 No platform runtime code or render baseline changed.
 
-**Phase 5-4d, code done; the lab step runs in the phase's acceptance run.**
+**Phase 5-4d, done: accepted in run 2026-10-11-run-58 on `c11ed00`** ([record](history/ACCEPTANCE-c11ed00.md)).
 Step 5-4c passed CI #405 on `fed1440`, including the Guestbook PostgreSQL
 role test and real browser token tests. `docs/ADDING-AN-APP.md`, linked from
 README and IDENTITY, describes today's complete schema, pod variables,
@@ -1342,7 +1342,7 @@ understandability check. Findings and disposition:
    PostgreSQL role, authenticated browser CRUD and token-isolation coverage.
    Target-host DR remains for phase 5's operator-run acceptance.
 
-**Phase 5-4e, code done; the lab step runs in the phase's acceptance run.**
+**Phase 5-4e, done: accepted in run 2026-10-11-run-58 on `c11ed00`** ([record](history/ACCEPTANCE-c11ed00.md)).
 Step 5-4d passed CI #407 on `5ce08f7`. The lab creates a Guestbook message
 through real SSO, reads it with the frontend's access token, records its ID,
 and compares ID/message on each host alongside Todo and Notes. Those same
@@ -1365,7 +1365,7 @@ Phase 5 still awaits the operator's unchanged-revision acceptance evidence
 and its final fresh-agent understandability check. Record the evidence and
 verdict as AGENTS.md describes before marking these deliveries accepted.
 
-**Phase 5-4f, code done; the lab step runs in the phase's acceptance run.**
+**Phase 5-4f, done: accepted in run 2026-10-11-run-58 on `c11ed00`** ([record](history/ACCEPTANCE-c11ed00.md)).
 Step 5-4e passed CI #409 on `c995371`. The independent review of
 `e918141..c995371` returned **YELLOW**: test isolation, real-token browser
 checks and Guestbook's lab path were sound, with no weakened DR safety
@@ -1406,7 +1406,7 @@ installation, four-database DR, Guestbook backup/PITR and report matching
 against the new guide step names remain to be proved on the corrected
 revision by the phase acceptance run.
 
-**Phase 5-4g, code done; the lab step runs in the phase's acceptance run.**
+**Phase 5-4g, done: accepted in run 2026-10-11-run-58 on `c11ed00`** ([record](history/ACCEPTANCE-c11ed00.md)).
 Step 5-4f passed CI #410 on `3c86acd`. The fresh-agent understandability
 review returned **YELLOW**: the reviewer could take over installation and
 add an app without learning an internal framework, but found two validation
@@ -1438,7 +1438,7 @@ understandable. Markdown step interpretation and resume rules need more
 care than the main install flow. Fixes 1 and 4 are in this delivery; 2 and
 3 remain for the next CI-gated delivery before lab acceptance.
 
-**Phase 5-4h, code done; the lab step runs in the phase's acceptance run.**
+**Phase 5-4h, done: accepted in run 2026-10-11-run-58 on `c11ed00`** ([record](history/ACCEPTANCE-c11ed00.md)).
 Step 5-4g passed CI #411 on `14c2c36`. This completes the remaining fixes
 from its YELLOW understandability review:
 
@@ -1464,3 +1464,27 @@ All four findings now have corrections; the review's verdict remains
 YELLOW as reported. Phase 5 still needs its unchanged-revision lab run and
 recorded evidence before acceptance. No render-baseline or name-guard
 allowlist change was required.
+
+
+**Phase 5 lab acceptance, run 2026-10-11-run-58: CLEAN PASS on `c11ed00`.**
+[Record](history/ACCEPTANCE-c11ed00.md), supplied by the operator on
+2026-10-12. CI #412 was green on the revision. The run had 124 PASS steps,
+72 product logs, no failures, refusals, unfinished actions or deviations,
+and the same clean revision at every step. Failover took 4 min 09 s;
+the whole run took 43 min 42 s. Recomputing the report from local logs
+matched it exactly; every product command's output expectations passed.
+
+This accepts 5-3 and 5-4a–h: the example sources in their own directories,
+Guestbook's database and login, and its markers through snapshot restore,
+failover, nightly backup, isolated PITR, standby rebuild, re-seed and
+reboots. The four-database group and port 5435 passed the real firewall,
+quarantine and recovery checks. Guestbook's separate PITR log confirms
+both restored and live row assertions, although its excerpt was omitted
+from EVIDENCE.md. The record states the limits, including the final
+restart-count probe's Todo/Notes/nginx-only scope.
+
+The earlier entries' pending lab steps are resolved by this record. The
+pre-lab understandability verdict remains YELLOW as reported; all four
+findings were corrected before this run. The final fresh-agent check of
+the corrected phase is the next step; lab acceptance is not a replacement
+for that review.

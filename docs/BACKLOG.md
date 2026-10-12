@@ -316,6 +316,67 @@ why. The seven workloads already log to journald (`LogDriver=journald`), and
   holds the lost host's logs up to the moment it was lost. Testable in the
   lab with the two VMs.
 
+## Services that are not web apps
+
+The platform must also run services like Seq (a log server): a vendor's
+image, its own data on disk, its own passwords and login, and other apps
+sending to it. Adding the next service of that kind must be as easy as
+adding a web app is today. This widens the platform plan's scope
+(docs/PLATFORM-PLAN.md, section 2, leaves out storage other than PostgreSQL
+and unknown service kinds) and goes against principles 2 and 3 above, so
+it starts with the owner's decision and a plan update, not with code.
+
+- **S1. Support Seq-like services through the app contract.** *[new]*
+  *[decision]* Owner's requirement (2026-10-12): general, so that similar
+  services are easy to add. What stops Seq today, at `3f336c1`:
+  - **Image**: `app.yaml` can only build an image from source (`context`,
+    `containerfile`); there is no prebuilt `reference` (plan 5.2). A
+    one-line Containerfile (`FROM <vendor image>`) works around it.
+  - **Data on disk**: `pod_contract.py` allows only `secret`, `configMap`
+    and `emptyDir` volumes, and `emptyDir` is gone at every restart; the
+    plan's only data classes are the replicated PostgreSQL group and none
+    (5.6). This is the main blocker.
+  - **Secrets**: an app gets its own secrets only with `database: true`
+    (`pod_contract.py`, `secrets.application_secret_mapping`), so a service
+    without a database cannot get an admin password.
+  - **Login**: `login:` makes a public OIDC client for a frontend behind
+    `auth.js` (`keycloak.configure` forces `publicClient`); a service with
+    its own login, or one that needs a confidential client, does not fit.
+  - **Other apps reaching it**: an app's ConfigMap has fixed keys and
+    `app.yaml` never names another app, so there is no way to hand the
+    service's address to the apps that use it.
+
+  Make it general as a few new **app.yaml fields** in the one model
+  (`apps.App`, `platform_file`, `pod_contract`, `bundle.json`), not as a
+  plugin or component framework (plan, section 3): a Seq app is then a
+  directory and a `platform.yaml` entry like any other. Each field to be
+  decided and designed in the plan first:
+  1. `images.<name>.reference`: a prebuilt image, pulled when the bundle is
+     built and carried in it with its ID like the others (plan 5.2).
+  2. `volumes`: named persistent volumes with a data class. A new class for
+     data kept on the host but not replicated, which needs the operator's
+     explicit loss acceptance in `platform.yaml` (plan 5.6); whether such a
+     volume is in the nightly backup is part of the decision. `pod_contract`
+     accepts a `persistentVolumeClaim` only for a declared volume;
+     uninstall keeps it like a database volume (plan 5.8). DR must say
+     what happens to it on failover (the standby starts empty) and refuse
+     an unclassified volume.
+  3. `secrets`: named passwords the platform generates and mounts as files,
+     for any app, with or without a database.
+  4. `login`: a way to say the service handles its own login (no client
+     made); a confidential client only if a service needs one.
+  5. Addresses for other apps: the operator connects them in
+     `platform.yaml` (which app's endpoint another app may use, under what
+     key in its ConfigMap); `app.yaml` still names no other app.
+
+  Done when Seq is installed, restarted and updated from its own directory
+  with its data kept, without a change to platform code, and a second
+  service of the same kind is added the same way (to be chosen with the
+  owner; the plan's rule is to generalise from two real cases, not one).
+  Its lab proof covers restart, reboot, failover (with the accepted loss)
+  and, if decided, backup and restore. Until then: run Seq outside the
+  platform, or forward the hosts' journald to it (see L6).
+
 ## Data checks in acceptance
 
 Acceptance proves replication state for all three databases (streaming, slot,
